@@ -412,6 +412,11 @@ mod tests {
         use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
 
         mod basic_creation {
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM};
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
             use super::*;
             #[test]
             fn test_data_contract_creation_with_single_token() {
@@ -1062,6 +1067,119 @@ mod tests {
                     .unwrap()
                     .expect("expected to commit transaction");
             }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_with_valid_perpetual_distribution() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config
+                        .distribution_rules_mut()
+                        .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                            TokenPerpetualDistributionV0 {
+                                distribution_type: RewardDistributionType::BlockBasedDistribution {
+                                    interval: 10,
+                                    function: DistributionFunction::Exponential {
+                                        a: 1,
+                                        d: 1,
+                                        m: 1,
+                                        n: 1,
+                                        o: 0,
+                                        start_moment: None,
+                                        b: 10,
+                                        min_value: None,
+                                        max_value: Some(MAX_DISTRIBUTION_PARAM),
+                                    },
+                                },
+                                // we give to identity 2
+                                distribution_recipient: TokenDistributionRecipient::Identity(
+                                    identity.id(),
+                                ),
+                            },
+                        )));
+                }
+
+                let identity_id = identity.id();
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, Some(100_000));
+            }
         }
 
         mod pre_programmed_distribution {
@@ -1243,6 +1361,11 @@ mod tests {
         }
 
         mod token_errors {
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
             use super::*;
             #[test]
             fn test_data_contract_creation_with_single_token_with_starting_balance_over_limit_should_cause_error(
@@ -1690,6 +1813,230 @@ mod tests {
                     .commit_transaction(transaction)
                     .unwrap()
                     .expect("expected to commit transaction");
+            }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_with_invalid_perpetual_distribution_should_cause_error(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config
+                        .distribution_rules_mut()
+                        .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                            TokenPerpetualDistributionV0 {
+                                distribution_type: RewardDistributionType::BlockBasedDistribution {
+                                    interval: 10,
+                                    function: DistributionFunction::Exponential {
+                                        a: 0,
+                                        d: 0,
+                                        m: 0,
+                                        n: 0,
+                                        o: 0,
+                                        start_moment: None,
+                                        b: 0,
+                                        min_value: None,
+                                        max_value: None,
+                                    },
+                                },
+                                // we give to identity 2
+                                distribution_recipient: TokenDistributionRecipient::Identity(
+                                    identity.id(),
+                                ),
+                            },
+                        )));
+                }
+
+                let identity_id = identity.id();
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(
+                            BasicError::InvalidTokenDistributionFunctionDivideByZeroError(_)
+                        ),
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, None);
+            }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_with_random_perpetual_distribution_should_cause_error(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config
+                        .distribution_rules_mut()
+                        .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                            TokenPerpetualDistributionV0 {
+                                distribution_type: RewardDistributionType::BlockBasedDistribution {
+                                    interval: 10,
+                                    function: DistributionFunction::Random { min: 0, max: 10 },
+                                },
+                                // we give to identity 2
+                                distribution_recipient: TokenDistributionRecipient::Identity(
+                                    identity.id(),
+                                ),
+                            },
+                        )));
+                }
+
+                let identity_id = identity.id();
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_)),
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, None);
             }
         }
     }

@@ -93,13 +93,13 @@ impl DistributionFunction {
                     ));
                 }
 
-                if *trailing_distribution_interval_amount > MAX_DISTRIBUTION_PARAM {
+                // Ensure trailing amount does not exceed the initial amount
+                if *trailing_distribution_interval_amount > *distribution_start_amount {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
                             "trailing_distribution_interval_amount".to_string(),
-                            0,
-                            MAX_DISTRIBUTION_PARAM as i64,
-                            None,
+                            "distribution_start_amount".to_string(),
+                            "smaller than or equal to".to_string(),
                         )
                         .into(),
                     ));
@@ -525,7 +525,7 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
                             1,
-                            MAX_LOG_A_PARAM,
+                            MAX_EXP_A_PARAM as i64,
                             None,
                         )
                         .into(),
