@@ -240,6 +240,7 @@ impl<C> Platform<C> {
             max_supply: None,
             keeps_history: TokenKeepsHistoryRulesV0::default().into(),
             start_as_paused: false,
+            allow_transfer_to_frozen_balance: true,
             max_supply_change_rules: ChangeControlRulesV0::default().into(),
             distribution_rules: TokenDistributionRulesV0 {
                 perpetual_distribution: None,

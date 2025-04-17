@@ -35,7 +35,7 @@ pub struct TokenConfigurationV0 {
     #[serde(default = "default_starts_as_paused")]
     pub start_as_paused: bool,
     /// Allow to transfer and mint tokens to frozen identity token balances
-    #[serde(default)]
+    #[serde(default = "default_allow_transfer_to_frozen_balance")]
     pub allow_transfer_to_frozen_balance: bool,
     /// Who can change the max supply
     /// Even if set no one can ever change this under the base supply
@@ -72,6 +72,11 @@ fn default_keeps_history() -> bool {
 // Default function for `starts_as_paused`
 fn default_starts_as_paused() -> bool {
     false
+}
+
+// Default function for `allow_transfer_to_frozen_balance`
+fn default_allow_transfer_to_frozen_balance() -> bool {
+    true
 }
 
 fn default_token_keeps_history_rules() -> TokenKeepsHistoryRules {
@@ -146,13 +151,14 @@ impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  distribution_rules: {},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  allow_transfer_to_frozen_balance: {},\n  max_supply_change_rules: {:?},\n  distribution_rules: {},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
             self.conventions_change_rules,
             self.base_supply,
             self.max_supply,
             self.keeps_history,
             self.start_as_paused,
+            self.allow_transfer_to_frozen_balance,
             self.max_supply_change_rules,
             self.distribution_rules,
             self.manual_minting_rules,
@@ -193,7 +199,7 @@ impl TokenConfigurationV0 {
                 keeps_direct_purchase_history: true,
             }),
             start_as_paused: false,
-            allow_transfer_to_frozen_balance: false,
+            allow_transfer_to_frozen_balance: true,
             max_supply_change_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
                 admin_action_takers: AuthorizedActionTakers::NoOne,

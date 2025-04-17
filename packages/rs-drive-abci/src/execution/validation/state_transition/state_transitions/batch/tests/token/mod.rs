@@ -14,7 +14,6 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
-use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -4393,6 +4392,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 platform_version,
             );
