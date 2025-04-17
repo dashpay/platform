@@ -22,6 +22,7 @@ impl Drive {
         contract_id: Identifier,
         owner_id: Identifier,
         description: &String,
+        short_only: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -32,6 +33,7 @@ impl Drive {
             contract_id,
             owner_id,
             description,
+            short_only,
             block_info,
             apply,
             transaction,
@@ -56,6 +58,7 @@ impl Drive {
         contract_id: Identifier,
         owner_id: Identifier,
         description: &String,
+        short_only: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -68,10 +71,11 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let batch_operations = self.add_new_contract_description_operations(
+        let batch_operations = self.add_new_contract_description_operations_v0(
             contract_id,
             owner_id,
             description,
+            short_only,
             block_info,
             &mut estimated_costs_only_with_layer_info,
             transaction,
@@ -89,7 +93,7 @@ impl Drive {
 
     /// Creates and returns the LowLeveLDriveOperations needed to create
     /// the documents in the Keyword Search contract for the contract description
-    pub(crate) fn add_new_contract_description_operations_v0(
+    pub(super) fn add_new_contract_description_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,

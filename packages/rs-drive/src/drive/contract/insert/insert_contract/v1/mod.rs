@@ -324,6 +324,7 @@ impl Drive {
                 contract.id(),
                 contract.owner_id(),
                 description,
+                false,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

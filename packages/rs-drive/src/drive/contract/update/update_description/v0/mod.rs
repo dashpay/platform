@@ -140,7 +140,7 @@ impl Drive {
 
         if existing_documents.is_empty() {
             // Add the new one
-            operations.extend(self.add_new_contract_description_operations_v0(
+            operations.extend(self.add_new_contract_description_operations(
                 contract_id,
                 owner_id,
                 description,
