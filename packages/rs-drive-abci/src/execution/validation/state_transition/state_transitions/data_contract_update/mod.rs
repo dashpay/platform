@@ -1993,6 +1993,7 @@ mod tests {
 
     mod description_updates {
         use super::*;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
         use dpp::{
             data_contract::conversion::value::v0::DataContractValueConversionMethodsV0,
             data_contracts::SystemDataContract,
@@ -2206,15 +2207,22 @@ mod tests {
                 },
             );
 
-            let res = platform
+            let mut res = platform
                 .drive
                 .query_documents(query, None, false, None, None)
-                .unwrap();
+                .expect("expected query to succeed")
+                .documents_owned();
 
-            res.documents()
-                .iter()
-                .map(|d| d.get("description").unwrap().as_str().unwrap().to_owned())
-                .collect()
+            if res.is_empty() {
+                panic!("expected a document description");
+            }
+
+            let first_document = res.remove(0);
+
+            first_document
+                .properties()
+                .get_string("description")
+                .expect("expected description to exist")
         }
 
         // ────────────────────────────────────────────────────────────────────────
