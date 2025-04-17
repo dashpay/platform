@@ -1,7 +1,9 @@
 use crate::drive::tokens::paths::{
     token_ms_timed_at_time_distributions_path_vec, token_ms_timed_distributions_path_vec,
     token_pre_programmed_at_time_distribution_path_vec, token_pre_programmed_distributions_path,
-    token_root_pre_programmed_distributions_path, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
+    token_root_pre_programmed_distributions_path,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -15,7 +17,7 @@ use dpp::data_contract::associated_token::token_distribution_key::{
     TokenDistributionKey, TokenDistributionType,
 };
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::methods::v0::TokenPreProgrammedDistributionV0Methods;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
@@ -115,6 +117,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Version 0 of `add_perpetual_distribution`
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_pre_programmed_distributions_v0(
         &self,
         token_id: [u8; 32],
@@ -131,7 +134,7 @@ impl Drive {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_token_pre_programmed_distribution(
                 token_id,
-                distribution.distributions().keys(),
+                Some(distribution.distributions().keys()),
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -187,6 +190,16 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution("we can not insert the pre programmed distribution as it already existed, this should have been validated before insertion")));
         }
         let pre_programmed_distributions_path = token_pre_programmed_distributions_path(&token_id);
+
+        self.batch_insert_empty_tree(
+            pre_programmed_distributions_path,
+            DriveKeyInfo::Key(vec![
+                TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+            ]),
+            None, // we will never clean this part up
+            batch_operations,
+            &platform_version.drive,
+        )?;
 
         for (time, distribution) in distribution.distributions() {
             self.batch_insert_empty_sum_tree(

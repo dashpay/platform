@@ -82,6 +82,7 @@ impl DriveHighLevelBatchOperationConverter for TokenMintTransitionAction {
                         identity_balance_holder_id: self.identity_balance_holder_id(),
                         mint_amount: self.mint_amount(),
                         allow_first_mint: false,
+                        allow_saturation: false,
                     }));
 
                     let token_configuration = self.base().token_configuration()?;

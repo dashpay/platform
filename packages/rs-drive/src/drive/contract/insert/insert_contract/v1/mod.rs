@@ -88,6 +88,7 @@ impl Drive {
 
     /// Adds a contract to storage using `add_contract_to_storage`
     /// and inserts the empty trees which will be necessary to later insert documents.
+    #[allow(clippy::too_many_arguments)]
     fn insert_contract_element_v1(
         &self,
         contract_element: Element,
@@ -124,6 +125,7 @@ impl Drive {
     /// These operations add a contract to storage using `add_contract_to_storage`
     /// and insert the empty trees which will be necessary to later insert documents.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn insert_contract_add_operations_v1(
         &self,
         contract_element: Element,
@@ -220,9 +222,7 @@ impl Drive {
             {
                 self.add_perpetual_distribution(
                     token_id.to_buffer(),
-                    contract.owner_id().to_buffer(),
                     perpetual_distribution,
-                    block_info,
                     estimated_costs_only_with_layer_info,
                     &mut batch_operations,
                     transaction,
@@ -301,6 +301,31 @@ impl Drive {
             batch_operations.extend(self.add_new_groups_operations(
                 contract.id(),
                 contract.groups(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if !contract.keywords().is_empty() {
+            batch_operations.extend(self.add_new_contract_keywords_operations(
+                contract.id(),
+                contract.owner_id(),
+                contract.keywords(),
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if let Some(description) = contract.description() {
+            batch_operations.extend(self.add_new_contract_description_operations(
+                contract.id(),
+                contract.owner_id(),
+                description,
+                false,
+                block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

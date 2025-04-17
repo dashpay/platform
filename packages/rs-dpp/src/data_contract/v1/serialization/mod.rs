@@ -1,4 +1,3 @@
-use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -90,9 +89,7 @@ impl DataContractV1 {
             id,
             document_schemas,
             schema_defs.as_ref(),
-            config.documents_keep_history_contract_default(),
-            config.documents_mutable_contract_default(),
-            config.documents_can_be_deleted_contract_default(),
+            &config,
             full_validation,
             false,
             validation_operations,
@@ -114,6 +111,8 @@ impl DataContractV1 {
             updated_at_epoch: None,
             groups: Default::default(),
             tokens: Default::default(),
+            keywords: Default::default(),
+            description: None,
         };
 
         Ok(data_contract)
@@ -140,15 +139,15 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
+            keywords,
+            description,
         } = data_contract_data;
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
             document_schemas,
             schema_defs.as_ref(),
-            config.documents_keep_history_contract_default(),
-            config.documents_mutable_contract_default(),
-            config.documents_can_be_deleted_contract_default(),
+            &config,
             full_validation,
             !tokens.is_empty(),
             validation_operations,
@@ -170,6 +169,8 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
+            keywords,
+            description,
         };
 
         Ok(data_contract)

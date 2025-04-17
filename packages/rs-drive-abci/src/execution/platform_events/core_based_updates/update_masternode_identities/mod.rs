@@ -8,6 +8,7 @@ mod get_owner_identity_owner_key;
 mod get_owner_identity_withdrawal_key;
 mod get_voter_identifier;
 mod get_voter_identity_key;
+#[allow(clippy::module_inception)]
 mod update_masternode_identities;
 mod update_operator_identity;
 mod update_owner_withdrawal_address;

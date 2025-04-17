@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::util::batch::DriveOperation::{
-    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation,
+    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation, TokenOperation,
 };
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -12,10 +12,12 @@ use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
-use crate::util::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
+use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationType, TokenOperationType};
 use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 use crate::error::drive::DriveError;
 
@@ -46,6 +48,8 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
 
                 let also_insert_vote_poll_stored_info = self.take_should_store_contest_info();
 
+                let document_creation_token_cost = self.base().token_cost();
+
                 let document = Document::try_from_owned_create_transition_action(
                     self,
                     owner_id,
@@ -62,6 +66,26 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                         nonce: identity_contract_nonce,
                     },
                 )];
+
+                if let Some((token_id, effect, cost)) = document_creation_token_cost {
+                    match effect {
+                        DocumentActionTokenEffect::TransferTokenToContractOwner => {
+                            ops.push(TokenOperation(TokenOperationType::TokenTransfer {
+                                token_id,
+                                sender_id: owner_id,
+                                recipient_id: contract_fetch_info.contract.owner_id(),
+                                amount: cost,
+                            }));
+                        }
+                        DocumentActionTokenEffect::BurnToken => {
+                            ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                                token_id,
+                                identity_balance_holder_id: owner_id,
+                                burn_amount: cost,
+                            }));
+                        }
+                    }
+                }
 
                 if let Some((contested_document_resource_vote_poll, credits)) =
                     maybe_prefunded_voting_balance

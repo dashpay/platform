@@ -64,12 +64,13 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_info_for_identity_id: FeatureVersion,
     pub verify_token_status: FeatureVersion,
     pub verify_token_pre_programmed_distributions: FeatureVersion,
+    pub verify_token_direct_selling_price: FeatureVersion,
+    pub verify_token_direct_selling_prices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyVoteMethodVersions {
     pub verify_masternode_vote: FeatureVersion,
-    pub verify_start_at_contender_in_proof: FeatureVersion,
     pub verify_vote_poll_votes_proof: FeatureVersion,
     pub verify_identity_votes_given_proof: FeatureVersion,
     pub verify_vote_poll_vote_state_proof: FeatureVersion,

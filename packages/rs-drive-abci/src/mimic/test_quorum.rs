@@ -50,7 +50,7 @@ impl From<&ValidatorInQuorum> for ValidatorV0 {
         } = value;
         ValidatorV0 {
             pro_tx_hash: *pro_tx_hash,
-            public_key: Some(public_key.clone()),
+            public_key: Some(*public_key),
             node_ip: node_ip.to_string(),
             node_id: *node_id,
             core_port: *core_port,
@@ -217,7 +217,7 @@ impl From<&TestQuorumInfo> for ValidatorSetV0 {
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))
                 .collect(),
-            threshold_public_key: public_key.clone(),
+            threshold_public_key: *public_key,
             quorum_index: *quorum_index,
         }
     }

@@ -11,7 +11,7 @@ use crate::data_contract::DataContract;
     feature = "document-json-conversion"
 ))]
 use crate::document::extended_document::fields::property_names;
-use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
+use crate::document::{Document, DocumentV0Getters};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
@@ -27,12 +27,16 @@ use platform_value::btreemap_extensions::{
     BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
+#[cfg(all(
+    feature = "document-serde-conversion",
+    feature = "data-contract-serde-conversion"
+))]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 #[cfg(feature = "validation")]
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 #[cfg(feature = "document-json-conversion")]
@@ -40,6 +44,7 @@ use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 #[cfg(feature = "document-json-conversion")]
@@ -119,6 +124,15 @@ pub struct ExtendedDocumentV0 {
         serde(rename = "$entropy")
     )]
     pub entropy: Bytes32,
+    /// A field representing the token payment info.
+    #[cfg_attr(
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+        serde(rename = "$tokenPaymentInfo")
+    )]
+    pub token_payment_info: Option<TokenPaymentInfo>,
 }
 
 impl ExtendedDocumentV0 {
@@ -218,6 +232,7 @@ impl ExtendedDocumentV0 {
         document: Document,
         data_contract: DataContract,
         document_type_name: String,
+        token_payment_info: Option<TokenPaymentInfo>,
     ) -> Self {
         Self {
             document_type_name,
@@ -226,6 +241,7 @@ impl ExtendedDocumentV0 {
             data_contract,
             metadata: None,
             entropy: Default::default(),
+            token_payment_info,
         }
     }
 
@@ -291,6 +307,16 @@ impl ExtendedDocumentV0 {
             .clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
+
+        let token_payment_info = properties
+            .remove_optional_map_as_btree_map_keep_values_as_platform_value(
+                property_names::TOKEN_PAYMENT_INFO,
+            )
+            .ok()
+            .flatten()
+            .map(|map| map.try_into())
+            .transpose()?;
+
         let document_type_name = properties
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
@@ -305,6 +331,7 @@ impl ExtendedDocumentV0 {
             data_contract_id,
             metadata: None,
             entropy: Default::default(),
+            token_payment_info,
         };
 
         extended_document.data_contract_id = Identifier::new(
@@ -340,6 +367,15 @@ impl ExtendedDocumentV0 {
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
 
+        let token_payment_info = properties
+            .remove_optional_map_as_btree_map_keep_values_as_platform_value(
+                property_names::TOKEN_PAYMENT_INFO,
+            )
+            .ok()
+            .flatten()
+            .map(|map| map.try_into())
+            .transpose()?;
+
         let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
 
         let identifiers = document_type.identifier_paths().to_owned();
@@ -364,6 +400,7 @@ impl ExtendedDocumentV0 {
             data_contract_id,
             metadata: None,
             entropy: Default::default(),
+            token_payment_info,
         };
 
         extended_document.data_contract_id = properties
@@ -396,6 +433,13 @@ impl ExtendedDocumentV0 {
             property_names::DATA_CONTRACT_ID.to_string(),
             JsonValue::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
         );
+        if let Some(token_payment_info) = self.token_payment_info {
+            let value: Value = token_payment_info.try_into()?;
+            value_mut.insert(
+                property_names::TOKEN_PAYMENT_INFO.to_string(),
+                value.try_into_validating_json()?,
+            );
+        }
         Ok(value)
     }
 
@@ -410,6 +454,12 @@ impl ExtendedDocumentV0 {
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(self.data_contract_id.to_buffer()),
         );
+        if let Some(token_payment_info) = self.token_payment_info {
+            object.insert(
+                property_names::TOKEN_PAYMENT_INFO.to_string(),
+                token_payment_info.try_into()?,
+            );
+        }
         Ok(object)
     }
 
@@ -419,6 +469,7 @@ impl ExtendedDocumentV0 {
             document_type_name,
             data_contract_id,
             document,
+            token_payment_info,
             ..
         } = self;
 
@@ -432,6 +483,12 @@ impl ExtendedDocumentV0 {
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(data_contract_id.to_buffer()),
         );
+        if let Some(token_payment_info) = token_payment_info {
+            object.insert(
+                property_names::TOKEN_PAYMENT_INFO.to_string(),
+                token_payment_info.try_into()?,
+            );
+        }
         Ok(object)
     }
 
@@ -508,11 +565,5 @@ impl ExtendedDocumentV0 {
             &self.document,
             platform_version,
         )
-    }
-}
-
-impl From<ExtendedDocumentV0> for ExtendedDocument {
-    fn from(value: ExtendedDocumentV0) -> Self {
-        ExtendedDocument::V0(value)
     }
 }

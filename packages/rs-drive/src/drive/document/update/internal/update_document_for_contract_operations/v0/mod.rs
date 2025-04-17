@@ -29,7 +29,7 @@ use crate::drive::document::paths::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -57,7 +57,7 @@ impl Drive {
         // if it requires revision then there are reasons for us to be able to update in drive
         {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
-                "documents for this contract are not mutable",
+                "this document type is not mutable",
             )));
         }
 

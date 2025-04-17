@@ -7,7 +7,6 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{GroveDb, TransactionArg};
 use integer_encoding::VarInt;
 
-///
 impl Drive {
     /// Gets the current protocol version from aux storage
     ///

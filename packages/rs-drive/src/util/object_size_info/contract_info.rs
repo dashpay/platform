@@ -177,7 +177,7 @@ impl<'a> From<&'a DataContractOwnedResolvedInfo> for DataContractResolvedInfo<'a
     }
 }
 
-impl<'a> DataContractResolvedInfo<'a> {
+impl DataContractResolvedInfo<'_> {
     /// The id of the contract
     pub fn id(&self) -> Identifier {
         match self {
@@ -191,7 +191,7 @@ impl<'a> DataContractResolvedInfo<'a> {
         }
     }
 }
-impl<'a> AsRef<DataContract> for DataContractResolvedInfo<'a> {
+impl AsRef<DataContract> for DataContractResolvedInfo<'_> {
     /// The ref of the contract
     fn as_ref(&self) -> &DataContract {
         match self {

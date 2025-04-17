@@ -282,7 +282,7 @@ pub struct ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
     pub order_ascending: bool,
 }
 
-impl<'a> ResolvedContestedDocumentVotePollVotesDriveQuery<'a> {
+impl ResolvedContestedDocumentVotePollVotesDriveQuery<'_> {
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,

@@ -4,15 +4,11 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_group_actions_request::GetGroupActionsRequestV0;
-use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{
-    emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent,
-    EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent,
-    PersonalEncryptedNote, SharedEncryptedNote, TokenConfigUpdateEvent,
-    TokenEvent as TokenEventResponse, UnfreezeEvent,
-};
+use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent, EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent, TokenConfigUpdateEvent, TokenEvent as TokenEventResponse, UnfreezeEvent, UpdateDirectPurchasePriceEvent};
 use dapi_grpc::platform::v0::get_group_actions_response::{
     get_group_actions_response_v0, GetGroupActionsResponseV0,
 };
+use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::update_direct_purchase_price_event::{Price, PriceForQuantity, PricingSchedule};
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::action_event;
@@ -22,6 +18,7 @@ use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_event::TokenEvent;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
@@ -140,7 +137,7 @@ impl<C> Platform<C> {
                                         TokenEvent::Mint(amount, recipient_id, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::Mint(MintEvent {
-                                                    amount: amount as u64,
+                                                    amount,
                                                     recipient_id: recipient_id.to_vec(),
                                                     public_note,
                                                 })),
@@ -149,7 +146,7 @@ impl<C> Platform<C> {
                                         TokenEvent::Burn(amount, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::Burn(BurnEvent {
-                                                    amount: amount as u64,
+                                                    amount,
                                                     public_note,
                                                 })),
                                             })
@@ -181,9 +178,6 @@ impl<C> Platform<C> {
                                                 )),
                                             })
                                         }
-                                        TokenEvent::Transfer(..) => {
-                                            return None;
-                                        },
                                         TokenEvent::EmergencyAction(action, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::EmergencyAction(EmergencyActionEvent {
@@ -203,9 +197,32 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
-                                        TokenEvent::Claim(..) => {
-                                            return None;
+                                        TokenEvent::ChangePriceForDirectPurchase(pricing_schedule, public_note) => {
+                                            group_action_event::EventType::TokenEvent(TokenEventResponse {
+                                                r#type: Some(token_event::Type::UpdatePrice(UpdateDirectPurchasePriceEvent {
+                                                    price: pricing_schedule.map(|pricing_schedule| {
+                                                        match pricing_schedule {
+                                                            TokenPricingSchedule::SinglePrice(price) => {
+                                                                Price::FixedPrice(price)
+                                                            }
+                                                            TokenPricingSchedule::SetPrices(prices) => {
+                                                                let schedule = PricingSchedule {
+                                                                    price_for_quantity: prices
+                                                                        .into_iter()
+                                                                        .map(|(quantity, price)| PriceForQuantity { quantity, price })
+                                                                        .collect(),
+                                                                };
+                                                                Price::VariablePrice(schedule)
+                                                            }
+                                                        }
+                                                    }),
+                                                    public_note,
+                                                })),
+                                            })
                                         }
+                                        TokenEvent::Transfer(..) | TokenEvent::DirectPurchase(..) | TokenEvent::Claim(..) => {
+                                            return None;
+                                        },
                                     },
                                 },
                             }),

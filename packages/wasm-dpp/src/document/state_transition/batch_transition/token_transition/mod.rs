@@ -1,23 +1,28 @@
-mod burn;
+pub mod burn;
 mod claim;
-mod config;
-mod destroy;
-mod emergency_action;
-mod freeze;
-mod mint;
-mod transfer;
-mod unfreeze;
+pub mod config;
+pub mod destroy;
+pub mod direct_purchase;
+pub mod emergency_action;
+pub mod freeze;
+pub mod mint;
+pub mod set_price_for_direct_purchase;
+pub mod transfer;
+pub mod unfreeze;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
 use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destroy::TokenDestroyFrozenFundsTransitionWasm;
+use crate::batch_transition::token_transition::direct_purchase::TokenDirectPurchaseTransitionWasm;
 use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
+use crate::batch_transition::token_transition::set_price_for_direct_purchase::TokenSetPriceForDirectPurchaseTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
 use crate::identifier::IdentifierWrapper;
+use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
@@ -37,6 +42,8 @@ pub enum TokenTransitionType {
     Claim,
     EmergencyAction,
     ConfigUpdate,
+    DirectPurchase,
+    SetPriceForDirectPurchase,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -51,6 +58,10 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::EmergencyAction(_) => TokenTransitionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionType::ConfigUpdate,
             TokenTransition::Claim(_) => TokenTransitionType::Claim,
+            TokenTransition::DirectPurchase(_) => TokenTransitionType::DirectPurchase,
+            TokenTransition::SetPriceForDirectPurchase(_) => {
+                TokenTransitionType::SetPriceForDirectPurchase
+            }
         }
     }
 }
@@ -71,7 +82,7 @@ impl From<TokenTransitionWasm> for TokenTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
     #[wasm_bindgen(js_name=getTransitionType)]
     pub fn transition_type(&self) -> TokenTransitionType {
@@ -91,6 +102,21 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
         self.0.base().data_contract_id().into()
+    }
+
+    #[wasm_bindgen(js_name=getHistoricalDocumentTypeName)]
+    pub fn historical_document_type_name(&self) -> String {
+        self.0.historical_document_type_name().to_string()
+    }
+
+    #[wasm_bindgen(js_name=getHistoricalDocumentId)]
+    pub fn historical_document_id(&self, owner_id: IdentifierWrapper) -> IdentifierWrapper {
+        self.0.historical_document_id(owner_id.into()).into()
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
+        self.0.base().identity_contract_nonce()
     }
 
     #[wasm_bindgen(js_name=toTransition)]
@@ -117,6 +143,12 @@ impl TokenTransitionWasm {
                 TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
             }
             TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
+            TokenTransition::DirectPurchase(direct_purchase) => {
+                TokenDirectPurchaseTransitionWasm::from(direct_purchase.clone()).into()
+            }
+            TokenTransition::SetPriceForDirectPurchase(set_price) => {
+                TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into()
+            }
         }
     }
 }

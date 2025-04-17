@@ -41,6 +41,8 @@ impl Drive {
         Ok(maybe_group)
     }
 
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub(super) fn fetch_group_info_and_add_operations_v0(
         &self,
         contract_id: Identifier,

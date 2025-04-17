@@ -19,6 +19,7 @@ where
     C: CoreRPCLike,
 {
     /// Keeps a record of the vote poll after it has finished
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn keep_record_of_finished_contested_resource_vote_poll(
         &self,
         block_platform_state: &PlatformState,

@@ -46,6 +46,8 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_token_info_for_identity_id: 0,
         verify_token_status: 0,
         verify_token_pre_programmed_distributions: 0,
+        verify_token_direct_selling_price: 0,
+        verify_token_direct_selling_prices: 0,
     },
     single_document: DriveVerifySingleDocumentMethodVersions {
         verify_proof: 0,
@@ -61,7 +63,6 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     },
     voting: DriveVerifyVoteMethodVersions {
         verify_masternode_vote: 0,
-        verify_start_at_contender_in_proof: 0,
         verify_vote_poll_votes_proof: 0,
         verify_identity_votes_given_proof: 0,
         verify_vote_poll_vote_state_proof: 0,

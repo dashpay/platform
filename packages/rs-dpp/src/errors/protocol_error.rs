@@ -281,6 +281,15 @@ pub enum ProtocolError {
 
     #[error("invalid distribution step error: {0}")]
     InvalidDistributionStep(&'static str),
+
+    #[error("missing epoch info: {0}")]
+    MissingEpochInfo(String),
+
+    #[error("Invalid BatchedTransitionAction variant: expected {expected}, found {found}")]
+    InvalidBatchedTransitionActionVariant {
+        expected: &'static str,
+        found: &'static str,
+    },
 }
 
 impl From<&str> for ProtocolError {

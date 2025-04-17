@@ -6,27 +6,20 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
-#[cfg(feature = "validation")]
-pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
-
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use platform_value::{Identifier, Value};
 
 mod accessors;
-#[cfg(feature = "random-documents")]
-pub mod random_document;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
-#[cfg(feature = "validation")]
-mod validator;
-pub const DEFAULT_HASH_SIZE: usize = 32;
-pub const DEFAULT_FLOAT_SIZE: usize = 8;
-pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
-pub const MAX_INDEX_SIZE: usize = 255;
-pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct DocumentTypeV0 {
@@ -70,9 +63,6 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
 }
 
-impl DocumentTypeV0 {
-    // Public method to set the data_contract_id
-    pub fn set_data_contract_id(&mut self, new_id: Identifier) {
-        self.data_contract_id = new_id;
-    }
-}
+impl DocumentTypeBasicMethods for DocumentTypeV0 {}
+
+impl DocumentTypeV0Methods for DocumentTypeV0 {}

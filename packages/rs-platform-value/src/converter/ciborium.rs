@@ -85,12 +85,6 @@ impl TryFrom<CborValue> for Value {
     }
 }
 
-impl From<Box<CborValue>> for Box<Value> {
-    fn from(value: Box<CborValue>) -> Self {
-        value.into()
-    }
-}
-
 impl TryInto<CborValue> for Value {
     type Error = Error;
 

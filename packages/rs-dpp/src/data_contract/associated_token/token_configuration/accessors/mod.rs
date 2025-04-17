@@ -148,6 +148,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
             TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
         }
     }
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.description(),
+        }
+    }
 }
 
 /// Implementing TokenConfigurationV0Setters for TokenConfiguration
@@ -251,6 +258,13 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_main_control_group_can_be_modified(action_takers),
+        }
+    }
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.set_description(description),
         }
     }
 }

@@ -25,7 +25,6 @@ use crate::{
     IdentityPublicKeyWasm,
 };
 
-use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
@@ -34,9 +33,9 @@ use crate::batch_transition::document_transition::DocumentTransitionWasm;
 use crate::batch_transition::token_transition::TokenTransitionWasm;
 use dpp::state_transition::StateTransitionIdentitySigned;
 
-mod batched_transition;
+pub mod batched_transition;
 pub mod document_transition;
-mod token_transition;
+pub mod token_transition;
 // pub mod validation;
 
 #[derive(Clone, Debug)]
@@ -105,7 +104,7 @@ impl BatchTransitionWasm {
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
-        self.0.user_fee_increase() as u16
+        self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(js_name=setUserFeeIncrease)]

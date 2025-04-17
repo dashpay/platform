@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Insert a new non-unique key into an identity operations
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn insert_new_non_unique_key_operations_v0(
         &self,
         identity_id: [u8; 32],

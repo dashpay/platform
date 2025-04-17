@@ -137,6 +137,7 @@ impl Drive {
 
     /// Updates a contract.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_contract_element_v1(
         &self,
         contract_element: Element,
@@ -168,6 +169,7 @@ impl Drive {
     }
 
     /// Updates a contract.
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(super) fn update_contract_add_operations_v1(
         &self,
@@ -196,6 +198,7 @@ impl Drive {
     }
 
     /// operations for updating a contract.
+    #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v1(
         &self,
         contract_element: Element,
@@ -222,7 +225,7 @@ impl Drive {
         for (token_pos, configuration) in contract.tokens() {
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
-                    "data contract has a token at position {}, but can not find it",
+                    "data contract has a token at position {}, but it can not be found",
                     token_pos
                 )),
             ))?;
@@ -242,6 +245,30 @@ impl Drive {
             batch_operations.extend(self.add_new_groups_operations(
                 contract.id(),
                 contract.groups(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if !contract.keywords().is_empty() {
+            batch_operations.extend(self.update_contract_keywords_operations(
+                contract.id(),
+                contract.owner_id(),
+                contract.keywords(),
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if let Some(description) = contract.description() {
+            batch_operations.extend(self.update_contract_description_operations(
+                contract.id(),
+                contract.owner_id(),
+                description,
+                block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

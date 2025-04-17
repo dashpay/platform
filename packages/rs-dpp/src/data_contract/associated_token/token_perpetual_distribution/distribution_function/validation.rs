@@ -5,7 +5,7 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError,
 };
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
-    DistributionFunction, MAX_DISTRIBUTION_PARAM,
+    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_LINEAR_SLOPE_PARAM,
 };
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -142,8 +142,8 @@ impl DistributionFunction {
             DistributionFunction::Linear {
                 a,
                 d,
-                s,
-                b,
+                start_step: s,
+                starting_amount: b,
                 min_value,
                 max_value,
             } => {
@@ -164,12 +164,12 @@ impl DistributionFunction {
                     ));
                 }
 
-                if *a > MAX_DISTRIBUTION_PARAM as i64 || *a < -(MAX_DISTRIBUTION_PARAM as i64) {
+                if *a > MAX_LINEAR_SLOPE_PARAM as i64 || *a < -(MAX_LINEAR_SLOPE_PARAM as i64) {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
-                            -(MAX_DISTRIBUTION_PARAM as i64),
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            -(MAX_LINEAR_SLOPE_PARAM as i64),
+                            MAX_LINEAR_SLOPE_PARAM as i64,
                             None,
                         )
                         .into(),
@@ -220,12 +220,12 @@ impl DistributionFunction {
                 let start_token_amount = DistributionFunction::Linear {
                     a: *a,
                     d: *d,
-                    s: Some(s.unwrap_or(start_moment)),
-                    b: *b,
+                    start_step: Some(s.unwrap_or(start_moment)),
+                    starting_amount: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(start_moment)?;
+                .evaluate(0, start_moment)?;
 
                 if *a > 0 {
                     // we want to put in the max value to see if we are starting off at the max
@@ -264,7 +264,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 b,
                 min_value,
                 max_value,
@@ -351,15 +351,16 @@ impl DistributionFunction {
                     m: *m,
                     n: *n,
                     o: *o,
-                    s: Some(s.unwrap_or(start_moment)),
+                    start_moment: Some(s.unwrap_or(start_moment)),
                     b: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(start_moment)?;
+                .evaluate(0, start_moment)?;
 
                 // Now, based on the monotonicity implied by (*a) * (*m),
                 // check for incoherence:
+                #[allow(clippy::comparison_chain)]
                 if (*a) * (*m) > 0 {
                     // The function is increasing.
                     if let Some(max) = max_value {
@@ -393,7 +394,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 c,
                 min_value,
                 max_value,
@@ -528,12 +529,12 @@ impl DistributionFunction {
                     m: *m,
                     n: *n,
                     o: *o,
-                    s: Some(s.unwrap_or(start_moment)),
+                    start_moment: Some(s.unwrap_or(start_moment)),
                     c: *c,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(start_moment)?;
+                .evaluate(0, start_moment)?;
 
                 if *m > 0 {
                     // we want to put in the max value to see if we are starting off at the max
@@ -571,7 +572,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 b,
                 min_value,
                 max_value,
@@ -693,12 +694,12 @@ impl DistributionFunction {
                     m: *m,
                     n: *n,
                     o: *o,
-                    s: Some(s.unwrap_or(start_moment)),
+                    start_moment: Some(s.unwrap_or(start_moment)),
                     b: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(start_moment)?;
+                .evaluate(0, start_moment)?;
 
                 if let Some(max) = max_value {
                     if start_token_amount == *max {
@@ -718,7 +719,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 b,
                 min_value,
                 max_value,
@@ -832,17 +833,18 @@ impl DistributionFunction {
                     m: *m,
                     n: *n,
                     o: *o,
-                    s: Some(start_s),
+                    start_moment: Some(start_s),
                     b: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                .evaluate(start_moment)?;
+                .evaluate(0, start_moment)?;
 
                 // Determine the function's monotonicity.
                 // For InvertedLogarithmic, f'(x) = -a / (d * (x - s + o)).
                 // Hence, if a > 0, the function is decreasing;
                 // if a < 0, the function is increasing.
+                #[allow(clippy::comparison_chain)]
                 if *a > 0 {
                     // For a decreasing function, if the start amount is already at min_value,
                     // the function would never decrease further.
@@ -1017,8 +1019,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(3800),
-                b: 100,
+                start_step: Some(3800),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1040,8 +1042,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 0,
-                s: Some(0),
-                b: 100,
+                start_step: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1057,8 +1059,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(MAX_DISTRIBUTION_PARAM + 1),
-                b: 100,
+                start_step: Some(MAX_DISTRIBUTION_PARAM + 1),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1074,8 +1076,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 0, // Invalid: a cannot be zero
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_step: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1094,8 +1096,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: a exceeds allowed range
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_step: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1114,8 +1116,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_step: Some(0),
+                starting_amount: 100,
                 min_value: Some(200), // Invalid: min > max
                 max_value: Some(150),
             };
@@ -1134,8 +1136,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds allowed range
-                b: 100,
+                start_step: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds allowed range
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1154,8 +1156,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_step: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value exceeds max allowed range
             };
@@ -1174,8 +1176,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(0),
-                b: 150, // Starts at max value
+                start_step: Some(0),
+                starting_amount: 150, // Starts at max value
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1194,8 +1196,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: -1, // Negative slope (decreasing function)
                 d: 10,
-                s: Some(0),
-                b: 50, // Starts at min value
+                start_step: Some(0),
+                starting_amount: 50, // Starts at min value
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1214,8 +1216,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: -5, // Valid decreasing function
                 d: 10,
-                s: Some(START_MOMENT),
-                b: 200,
+                start_step: Some(START_MOMENT),
+                starting_amount: 200,
                 min_value: Some(50),
                 max_value: Some(250),
             };
@@ -1244,8 +1246,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: -3,
                 d: 5,
-                s: Some(START_MOMENT),
-                b: 100,
+                start_step: Some(START_MOMENT),
+                starting_amount: 100,
                 min_value: Some(10), // Valid min boundary
                 max_value: Some(150),
             };
@@ -1261,8 +1263,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 3,
                 d: 5,
-                s: Some(START_MOMENT),
-                b: 50,
+                start_step: Some(START_MOMENT),
+                starting_amount: 50,
                 min_value: Some(10),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
             };
@@ -1284,7 +1286,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(80),
@@ -1310,7 +1312,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -1331,7 +1333,7 @@ mod tests {
                 m: 2,
                 n: 0, // Invalid: n == 0
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -1352,7 +1354,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: 0,
-                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s too large
+                start_moment: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s too large
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -1373,7 +1375,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: o too high
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -1394,7 +1396,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: -(MAX_DISTRIBUTION_PARAM as i64) - 1, // Invalid: o too low
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -1415,7 +1417,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too high
@@ -1436,7 +1438,7 @@ mod tests {
                 m: 2,
                 n: 3,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(60), // min_value > max_value
                 max_value: Some(50),
@@ -1459,7 +1461,7 @@ mod tests {
                 m: 2, // positive
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 100, // f(0) = 100
                 min_value: Some(1),
                 max_value: Some(100), // Starting at max_value
@@ -1482,7 +1484,7 @@ mod tests {
                 m: 2, // positive => a*m is negative (decreasing)
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 50,               // f(0) = 50
                 min_value: Some(50), // Starting at min_value
                 max_value: Some(100),
@@ -1503,7 +1505,7 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 20,
                 min_value: None,
                 max_value: None,
@@ -1527,12 +1529,12 @@ mod tests {
                 m: 3,
                 n: 2,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 0,
                 min_value: Some(0),
                 max_value: Some(100),
             };
-            let eval_result = dist.evaluate(4);
+            let eval_result = dist.evaluate(0, 4);
             assert_eq!(
                 eval_result.unwrap(),
                 8,
@@ -1558,7 +1560,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: -3999,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(1000000),
@@ -1583,7 +1585,7 @@ mod tests {
                 m: 1,
                 n: 0,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -1603,7 +1605,7 @@ mod tests {
                 m: 0, // Invalid: `m` should not be zero
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -1626,7 +1628,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -1649,7 +1651,7 @@ mod tests {
                 m: 1, // `m > 0`, so `max_value` must be set
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: None, // Invalid: max_value must be set
@@ -1672,7 +1674,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: `o` exceeds allowed range
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -1695,7 +1697,7 @@ mod tests {
                 m: -1,
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(50), // Invalid: min > max
                 max_value: Some(30),
@@ -1718,7 +1720,7 @@ mod tests {
                 m: -2, // Valid: Decay function (exponential decrease)
                 n: 4,
                 o: 2,
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 c: 8,
                 min_value: Some(2),
                 max_value: Some(50),
@@ -1738,7 +1740,7 @@ mod tests {
                 m: 2,
                 n: 4,
                 o: 1,
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 c: 8,
                 min_value: Some(2),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
@@ -1758,7 +1760,7 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM),
@@ -1781,7 +1783,7 @@ mod tests {
                 m: 2, // Increasing
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(1000), // Small `max_value`
@@ -1804,7 +1806,7 @@ mod tests {
                 m: -3, // Decreasing
                 n: 2,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(10), // Function starts at `min_value`
                 max_value: Some(1000),
@@ -1827,7 +1829,7 @@ mod tests {
                 m: 3, // Increasing
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 5,
                 min_value: Some(1),
                 max_value: None, // Should fail
@@ -1850,7 +1852,7 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: i64::MAX / 2, // Large `o`
-                s: Some(0),
+                start_moment: Some(0),
                 c: 5,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM),
@@ -1873,7 +1875,7 @@ mod tests {
                 m: -2, // Decreasing
                 n: 2,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(10),
                 max_value: Some(100),
@@ -1896,7 +1898,7 @@ mod tests {
                 m: 1, // Small positive `m`
                 n: 10,
                 o: -3,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 5,
                 min_value: Some(10),
                 max_value: Some(1000),
@@ -1927,7 +1929,7 @@ mod tests {
                 m: -1, // Small negative `m`
                 n: 4,
                 o: 2,
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 c: 8,
                 min_value: Some(5),
                 max_value: Some(100),
@@ -1947,7 +1949,7 @@ mod tests {
                 m: -2, // Decreasing
                 n: 3,
                 o: 5, // Shift start
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 c: 10,
                 min_value: Some(5),
                 max_value: Some(100),
@@ -1969,7 +1971,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: 1,
-                s: None,
+                start_moment: None,
                 b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -1989,7 +1991,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -2012,7 +2014,7 @@ mod tests {
                 m: 1,
                 n: 0, // Invalid: Division by zero in log denominator
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -2035,7 +2037,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: -5, // Causes (x - s + o) to be <= 0
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
@@ -2058,7 +2060,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too large
@@ -2081,7 +2083,7 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: Some(50), // Invalid: min > max
                 max_value: Some(30),
@@ -2104,7 +2106,7 @@ mod tests {
                 m: 2,
                 n: 4,
                 o: 3, // Offset ensures (x - s + o) > 0
-                s: Some(START_MOMENT - 2),
+                start_moment: Some(START_MOMENT - 2),
                 b: 8,
                 min_value: Some(2),
                 max_value: Some(50),
@@ -2124,7 +2126,7 @@ mod tests {
                 m: 2,
                 n: 4,
                 o: 1,
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 b: 8,
                 min_value: Some(2),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
@@ -2146,7 +2148,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -2169,7 +2171,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -2189,7 +2191,7 @@ mod tests {
                 m: 1,
                 n: 0, // Invalid: n = 0 causes division by zero in log argument
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -2209,7 +2211,7 @@ mod tests {
                 m: 0, // Invalid: m = 0 causes invalid log argument
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -2229,7 +2231,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: -10, // Causes log argument to be non-positive
-                s: Some(START_MOMENT),
+                start_moment: Some(START_MOMENT),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -2249,7 +2251,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds max
+                start_moment: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds max
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(50),
@@ -2269,7 +2271,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(60), // Invalid: min > max
                 max_value: Some(50),
@@ -2289,7 +2291,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
@@ -2309,7 +2311,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 50, // Starts at max_value
                 min_value: Some(1),
                 max_value: Some(50), // Function already at max
@@ -2329,7 +2331,7 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 1, // Starts at min_value
                 min_value: Some(1),
                 max_value: Some(50), // Function already at min

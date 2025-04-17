@@ -154,6 +154,11 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
 
         group_positions
     }
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String> {
+        &self.description
+    }
 }
 
 /// Implementing `TokenConfigurationV0Setters` for `TokenConfigurationV0`
@@ -229,5 +234,10 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         self.main_control_group_can_be_modified = action_takers;
+    }
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
     }
 }

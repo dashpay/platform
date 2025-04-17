@@ -7,6 +7,7 @@ mod invalid_token_config_update_no_change_error;
 mod invalid_token_id_error;
 mod invalid_token_note_too_big_error;
 mod invalid_token_position_error;
+mod missing_default_localization;
 mod token_transfer_to_ourselves_error;
 
 pub use choosing_token_mint_recipient_not_allowed_error::*;
@@ -18,4 +19,5 @@ pub use invalid_token_config_update_no_change_error::*;
 pub use invalid_token_id_error::*;
 pub use invalid_token_note_too_big_error::*;
 pub use invalid_token_position_error::*;
+pub use missing_default_localization::*;
 pub use token_transfer_to_ourselves_error::*;

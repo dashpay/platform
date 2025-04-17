@@ -1,0 +1,40 @@
+{
+    "$format_version": "1",
+    "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+    "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+    "version": 1,
+    "keywords": [],
+    "documentSchemas": {
+        "preorder": {
+            "type": "object",
+            "indices": [
+                {
+                    "name": "saltedHash",
+                    "properties": [
+                        {
+                            "saltedDomainHash": "asc"
+                        }
+                    ],
+                    "unique": true
+                }
+            ],
+            "properties": {
+                "saltedDomainHash": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 0,
+                    "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
+                }
+            },
+            "required": [
+                "saltedDomainHash"
+            ],
+            "additionalProperties": false,
+            "$comment": "Preorder documents are immutable: modification and deletion are restricted"
+        }
+    },
+    "groups": {},
+    "tokens": {}
+}

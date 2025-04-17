@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false }
 console_error_panic_hook = { version = "0.1.6" }
-thiserror = { version = "2.0.9" }
+thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [
     'console',
     'Document',
@@ -18,7 +18,7 @@ web-sys = { version = "0.3.4", features = [
     'Node',
     'Window',
 ] }
-wasm-bindgen = { version = "=0.2.99" }
+wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think it's not needed (LKl)
 # tonic = { version = "*", features = ["transport"], default-features = false }

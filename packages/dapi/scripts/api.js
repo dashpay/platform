@@ -13,10 +13,9 @@ const {
   getPlatformDefinition,
   v0: {
     PlatformPromiseClient,
+    DrivePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
-
-const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const { client: RpcClient } = require('jayson/promise');
 
@@ -41,9 +40,6 @@ const platformHandlersFactory = require(
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 
 async function main() {
-  await loadWasmDpp();
-  // const blsSignatures = await loadBLS();
-
   /* Application start */
   const configValidationResult = validateConfig(config);
   if (!configValidationResult.isValid) {
@@ -69,7 +65,8 @@ async function main() {
 
   logger.info('Connection to ZMQ established.');
 
-  const driveClient = new PlatformPromiseClient(`http://${config.driveRpc.host}:${config.driveRpc.port}`, undefined);
+  const platformClient = new PlatformPromiseClient(`http://${config.driveRpc.host}:${config.driveRpc.port}`, undefined);
+  const driveClient = new DrivePromiseClient(`http://${config.driveRpc.host}:${config.driveRpc.port}`, undefined);
 
   const rpcClient = RpcClient.http({
     host: config.tendermintCore.host,
@@ -131,8 +128,6 @@ async function main() {
   });
   logger.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
-  const dpp = new DashPlatformProtocol(null, 1);
-
   // Start GRPC server
   logger.info('Starting GRPC server');
 
@@ -144,8 +139,8 @@ async function main() {
   const platformHandlers = platformHandlersFactory(
     rpcClient,
     blockchainListener,
+    platformClient,
     driveClient,
-    dpp,
     isProductionEnvironment,
   );
 

@@ -102,6 +102,8 @@ mod tests {
                     TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
                 ),
             ]),
+            keywords: Vec::new(),
+            description: None,
         });
 
         let token_id_1 = contract.token_id(0).expect("expected token at position 0");
@@ -134,6 +136,7 @@ mod tests {
                 identity.id().to_buffer(),
                 5000,
                 true,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,
@@ -158,6 +161,7 @@ mod tests {
                 identity.id().to_buffer(),
                 10000,
                 true,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,
@@ -260,6 +264,8 @@ mod tests {
                 0,
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
             )]),
+            keywords: Vec::new(),
+            description: None,
         });
 
         let token_id = contract.token_id(0).expect("expected token at position 0");
@@ -347,6 +353,8 @@ mod tests {
                 0,
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
             )]),
+            keywords: Vec::new(),
+            description: None,
         });
 
         let token_id = contract.token_id(0).expect("expected token at position 0");

@@ -34,7 +34,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
@@ -51,6 +51,7 @@ impl Drive {
     /// Adds a document to primary storage.
     /// If a document isn't sent to this function then we are just calling to know the query and
     /// insert operations
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_to_primary_storage_0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,

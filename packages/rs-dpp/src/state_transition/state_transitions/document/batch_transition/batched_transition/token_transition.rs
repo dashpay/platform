@@ -18,7 +18,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -33,6 +33,9 @@ use crate::state_transition::batch_transition::token_emergency_action_transition
 use crate::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use crate::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use crate::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
+use crate::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
+use crate::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
+use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use crate::tokens::token_event::TokenEvent;
@@ -74,6 +77,12 @@ pub enum TokenTransition {
 
     #[display("TokenConfigUpdateTransition({})", "_0")]
     ConfigUpdate(TokenConfigUpdateTransition),
+
+    #[display("TokenDirectPurchaseTransition({})", "_0")]
+    DirectPurchase(TokenDirectPurchaseTransition),
+
+    #[display("TokenSetPriceForDirectPurchaseTransition({})", "_0")]
+    SetPriceForDirectPurchase(TokenSetPriceForDirectPurchaseTransition),
 }
 
 impl BatchTransitionResolversV0 for TokenTransition {
@@ -168,6 +177,24 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
+
+    fn as_transition_token_direct_purchase(&self) -> Option<&TokenDirectPurchaseTransition> {
+        if let Self::DirectPurchase(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_set_price_for_direct_purchase(
+        &self,
+    ) -> Option<&TokenSetPriceForDirectPurchaseTransition> {
+        if let Self::SetPriceForDirectPurchase(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait TokenTransitionV0Methods {
@@ -200,11 +227,7 @@ pub trait TokenTransitionV0Methods {
         token_history_contract: &'a DataContract,
     ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
     /// Historical document id
-    fn historical_document_id(
-        &self,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-    ) -> Identifier;
+    fn historical_document_id(&self, owner_id: Identifier) -> Identifier;
     fn associated_token_event(
         &self,
         token_configuration: &TokenConfiguration,
@@ -213,7 +236,6 @@ pub trait TokenTransitionV0Methods {
     /// Historical document id
     fn build_historical_document(
         &self,
-        token_historical_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -235,6 +257,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(t) => t.base(),
             TokenTransition::EmergencyAction(t) => t.base(),
             TokenTransition::ConfigUpdate(t) => t.base(),
+            TokenTransition::DirectPurchase(t) => t.base(),
+            TokenTransition::SetPriceForDirectPurchase(t) => t.base(),
         }
     }
 
@@ -249,6 +273,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(t) => t.base_mut(),
             TokenTransition::EmergencyAction(t) => t.base_mut(),
             TokenTransition::ConfigUpdate(t) => t.base_mut(),
+            TokenTransition::DirectPurchase(t) => t.base_mut(),
+            TokenTransition::SetPriceForDirectPurchase(t) => t.base_mut(),
         }
     }
 
@@ -267,6 +293,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(_) => None,
             TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id)),
             TokenTransition::ConfigUpdate(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::DirectPurchase(_) => None,
+            TokenTransition::SetPriceForDirectPurchase(t) => Some(t.calculate_action_id(owner_id)),
         }
     }
 
@@ -278,8 +306,11 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::Unfreeze(_)
             | TokenTransition::DestroyFrozenFunds(_)
             | TokenTransition::EmergencyAction(_)
-            | TokenTransition::ConfigUpdate(_) => true,
-            TokenTransition::Transfer(_) | TokenTransition::Claim(_) => false,
+            | TokenTransition::ConfigUpdate(_)
+            | TokenTransition::SetPriceForDirectPurchase(_) => true,
+            TokenTransition::Transfer(_)
+            | TokenTransition::Claim(_)
+            | TokenTransition::DirectPurchase(_) => false,
         }
     }
 
@@ -315,6 +346,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::DestroyFrozenFunds(_) => "destroyFrozenFunds",
             TokenTransition::ConfigUpdate(_) => "configUpdate",
             TokenTransition::Claim(_) => "claim",
+            TokenTransition::DirectPurchase(_) => "directPurchase",
+            TokenTransition::SetPriceForDirectPurchase(_) => "setPriceForDirectPurchase",
         }
     }
 
@@ -327,16 +360,14 @@ impl TokenTransitionV0Methods for TokenTransition {
     }
 
     /// Historical document id
-    fn historical_document_id(
-        &self,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-    ) -> Identifier {
+    fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
+        let token_id = self.token_id();
         let name = self.historical_document_type_name();
+        let owner_nonce = self.identity_contract_nonce();
         Document::generate_document_id_v0(
-            &(TOKEN_HISTORY_ID_BYTES.into()),
+            &token_id,
             &owner_id,
-            name,
+            format!("history_{}", name).as_str(),
             owner_nonce.to_be_bytes().as_slice(),
         )
     }
@@ -344,7 +375,6 @@ impl TokenTransitionV0Methods for TokenTransition {
     /// Historical document id
     fn build_historical_document(
         &self,
-        token_historical_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -354,7 +384,6 @@ impl TokenTransitionV0Methods for TokenTransition {
     ) -> Result<Document, ProtocolError> {
         self.associated_token_event(token_configuration, owner_id)?
             .build_historical_document_owned(
-                token_historical_contract,
                 token_id,
                 owner_id,
                 owner_nonce,
@@ -431,9 +460,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                                 TokenDistributionResolvedRecipient::ContractOwnerIdentity(owner_id)
                             }
                             TokenDistributionRecipient::Identity(identifier) => {
-                                TokenDistributionResolvedRecipient::ContractOwnerIdentity(
-                                    identifier,
-                                )
+                                TokenDistributionResolvedRecipient::Identity(identifier)
                             }
                             TokenDistributionRecipient::EvonodesByParticipation => {
                                 TokenDistributionResolvedRecipient::Evonode(owner_id)
@@ -447,6 +474,16 @@ impl TokenTransitionV0Methods for TokenTransition {
                     distribution_recipient,
                     TokenAmount::MAX, // we do not know how much will be released
                     claim.public_note().cloned(),
+                )
+            }
+            TokenTransition::DirectPurchase(direct_purchase) => TokenEvent::DirectPurchase(
+                direct_purchase.token_count(),
+                direct_purchase.total_agreed_price(),
+            ),
+            TokenTransition::SetPriceForDirectPurchase(set_price_transition) => {
+                TokenEvent::ChangePriceForDirectPurchase(
+                    set_price_transition.price().cloned(),
+                    set_price_transition.public_note().cloned(),
                 )
             }
         })

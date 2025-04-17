@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "1.8.0",
+  "version": "2.0.0-dev.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -67,7 +67,8 @@
     "packages/dash-spv",
     "packages/wasm-dpp",
     "packages/withdrawals-contract",
-    "packages/token-history-contract"
+    "packages/token-history-contract",
+    "packages/search-contract"
   ],
   "resolutions": {
     "elliptic": "6.5.7",
@@ -85,7 +86,7 @@
     "protobufjs": "^6.11.4",
     "browserify-sign": "4.2.2",
     "istanbul-lib-processinfo": "2.0.3",
-    "@babel/core": "7.23.3",
+    "@babel/runtime": "^7.26.10",
     "tsconfig-paths": "4.2.0",
     "ansi-regex": "5.0.1",
     "cacache": "18.0.0",

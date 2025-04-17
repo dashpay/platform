@@ -6,7 +6,9 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV0Setters,
+};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
@@ -66,7 +68,7 @@ impl DataContractV0Getters for DataContractV0 {
     }
 
     fn has_document_type_for_name(&self, name: &str) -> bool {
-        self.document_types.get(name).is_some()
+        self.document_types.contains_key(name)
     }
 
     fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {
@@ -104,9 +106,7 @@ impl DataContractV0Setters for DataContractV0 {
 
         self.document_types
             .iter_mut()
-            .for_each(|(_, document_type)| match document_type {
-                DocumentType::V0(v0) => v0.data_contract_id = id,
-            })
+            .for_each(|(_, document_type)| document_type.set_data_contract_id(id))
     }
 
     fn set_version(&mut self, version: u32) {

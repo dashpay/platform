@@ -102,9 +102,7 @@ impl Value {
                             )));
                         };
 
-                        let Some(array_value) = map.get_optional_key_mut(string_part) else {
-                            return None;
-                        };
+                        let array_value = map.get_optional_key_mut(string_part)?;
 
                         if array_value.is_null() {
                             return None;
@@ -151,9 +149,7 @@ impl Value {
                             }
                             None
                         } else {
-                            let Some(new_value) = map.get_optional_key_mut(path_component) else {
-                                return None;
-                            };
+                            let new_value = map.get_optional_key_mut(path_component)?;
                             Some(Ok(new_value))
                         }
                     })

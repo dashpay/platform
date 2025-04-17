@@ -35,11 +35,11 @@ impl Drive {
     /// # Versioning
     /// - Uses version 0 of `mark_pre_programmed_release_as_distributed_operations_v0` if supported.
     /// - Returns an error if an unknown version is received.
+    #[allow(clippy::too_many_arguments)]
     pub fn mark_pre_programmed_release_as_distributed_operations(
         &self,
         token_id: [u8; 32],
-        owner_id: [u8; 32],
-        identity_id: [u8; 32],
+        recipient_id: [u8; 32],
         release_time: TimestampMillis,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -57,8 +57,7 @@ impl Drive {
         {
             0 => self.mark_pre_programmed_release_as_distributed_operations_v0(
                 token_id,
-                owner_id,
-                identity_id,
+                recipient_id,
                 release_time,
                 block_info,
                 estimated_costs_only_with_layer_info,

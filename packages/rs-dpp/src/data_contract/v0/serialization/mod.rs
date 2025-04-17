@@ -1,4 +1,3 @@
-use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -91,9 +90,7 @@ impl DataContractV0 {
             id,
             document_schemas,
             schema_defs.as_ref(),
-            config.documents_keep_history_contract_default(),
-            config.documents_mutable_contract_default(),
-            config.documents_can_be_deleted_contract_default(),
+            &config,
             full_validation,
             false,
             validation_operations,
@@ -133,9 +130,7 @@ impl DataContractV0 {
             id,
             document_schemas,
             schema_defs.as_ref(),
-            config.documents_keep_history_contract_default(),
-            config.documents_mutable_contract_default(),
-            config.documents_can_be_deleted_contract_default(),
+            &config,
             full_validation,
             false,
             validation_operations,

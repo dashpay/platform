@@ -2,20 +2,17 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
-
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::ProtocolError;
-
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -134,8 +131,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let old_data_contract = &contract_fetch_info.contract;
 
+        // Here we do validations that consider the old data contract
         let validation_result =
-            old_data_contract.validate_update(new_data_contract, platform_version)?;
+            old_data_contract.validate_update(new_data_contract, block_info, platform_version)?;
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(

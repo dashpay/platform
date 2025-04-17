@@ -23,6 +23,7 @@ pub struct TokenConfigurationV0 {
     #[serde(default = "default_change_control_rules")]
     pub conventions_change_rules: ChangeControlRules,
     /// The supply at the creation of the token
+    #[serde(default)]
     pub base_supply: TokenAmount,
     /// The maximum supply the token can ever have
     #[serde(default)]
@@ -59,6 +60,8 @@ pub struct TokenConfigurationV0 {
     pub main_control_group: Option<GroupContractPosition>,
     #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 // Default function for `keeps_history`
@@ -77,6 +80,8 @@ fn default_token_keeps_history_rules() -> TokenKeepsHistoryRules {
         keeps_freezing_history: true,
         keeps_minting_history: true,
         keeps_burning_history: true,
+        keeps_direct_pricing_history: true,
+        keeps_direct_purchase_history: true,
     })
 }
 
@@ -101,6 +106,13 @@ fn default_token_distribution_rules() -> TokenDistributionRules {
         }),
         minting_allow_choosing_destination: true,
         minting_allow_choosing_destination_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+        change_direct_purchase_pricing_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: AuthorizedActionTakers::NoOne,
             admin_action_takers: AuthorizedActionTakers::NoOne,
             changing_authorized_action_takers_to_no_one_allowed: false,
@@ -177,6 +189,8 @@ impl TokenConfigurationV0 {
                 keeps_freezing_history: true,
                 keeps_minting_history: true,
                 keeps_burning_history: true,
+                keeps_direct_pricing_history: true,
+                keeps_direct_purchase_history: true,
             }),
             start_as_paused: false,
             allow_transfer_to_frozen_balance: false,
@@ -217,6 +231,15 @@ impl TokenConfigurationV0 {
                     self_changing_admin_action_takers_allowed: false,
                 }
                 .into(),
+                change_direct_purchase_pricing_rules: ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ),
             }),
             manual_minting_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
@@ -268,6 +291,7 @@ impl TokenConfigurationV0 {
             .into(),
             main_control_group: None,
             main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
+            description: None,
         }
     }
 

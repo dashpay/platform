@@ -103,7 +103,7 @@ impl<'a> From<&'a ContestedDocumentResourceVotePollWithContractInfo>
     }
 }
 
-impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
+impl From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_>>
     for ContestedDocumentResourceVotePoll
 {
     fn from(value: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed) -> Self {
@@ -123,7 +123,7 @@ impl<'a> From<ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>
     }
 }
 
-impl<'a> From<&ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a>>
+impl From<&ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_>>
     for ContestedDocumentResourceVotePoll
 {
     fn from(value: &ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed) -> Self {
@@ -183,7 +183,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     }
 }
 
-impl<'a> ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
+impl ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
     /// Serializes the contested document resource vote poll with contract information (allowing borrowed data) to bytes.
     ///
     /// # Returns
@@ -283,7 +283,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     }
 }
 
-impl<'a> ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
+impl ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
     /// Retrieves the index associated with the document type and index name.
     ///
     /// # Returns

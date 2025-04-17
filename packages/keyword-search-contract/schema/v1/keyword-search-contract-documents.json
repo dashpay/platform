@@ -1,0 +1,126 @@
+{
+  "contractKeywords": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byKeyword",
+        "properties": [
+          {
+            "keyword": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byContractId",
+        "properties": [
+          {
+            "contractId": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "keyword": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 50,
+        "position": 0
+      },
+      "contractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "position": 1,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      }
+    },
+    "required": [
+      "contractId",
+      "keyword"
+    ],
+    "description": "Keywords associated with the contract allowing for better searchability. This document type can be deleted but not manually created nor updated. Creation occurs automatically internally on DataContractCreate and mirrors the contract's keywords field. It can be updated with DataContractUpdate.",
+    "additionalProperties": false
+  },
+  "shortDescription": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byContractId",
+        "properties": [
+          {
+            "contractId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "contractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "description": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 100,
+        "position": 1
+      }
+    },
+    "required": [
+      "contractId",
+      "description"
+    ],
+    "description": "Short description of the contract. This document type is mutable but creation is not allowed. Creation occurs automatically internally on DataContractCreate and mirrors the contract's description field initially.",
+    "additionalProperties": false
+  },
+  "fullDescription": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byContractId",
+        "properties": [
+          {
+            "contractId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "contractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "description": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 10000,
+        "position": 1
+      }
+    },
+    "required": [
+      "contractId",
+      "description"
+    ],
+    "description": "Full description of the contract. This document type is mutable but creation is not allowed. Creation occurs automatically internally on DataContractCreate and mirrors the contract's description field initially.",
+    "additionalProperties": false
+  }
+}

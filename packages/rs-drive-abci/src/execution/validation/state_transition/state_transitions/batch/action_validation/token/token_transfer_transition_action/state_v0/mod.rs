@@ -1,7 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, TokenIsPausedError};
+use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, TokenIsPausedError, TokenTransferRecipientIdentityNotExistError};
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::prelude::Identifier;
@@ -48,6 +48,7 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
             transaction,
             platform_version,
         )?;
+
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
@@ -158,6 +159,19 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
                     )),
                 ));
             }
+        }
+
+        // Make sure recipient exists
+        let recipient_balance = platform.drive.fetch_identity_balance(
+            self.recipient_id().to_buffer(),
+            transaction,
+            platform_version,
+        )?;
+
+        if recipient_balance.is_none() {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                TokenTransferRecipientIdentityNotExistError::new(self.recipient_id()).into(),
+            ));
         }
 
         Ok(SimpleConsensusValidationResult::new())

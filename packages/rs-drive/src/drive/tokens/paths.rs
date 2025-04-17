@@ -15,6 +15,8 @@ pub const TOKEN_STATUS_INFO_KEY: u8 = 64;
 pub const TOKEN_IDENTITY_INFO_KEY: u8 = 192;
 /// Key for accessing token balances tree.
 pub const TOKEN_BALANCES_KEY: u8 = 128;
+/// Key that sets the pricing schedule for directly buying the token.
+pub const TOKEN_DIRECT_SELL_PRICE_KEY: u8 = 92;
 
 /// Key for token distributions sub level
 pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
@@ -56,26 +58,23 @@ pub const TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY: u8 = 192;
 /// Key for the perpetual distribution info.
 pub const TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY: u8 = 128;
 
-/// Key for the perpetual distribution first event.
-pub const TOKEN_PERPETUAL_DISTRIBUTIONS_FIRST_EVENT_KEY: u8 = 64;
-
 /// Key for the perpetual distribution last claim for identities key.
 pub const TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY: u8 = 192;
 
-/// The path for the balances tree
+/// Key for the perpetual distribution last claim for identities key.
+pub const TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY: u8 = 192;
 
+/// The path for the balances tree
 pub fn tokens_root_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Tokens)]
 }
 
 /// The path for the balances tree
-
 pub fn tokens_root_path_vec() -> Vec<Vec<u8>> {
     vec![Into::<&[u8; 1]>::into(RootTree::Tokens).to_vec()]
 }
 
 /// The root path of token balances tree, this refers to a big sum tree
-
 pub fn token_balances_root_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Tokens),
@@ -84,13 +83,27 @@ pub fn token_balances_root_path() -> [&'static [u8]; 2] {
 }
 
 /// The root path of token balances tree, this refers to a big sum tree
-
 pub fn token_balances_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Tokens as u8], vec![TOKEN_BALANCES_KEY]]
 }
 
-/// Returns the root path for token identity information as a fixed-size array of byte slices.
+/// The root path of token direct selling price tree
+pub fn token_direct_purchase_root_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DIRECT_SELL_PRICE_KEY],
+    ]
+}
 
+/// The root path of token direct selling price tree
+pub fn token_direct_purchase_root_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DIRECT_SELL_PRICE_KEY],
+    ]
+}
+
+/// Returns the root path for token identity information as a fixed-size array of byte slices.
 pub fn token_identity_infos_root_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Tokens),
@@ -99,13 +112,11 @@ pub fn token_identity_infos_root_path() -> [&'static [u8]; 2] {
 }
 
 /// Returns the root path for token identity information as a vector of byte vectors.
-
 pub fn token_identity_infos_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Tokens as u8], vec![TOKEN_IDENTITY_INFO_KEY]]
 }
 
 /// Returns the root path for token statuses as a fixed-size array of byte slices.
-
 pub fn token_statuses_root_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Tokens),
@@ -114,7 +125,6 @@ pub fn token_statuses_root_path() -> [&'static [u8]; 2] {
 }
 
 /// Returns the root path for token statuses as a vector of byte vectors.
-
 pub fn token_statuses_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Tokens as u8], vec![TOKEN_STATUS_INFO_KEY]]
 }
@@ -211,6 +221,62 @@ pub fn token_perpetual_distributions_identity_last_claimed_time_path_vec(
         vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
         token_id.to_vec(),
         vec![TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token
+pub fn token_pre_programmed_distributions_identity_last_claimed_time_path(
+    token_id: &[u8; 32],
+) -> [&[u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DISTRIBUTIONS_KEY],
+        &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY],
+        token_id,
+        &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token as a vector
+pub fn token_pre_programmed_distributions_identity_last_claimed_time_path_vec(
+    token_id: [u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DISTRIBUTIONS_KEY],
+        vec![TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY],
+        token_id.to_vec(),
+        vec![TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token
+pub fn token_perpetual_distributions_identity_last_claimed_by_identity_path<'a>(
+    token_id: &'a [u8; 32],
+    identity_id: &'a [u8; 32],
+) -> [&'a [u8]; 6] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DISTRIBUTIONS_KEY],
+        &[TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+        token_id,
+        &[TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+        identity_id,
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token as a vector
+pub fn token_perpetual_distributions_identity_last_claimed_by_identity_path_vec(
+    token_id: [u8; 32],
+    identity_id: [u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DISTRIBUTIONS_KEY],
+        vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+        token_id.to_vec(),
+        vec![TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+        identity_id.to_vec(),
     ]
 }
 
@@ -411,7 +477,6 @@ pub fn token_epoch_timed_at_epoch_distributions_path_vec(epoch_index: EpochIndex
 }
 
 /// The path for the token balances tree
-
 pub fn token_balances_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Tokens),
@@ -421,7 +486,6 @@ pub fn token_balances_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
 }
 
 /// The path for the token balances tree
-
 pub fn token_balances_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Tokens as u8],
@@ -431,7 +495,6 @@ pub fn token_balances_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
 }
 
 /// The path for the token info tree
-
 pub fn token_identity_infos_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Tokens),
@@ -441,7 +504,6 @@ pub fn token_identity_infos_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
 }
 
 /// The path for the token info tree
-
 pub fn token_identity_infos_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Tokens as u8],

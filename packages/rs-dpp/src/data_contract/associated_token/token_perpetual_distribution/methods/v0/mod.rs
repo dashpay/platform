@@ -1,5 +1,6 @@
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
 /// Accessor trait for `TokenPerpetualDistribution`, providing getter and setter methods
@@ -21,5 +22,7 @@ pub trait TokenPerpetualDistributionV0Accessors {
 /// Methods trait for `TokenPerpetualDistribution`
 pub trait TokenPerpetualDistributionV0Methods {
     /// we use u64 as a catch-all for any type of interval we might have, eg time, block or epoch
-    fn next_interval(&self, block_info: &BlockInfo) -> u64;
+    fn next_interval(&self, block_info: &BlockInfo) -> RewardDistributionMoment;
+
+    fn current_interval(&self, block_info: &BlockInfo) -> RewardDistributionMoment;
 }

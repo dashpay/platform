@@ -6,7 +6,6 @@ use thiserror::Error;
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
-#[cfg(feature = "state-transition-validation")]
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -42,7 +41,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -65,9 +64,6 @@ pub enum StateError {
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 
-    // TODO: Not sure we can do it.
-    //   The order of variants must be always the same otherwise serialization won't work
-    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     DataTriggerError(DataTriggerError),
 
@@ -243,6 +239,12 @@ pub enum StateError {
     InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch),
 
     #[error(transparent)]
+    InvalidTokenClaimNoCurrentRewards(InvalidTokenClaimNoCurrentRewards),
+
+    #[error(transparent)]
+    InvalidTokenClaimWrongClaimant(InvalidTokenClaimWrongClaimant),
+
+    #[error(transparent)]
     NewTokensDestinationIdentityDoesNotExistError(NewTokensDestinationIdentityDoesNotExistError),
 
     #[error(transparent)]
@@ -270,6 +272,32 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenNotPausedError(TokenNotPausedError),
+
+    #[error(transparent)]
+    TokenTransferRecipientIdentityNotExistError(TokenTransferRecipientIdentityNotExistError),
+
+    #[error(transparent)]
+    PreProgrammedDistributionTimestampInPastError(PreProgrammedDistributionTimestampInPastError),
+
+    #[error(transparent)]
+    IdentityHasNotAgreedToPayRequiredTokenAmountError(
+        IdentityHasNotAgreedToPayRequiredTokenAmountError,
+    ),
+
+    #[error(transparent)]
+    RequiredTokenPaymentInfoNotSetError(RequiredTokenPaymentInfoNotSetError),
+
+    #[error(transparent)]
+    IdentityTryingToPayWithWrongTokenError(IdentityTryingToPayWithWrongTokenError),
+
+    #[error(transparent)]
+    TokenDirectPurchaseUserPriceTooLow(TokenDirectPurchaseUserPriceTooLow),
+
+    #[error(transparent)]
+    TokenAmountUnderMinimumSaleAmount(TokenAmountUnderMinimumSaleAmount),
+
+    #[error(transparent)]
+    TokenNotForDirectSale(TokenNotForDirectSale),
 }
 
 impl From<StateError> for ConsensusError {

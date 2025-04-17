@@ -6,7 +6,7 @@ use grovedb::Query;
 use sqlparser::ast;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-
+use std::fmt::Display;
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
@@ -173,8 +173,8 @@ impl WhereOperator {
     }
 }
 
-impl ToString for WhereOperator {
-    fn to_string(&self) -> String {
+impl Display for WhereOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Self::Equal => "=",
             Self::GreaterThan => ">",
@@ -189,7 +189,7 @@ impl ToString for WhereOperator {
             Self::StartsWith => "StartsWith",
         };
 
-        s.to_string()
+        write!(f, "{}", s)
     }
 }
 
@@ -433,8 +433,10 @@ impl<'a> WhereClause {
     }
 
     /// Given a list of where clauses, returns them in groups of equal, range, and in clauses
+    #[allow(clippy::type_complexity)]
     pub(crate) fn group_clauses(
         where_clauses: &'a [WhereClause],
+        // TODO: Define a type/struct for return value
     ) -> Result<(BTreeMap<String, Self>, Option<Self>, Option<Self>), Error> {
         if where_clauses.is_empty() {
             return Ok((BTreeMap::new(), None, None));

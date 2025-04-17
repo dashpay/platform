@@ -1,4 +1,6 @@
+mod direct_selling;
 mod distribution;
+
 use super::*;
 use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -8,12 +10,10 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
-use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
@@ -57,6 +57,7 @@ mod token_tests {
                     &mut platform,
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
+                    None,
                     None,
                     platform_version,
                 );
@@ -146,6 +147,7 @@ mod token_tests {
                     Some(|token_configuration: &mut TokenConfiguration| {
                         token_configuration.set_max_supply(Some(1000000));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -240,6 +242,7 @@ mod token_tests {
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -328,6 +331,7 @@ mod token_tests {
                     &mut platform,
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
+                    None,
                     None,
                     platform_version,
                 );
@@ -421,6 +425,7 @@ mod token_tests {
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -509,6 +514,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_minting_allow_choosing_destination(false);
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -608,6 +614,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_minting_allow_choosing_destination(false);
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -705,6 +712,7 @@ mod token_tests {
                             .set_minting_allow_choosing_destination(false);
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -796,6 +804,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_new_tokens_destination_identity(Some(identity.id()));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -898,6 +907,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_new_tokens_destination_identity(Some(identity.id()));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -997,6 +1007,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_new_tokens_destination_identity(Some(identity.id()));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -1106,6 +1117,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -1208,6 +1220,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1322,6 +1335,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1432,6 +1446,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1629,6 +1644,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1835,6 +1851,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2128,6 +2145,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2418,6 +2436,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2533,6 +2552,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2733,6 +2753,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2863,6 +2884,7 @@ mod token_tests {
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
                 None,
+                None,
                 platform_version,
             );
 
@@ -2948,6 +2970,7 @@ mod token_tests {
                 &mut platform,
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 platform_version,
             );
@@ -3041,6 +3064,7 @@ mod token_tests {
                 &mut platform,
                 contract_owner_identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 platform_version,
             );
@@ -3161,6 +3185,7 @@ mod token_tests {
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3261,6 +3286,7 @@ mod token_tests {
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3351,6 +3377,7 @@ mod token_tests {
                 &mut platform,
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 platform_version,
             );
@@ -3469,6 +3496,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 Some(
                     [(
                         0,
@@ -3562,26 +3590,21 @@ mod token_tests {
             .expect("expect to create documents batch transition");
 
             // here we add fake info
-            match &mut token_transfer_transition {
-                StateTransition::Batch(batch) => {
-                    let first_transition = batch
-                        .first_transition_mut()
-                        .expect("expected_first_transition");
-                    match first_transition {
-                        BatchedTransitionMutRef::Token(token) => match token {
-                            TokenTransition::Transfer(transfer) => transfer
-                                .base_mut()
-                                .set_using_group_info(Some(GroupStateTransitionInfo {
-                                    group_contract_position: 0,
-                                    action_id,
-                                    action_is_proposer: true,
-                                })),
-                            _ => {}
-                        },
-                        _ => {}
+            if let StateTransition::Batch(batch) = &mut token_transfer_transition {
+                let first_transition = batch
+                    .first_transition_mut()
+                    .expect("expected_first_transition");
+                if let BatchedTransitionMutRef::Token(token) = first_transition {
+                    if let TokenTransition::Transfer(transfer) = token {
+                        transfer
+                            .base_mut()
+                            .set_using_group_info(Some(GroupStateTransitionInfo {
+                                group_contract_position: 0,
+                                action_id,
+                                action_is_proposer: true,
+                            }))
                     }
                 }
-                _ => {}
             }
 
             token_transfer_transition
@@ -3683,6 +3706,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 platform_version,
             );
@@ -3791,6 +3815,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 platform_version,
             );
@@ -3961,6 +3986,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 platform_version,
             );
@@ -4551,6 +4577,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -4653,6 +4680,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -4763,6 +4791,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -4920,6 +4949,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -5011,6 +5041,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -5101,6 +5132,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -5201,6 +5233,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -5318,6 +5351,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -5524,6 +5558,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [
                             (

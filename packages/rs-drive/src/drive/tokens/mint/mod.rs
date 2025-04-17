@@ -12,12 +12,14 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Mints (issues) new tokens by increasing the total supply and adding them to an identity's balance.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_mint(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
         issuance_amount: u64,
         allow_first_mint: bool,
+        allow_saturation: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -29,6 +31,7 @@ impl Drive {
                 identity_id,
                 issuance_amount,
                 allow_first_mint,
+                allow_saturation,
                 block_info,
                 apply,
                 transaction,
@@ -42,6 +45,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds the operations to mint tokens without calculating fees and optionally applying.
     pub fn token_mint_add_to_operations(
         &self,
@@ -49,6 +53,7 @@ impl Drive {
         identity_id: [u8; 32],
         issuance_amount: u64,
         allow_first_mint: bool,
+        allow_saturation: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -60,6 +65,7 @@ impl Drive {
                 identity_id,
                 issuance_amount,
                 allow_first_mint,
+                allow_saturation,
                 apply,
                 transaction,
                 drive_operations,
@@ -74,12 +80,14 @@ impl Drive {
     }
 
     /// Gathers the operations needed to mint tokens.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_mint_operations(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
         issuance_amount: u64,
         allow_first_mint: bool,
+        allow_saturation: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -92,6 +100,7 @@ impl Drive {
                 identity_id,
                 issuance_amount,
                 allow_first_mint,
+                allow_saturation,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

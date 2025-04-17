@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_contenders_operations_v1(
         &self,
         vote_polls: &[(
@@ -30,7 +32,7 @@ impl Drive {
     ) -> Result<(), Error> {
         for (vote_poll, _, votes) in vote_polls {
             let path = vote_poll.contenders_path(platform_version)?;
-            for (resource_vote_choice, _) in *votes {
+            for resource_vote_choice in (*votes).keys() {
                 self.batch_delete(
                     path.as_slice().into(),
                     resource_vote_choice.to_key().as_slice(),

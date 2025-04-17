@@ -33,6 +33,7 @@ impl Drive {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn fetch_action_signers_and_add_operations_v0(
         &self,
         contract_id: Identifier,

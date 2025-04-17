@@ -1,7 +1,7 @@
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::StateTransitionValueConvert;
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityPublicKeyInCreationV0 {
+impl StateTransitionValueConvert<'_> for IdentityPublicKeyInCreationV0 {
     // this might be faster (todo: check)
     // fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> where Self: Sized {
     //         Ok(Self {

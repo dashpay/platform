@@ -35,6 +35,7 @@ pub trait TokenBaseTransitionActionValidation {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+    #[allow(clippy::too_many_arguments)]
     fn validate_group_action(
         &self,
         rules: &ChangeControlRules,

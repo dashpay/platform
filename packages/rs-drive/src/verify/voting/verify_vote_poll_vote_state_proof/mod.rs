@@ -12,7 +12,7 @@ use crate::query::vote_poll_vote_state_query::{
 };
 use dpp::version::PlatformVersion;
 
-impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
+impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
     /// Verifies a proof for the vote poll vote state proof.
     ///
     /// This function takes a byte slice representing the serialized proof, verifies it, and returns a tuple consisting of the root hash

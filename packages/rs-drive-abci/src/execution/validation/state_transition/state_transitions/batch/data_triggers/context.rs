@@ -18,7 +18,7 @@ pub struct DataTriggerExecutionContext<'a> {
     pub state_transition_execution_context: &'a StateTransitionExecutionContext,
 }
 
-impl<'a> Debug for DataTriggerExecutionContext<'a> {
+impl Debug for DataTriggerExecutionContext<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("data_trigger_execution_context")
             .field("platform", self.platform)

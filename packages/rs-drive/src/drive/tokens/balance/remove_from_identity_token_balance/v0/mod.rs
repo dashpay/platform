@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::tokens) fn remove_from_identity_token_balance_v0(
         &self,
         token_id: [u8; 32],

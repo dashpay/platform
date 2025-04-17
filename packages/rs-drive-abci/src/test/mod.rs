@@ -41,21 +41,19 @@ pub mod helpers;
 ///     }
 /// }
 ///
-/// fn main() {
-///     use drive_abci::expect_match;
-///     let fee_result = FeeResult {};
-///     let mut processing_result = ProcessingResult {
-///         results: vec![StateTransitionExecutionResult::SuccessfulExecution(42, fee_result)],
-///     };
+/// use drive_abci::expect_match;
+/// let fee_result = FeeResult {};
+/// let mut processing_result = ProcessingResult {
+///     results: vec![StateTransitionExecutionResult::SuccessfulExecution(42, fee_result)],
+/// };
 ///
-///     let fee_result = expect_match!(
-///         &processing_result.execution_results()[0],
-///         StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => fee_result
-///     );
+/// let fee_result = expect_match!(
+///     &processing_result.execution_results()[0],
+///     StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => fee_result
+/// );
 ///
-///     // Use fee_result here
-///     println!("{:?}", fee_result);
-/// }
+/// // Use fee_result here
+/// println!("{:?}", fee_result);
 /// ```
 #[macro_export]
 macro_rules! expect_match {

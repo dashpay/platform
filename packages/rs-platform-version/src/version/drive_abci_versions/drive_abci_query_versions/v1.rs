@@ -9,11 +9,7 @@ use versioned_feature_core::FeatureVersionBounds;
 pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryVersions {
     max_returned_elements: 100,
     response_metadata: 0,
-    proofs_query: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    },
+    proofs_query: 0,
     document_query: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -100,6 +96,11 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         token_total_supply: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_direct_purchase_prices: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

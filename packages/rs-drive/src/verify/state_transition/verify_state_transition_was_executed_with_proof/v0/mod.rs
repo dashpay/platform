@@ -5,7 +5,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
-use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
@@ -33,19 +32,17 @@ use dpp::state_transition::batch_transition::document_replace_transition::Docume
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods, TOKEN_HISTORY_ID_BYTES};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
-use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
@@ -82,9 +79,13 @@ impl Drive {
                 let contract_for_serialization: DataContractInSerializationFormat = contract
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
-                if &contract_for_serialization != data_contract_create.data_contract() {
+
+                if !contract_for_serialization
+                    .eq_without_auto_fields(data_contract_create.data_contract())
+                {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after create with id {}", data_contract_create.data_contract().id()))));
                 }
+
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
             StateTransition::DataContractUpdate(data_contract_update) => {
@@ -308,9 +309,16 @@ impl Drive {
                         let identity_contract_nonce =
                             token_transition.base().identity_contract_nonce();
 
-                        let document_type_name =
+                        let token_history_document_type_name =
                             token_transition.historical_document_type_name().to_string();
-                        let document_type = token_transition.historical_document_type(&contract)?;
+
+                        let token_history_contract = load_system_data_contract(
+                            SystemDataContract::TokenHistory,
+                            platform_version,
+                        )?;
+
+                        let token_history_document_type =
+                            token_transition.historical_document_type(&token_history_contract)?;
 
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
@@ -319,19 +327,27 @@ impl Drive {
 
                         let historical_query = || {
                             let query = SingleDocumentDriveQuery {
-                                contract_id: TOKEN_HISTORY_ID_BYTES,
-                                document_type_name,
+                                contract_id: token_history_contract.id().into_buffer(),
+                                document_type_name: token_history_document_type_name,
                                 document_type_keeps_history: false,
                                 document_id: token_transition
-                                    .historical_document_id(owner_id, identity_contract_nonce)
+                                    .historical_document_id(owner_id)
                                     .to_buffer(),
                                 block_time_ms: None, //None because we want latest
                                 contested_status:
                                     SingleDocumentDriveQueryContestedStatus::NotContested,
                             };
 
+                            let (root_hash, document) = query.verify_proof(
+                                false,
+                                proof,
+                                token_history_document_type,
+                                platform_version,
+                            )?;
+
+                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+
                             let expected_document = token_transition.build_historical_document(
-                                &contract,
                                 token_id,
                                 owner_id,
                                 identity_contract_nonce,
@@ -339,16 +355,20 @@ impl Drive {
                                 token_config,
                                 platform_version,
                             )?;
-                            let (root_hash, document) = query.verify_proof(
-                                false,
-                                proof,
-                                document_type,
-                                platform_version,
-                            )?;
-                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+
+                            // Some fields are populated by the drive,
+                            // so we need to ignore them
+                            let ignore_fields = match token_transition {
+                                TokenTransition::DestroyFrozenFunds(_) => {
+                                    Some(vec!["destroyedAmount"])
+                                }
+                                TokenTransition::Claim(_) => Some(vec!["amount"]),
+                                _ => None,
+                            };
+
                             if !document.is_equal_ignoring_time_based_fields(
                                 &expected_document,
-                                Some(vec!["destroyedAmount"]),
+                                ignore_fields,
                                 platform_version,
                             )? {
                                 return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
@@ -479,59 +499,49 @@ impl Drive {
                                     ))
                                 }
                             }
-                            TokenTransition::DestroyFrozenFunds(_) => historical_query(),
-                            TokenTransition::EmergencyAction(emergency_action_transition) => {
-                                let (root_hash, Some(token_status)) = Drive::verify_token_status(
-                                    proof,
-                                    token_id.into_buffer(),
-                                    true,
-                                    platform_version,
-                                )?
-                                else {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(
-                                            "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
-                                };
-                                if token_status.paused()
-                                    != emergency_action_transition.emergency_action().paused()
-                                {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof contained token status saying this token is {}paused, but we expected {}paused", if token_status.paused() {""} else {"not "}, if emergency_action_transition.emergency_action().paused() {""} else {"not "}))));
+                            TokenTransition::DirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_purchase_history() {
+                                    historical_query()
+                                } else {
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_balance_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            owner_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token direct purchase)", owner_id))));
+                                    };
+                                    Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
                                 }
-                                Ok((root_hash, VerifiedTokenStatus(token_status)))
                             }
-                            TokenTransition::ConfigUpdate(update) => {
-                                let (root_hash, Some(updated_contract)) = Drive::verify_contract(
-                                    proof,
-                                    Some(contract.config().keeps_history()),
-                                    true,
-                                    false,
-                                    contract.id().into_buffer(),
-                                    platform_version,
-                                )?
-                                else {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(
-                                            "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
-                                };
-                                let mut expected_config = token_config.clone();
-                                expected_config.apply_token_configuration_item(
-                                    update.update_token_configuration_item().clone(),
-                                );
-                                let new_token_config = updated_contract.expected_token_configuration(
-                                        token_transition.base().token_contract_position(),
-                                    ).map_err(|_| {
-                                        Error::Proof(ProofError::CorruptedProof("returned proof does not have a token configuration, which should not be possible".to_string()))
-                                    })?;
-
-                                if new_token_config != &expected_config {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!(
-                                                "expected token configuration does not match the token configuration from the proof: expected {}, found {}",
-                                                expected_config, new_token_config
-                                            ))));
+                            TokenTransition::SetPriceForDirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_pricing_history() {
+                                    historical_query()
+                                } else {
+                                    let (root_hash, token_pricing_schedule) =
+                                        Drive::verify_token_direct_selling_price(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?;
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenPricingSchedule(
+                                            owner_id,
+                                            token_pricing_schedule,
+                                        ),
+                                    ))
                                 }
-                                Ok((root_hash, VerifiedDataContract(updated_contract)))
                             }
-                            TokenTransition::Claim(_) => historical_query(),
+                            TokenTransition::DestroyFrozenFunds(_)
+                            | TokenTransition::EmergencyAction(_)
+                            | TokenTransition::ConfigUpdate(_)
+                            | TokenTransition::Claim(_) => historical_query(),
                         }
                     }
                 }

@@ -8,14 +8,14 @@ use crate::ProtocolError;
 mod convert;
 pub use convert::FieldType;
 
-mod cbor_value;
-pub use cbor_value::*;
+mod value;
+pub use value::*;
 
 mod canonical;
 pub use canonical::*;
 
-mod cbor_map;
-pub use cbor_map::*;
+mod map;
+pub use map::*;
 
 pub trait ValuesCollection {
     type Key;

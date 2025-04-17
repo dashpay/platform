@@ -5,7 +5,16 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-mod evonode_status;
+/// Evonode status
+pub mod evonode_status;
+/// Groups
+pub mod groups;
+/// Identity token balance
+pub mod identity_token_balance;
+/// Token info
+pub mod token_info;
+/// Token status
+pub mod token_status;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
@@ -13,6 +22,7 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
@@ -43,8 +53,6 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-
-pub use evonode_status::*;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -621,3 +629,6 @@ pub struct ProposerBlockCountByRange(pub u64);
 #[derive(Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposerBlockCountById(pub u64);
+
+/// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
+pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;
