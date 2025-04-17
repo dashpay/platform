@@ -34,7 +34,8 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
     /// * `data_contract` - A reference to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `owner_id` - The identifier of the state transition owner
-    /// * `distribution_type` - The token distribution type
+    /// * `update_token_configuration_item` - The token configuration change item
+    /// * `using_group_info` - Group transition info status
     ///
     /// # Returns
     ///
