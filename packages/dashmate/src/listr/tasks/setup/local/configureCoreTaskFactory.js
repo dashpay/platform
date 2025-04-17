@@ -132,15 +132,9 @@ export default function configureCoreTaskFactory(
                 const blocksToGenerateInOneStep = 10;
 
                 let blocksGenerated = 0;
-                let {
-                  result: currentBlockHeight,
-                } = await ctx.coreService.getRpcClient().getBlockCount();
+                let currentBlockHeight = 0;
 
                 do {
-                  ({
-                    result: currentBlockHeight,
-                  } = await ctx.coreService.getRpcClient().getBlockCount());
-
                   await generateBlocks(
                     ctx.coreService,
                     blocksToGenerateInOneStep,
@@ -152,6 +146,10 @@ export default function configureCoreTaskFactory(
                       observer.next(`${blocksGenerated} blocks generated`);
                     },
                   );
+
+                  ({
+                    result: currentBlockHeight,
+                  } = await ctx.coreService.getRpcClient().getBlockCount());
                 } while (activationHeight > currentBlockHeight);
 
                 observer.complete();
@@ -299,15 +297,9 @@ export default function configureCoreTaskFactory(
                 const blocksToGenerateInOneStep = 10;
 
                 let blocksGenerated = 0;
-                let {
-                  result: currentBlockHeight,
-                } = await ctx.coreService.getRpcClient().getBlockCount();
+                let currentBlockHeight = 0;
 
                 do {
-                  ({
-                    result: currentBlockHeight,
-                  } = await ctx.coreService.getRpcClient().getBlockCount());
-
                   await generateBlocks(
                     ctx.coreService,
                     blocksToGenerateInOneStep,
@@ -319,6 +311,10 @@ export default function configureCoreTaskFactory(
                       observer.next(`${blocksGenerated} blocks generated`);
                     },
                   );
+
+                  ({
+                    result: currentBlockHeight,
+                  } = await ctx.coreService.getRpcClient().getBlockCount());
                 } while (activationHeight > currentBlockHeight);
 
                 observer.complete();
