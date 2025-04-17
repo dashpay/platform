@@ -2,8 +2,9 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::{DataContract, TokenContractPosition};
+use dpp::group::GroupStateTransitionInfoStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -139,7 +140,7 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
             self.owner_id,
             self.data_contract.id(),
             self.token_position,
-            self.update_token_configuration_item,
+            self.update_token_configuration_item.clone(),
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,
