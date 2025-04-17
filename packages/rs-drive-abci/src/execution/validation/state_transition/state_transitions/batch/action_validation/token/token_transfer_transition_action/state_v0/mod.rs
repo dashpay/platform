@@ -2,7 +2,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, TokenIsPausedError, TokenTransferRecipientIdentityNotExistError};
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::prelude::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
