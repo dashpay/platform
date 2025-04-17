@@ -1082,6 +1082,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         configFile.configs.local.platform.drive.abci.instantLock.quorum.activeSigners = 1;
         configFile.configs.local.platform.drive.tenderdash.genesis.consensus_params
           .validator.threshold = 100;
+        configFile.configs.local.platform.gateway.listeners.dapiAndDrive.http2
+          .maxConcurrentStreams = 30;
 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
