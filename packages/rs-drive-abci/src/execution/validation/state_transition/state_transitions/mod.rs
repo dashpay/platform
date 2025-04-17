@@ -1191,8 +1191,10 @@ pub(in crate::execution) mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &[documents_batch_create_serialized_preorder_transition_1.clone(),
-                        documents_batch_create_serialized_preorder_transition_2.clone()],
+                    &[
+                        documents_batch_create_serialized_preorder_transition_1.clone(),
+                        documents_batch_create_serialized_preorder_transition_2.clone(),
+                    ],
                     platform_state,
                     &BlockInfo::default_with_time(
                         platform_state
@@ -1234,8 +1236,10 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[documents_batch_create_serialized_transition_1.clone(),
-                    documents_batch_create_serialized_transition_2.clone()],
+                &[
+                    documents_batch_create_serialized_transition_1.clone(),
+                    documents_batch_create_serialized_transition_2.clone(),
+                ],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1504,8 +1508,10 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[documents_batch_create_serialized_preorder_transition_1.clone(),
-                    documents_batch_create_serialized_preorder_transition_2.clone()],
+                &[
+                    documents_batch_create_serialized_preorder_transition_1.clone(),
+                    documents_batch_create_serialized_preorder_transition_2.clone(),
+                ],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1534,8 +1540,10 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[documents_batch_create_serialized_transition_1.clone(),
-                    documents_batch_create_serialized_transition_2.clone()],
+                &[
+                    documents_batch_create_serialized_transition_1.clone(),
+                    documents_batch_create_serialized_transition_2.clone(),
+                ],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -2954,11 +2962,13 @@ pub(in crate::execution) mod tests {
                 )
                 .expect("process");
             assert_matches!(
-            processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::BasicError(BasicError::InvalidDocumentTransitionActionError { .. }),
-                _
-            )]
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::InvalidDocumentTransitionActionError { .. }
+                    ),
+                    _
+                )]
             );
         }
     }

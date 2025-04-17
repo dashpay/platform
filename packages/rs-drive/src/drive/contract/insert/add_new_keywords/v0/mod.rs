@@ -146,7 +146,7 @@ impl Drive {
         let mut entropy = Vec::with_capacity(contract_id.len() + keyword.len());
         entropy.extend_from_slice(contract_id.as_slice());
         entropy.extend_from_slice(keyword.as_bytes());
-        
+
         let document_id = Document::generate_document_id_v0(
             &keyword_search_contract::ID_BYTES.into(),
             &owner_id,

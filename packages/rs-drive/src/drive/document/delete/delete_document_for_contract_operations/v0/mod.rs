@@ -55,7 +55,15 @@ impl Drive {
             )));
         }
 
-        self.force_delete_document_for_contract_operations_v0(document_id, contract, document_type, previous_batch_operations, estimated_costs_only_with_layer_info, transaction, platform_version)
+        self.force_delete_document_for_contract_operations_v0(
+            document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
     }
 
     /// Prepares the operations for deleting a document.
