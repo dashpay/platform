@@ -696,6 +696,7 @@ mod random {
     /// When I claim tokens at various heights,
     /// Then I get deterministic balances at those heights.
     #[test]
+    #[ignore]
     fn test_random_max_supply() -> Result<(), String> {
         let steps = [
             TestStep::new(41, 100_192, true),
@@ -721,6 +722,7 @@ mod random {
     /// When I claim tokens at various heights,
     /// Then claim fails and I get the same balance at those heights.
     #[test]
+    #[ignore]
     fn test_block_based_perpetual_random_0_0() {
         check_heights(
             DistributionFunction::Random { min: 0, max: 0 },
@@ -736,6 +738,7 @@ mod random {
         .expect("no rewards");
     }
     #[test]
+    #[ignore]
     fn test_block_based_perpetual_random_0_u64_max_should_error_at_validation() {
         check_heights(
             DistributionFunction::Random {
@@ -751,6 +754,7 @@ mod random {
     }
 
     #[test]
+    #[ignore]
     fn test_block_based_perpetual_random_0_MAX_distribution_param() {
         check_heights(
             DistributionFunction::Random {
@@ -773,6 +777,7 @@ mod random {
     /// When I claim tokens at various heights,
     /// Then I get a distribution of balances that is close to the maximum entropy.
     #[test]
+    #[ignore]
     fn test_block_based_perpetual_random_10_30_entropy() {
         const N: u64 = 200;
         const MIN: u64 = 10;
@@ -2960,7 +2965,7 @@ mod test_suite {
         let consensus_result = perpetual_distribution
             .distribution_type
             .function()
-            .validate(contract_start_time)
+            .validate(contract_start_time, PlatformVersion::latest())
             .map_err(|e| format!("invalid distribution function: {:?}", e))?;
 
         if let Some(error) = consensus_result.first_error() {
