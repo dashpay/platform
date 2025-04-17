@@ -14,13 +14,17 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns a mutable reference to the conventions.
     fn conventions_mut(&mut self) -> &mut TokenConfigurationConvention;
+
     /// Returns the new tokens destination identity rules.
     fn conventions_change_rules(&self) -> &ChangeControlRules;
 
     /// Returns the base supply.
     fn base_supply(&self) -> TokenAmount;
-    /// Returns the base supply.
+
+    /// Returns the KeepsHistory rules.
     fn keeps_history(&self) -> &TokenKeepsHistoryRules;
+
+    /// Returns if we start as paused.
     fn start_as_paused(&self) -> bool;
 
     /// Returns the maximum supply.
@@ -46,8 +50,10 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the unfreeze rules.
     fn unfreeze_rules(&self) -> &ChangeControlRules;
+
     /// Returns the destroy frozen funds rules.
     fn destroy_frozen_funds_rules(&self) -> &ChangeControlRules;
+
     /// Returns the emergency action rules.
     fn emergency_action_rules(&self) -> &ChangeControlRules;
 
@@ -59,6 +65,9 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns all group positions used in the token configuration
     fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition>;
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String>;
 }
 
 /// Accessor trait for setters of `TokenConfigurationV0`
@@ -92,8 +101,10 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the unfreeze rules.
     fn set_unfreeze_rules(&mut self, rules: ChangeControlRules);
+
     /// Sets the `destroy frozen funds` rules.
     fn set_destroy_frozen_funds_rules(&mut self, rules: ChangeControlRules);
+
     /// Sets the emergency action rules.
     fn set_emergency_action_rules(&mut self, rules: ChangeControlRules);
 
@@ -102,4 +113,7 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers);
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>);
 }

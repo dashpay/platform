@@ -39,7 +39,7 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
-    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
+   GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse, GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
     GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
     GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
@@ -735,6 +735,33 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_group_action_signers,
             "get_group_action_signers",
+        )
+        .await
+    }
+
+    async fn get_token_direct_purchase_prices(
+        &self,
+        request: Request<GetTokenDirectPurchasePricesRequest>,
+    ) -> Result<Response<GetTokenDirectPurchasePricesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_direct_purchase_prices,
+            "get_token_direct_purchase_prices",
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl DriveInternal for QueryService {
+    async fn get_proofs(
+        &self,
+        request: Request<GetProofsRequest>,
+    ) -> Result<Response<GetProofsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proofs,
+            "get_proofs",
         )
         .await
     }

@@ -243,6 +243,7 @@ pub(super) fn create_domain_data_trigger_v0(
             block_time_ms: None,
         };
 
+        // todo: deal with cost of this operation
         let documents = context
             .platform
             .drive
@@ -333,6 +334,7 @@ pub(super) fn create_domain_data_trigger_v0(
         block_time_ms: None,
     };
 
+    // todo: deal with cost of this operation
     let preorder_documents = context
         .platform
         .drive

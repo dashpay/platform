@@ -67,6 +67,14 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRulesV0 {
     fn minting_allow_choosing_destination_rules_mut(&mut self) -> &mut ChangeControlRules {
         &mut self.minting_allow_choosing_destination_rules
     }
+
+    fn change_direct_purchase_pricing_rules(&self) -> &ChangeControlRules {
+        &self.change_direct_purchase_pricing_rules
+    }
+
+    fn change_direct_purchase_pricing_rules_mut(&mut self) -> &mut ChangeControlRules {
+        &mut self.change_direct_purchase_pricing_rules
+    }
 }
 
 /// Implementing `TokenDistributionRulesV0Setters` for `TokenDistributionRulesV0`
@@ -110,5 +118,9 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRulesV0 {
     /// Sets the rules for changing the minting allow choosing destination setting.
     fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules) {
         self.minting_allow_choosing_destination_rules = rules;
+    }
+
+    fn set_change_direct_purchase_pricing_rules(&mut self, rules: ChangeControlRules) {
+        self.change_direct_purchase_pricing_rules = rules;
     }
 }

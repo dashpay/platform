@@ -1,3 +1,4 @@
+
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
@@ -24,6 +25,11 @@ use dpp::tokens::calculate_token_id;
 use dpp::tokens::status::v0::TokenStatusV0;
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_event::TokenEvent;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use rand::rngs::StdRng;
@@ -48,59 +54,99 @@ static TOKEN_ID_2: LazyLock<Identifier> =
 impl<C> Platform<C> {
     /// This data is used for testing token and group queries in RS SDK tests.
     pub(super) fn create_data_for_group_token_queries(
-        &self,
-        block_info: &BlockInfo,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        self.register_identities(block_info, transaction, platform_version)?;
+    &self,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    self.register_identities(block_info, transaction, platform_version)?;
 
-        self.create_data_contract(block_info, transaction, platform_version)?;
+    self.create_data_contract(block_info, transaction, platform_version)?;
 
-        self.mint_tokens(block_info, transaction, platform_version)?;
+    self.mint_tokens(block_info, transaction, platform_version)?;
 
-        // Freeze tokens for identity 2
-        self.drive.token_freeze(
-            *TOKEN_ID_0,
-            IDENTITY_ID_2,
-            block_info,
-            true,
-            transaction,
-            platform_version,
-        )?;
+    // Freeze tokens for identity 2
+    self.drive.token_freeze(
+        *TOKEN_ID_0,
+        IDENTITY_ID_2,
+        block_info,
+        true,
+        transaction,
+        platform_version,
+    )?;
 
-        // Pause token 2
-        let status = TokenStatus::V0(TokenStatusV0 { paused: true });
-        self.drive.token_apply_status(
-            TOKEN_ID_1.to_buffer(),
-            status,
-            block_info,
-            true,
-            transaction,
-            platform_version,
-        )?;
+    // Pause token 2
+    let status = TokenStatus::V0(TokenStatusV0 { paused: true });
+    self.drive.token_apply_status(
+        TOKEN_ID_1.to_buffer(),
+        status,
+        block_info,
+        true,
+        transaction,
+        platform_version,
+    )?;
 
-        // Add burn token group action
-        let action_id = Identifier::new([32; 32]);
-        let group_action = GroupAction::V0(GroupActionV0 {
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some("world on fire".into()))),
-        });
+    // Add burn token group action
+    let action_id = Identifier::new([32; 32]);
+    let group_action = GroupAction::V0(GroupActionV0 {
+        event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some("world on fire".into()))),
+    });
 
-        self.drive.add_group_action(
-            DATA_CONTRACT_ID,
-            2,
-            Some(group_action),
-            action_id,
-            IDENTITY_ID_1,
-            1,
-            block_info,
-            true,
-            transaction,
-            platform_version,
-        )?;
+    self.drive.add_group_action(
+        DATA_CONTRACT_ID,
+        2,
+        Some(group_action),
+        action_id,
+        IDENTITY_ID_1,
+        1,
+        block_info,
+        true,
+        transaction,
+        platform_version,
+    )?;
 
-        Ok(())
-    }
+    Ok(())
+}
+
+    /// Create some test data for token direct prices.
+    ///
+    /// Define single price pricing for [TOKEN_ID_1], and pricing schedule for [TOKEN_ID_2].
+    /// Leave [TOKEN_ID_0] without pricing.
+    ///
+    /// Tokens must be already created.
+    pub(crate) fn create_data_for_token_direct_prices(
+    &self,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    self.drive.token_set_direct_purchase_price(
+        TOKEN_ID_1.to_buffer(),
+        Some(TokenPricingSchedule::SinglePrice(25)),
+        block_info,
+        true,
+        transaction,
+        platform_version,
+    )?;
+
+    let pricing = TokenPricingSchedule::SetPrices(
+        (0..=900)
+            .step_by(100)
+            .map(|amount| (amount, 1000 - amount))
+            .collect(),
+    );
+
+    self.drive.token_set_direct_purchase_price(
+        TOKEN_ID_2.to_buffer(),
+        Some(pricing),
+        block_info,
+        true,
+        transaction,
+        platform_version,
+    )?;
+
+    Ok(())
+}
 
     fn register_identities(
         &self,
@@ -178,7 +224,7 @@ impl<C> Platform<C> {
         ]
         .into();
 
-        let token_configuration = TokenConfiguration::V0(TokenConfigurationV0 {
+        let mut token_configuration = TokenConfiguration::V0(TokenConfigurationV0 {
             conventions: TokenConfigurationConventionV0 {
                 localizations: Default::default(),
                 decimals: 8,
@@ -198,6 +244,7 @@ impl<C> Platform<C> {
                 new_tokens_destination_identity_rules: ChangeControlRulesV0::default().into(),
                 minting_allow_choosing_destination: true,
                 minting_allow_choosing_destination_rules: ChangeControlRulesV0::default().into(),
+                change_direct_purchase_pricing_rules: ChangeControlRulesV0::default().into(),
             }
             .into(),
             manual_minting_rules: ChangeControlRulesV0 {
@@ -222,7 +269,20 @@ impl<C> Platform<C> {
             emergency_action_rules: ChangeControlRulesV0::default().into(),
             main_control_group: None,
             main_control_group_can_be_modified: Default::default(),
+            description: Some("Some token description".to_string()),
         });
+
+        token_configuration
+            .conventions_mut()
+            .localizations_mut()
+            .insert(
+                "en".to_string(),
+                TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                    should_capitalize: false,
+                    singular_form: "cat".to_string(),
+                    plural_form: "cats".to_string(),
+                }),
+            );
 
         let tokens = [
             (0, token_configuration.clone()),
@@ -246,6 +306,8 @@ impl<C> Platform<C> {
             updated_at_epoch: None,
             groups,
             tokens,
+            keywords: vec!["cat".into(), "white".into()],
+            description: Some("Some contract description".to_string()),
         });
 
         self.drive.apply_contract(

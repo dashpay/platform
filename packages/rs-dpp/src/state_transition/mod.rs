@@ -362,6 +362,12 @@ impl StateTransition {
                             "TokenConfigUpdate"
                         }
                         BatchedTransitionRef::Token(TokenTransition::Claim(_)) => "TokenClaim",
+                        BatchedTransitionRef::Token(TokenTransition::DirectPurchase(_)) => {
+                            "TokenDirectPurchase"
+                        }
+                        BatchedTransitionRef::Token(
+                            TokenTransition::SetPriceForDirectPurchase(_),
+                        ) => "SetPriceForDirectPurchase",
                     };
                     document_transition_types.push(document_transition_name);
                 }

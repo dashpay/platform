@@ -20,6 +20,14 @@ impl TokenKeepsHistoryRulesV0Getters for TokenKeepsHistoryRulesV0 {
     fn keeps_burning_history(&self) -> bool {
         self.keeps_burning_history
     }
+
+    fn keeps_direct_pricing_history(&self) -> bool {
+        self.keeps_direct_pricing_history
+    }
+
+    fn keeps_direct_purchase_history(&self) -> bool {
+        self.keeps_direct_purchase_history
+    }
 }
 
 /// Implementing `TokenKeepsHistoryRulesV0Setters` for `TokenKeepsHistoryRulesV0`
@@ -38,5 +46,13 @@ impl TokenKeepsHistoryRulesV0Setters for TokenKeepsHistoryRulesV0 {
 
     fn set_keeps_burning_history(&mut self, value: bool) {
         self.keeps_burning_history = value;
+    }
+
+    fn set_keeps_direct_pricing_history(&mut self, value: bool) {
+        self.keeps_direct_pricing_history = value;
+    }
+
+    fn set_keeps_direct_purchase_history(&mut self, value: bool) {
+        self.keeps_direct_purchase_history = value;
     }
 }

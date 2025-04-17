@@ -31,6 +31,7 @@ pub struct DriveAbciQueryTokenVersions {
     pub identity_token_infos: FeatureVersionBounds,
     pub token_statuses: FeatureVersionBounds,
     pub token_total_supply: FeatureVersionBounds,
+    pub token_direct_purchase_prices: FeatureVersionBounds,
     pub token_pre_programmed_distributions: FeatureVersionBounds,
 }
 
