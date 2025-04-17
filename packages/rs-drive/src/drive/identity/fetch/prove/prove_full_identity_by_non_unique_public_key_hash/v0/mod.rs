@@ -35,7 +35,7 @@ impl Drive {
         )?;
         let identity_proof = if let Some(identity_id) = identity_ids.first() {
             let full_identity_query =
-                Self::full_identity_query(&identity_id, &platform_version.drive.grove_version)?;
+                Self::full_identity_query(identity_id, &platform_version.drive.grove_version)?;
             Some(self.grove_get_proved_path_query(
                 &full_identity_query,
                 transaction,
