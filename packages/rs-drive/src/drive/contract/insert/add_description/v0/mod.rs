@@ -5,6 +5,7 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contracts::keyword_search_contract;
 use dpp::document::{Document, DocumentV0};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -16,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 impl Drive {
     /// Creates the documents in the Keyword Search contract for the contract description and
     /// returns the fee result
-    pub(super) fn add_new_contract_description_v1(
+    pub(super) fn add_new_contract_description_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -27,7 +28,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.add_new_contract_description_add_to_operations_v1(
+        self.add_new_contract_description_add_to_operations_v0(
             contract_id,
             owner_id,
             description,
@@ -50,7 +51,7 @@ impl Drive {
 
     /// Creates and applies the LowLeveLDriveOperations needed to create
     /// the documents in the Keyword Search contract for the contract description
-    pub(super) fn add_new_contract_description_add_to_operations_v1(
+    pub(super) fn add_new_contract_description_add_to_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -88,7 +89,7 @@ impl Drive {
 
     /// Creates and returns the LowLeveLDriveOperations needed to create
     /// the documents in the Keyword Search contract for the contract description
-    pub(crate) fn add_new_contract_description_operations_v1(
+    pub(crate) fn add_new_contract_description_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -107,7 +108,7 @@ impl Drive {
         let short_description_document_type =
             contract.document_type_for_name("shortDescription")?;
 
-        let short_description_document = self.build_contract_description_document_owned_v1(
+        let short_description_document = self.build_contract_description_document_owned_v0(
             contract_id,
             owner_id,
             description,
@@ -137,7 +138,7 @@ impl Drive {
         if !short_only {
             let full_description_document_type =
                 contract.document_type_for_name("fullDescription")?;
-            let full_description_document = self.build_contract_description_document_owned_v1(
+            let full_description_document = self.build_contract_description_document_owned_v0(
                 contract_id,
                 owner_id,
                 description,
@@ -167,7 +168,7 @@ impl Drive {
     }
 
     /// Creates and returns a contract `description` document for the Keyword Search contract
-    pub(super) fn build_contract_description_document_owned_v1(
+    fn build_contract_description_document_owned_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -175,13 +176,6 @@ impl Drive {
         full_description: bool,
         block_info: &BlockInfo,
     ) -> Result<Document, Error> {
-        let owner_nonce =
-            match self.fetch_identity_nonce(owner_id.into(), true, None, PlatformVersion::latest())
-            {
-                Ok(maybe_nonce) => maybe_nonce.unwrap_or(1),
-                Err(e) => return Err(e),
-            };
-
         let document_type_name = if full_description {
             "fullDescription".to_string()
         } else {
@@ -189,10 +183,10 @@ impl Drive {
         };
 
         let document_id = Document::generate_document_id_v0(
-            &contract_id,
+            &keyword_search_contract::ID_BYTES.into(),
             &owner_id,
             &document_type_name,
-            &owner_nonce.to_be_bytes(),
+            contract_id.as_slice(),
         );
 
         let properties = BTreeMap::from([
@@ -208,7 +202,7 @@ impl Drive {
             created_at: Some(block_info.time_ms),
             updated_at: None,
             transferred_at: None,
-            created_at_block_height: Some(block_info.height),
+            created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,
             created_at_core_block_height: None,

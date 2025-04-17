@@ -313,6 +313,7 @@ pub(in crate::execution) mod tests {
         (identity, signer, master_key)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn setup_add_key_to_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity: &mut Identity,
@@ -971,6 +972,7 @@ pub(in crate::execution) mod tests {
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_dpns_name_contest_on_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -1189,10 +1191,8 @@ pub(in crate::execution) mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![
-                        documents_batch_create_serialized_preorder_transition_1.clone(),
-                        documents_batch_create_serialized_preorder_transition_2.clone(),
-                    ],
+                    &[documents_batch_create_serialized_preorder_transition_1.clone(),
+                        documents_batch_create_serialized_preorder_transition_2.clone()],
                     platform_state,
                     &BlockInfo::default_with_time(
                         platform_state
@@ -1234,10 +1234,8 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
-                    documents_batch_create_serialized_transition_1.clone(),
-                    documents_batch_create_serialized_transition_2.clone(),
-                ],
+                &[documents_batch_create_serialized_transition_1.clone(),
+                    documents_batch_create_serialized_transition_2.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1279,6 +1277,7 @@ pub(in crate::execution) mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_dpns_name_contest_on_identities_for_contract_records(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -1505,10 +1504,8 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
-                    documents_batch_create_serialized_preorder_transition_1.clone(),
-                    documents_batch_create_serialized_preorder_transition_2.clone(),
-                ],
+                &[documents_batch_create_serialized_preorder_transition_1.clone(),
+                    documents_batch_create_serialized_preorder_transition_2.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1537,10 +1534,8 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
-                    documents_batch_create_serialized_transition_1.clone(),
-                    documents_batch_create_serialized_transition_2.clone(),
-                ],
+                &[documents_batch_create_serialized_transition_1.clone(),
+                    documents_batch_create_serialized_transition_2.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1688,7 +1683,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                &[documents_batch_create_serialized_preorder_transition_1.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1717,7 +1712,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition_1.clone()],
+                &[documents_batch_create_serialized_transition_1.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1961,6 +1956,7 @@ pub(in crate::execution) mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
@@ -2011,7 +2007,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![masternode_vote_serialized_transition.clone()],
+                &[masternode_vote_serialized_transition.clone()],
                 platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2040,6 +2036,7 @@ pub(in crate::execution) mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn perform_votes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
@@ -2105,6 +2102,7 @@ pub(in crate::execution) mod tests {
         masternodes_by_vote_choice
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn get_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
@@ -2211,6 +2209,7 @@ pub(in crate::execution) mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn get_proved_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
@@ -2493,8 +2492,8 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![serialized_state_transition],
-                &platform_state,
+                &[serialized_state_transition],
+                platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -2514,6 +2513,9 @@ pub(in crate::execution) mod tests {
     }
 
     mod keyword_search_contract {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
         use super::*;
         //
         // ──────────────────────────────────────────────────────────────────────────
@@ -2891,7 +2893,7 @@ pub(in crate::execution) mod tests {
         }
 
         #[test]
-        fn owner_can_delete_keyword_document() {
+        fn owner_can_not_delete_keyword_document() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -2951,10 +2953,12 @@ pub(in crate::execution) mod tests {
                     None,
                 )
                 .expect("process");
-
             assert_matches!(
-                processing_result.into_execution_results().remove(0),
-                SuccessfulExecution(..)
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError(
+                ConsensusError::BasicError(BasicError::InvalidDocumentTransitionActionError { .. }),
+                _
+            )]
             );
         }
     }

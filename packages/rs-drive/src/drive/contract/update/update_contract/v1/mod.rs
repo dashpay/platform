@@ -20,11 +20,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-#[allow(clippy::too_many_arguments)]
-mod update_description;
-#[allow(clippy::too_many_arguments)]
-mod update_keywords;
-
 impl Drive {
     /// Updates a data contract.
     ///
@@ -230,7 +225,7 @@ impl Drive {
         for (token_pos, configuration) in contract.tokens() {
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
-                    "data contract has a token at position {}, but can not find it",
+                    "data contract has a token at position {}, but it can not be found",
                     token_pos
                 )),
             ))?;

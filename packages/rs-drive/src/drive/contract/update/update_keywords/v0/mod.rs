@@ -1,6 +1,5 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::{DriveDocumentQuery, WhereClause, WhereOperator};
@@ -9,16 +8,17 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
     /// Updates the documents in the Keyword Search contract for the contract
     /// update keywords and returns the fee result
-    pub(super) fn update_contract_keywords_v1(
+    pub(super) fn update_contract_keywords_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -29,7 +29,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.update_contract_keywords_add_to_operations_v1(
+        self.update_contract_keywords_add_to_operations_v0(
             contract_id,
             owner_id,
             keywords,
@@ -52,7 +52,7 @@ impl Drive {
 
     /// Creates and applies the LowLeveLDriveOperations needed to update
     /// the documents in the Keyword Search contract for the contract keywords
-    pub(super) fn update_contract_keywords_add_to_operations_v1(
+    pub(super) fn update_contract_keywords_add_to_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -90,7 +90,7 @@ impl Drive {
 
     /// Creates and returns the LowLeveLDriveOperations needed to update
     /// the documents in the Keyword Search contract for the contract keywords
-    pub(super) fn update_contract_keywords_operations_v1(
+    pub(super) fn update_contract_keywords_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -105,11 +105,7 @@ impl Drive {
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
         // First get the existing keywords so we know which ones we need to delete and which new ones we need to add
-        let contract = self
-            .cache
-            .system_data_contracts
-            .load_keyword_search()
-            .clone();
+        let contract = self.cache.system_data_contracts.load_keyword_search();
         let document_type = contract.document_type_for_name("contractKeywords")?;
 
         let mut query = DriveDocumentQuery::all_items_query(&contract, document_type, None);
@@ -131,24 +127,16 @@ impl Drive {
             Some(platform_version.protocol_version),
         )?;
 
-        let mut existing: Vec<(String, Identifier)> = Vec::new();
-        for doc in query_outcome.documents() {
-            let kw = doc
-                .get("keyword")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    Error::Drive(DriveError::CorruptedDriveState(
-                        "keyword should exist".to_string(),
-                    ))
-                })?
-                .to_string();
-            existing.push((kw, doc.id()));
+        let mut existing: BTreeMap<String, Identifier> = BTreeMap::new();
+        for doc in query_outcome.documents_owned() {
+            let kw = doc.properties().get_string("keyword")?;
+            existing.insert(kw, doc.id());
         }
 
         // If an existing keyword is not in the new keyword set, we delete it
         for (kw, doc_id) in &existing {
-            if !keywords.iter().any(|k| k == kw) {
-                operations.extend(self.delete_document_for_contract_operations(
+            if !keywords.contains(kw) {
+                operations.extend(self.force_delete_document_for_contract_operations(
                     *doc_id,
                     &contract,
                     document_type,
@@ -163,7 +151,7 @@ impl Drive {
         // Finally, add the new ones
         let mut keywords_to_add: Vec<String> = Vec::new();
         for kw in keywords {
-            if !existing.iter().any(|(e_kw, _)| e_kw == kw) {
+            if !existing.contains_key(kw) {
                 keywords_to_add.push(kw.clone());
             }
         }

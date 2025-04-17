@@ -11,7 +11,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-mod v1;
+mod v0;
 
 impl Drive {
     /// Creates the documents in the Keyword Search contract for the contract description and
@@ -31,12 +31,9 @@ impl Drive {
             .methods
             .contract
             .insert
-            .insert_contract
+            .add_description
         {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract descriptions are not supported in this version",
-            ))),
-            1 => self.add_new_contract_description_v1(
+            0 => self.add_new_contract_description_v0(
                 contract_id,
                 owner_id,
                 description,
@@ -47,7 +44,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_contract_description".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -71,12 +68,9 @@ impl Drive {
             .methods
             .contract
             .insert
-            .insert_contract
+            .add_description
         {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract descriptions are not supported in this version",
-            ))),
-            1 => self.add_new_contract_description_add_to_operations_v1(
+            0 => self.add_new_contract_description_add_to_operations_v0(
                 contract_id,
                 owner_id,
                 description,
@@ -88,7 +82,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_contract_description_add_to_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -113,12 +107,9 @@ impl Drive {
             .methods
             .contract
             .insert
-            .insert_contract
+            .add_description
         {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract descriptions are not supported in this version",
-            ))),
-            1 => self.add_new_contract_description_operations_v1(
+            0 => self.add_new_contract_description_operations_v0(
                 contract_id,
                 owner_id,
                 description,
@@ -130,7 +121,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_contract_description_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
