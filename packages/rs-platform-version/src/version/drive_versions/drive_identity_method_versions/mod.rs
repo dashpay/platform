@@ -96,6 +96,7 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
     pub has_non_unique_public_key_hash: FeatureVersion,
     pub has_non_unique_public_key_hash_already_for_identity: FeatureVersion,
     pub has_unique_public_key_hash: FeatureVersion,
+    pub fetch_full_identity_by_non_unique_public_key_hash: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -134,6 +135,7 @@ pub struct DriveIdentityProveMethodVersions {
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_ids_by_unique_public_key_hashes: FeatureVersion,
+    pub prove_full_identity_by_non_unique_public_key_hash: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
