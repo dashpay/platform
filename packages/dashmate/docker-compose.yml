@@ -231,6 +231,7 @@ services:
 volumes:
   core_data:
   drive_abci_data:
+  drive_abci_checkpoints:
   drive_tenderdash:
 
 networks:
