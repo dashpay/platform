@@ -1,10 +1,14 @@
 # DAPI Documentation
 
-Welcome to the DAPI (Decentralized API) documentation. This guide provides comprehensive information about DAPI, its architecture, configuration, and available endpoints.
+This guide provides comprehensive information about DAPI, its architecture, configuration, and available endpoints.
 
 ## What is DAPI?
 
-DAPI (Decentralized API) is the decentralized HTTP API layer for the Dash Evolution platform. It provides a simple interface for accessing both the Dash blockchain (Core) and the Dash Platform (Evolution) features.
+Historically, nodes in most cryptocurrency networks communicated with each other, and the outside world, according to a peer-to-peer (P2P) protocol.
+The use of P2P protocols presented some downsides for developers, namely, network resources were difficult to access without specialized knowledge or trusted third-party services.
+
+To overcome these obstacles, the Dash decentralized API (DAPI) uses Dash's robust masternode infrastructure to provide an API for accessing the network.
+DAPI supports both layer 1 (Core blockchain) and layer 2 (Dash Platform) functionality so all developers can interact with Dash via a single interface.
 
 DAPI offers several advantages over traditional centralized APIs:
 
@@ -31,20 +35,31 @@ Each process connects independently to the underlying Dash infrastructure (Core,
 
 Learn more about DAPI's architecture in the [Architecture](./architecture.md) section.
 
-## Documentation Sections
+## Endpoints
 
-### Getting Started
-- [Getting Started](./getting-started.md) - Quick start guide for developers
-
-### Core Documentation
-- [Architecture](./architecture.md) - Detailed explanation of DAPI's design
-- [Configuration](./configuration.md) - How to configure DAPI for different environments
-
-### Endpoints
+### Overview
 - [Endpoints Overview](./endpoints/index.md) - Index of all available API endpoints
-- [Core Endpoints](./endpoints/core-endpoints.md) - Interact with the Dash blockchain
-- [Platform Endpoints](./endpoints/platform-endpoints.md) - Interact with Dash Platform
-- [JSON-RPC Endpoints](./endpoints/json-rpc-endpoints.md) - Legacy endpoints
+
+### Core Endpoints
+- [getBestBlockHeight](./endpoints/core/getBestBlockHeight.md)
+- [getBlockchainStatus](./endpoints/core/getBlockchainStatus.md)
+- [getTransaction](./endpoints/core/getTransaction.md)
+- [broadcastTransaction](./endpoints/core/broadcastTransaction.md)
+- [subscribeToMasternodeList](./endpoints/core/subscribeToMasternodeList.md)
+
+### Platform Endpoints
+- [broadcastStateTransition](./endpoints/platform/broadcastStateTransition.md)
+- [waitForStateTransitionResult](./endpoints/platform/waitForStateTransitionResult.md)
+- [getConsensusParams](./endpoints/platform/getConsensusParams.md)
+- [getStatus](./endpoints/platform/getStatus.md)
+
+### Stream Endpoints
+- [subscribeToBlockHeadersWithChainLocks](./endpoints/streams/subscribeToBlockHeadersWithChainLocks.md)
+- [subscribeToTransactionsWithProofs](./endpoints/streams/subscribeToTransactionsWithProofs.md)
+
+### JSON-RPC Endpoints
+- [getBestBlockHash](./endpoints/json-rpc/getBestBlockHash.md)
+- [getBlockHash](./endpoints/json-rpc/getBlockHash.md)
 
 ## Client Libraries
 

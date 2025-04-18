@@ -4,7 +4,8 @@ This document explains the high-level architecture of DAPI, its components, and 
 
 ## Overview
 
-DAPI (Decentralized API) serves as the gateway to the Dash network, providing access to both Dash Core blockchain functionality and Dash Platform (Evolution) features. Unlike traditional centralized APIs, DAPI is designed to run on the Dash masternode network, ensuring high availability and censorship resistance.
+DAPI (Decentralized API) serves as the gateway to the Dash network, providing access to both Dash Core blockchain functionality and Dash Platform (Evolution) features.
+Unlike traditional centralized APIs, DAPI is designed to run on the Dash masternode network, ensuring high availability and censorship resistance.
 
 ## Architecture Diagram
 
@@ -41,7 +42,7 @@ DAPI (Decentralized API) serves as the gateway to the Dash network, providing ac
 
 ## Key Components
 
-### API Process (`api.js`)
+### API Process
 
 The API process is the main entry point for DAPI. It handles the basic gRPC and JSON-RPC endpoints, including both Core and Platform functionality.
 
@@ -197,6 +198,13 @@ DAPI connects to Tenderdash (a modified version of Tendermint) which serves as t
    - If it matches, the transaction is sent to the client with merkle proofs
 4. The stream continues until the client disconnects
 
+## Security
+
+DAPI protects connections by using TLS to encrypt communication between clients and the masternodes.
+This encryption safeguards transmitted data from unauthorized access, interception, or tampering.
+Platform gRPC endpoints provide an additional level of security by optionally returning cryptographic proofs.
+Successful proof verification guarantees that the server responded without modifying the requested data.
+
 ## Deployment Considerations
 
 DAPI is designed to be deployed on masternode. The prefered and officaially supported way is to use [dashmate](https://docs.dash.org/en/stable/docs/user/network/dashmate/index.html).
@@ -212,13 +220,10 @@ Key events that are logged include:
 - Server listening status
 - Error conditions
 
-## Configuration
+## Endpoints
 
-Both processes share the same configuration infrastructure, reading environment variables or a `.env` file.
-See the [Configuration](./configuration.md) document for details on available options.
+See the [endpoints](./endpoints/index.md) document for details on available endpoints.
 
 ## Further Information
 
-- For more details about the processes, see [Processes](./processes.md)
-- For configuration options, see [Configuration](./configuration.md)
-- For available endpoints, see [Endpoints](./endpoints/index.md)
+- Consult the [Dash Platform Developer Documentation](https://docs.dash.org/projects/platform/en/stable/) for more information about the broader Dash Platform ecosystem

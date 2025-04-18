@@ -14,7 +14,7 @@ The gRPC interface is the recommended way to interact with DAPI. It offers:
 
 ### JSON-RPC (Legacy)
 
-The JSON-RPC interface is provided for backward compatibility and will eventually be deprecated. It offers:
+The JSON-RPC interface will eventually be deprecated. It offers:
 - HTTP-based requests
 - Compatibility with existing tools
 - Simpler integration for basic use cases
@@ -28,43 +28,58 @@ DAPI endpoints are organized into three main categories:
 These endpoints provide access to the underlying Dash blockchain (Core) functionality, such as blocks, transactions, and network status.
 
 **Main gRPC endpoints:**
-- [`getBestBlockHeight`](./core-endpoints.md#getbestblockheight) - Returns the current blockchain height
-- [`getBlockchainStatus`](./core-endpoints.md#getblockchainstatus) - Returns blockchain status information
-- [`getTransaction`](./core-endpoints.md#gettransaction) - Retrieves transaction data by ID
-- [`broadcastTransaction`](./core-endpoints.md#broadcasttransaction) - Broadcasts a raw transaction to the network
-
-**Learn more:** [Core Endpoints Documentation](./core-endpoints.md)
+- [`getBestBlockHeight`](./core/getBestBlockHeight.md) - Returns the current blockchain height
+- [`getBlockchainStatus`](./core/getBlockchainStatus.md) - Returns blockchain status information
+- [`getTransaction`](./core/getTransaction.md) - Retrieves transaction data by ID
+- [`broadcastTransaction`](./core/broadcastTransaction.md) - Broadcasts a raw transaction to the network
+- [`subscribeToMasternodeList`](./core/subscribeToMasternodeList.md) - Stream masternode list updates
 
 ### 2. Platform Endpoints
 
 These endpoints provide access to Dash Platform (Evolution) features, enabling interaction with decentralized applications, identities, and data contracts.
 
 **Main gRPC endpoints:**
-- [`broadcastStateTransition`](./platform-endpoints.md#broadcaststatetransition) - Broadcasts a state transition to the platform
-- [`waitForStateTransitionResult`](./platform-endpoints.md#waitforstatetransitionresult) - Waits for a state transition to be processed
-- [`getConsensusParams`](./platform-endpoints.md#getconsensusparams) - Retrieves platform consensus parameters
-- [`getStatus`](./platform-endpoints.md#getstatus) - Gets platform status information
+- [`broadcastStateTransition`](./platform/broadcastStateTransition.md) - Broadcasts a state transition to the platform
+- [`waitForStateTransitionResult`](./platform/waitForStateTransitionResult.md) - Waits for a state transition to be processed
+- [`getConsensusParams`](./platform/getConsensusParams.md) - Retrieves platform consensus parameters
+- [`getStatus`](./platform/getStatus.md) - Gets platform status information
 
-**Learn more:** [Platform Endpoints Documentation](./platform-endpoints.md)
+The following endpoints are defined in the gRPC service but are served by Drive ABCI directly:
+
+- `getIdentity`
+- `getIdentitiesContractKeys`
+- `getIdentityBalance`
+- `getIdentityBalanceAndRevision`
+- `getIdentityKeys`
+- `getDocuments`
+- `getDataContract`
+- `getDataContracts`
+- `getDataContractHistory`
+- `getIdentityByPublicKeyHash`
+- `getIdentitiesByPublicKeyHashes`
+- `getProofs`
+- `getEpochsInfo`
+- `getProtocolVersionUpgradeVoteStatus`
+- `getProtocolVersionUpgradeState`
+- `getIdentityContractNonce`
+- `getIdentityNonce`
+
 
 ### 3. Stream Endpoints
 
 These endpoints provide real-time streaming data from the Dash network, including blocks, transactions, and masternode list updates.
 
 **Main streaming endpoints:**
-- [`subscribeToBlockHeadersWithChainLocks`](./core-endpoints.md#subscribetoBlockHeadersWithChainLocks) - Stream block headers and chain locks
-- [`subscribeToTransactionsWithProofs`](./core-endpoints.md#subscribetoTransactionsWithProofs) - Stream transactions matching a bloom filter
-- [`subscribeToMasternodeList`](./core-endpoints.md#subscribetomasterNodeList) - Stream masternode list updates
+- [`subscribeToBlockHeadersWithChainLocks`](./streams/subscribeToBlockHeadersWithChainLocks.md) - Stream block headers and chain locks
+- [`subscribeToTransactionsWithProofs`](./streams/subscribeToTransactionsWithProofs.md) - Stream transactions matching a bloom filter
 
 ### 4. JSON-RPC Endpoints
 
 These endpoints provide a subset of Dash Core functionality through the JSON-RPC interface for backward compatibility.
 
 **Available endpoints:**
-- [`getBestBlockHash`](./json-rpc-endpoints.md#getbestblockhash) - Returns the hash of the best block
-- [`getBlockHash`](./json-rpc-endpoints.md#getblockhash) - Returns the hash of a block at a specific height
-
-**Learn more:** [JSON-RPC Endpoints Documentation](./json-rpc-endpoints.md)
+- [`getBestBlockHash`](./json-rpc/getBestBlockHash.md) - Returns the hash of the best block
+- [`getBlockHash`](./json-rpc/getBlockHash.md) - Returns the hash of a block at a specific height
 
 ## Using the Endpoints
 
