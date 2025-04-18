@@ -1,5 +1,6 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
+use drive::query::GroveError::InvalidProof;
 use drive::query::PathQuery;
 
 /// Errors
@@ -21,7 +22,7 @@ pub enum Error {
     #[error("grovedb: {error}")]
     GroveDBError {
         proof_bytes: Vec<u8>,
-        path_query: PathQuery,
+        path_query: Option<PathQuery>,
         height: u64,
         time_ms: u64,
         error: String,
@@ -149,9 +150,18 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
         match self {
             Ok(o) => Ok(o),
             Err(e) => match e {
+                drive::error::Error::GroveDB(InvalidProof(path_query, _)) => {
+                    Err(Error::GroveDBError {
+                        proof_bytes: proof.grovedb_proof.clone(),
+                        path_query: Some(path_query),
+                        height: metadata.height,
+                        time_ms: metadata.time_ms,
+                        error: e.to_string(),
+                    })
+                }
                 drive::error::Error::GroveDB(e) => Err(Error::GroveDBError {
                     proof_bytes: proof.grovedb_proof.clone(),
-                    path_query: proof.path_query.clone(),
+                    path_query: None,
                     height: metadata.height,
                     time_ms: metadata.time_ms,
                     error: e.to_string(),
