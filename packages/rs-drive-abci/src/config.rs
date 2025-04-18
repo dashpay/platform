@@ -180,9 +180,6 @@ pub struct PlatformConfig {
     /// Path to data storage
     pub db_path: PathBuf,
 
-    /// State sync configuration
-    pub state_sync_config: StateSyncAbciConfig,
-
     /// Path to store rejected / invalid items (like transactions).
     /// Used mainly for debugging.
     ///
@@ -278,7 +275,6 @@ impl<'de> Deserialize<'de> for PlatformConfig {
             instant_lock: config.instant_lock,
             block_spacing_ms: config.block_spacing_ms,
             db_path: config.db_path,
-            state_sync_config: config.state_sync,
             rejections_path: config.rejections_path,
             #[cfg(feature = "testing-config")]
             testing_configs: config.testing_configs,
@@ -730,11 +726,10 @@ impl PlatformConfig {
             },
             block_spacing_ms: 5000,
             drive: Default::default(),
-            abci: Default::default(),
+            abci: AbciConfig::default_local(),
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
-            state_sync_config: StateSyncAbciConfig::default_local(),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
@@ -773,12 +768,11 @@ impl PlatformConfig {
             },
             block_spacing_ms: 5000,
             drive: Default::default(),
-            abci: Default::default(),
+            abci: AbciConfig::default_testnet(),
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
-            state_sync_config: StateSyncAbciConfig::default_local(),
             #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
             tokio_console_enabled: false,
@@ -816,11 +810,10 @@ impl PlatformConfig {
             },
             block_spacing_ms: 5000,
             drive: DriveConfig::default_testnet(),
-            abci: Default::default(),
+            abci: AbciConfig::default_testnet(),
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
-            state_sync_config: StateSyncAbciConfig::default_testnet(),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
@@ -859,11 +852,10 @@ impl PlatformConfig {
             },
             block_spacing_ms: 5000,
             drive: Default::default(),
-            abci: Default::default(),
+            abci: AbciConfig::default_mainnet(),
             core: Default::default(),
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
-            state_sync_config: StateSyncAbciConfig::default_mainnet(),
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),

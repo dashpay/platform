@@ -1107,8 +1107,17 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               maxConcurrentListSnapshots: 100,
               maxConcurrentSnapshotChunk: 100,
             };
+
+            options.platform.drive.abci.stateSync = {
+              snapshots: {
+                enabled: true,
+                frequency: 5,
+                maxLimit: 100,
+              },
+            };
           });
 
+        configFile.configs.local.platform.drive.abci.stateSync.snapshots.enabled = false;
         configFile.configs.local.platform.drive.tenderdash.stateSync.enabled = false;
 
         return configFile;

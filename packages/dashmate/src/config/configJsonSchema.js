@@ -949,6 +949,31 @@ export default {
                   required: ['txProcessingTimeLimit'],
                   additionalProperties: false,
                 },
+                stateSync: {
+                  type: 'object',
+                  properties: {
+                    snapshots: {
+                      type: 'object',
+                      properties: {
+                        enabled: {
+                          type: 'boolean',
+                        },
+                        frequency: {
+                          type: 'integer',
+                          minimum: 1,
+                        },
+                        maxLimit: {
+                          type: 'integer',
+                          minimum: 1,
+                        },
+                      },
+                      required: ['enabled', 'frequency', 'maxLimit'],
+                      additionalProperties: false,
+                    },
+                  },
+                  required: ['snapshots'],
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
               required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer'],

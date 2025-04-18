@@ -305,6 +305,13 @@ export default function getBaseConfigFactory() {
               txProcessingTimeLimit: null,
             },
             epochTime: 788400,
+            stateSync: {
+              snapshots: {
+                enabled: true,
+                frequency: 5,
+                maxLimit: 100,
+              },
+            },
           },
           tenderdash: {
             mode: 'full',
