@@ -100,7 +100,7 @@ pub unsafe extern "C" fn verify_full_identity_by_identity_id(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn verify_identity_id_by_public_key_hash(
+pub unsafe extern "C" fn verify_identity_id_by_unique_public_key_hash(
     proof_array: *const u8,
     proof_len: usize,
     is_proof_subset: bool,
@@ -109,8 +109,11 @@ pub unsafe extern "C" fn verify_identity_id_by_public_key_hash(
     let proof = unsafe { slice::from_raw_parts(proof_array, proof_len) };
     let public_key_hash = unsafe { std::ptr::read(public_key_hash) };
 
-    let verification_result =
-        Drive::verify_identity_id_by_public_key_hash(proof, is_proof_subset, public_key_hash);
+    let verification_result = Drive::verify_identity_id_by_unique_public_key_hash(
+        proof,
+        is_proof_subset,
+        public_key_hash,
+    );
 
     match verification_result {
         Ok((root_hash, maybe_identity_id)) => {
@@ -680,13 +683,13 @@ mod tests {
     }
 
     #[test]
-    fn verify_identity_id_by_public_key_hash() {
+    fn verify_identity_id_by_unique_public_key_hash() {
         let proof = multiple_identity_proof();
         let public_key_hash: PublicKeyHash = [
             31, 8, 21, 38, 154, 252, 1, 45, 228, 66, 96, 206, 178, 138, 68, 150, 211, 24, 65, 132,
         ];
         let (_root_hash, maybe_identity_id) =
-            Drive::verify_identity_id_by_public_key_hash(proof, true, public_key_hash)
+            Drive::verify_identity_id_by_unique_public_key_hash(proof, true, public_key_hash)
                 .expect("should verify");
         let expected_identity_id: [u8; 32] = [
             15, 126, 159, 152, 150, 254, 206, 186, 180, 193, 157, 65, 233, 215, 241, 108, 23, 39,
