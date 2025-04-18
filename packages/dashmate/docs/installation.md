@@ -1,25 +1,60 @@
 # Installation
 
 This guide provides instructions for installing Dashmate, a distribution package for Dash node installation.
+The guide is written for Ubuntu 22.04 x64 LTS, but the steps should be similar for other Linux distributions.
 
-## Dependencies
+## Install dependencies
 
-Before installing Dashmate, ensure you have the following dependencies installed:
-
-* [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
-* [Node.js](https://nodejs.org/en/download/) (v20, NPM v8.0+)
-
-For Linux installations, you may optionally wish to follow the Docker [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user. Otherwise, you will have to run CLI and Docker commands with `sudo`.
-
-## Installing Dashmate
-
-Use NPM to install dashmate globally in your system:
+Install and configure Docker:
 
 ```bash
-$ npm install -g dashmate
+curl -fsSL https://get.docker.com -o get-docker.sh && sh ./get-docker.sh
+sudo usermod -aG docker $USER
+newgrp docker
 ```
 
-This will make the `dashmate` command available system-wide.
+## Install dashmate
+
+There are several methods available for installing dashmate.
+Installing the Linux, MacOS, or Windows packages from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest) is recommended for mainnet masternodes.
+
+### Debian package
+
+Download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest):
+
+```bash
+wget https://github.com/dashpay/platform/releases/download/v1.8.0/dashmate_1.8.0.e4e156c86-1_amd64.deb
+```
+
+Install dashmate using apt:
+
+```bash
+sudo apt update
+sudo apt install ./dashmate_1.8.0.e4e156c86-1_amd64.deb
+```
+
+> **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
+> You can ignore this error message:
+> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_1.8.0.e4e156c86-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+
+### Node package
+
+> **Warning:** This installation option is not recommended for mainnet masternodes.
+> Please install packages from the GitHub releases page.
+
+To install the NPM package, it is necessary to install Node.JS first. We recommend installing it using [nvm](https://github.com/nvm-sh/nvm#readme):
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+source ~/.bashrc
+nvm install 20
+```
+
+Once Node.JS has been installed, use NPM to install dashmate:
+
+```bash
+npm install -g dashmate
+```
 
 ## Verifying Installation
 
