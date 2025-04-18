@@ -1,9 +1,12 @@
-
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
@@ -25,10 +28,6 @@ use dpp::tokens::calculate_token_id;
 use dpp::tokens::status::v0::TokenStatusV0;
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_event::TokenEvent;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
-use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
-use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -54,59 +53,59 @@ static TOKEN_ID_2: LazyLock<Identifier> =
 impl<C> Platform<C> {
     /// This data is used for testing token and group queries in RS SDK tests.
     pub(super) fn create_data_for_group_token_queries(
-    &self,
-    block_info: &BlockInfo,
-    transaction: TransactionArg,
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    self.register_identities(block_info, transaction, platform_version)?;
+        &self,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.register_identities(block_info, transaction, platform_version)?;
 
-    self.create_data_contract(block_info, transaction, platform_version)?;
+        self.create_data_contract(block_info, transaction, platform_version)?;
 
-    self.mint_tokens(block_info, transaction, platform_version)?;
+        self.mint_tokens(block_info, transaction, platform_version)?;
 
-    // Freeze tokens for identity 2
-    self.drive.token_freeze(
-        *TOKEN_ID_0,
-        IDENTITY_ID_2,
-        block_info,
-        true,
-        transaction,
-        platform_version,
-    )?;
+        // Freeze tokens for identity 2
+        self.drive.token_freeze(
+            *TOKEN_ID_0,
+            IDENTITY_ID_2,
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
 
-    // Pause token 2
-    let status = TokenStatus::V0(TokenStatusV0 { paused: true });
-    self.drive.token_apply_status(
-        TOKEN_ID_1.to_buffer(),
-        status,
-        block_info,
-        true,
-        transaction,
-        platform_version,
-    )?;
+        // Pause token 2
+        let status = TokenStatus::V0(TokenStatusV0 { paused: true });
+        self.drive.token_apply_status(
+            TOKEN_ID_1.to_buffer(),
+            status,
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
 
-    // Add burn token group action
-    let action_id = Identifier::new([32; 32]);
-    let group_action = GroupAction::V0(GroupActionV0 {
-        event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some("world on fire".into()))),
-    });
+        // Add burn token group action
+        let action_id = Identifier::new([32; 32]);
+        let group_action = GroupAction::V0(GroupActionV0 {
+            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some("world on fire".into()))),
+        });
 
-    self.drive.add_group_action(
-        DATA_CONTRACT_ID,
-        2,
-        Some(group_action),
-        action_id,
-        IDENTITY_ID_1,
-        1,
-        block_info,
-        true,
-        transaction,
-        platform_version,
-    )?;
+        self.drive.add_group_action(
+            DATA_CONTRACT_ID,
+            2,
+            Some(group_action),
+            action_id,
+            IDENTITY_ID_1,
+            1,
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
 
-    Ok(())
-}
+        Ok(())
+    }
 
     /// Create some test data for token direct prices.
     ///
@@ -115,38 +114,38 @@ impl<C> Platform<C> {
     ///
     /// Tokens must be already created.
     pub(crate) fn create_data_for_token_direct_prices(
-    &self,
-    block_info: &BlockInfo,
-    transaction: TransactionArg,
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    self.drive.token_set_direct_purchase_price(
-        TOKEN_ID_1.to_buffer(),
-        Some(TokenPricingSchedule::SinglePrice(25)),
-        block_info,
-        true,
-        transaction,
-        platform_version,
-    )?;
+        &self,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.token_set_direct_purchase_price(
+            TOKEN_ID_1.to_buffer(),
+            Some(TokenPricingSchedule::SinglePrice(25)),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
 
-    let pricing = TokenPricingSchedule::SetPrices(
-        (0..=900)
-            .step_by(100)
-            .map(|amount| (amount, 1000 - amount))
-            .collect(),
-    );
+        let pricing = TokenPricingSchedule::SetPrices(
+            (0..=900)
+                .step_by(100)
+                .map(|amount| (amount, 1000 - amount))
+                .collect(),
+        );
 
-    self.drive.token_set_direct_purchase_price(
-        TOKEN_ID_2.to_buffer(),
-        Some(pricing),
-        block_info,
-        true,
-        transaction,
-        platform_version,
-    )?;
+        self.drive.token_set_direct_purchase_price(
+            TOKEN_ID_2.to_buffer(),
+            Some(pricing),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
 
-    Ok(())
-}
+        Ok(())
+    }
 
     fn register_identities(
         &self,
