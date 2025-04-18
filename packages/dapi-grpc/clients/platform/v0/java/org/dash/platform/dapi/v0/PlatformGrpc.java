@@ -3134,13 +3134,13 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 33;
   private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 34;
   private static final int METHODID_GET_TOKEN_STATUSES = 35;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 36;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 37;
-  private static final int METHODID_GET_GROUP_INFO = 38;
-  private static final int METHODID_GET_GROUP_INFOS = 39;
-  private static final int METHODID_GET_GROUP_ACTIONS = 40;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 41;
   private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 36;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 37;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 38;
+  private static final int METHODID_GET_GROUP_INFO = 39;
+  private static final int METHODID_GET_GROUP_INFOS = 40;
+  private static final int METHODID_GET_GROUP_ACTIONS = 41;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 42;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
