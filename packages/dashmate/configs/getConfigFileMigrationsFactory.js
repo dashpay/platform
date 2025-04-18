@@ -1081,8 +1081,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
-            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
           });
         return configFile;
       },
