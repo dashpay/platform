@@ -1208,8 +1208,37 @@ export default {
                 genesis: {
                   type: 'object',
                 },
+                stateSync: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    retries: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    chunkRequestTimeout: {
+                      $ref: '#/definitions/duration',
+                    },
+                    fetchersCount: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    maxConcurrentListSnapshots: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    maxConcurrentSnapshotChunk: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                  },
+                  required: ['enabled', 'retries', 'chunkRequestTimeout', 'fetchersCount', 'maxConcurrentListSnapshots', 'maxConcurrentSnapshotChunk'],
+                  additionalProperties: false,
+                },
               },
-              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
+              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics', 'stateSync'],
               additionalProperties: false,
             },
           },
