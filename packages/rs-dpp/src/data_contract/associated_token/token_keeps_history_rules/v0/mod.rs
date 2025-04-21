@@ -35,6 +35,19 @@ pub struct TokenKeepsHistoryRulesV0 {
     pub keeps_direct_purchase_history: bool,
 }
 
+impl TokenKeepsHistoryRulesV0 {
+    pub fn default_for_keeping_all_history(keeps_all_history: bool) -> TokenKeepsHistoryRulesV0 {
+        TokenKeepsHistoryRulesV0 {
+            keeps_transfer_history: keeps_all_history,
+            keeps_freezing_history: keeps_all_history,
+            keeps_minting_history: keeps_all_history,
+            keeps_burning_history: keeps_all_history,
+            keeps_direct_pricing_history: keeps_all_history,
+            keeps_direct_purchase_history: keeps_all_history,
+        }
+    }
+}
+
 impl Default for TokenKeepsHistoryRulesV0 {
     fn default() -> Self {
         TokenKeepsHistoryRulesV0 {
