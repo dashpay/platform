@@ -1,6 +1,6 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
-use drive::query::GroveError::InvalidProof;
+use drive::grovedb::Error as GroveError;
 use drive::query::PathQuery;
 
 /// Errors
@@ -153,7 +153,7 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
             Err(drive::error::Error::GroveDB(grove_err)) => {
                 // If InvalidProof error is returned, extract the path query from it
                 let maybe_query = match &grove_err {
-                    InvalidProof(path_query, ..) => Some(path_query.clone()),
+                    GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
                     _ => None,
                 };
 
