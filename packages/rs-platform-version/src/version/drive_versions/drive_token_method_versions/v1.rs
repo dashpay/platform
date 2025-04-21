@@ -32,6 +32,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         total_supply_and_aggregated_identity_balances: 0,
         pre_programmed_distributions: 0,
         token_direct_purchase_prices: 0,
+        perpetual_distribution_last_paid_time: 0,
     },
     update: DriveTokenUpdateMethodVersions {
         create_token_trees: 0,

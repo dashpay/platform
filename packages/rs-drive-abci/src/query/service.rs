@@ -41,6 +41,7 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
     GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
     GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
     GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
     GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
@@ -761,6 +762,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_token_direct_purchase_prices,
             "get_token_direct_purchase_prices",
+        )
+        .await
+    }
+
+    async fn get_token_perpetual_distribution_last_claim(
+        &self,
+        request: Request<GetTokenPerpetualDistributionLastClaimRequest>,
+    ) -> Result<Response<GetTokenPerpetualDistributionLastClaimResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_perpetual_distribution_last_claim,
+            "get_token_perpetual_distribution_last_claim",
         )
         .await
     }
