@@ -87,6 +87,7 @@ use crate::state_transition::data_contract_update_transition::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
@@ -287,23 +288,28 @@ impl StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let state_transition = StateTransition::deserialize_from_bytes(bytes)?;
-        let active_version_range = state_transition.active_version_range();
-
-        // Tests are done with very high protocol ranges, while we could put this behind a feature,
-        // that would probably be overkill.
-        if active_version_range.contains(&platform_version.protocol_version)
-            || platform_version.protocol_version > 268435456
+        #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
-            Ok(state_transition)
-        } else {
-            Err(ProtocolError::StateTransitionError(
-                StateTransitionIsNotActiveError {
-                    state_transition_type: state_transition.name(),
-                    active_version_range,
-                    current_protocol_version: platform_version.protocol_version,
-                },
-            ))
+            let active_version_range = state_transition.active_version_range();
+
+            // Tests are done with very high protocol ranges, while we could put this behind a feature,
+            // that would probably be overkill.
+            if active_version_range.contains(&platform_version.protocol_version)
+                || platform_version.protocol_version > 268435456
+            {
+                Ok(state_transition)
+            } else {
+                Err(ProtocolError::StateTransitionError(
+                    StateTransitionIsNotActiveError {
+                        state_transition_type: state_transition.name(),
+                        active_version_range,
+                        current_protocol_version: platform_version.protocol_version,
+                    },
+                ))
+            }
         }
+        #[cfg(not(all(feature = "state-transitions", feature = "validation")))]
+        Ok(state_transition)
     }
 
     pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
