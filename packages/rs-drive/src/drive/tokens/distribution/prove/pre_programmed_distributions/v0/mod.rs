@@ -1,6 +1,4 @@
-use crate::drive::tokens::distribution::queries::{
-    QueryPreProgrammedDistributionStartAt,
-};
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

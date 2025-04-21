@@ -25,13 +25,14 @@ impl<C> Platform<C> {
         &self,
         GetTokenPerpetualDistributionLastClaimRequestV0 {
             token_id,
-            contract_info, 
+            contract_info,
             identity_id,
             prove,
         }: GetTokenPerpetualDistributionLastClaimRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetTokenPerpetualDistributionLastClaimResponseV0>, Error> {
+    ) -> Result<QueryValidationResult<GetTokenPerpetualDistributionLastClaimResponseV0>, Error>
+    {
         // ── Basic argument validation ──────────────────────────────────────────
         let token_id: Identifier =
             check_validation_result_with_data!(token_id.try_into().map_err(|_| {
@@ -46,7 +47,7 @@ impl<C> Platform<C> {
                     "identity_id must be a valid identifier (32 bytes long)".to_string(),
                 )
             }));
-        
+
         let response = if prove {
             let proof = check_validation_result_with_data!(self
                 .drive
@@ -65,27 +66,54 @@ impl<C> Platform<C> {
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
-        } else if let Some(ContractTokenInfo{ contract_id, token_contract_position }) = contract_info {
+        } else if let Some(ContractTokenInfo {
+            contract_id,
+            token_contract_position,
+        }) = contract_info
+        {
             let contract_id: Identifier =
                 check_validation_result_with_data!(contract_id.try_into().map_err(|_| {
                     QueryError::InvalidArgument(
                         "contract_id must be a valid identifier (32 bytes long)".to_string(),
                     )
                 }));
-            let Some(contract) = check_validation_result_with_data!(self.drive.get_contract_with_fetch_info(contract_id.into_buffer(), false, None, platform_version).map_err(
-                    QueryError::Drive
-                )) else {
-                return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(format!("contract with identifier {} not found", contract_id))));
+            let Some(contract) = check_validation_result_with_data!(self
+                .drive
+                .get_contract_with_fetch_info(
+                    contract_id.into_buffer(),
+                    false,
+                    None,
+                    platform_version
+                )
+                .map_err(QueryError::Drive))
+            else {
+                return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                    format!("contract with identifier {} not found", contract_id),
+                )));
             };
-            
+
             if token_contract_position > u16::MAX as u32 {
-                return Ok(QueryValidationResult::new_with_error(QueryError::InvalidArgument("token_contract_position must be less than u16::MAX".to_string())));
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "token_contract_position must be less than u16::MAX".to_string(),
+                    ),
+                ));
             }
-            
-            let token = check_validation_result_with_data!(contract.contract.expected_token_configuration(token_contract_position as u16).map_err(QueryError::Protocol));
+
+            let token = check_validation_result_with_data!(contract
+                .contract
+                .expected_token_configuration(token_contract_position as u16)
+                .map_err(QueryError::Protocol));
             let token_distribution_rules = token.distribution_rules();
-            let Some(token_perpetual_distribution_rules) = token_distribution_rules.perpetual_distribution() else {
-                return Ok(QueryValidationResult::new_with_error(QueryError::InvalidArgument(format!("contract with identifier {} does not have perpetual distribution rules", contract_id))));
+            let Some(token_perpetual_distribution_rules) =
+                token_distribution_rules.perpetual_distribution()
+            else {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(format!(
+                        "contract with identifier {} does not have perpetual distribution rules",
+                        contract_id
+                    )),
+                ));
             };
 
             let paid_at = self
@@ -96,22 +124,23 @@ impl<C> Platform<C> {
                     token_perpetual_distribution_rules.distribution_type(),
                     None,
                     platform_version,
-                )?.map(|moment| {
-                match moment {
-                    RewardDistributionMoment::BlockBasedMoment(height) => last_claim_info::PaidAt::BlockHeight(height),
-                    RewardDistributionMoment::TimeBasedMoment(timestamp) => last_claim_info::PaidAt::TimestampMs(timestamp),
-                    RewardDistributionMoment::EpochBasedMoment(epoch) => last_claim_info::PaidAt::Epoch(epoch as u32),
-                }
-            });
-
-
+                )?
+                .map(|moment| match moment {
+                    RewardDistributionMoment::BlockBasedMoment(height) => {
+                        last_claim_info::PaidAt::BlockHeight(height)
+                    }
+                    RewardDistributionMoment::TimeBasedMoment(timestamp) => {
+                        last_claim_info::PaidAt::TimestampMs(timestamp)
+                    }
+                    RewardDistributionMoment::EpochBasedMoment(epoch) => {
+                        last_claim_info::PaidAt::Epoch(epoch as u32)
+                    }
+                });
 
             GetTokenPerpetualDistributionLastClaimResponseV0 {
                 result: Some(
                     get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
-                        LastClaimInfo {
-                            paid_at,
-                        }
+                        LastClaimInfo { paid_at },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state)),
@@ -124,16 +153,13 @@ impl<C> Platform<C> {
                     identity_id,
                     None,
                     platform_version,
-                )?.map(|moment| {
-                last_claim_info::PaidAt::RawBytes(moment)
-            });
+                )?
+                .map(|moment| last_claim_info::PaidAt::RawBytes(moment));
 
             GetTokenPerpetualDistributionLastClaimResponseV0 {
                 result: Some(
                     get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
-                        LastClaimInfo {
-                            paid_at,
-                        },
+                        LastClaimInfo { paid_at },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state)),

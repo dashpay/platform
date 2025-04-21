@@ -21,7 +21,8 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<RewardDistributionMoment>), Error> {
-        let path_query = Drive::perpetual_distribution_last_paid_moment_query(token_id, identity_id);
+        let path_query =
+            Drive::perpetual_distribution_last_paid_moment_query(token_id, identity_id);
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
                 proof,
@@ -45,11 +46,8 @@ impl Drive {
                             e
                         )))
                     })?;
-                    Ok((
-                        root_hash,
-                        Some(moment),
-                    ))
-                },
+                    Ok((root_hash, Some(moment)))
+                }
                 None => Ok((root_hash, None)),
                 _ => Err(Error::Proof(ProofError::IncorrectValueSize(
                     "proof did not point to an item",

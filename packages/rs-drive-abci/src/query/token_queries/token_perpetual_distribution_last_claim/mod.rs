@@ -7,8 +7,7 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
-    GetTokenPerpetualDistributionLastClaimRequest,
-    GetTokenPerpetualDistributionLastClaimResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
 };
 use dpp::version::PlatformVersion;
 
@@ -59,9 +58,11 @@ impl<C> Platform<C> {
                     platform_state,
                     platform_version,
                 )?;
-                Ok(result.map(|response_v0| GetTokenPerpetualDistributionLastClaimResponse {
-                    version: Some(ResponseVersion::V0(response_v0)),
-                }))
+                Ok(result.map(
+                    |response_v0| GetTokenPerpetualDistributionLastClaimResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    },
+                ))
             }
         }
     }

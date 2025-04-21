@@ -54,9 +54,7 @@ impl Drive {
             drive_operations,
             &platform_version.drive,
         ) {
-            Ok(Some(Item(value, _))) => {
-                Ok(Some(value))
-            }
+            Ok(Some(Item(value, _))) => Ok(Some(value)),
 
             Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
 
@@ -109,12 +107,14 @@ impl Drive {
 
         match raw_opt {
             Some(raw_bytes) => {
-                let moment = distribution_type.moment_from_bytes(&raw_bytes).map_err(|e| {
-                    Error::Drive(DriveError::CorruptedDriveState(format!(
-                        "Moment should be specific amount of bytes: {}",
-                        e
-                    )))
-                })?;
+                let moment = distribution_type
+                    .moment_from_bytes(&raw_bytes)
+                    .map_err(|e| {
+                        Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "Moment should be specific amount of bytes: {}",
+                            e
+                        )))
+                    })?;
                 Ok(Some(moment))
             }
             None => Ok(None),

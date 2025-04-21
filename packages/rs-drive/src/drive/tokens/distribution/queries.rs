@@ -1,9 +1,12 @@
-use crate::drive::tokens::paths::{token_perpetual_distributions_identity_last_claimed_time_path_vec, token_pre_programmed_distributions_path_vec};
+use crate::drive::tokens::paths::{
+    token_perpetual_distributions_identity_last_claimed_time_path_vec,
+    token_pre_programmed_distributions_path_vec,
+};
+use crate::drive::Drive;
 use crate::query::QueryItem;
 use dpp::identifier::Identifier;
 use dpp::prelude::{StartAtIncluded, TimestampMillis};
 use grovedb::{PathQuery, Query, SizedQuery};
-use crate::drive::Drive;
 
 /// Defines the starting point for a query on pre-programmed token distributions.
 ///
@@ -51,9 +54,9 @@ impl Drive {
                 query
             }
             Some(QueryPreProgrammedDistributionStartAt {
-                     start_at_time,
-                     start_at_recipient,
-                 }) => {
+                start_at_time,
+                start_at_recipient,
+            }) => {
                 let mut query = Query::new_single_query_item(QueryItem::RangeFrom(
                     start_at_time.to_be_bytes().to_vec()..,
                 ));
@@ -104,7 +107,7 @@ impl Drive {
     ///
     pub fn perpetual_distribution_last_paid_moment_query(
         token_id: [u8; 32],
-        identity_id: [u8;32],
+        identity_id: [u8; 32],
     ) -> PathQuery {
         let path = token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
         let query = Query::new_single_key(identity_id.to_vec());

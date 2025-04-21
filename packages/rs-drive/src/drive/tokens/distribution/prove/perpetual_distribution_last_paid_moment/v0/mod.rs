@@ -1,4 +1,3 @@
-
 use crate::drive::tokens::paths::token_perpetual_distributions_identity_last_claimed_time_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -34,10 +33,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let path = token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
-        let path_query = PathQuery::new_single_key(
-            path,
-            identity_id.to_vec(),
-        );
+        let path_query = PathQuery::new_single_key(path, identity_id.to_vec());
 
         self.grove_get_proved_path_query(
             &path_query,

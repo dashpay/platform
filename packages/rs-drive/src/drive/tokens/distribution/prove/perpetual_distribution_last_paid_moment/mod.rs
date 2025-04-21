@@ -4,9 +4,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use dpp::identifier::Identifier;
 
 impl Drive {
     /// Returns a GroveDB **proof** of the last claim for a perpetual distribution.
