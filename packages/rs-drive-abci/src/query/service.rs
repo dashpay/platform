@@ -11,42 +11,7 @@ use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
 use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
-    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
-    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
-    GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
-    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
-    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetGroupActionSignersRequest,
-    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
-    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
-    GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
-    GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
-    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
-    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
-    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
-    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
-    GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
-    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
-    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
-    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
-    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
-    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
-};
+use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest, GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest, GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse, GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse, GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse};
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
@@ -763,6 +728,15 @@ impl PlatformService for QueryService {
             "get_token_direct_purchase_prices",
         )
         .await
+    }
+
+    async fn get_token_perpetual_distribution_last_claim(&self, request: Request<GetTokenPerpetualDistributionLastClaimRequest>) -> Result<Response<GetTokenPerpetualDistributionLastClaimResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_perpetual_distribution_last_claim,
+            "get_token_perpetual_distribution_last_claim",
+        )
+            .await
     }
 }
 

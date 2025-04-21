@@ -68,6 +68,7 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_pre_programmed_distributions: FeatureVersion,
     pub verify_token_direct_selling_price: FeatureVersion,
     pub verify_token_direct_selling_prices: FeatureVersion,
+    pub verify_token_perpetual_distribution_last_paid_time: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -168,7 +168,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * (x - start_moment) / d) + starting_amount
+    /// f(x) = (a * (x - start_step) / d) + starting_amount
     /// ```
     ///
     /// # Parameters
@@ -372,7 +372,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * e^(m * (x - s) / n)) / d + b
+    /// f(x) = (a * e^(m * (x - s + o) / n)) / d + b
     /// ```
     ///
     /// # Parameters
@@ -431,7 +431,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is computed as:
     ///
     /// ```text
-    /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
+    /// f(x) = (a * ln(m * (x - s + o) / n)) / d + b
     /// ```
     ///
     /// # Parameters

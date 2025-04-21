@@ -6,3 +6,4 @@ mod token_direct_purchase_prices;
 mod token_pre_programmed_distributions;
 mod token_status;
 mod token_total_supply;
+mod token_perpetual_distribution_last_claim;

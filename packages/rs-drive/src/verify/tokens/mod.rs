@@ -10,3 +10,4 @@ mod verify_token_pre_programmed_distributions;
 mod verify_token_status;
 mod verify_token_statuses;
 mod verify_token_total_supply_and_aggregated_identity_balance;
+mod verify_token_perpetual_distribution_last_paid_time;
