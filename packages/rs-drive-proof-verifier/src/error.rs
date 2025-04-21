@@ -149,25 +149,24 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
     fn map_drive_error(self, proof: &Proof, metadata: &ResponseMetadata) -> Result<O, Error> {
         match self {
             Ok(o) => Ok(o),
-            Err(e) => match e {
-                drive::error::Error::GroveDB(InvalidProof(path_query, _)) => {
-                    Err(Error::GroveDBError {
-                        proof_bytes: proof.grovedb_proof.clone(),
-                        path_query: Some(path_query),
-                        height: metadata.height,
-                        time_ms: metadata.time_ms,
-                        error: e.to_string(),
-                    })
-                }
-                drive::error::Error::GroveDB(e) => Err(Error::GroveDBError {
+
+            Err(drive::error::Error::GroveDB(grove_err)) => {
+                // If InvalidProof error is returned, extract the path query from it
+                let maybe_query = match &grove_err {
+                    InvalidProof(path_query, ..) => Some(path_query.clone()),
+                    _ => None,
+                };
+
+                Err(Error::GroveDBError {
                     proof_bytes: proof.grovedb_proof.clone(),
-                    path_query: None,
+                    path_query: maybe_query,
                     height: metadata.height,
                     time_ms: metadata.time_ms,
-                    error: e.to_string(),
-                }),
-                _ => Err(e.into()),
-            },
+                    error: grove_err.to_string(),
+                })
+            }
+
+            Err(other) => Err(other.into()),
         }
     }
 }
