@@ -154,7 +154,7 @@ impl<C> Platform<C> {
                     None,
                     platform_version,
                 )?
-                .map(|moment| last_claim_info::PaidAt::RawBytes(moment));
+                .map(last_claim_info::PaidAt::RawBytes);
 
             GetTokenPerpetualDistributionLastClaimResponseV0 {
                 result: Some(
