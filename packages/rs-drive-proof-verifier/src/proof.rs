@@ -46,6 +46,7 @@ use drive::drive::identity::key::fetch::{
 };
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
+use drive::grovedb::Error as GroveError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
@@ -417,12 +418,21 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
                 platform_version,
             )
             .map_err(|e| match e {
-                drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                    proof_bytes: proof.grovedb_proof.clone(),
-                    height: mtd.height,
-                    time_ms: mtd.time_ms,
-                    error: e.to_string(),
-                },
+                drive::error::Error::GroveDB(e) => {
+                    // If InvalidProof error is returned, extract the path query from it
+                    let maybe_query = match &e {
+                        GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
+                        _ => None,
+                    };
+
+                    Error::GroveDBError {
+                        proof_bytes: proof.grovedb_proof.clone(),
+                        path_query: maybe_query,
+                        height: mtd.height,
+                        time_ms: mtd.time_ms,
+                        error: e.to_string(),
+                    }
+                }
                 _ => e.into(),
             })?;
 
