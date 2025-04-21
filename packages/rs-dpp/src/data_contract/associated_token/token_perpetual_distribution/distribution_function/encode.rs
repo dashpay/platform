@@ -22,8 +22,10 @@ impl Encode for DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
-                n,
+                start_decreasing_offset: s,
+                max_interval_count,
+                distribution_start_amount: n,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
                 2u8.encode(encoder)?;
@@ -31,7 +33,9 @@ impl Encode for DistributionFunction {
                 decrease_per_interval_numerator.encode(encoder)?;
                 decrease_per_interval_denominator.encode(encoder)?;
                 s.encode(encoder)?;
+                max_interval_count.encode(encoder)?;
                 n.encode(encoder)?;
+                trailing_distribution_interval_amount.encode(encoder)?;
                 min_value.encode(encoder)?;
             }
             DistributionFunction::Stepwise(steps) => {
@@ -60,7 +64,7 @@ impl Encode for DistributionFunction {
                 m,
                 n,
                 o,
-                start_moment: s,
+                start_moment,
                 b,
                 min_value,
                 max_value,
@@ -71,7 +75,7 @@ impl Encode for DistributionFunction {
                 m.encode(encoder)?;
                 n.encode(encoder)?;
                 o.encode(encoder)?;
-                s.encode(encoder)?;
+                start_moment.encode(encoder)?;
                 b.encode(encoder)?;
                 min_value.encode(encoder)?;
                 max_value.encode(encoder)?;
@@ -83,7 +87,7 @@ impl Encode for DistributionFunction {
                 n,
                 o,
                 start_moment: s,
-                c,
+                b,
                 min_value,
                 max_value,
             } => {
@@ -94,7 +98,7 @@ impl Encode for DistributionFunction {
                 n.encode(encoder)?;
                 o.encode(encoder)?;
                 s.encode(encoder)?;
-                c.encode(encoder)?;
+                b.encode(encoder)?;
                 min_value.encode(encoder)?;
                 max_value.encode(encoder)?;
             }
@@ -167,15 +171,19 @@ impl Decode for DistributionFunction {
                 let decrease_per_interval_numerator = u16::decode(decoder)?;
                 let decrease_per_interval_denominator = u16::decode(decoder)?;
                 let s = Option::<u64>::decode(decoder)?;
+                let max_interval_count = Option::<u16>::decode(decoder)?;
                 let n = TokenAmount::decode(decoder)?;
+                let trailing_distribution_interval_amount = TokenAmount::decode(decoder)?;
                 let min_value = Option::<u64>::decode(decoder)?;
                 Ok(Self::StepDecreasingAmount {
-                    s,
+                    start_decreasing_offset: s,
                     decrease_per_interval_numerator,
                     decrease_per_interval_denominator,
                     step_count,
-                    n,
+                    distribution_start_amount: n,
+                    max_interval_count,
                     min_value,
+                    trailing_distribution_interval_amount,
                 })
             }
             3 => {
@@ -226,8 +234,8 @@ impl Decode for DistributionFunction {
                 let m = i64::decode(decoder)?;
                 let n = u64::decode(decoder)?;
                 let o = i64::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let c = TokenAmount::decode(decoder)?;
+                let start_moment = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
                 let min_value = Option::<u64>::decode(decoder)?;
                 let max_value = Option::<u64>::decode(decoder)?;
                 Ok(Self::Exponential {
@@ -236,8 +244,8 @@ impl Decode for DistributionFunction {
                     m,
                     n,
                     o,
-                    start_moment: s,
-                    c,
+                    start_moment,
+                    b,
                     min_value,
                     max_value,
                 })
@@ -313,14 +321,18 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 let decrease_per_interval_numerator = u16::borrow_decode(decoder)?;
                 let decrease_per_interval_denominator = u16::borrow_decode(decoder)?;
                 let s = Option::<u64>::borrow_decode(decoder)?;
+                let max_interval_count = Option::<u16>::borrow_decode(decoder)?;
                 let n = TokenAmount::borrow_decode(decoder)?;
+                let trailing_distribution_interval_amount = TokenAmount::borrow_decode(decoder)?;
                 let min_value = Option::<u64>::borrow_decode(decoder)?;
                 Ok(Self::StepDecreasingAmount {
                     step_count,
                     decrease_per_interval_numerator,
                     decrease_per_interval_denominator,
-                    s,
-                    n,
+                    start_decreasing_offset: s,
+                    max_interval_count,
+                    distribution_start_amount: n,
+                    trailing_distribution_interval_amount,
                     min_value,
                 })
             }
@@ -372,8 +384,8 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 let m = i64::borrow_decode(decoder)?;
                 let n = u64::borrow_decode(decoder)?;
                 let o = i64::borrow_decode(decoder)?;
-                let s = Option::<u64>::borrow_decode(decoder)?;
-                let c = TokenAmount::borrow_decode(decoder)?;
+                let start_moment = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
                 let min_value = Option::<u64>::borrow_decode(decoder)?;
                 let max_value = Option::<u64>::borrow_decode(decoder)?;
                 Ok(Self::Exponential {
@@ -382,8 +394,8 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     m,
                     n,
                     o,
-                    start_moment: s,
-                    c,
+                    start_moment,
+                    b,
                     min_value,
                     max_value,
                 })

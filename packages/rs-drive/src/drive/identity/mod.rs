@@ -40,6 +40,10 @@ pub mod key;
 #[cfg(feature = "server")]
 pub mod update;
 
+/// A module for a struct encapsulating an identity and a non-unique public key hash to identity id proof
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod identity_and_non_unique_public_key_hash_double_proof;
+
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::error::drive::DriveError;
 use crate::error::Error;
