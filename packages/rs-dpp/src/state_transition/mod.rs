@@ -2,6 +2,7 @@ use derive_more::From;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
+use std::ops::RangeInclusive;
 
 pub use abstract_state_transition::state_transition_helpers;
 
@@ -17,7 +18,7 @@ use dashcore::signer;
 #[cfg(feature = "state-transition-validation")]
 use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_version::version::PlatformVersion;
+use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 mod abstract_state_transition;
 #[cfg(any(
@@ -54,6 +55,7 @@ use crate::consensus::ConsensusError;
 pub use traits::*;
 
 use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
 #[cfg(any(
     feature = "state-transition-signing",
@@ -71,18 +73,22 @@ use crate::identity::Purpose;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
-use crate::serialization::Signable;
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
+use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
+use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
+use crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 #[cfg(feature = "state-transition-validation")]
@@ -104,11 +110,10 @@ use crate::state_transition::identity_topup_transition::{
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
-
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -278,6 +283,62 @@ impl OptionallyAssetLockProved for StateTransition {
 }
 
 impl StateTransition {
+    pub fn deserialize_from_bytes_in_version(
+        bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let state_transition = StateTransition::deserialize_from_bytes(bytes)?;
+        #[cfg(all(feature = "state-transitions", feature = "validation"))]
+        {
+            let active_version_range = state_transition.active_version_range();
+
+            // Tests are done with very high protocol ranges, while we could put this behind a feature,
+            // that would probably be overkill.
+            if active_version_range.contains(&platform_version.protocol_version)
+                || platform_version.protocol_version > 268435456
+            {
+                Ok(state_transition)
+            } else {
+                Err(ProtocolError::StateTransitionError(
+                    StateTransitionIsNotActiveError {
+                        state_transition_type: state_transition.name(),
+                        active_version_range,
+                        current_protocol_version: platform_version.protocol_version,
+                    },
+                ))
+            }
+        }
+        #[cfg(not(all(feature = "state-transitions", feature = "validation")))]
+        Ok(state_transition)
+    }
+
+    pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
+        match self {
+            StateTransition::DataContractCreate(data_contract_create_transition) => {
+                match data_contract_create_transition.data_contract() {
+                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                }
+            }
+            StateTransition::DataContractUpdate(data_contract_update_transition) => {
+                match data_contract_update_transition.data_contract() {
+                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                }
+            }
+            StateTransition::Batch(batch_transition) => match batch_transition {
+                BatchTransition::V0(_) => ALL_VERSIONS,
+                BatchTransition::V1(_) => 9..=LATEST_VERSION,
+            },
+            StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
+        }
+    }
+
     pub fn is_identity_signed(&self) -> bool {
         !matches!(
             self,
