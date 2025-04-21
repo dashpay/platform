@@ -5,7 +5,6 @@ pub mod token_info;
 pub mod token_status;
 pub mod token_total_supply;
 
-use drive::query::GroveError::InvalidProof;
 use crate::from_request::TryFromRequest;
 use crate::provider::DataContractProvider;
 use crate::verify::verify_tenderdash_proof;
@@ -47,6 +46,7 @@ use drive::drive::identity::key::fetch::{
 };
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
+use drive::grovedb::Error as GroveError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
@@ -421,7 +421,7 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
                 drive::error::Error::GroveDB(e) => {
                     // If InvalidProof error is returned, extract the path query from it
                     let maybe_query = match &e {
-                        InvalidProof(path_query, ..) => Some(path_query.clone()),
+                        GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
                         _ => None,
                     };
 
