@@ -50,6 +50,7 @@ pub trait ContextProvider: Send + Sync {
     /// # Arguments
     ///
     /// * `token_id`: The ID of the token to fetch.
+    /// * `platform_version`: The platform version to use.
     ///
     /// # Returns
     ///
