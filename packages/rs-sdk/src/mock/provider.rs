@@ -5,6 +5,8 @@ use crate::platform::Fetch;
 use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::{TokenConfiguration, TokenContractPosition};
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::error::ContextProviderError;
@@ -214,6 +216,24 @@ impl ContextProvider for GrpcContextProvider {
         }
 
         Ok(data_contract.map(Arc::new))
+    }
+
+    fn get_token_configuration(
+        &self,
+        data_contract_id: &Identifier,
+        token_contract_position: &TokenContractPosition,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError> {
+        let data_contract = self.get_data_contract(data_contract_id, platform_version)?;
+        if let Some(data_contract) = data_contract {
+            Ok(data_contract
+                .tokens()
+                .get(&token_contract_position)
+                .cloned()
+                .map(Arc::new))
+        } else {
+            Ok(None)
+        }
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

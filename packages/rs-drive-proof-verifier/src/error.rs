@@ -112,6 +112,10 @@ pub enum ContextProviderError {
     #[error("cannot get data contract: {0}")]
     DataContractFailure(String),
 
+    /// Token configuration is invalid or not found, or some error occurred during token configuration retrieval
+    #[error("cannot get token configuration: {0}")]
+    TokenConfigurationFailure(String),
+
     /// Provided quorum is invalid
     #[error("invalid quorum: {0}")]
     InvalidQuorum(String),
