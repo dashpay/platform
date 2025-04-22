@@ -332,7 +332,7 @@ impl ContextProvider for MockContextProvider {
         if let Some(data_contract) = data_contract {
             Ok(data_contract
                 .tokens()
-                .get(&token_contract_position)
+                .get(token_contract_position)
                 .cloned()
                 .map(Arc::new))
         } else {
