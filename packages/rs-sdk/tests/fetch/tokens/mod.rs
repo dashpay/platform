@@ -1,4 +1,5 @@
 mod identity_token_balances;
 mod token_info;
+mod token_perpetual_distribution_last_claim;
 mod token_status;
 mod token_total_supply;

@@ -32,8 +32,8 @@ use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive_proof_verifier::types::{
     Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
-    ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
-    Voters,
+    ProposerBlockCounts, RetrievedValues, TokenPerpetualDistributionLastClaim,
+    TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -448,3 +448,4 @@ impl_mock_response!(EvoNodeStatus);
 impl_mock_response!(CurrentQuorumsInfo);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
+impl_mock_response!(TokenPerpetualDistributionLastClaim);

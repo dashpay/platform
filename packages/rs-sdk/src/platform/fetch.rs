@@ -293,3 +293,7 @@ impl Fetch for drive_proof_verifier::types::PrefundedSpecializedBalance {
 impl Fetch for Vote {
     type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
 }
+
+impl Fetch for drive_proof_verifier::types::TokenPerpetualDistributionLastClaim {
+    type Request = platform_proto::GetTokenPerpetualDistributionLastClaimRequest;
+}
