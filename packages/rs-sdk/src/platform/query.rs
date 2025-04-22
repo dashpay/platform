@@ -29,6 +29,7 @@ use dapi_grpc::platform::v0::{
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::data_contract::TokenContractPosition;
 use dpp::version::PlatformVersionError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -707,10 +708,8 @@ impl Query<GetTokenDirectPurchasePricesRequest> for &[Identifier] {
 pub struct TokenLastClaimQuery {
     pub token_id: Identifier,
     pub identity_id: Identifier,
-    pub contract_info: Option<(
-        Identifier, // contract_id
-        u32,        // token_contract_position
-    )>,
+    pub contract_id: Identifier,
+    pub token_contract_position: TokenContractPosition,
 }
 
 impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuery {
@@ -725,12 +724,12 @@ impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuer
                     proto::get_token_perpetual_distribution_last_claim_request::GetTokenPerpetualDistributionLastClaimRequestV0 {
                         token_id: self.token_id.to_vec(),
                         identity_id: self.identity_id.to_vec(),
-                        contract_info: self.contract_info.map(|(contract_id, pos)| {
+                        contract_info: if prove {Some(
                             proto::get_token_perpetual_distribution_last_claim_request::ContractTokenInfo {
-                                contract_id: contract_id.to_vec(),
-                                token_contract_position: pos,
-                            }
-                        }),
+                                contract_id: self.contract_id.to_vec(),
+                                token_contract_position: self.token_contract_position as u32,
+                            },
+                        )} else {None},
                         prove,
                     },
                 ),

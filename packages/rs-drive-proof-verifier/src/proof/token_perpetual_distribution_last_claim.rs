@@ -135,7 +135,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest>
                 });
             };
 
-            // Verify the GroveDB proof -> reward‑moment
+            // Verify the GroveDB proof => reward‑moment
             let (root, moment_opt) = Drive::verify_token_perpetual_distribution_last_paid_time(
                 &proof_msg.grovedb_proof,
                 token_id,
@@ -148,7 +148,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest>
             // Verify the Tendermint header / quorum sig that wraps the Grove proof
             verify_tenderdash_proof(&proof_msg, &mtd, &root, provider)?;
 
-            // Item is absent => the identity has never claimed ⇒ return None
+            // Item is absent => the identity has never claimed => return None
             let Some(moment) = moment_opt else {
                 return Ok((None, mtd, proof_msg.clone()));
             };
@@ -183,7 +183,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest>
                 PaidAt::RawBytes(bytes) => TokenPerpetualDistributionLastClaim::Raw(bytes),
             };
 
-            // There ISN’T any proof in this branch → return an empty one
+            // There ISN’T any proof in this branch, return an empty one
             return Ok((Some(claim), mtd, Proof::default()));
         }
 
