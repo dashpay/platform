@@ -225,15 +225,9 @@ impl ContextProvider for GrpcContextProvider {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError> {
         let data_contract = self.get_data_contract(data_contract_id, platform_version)?;
-        if let Some(data_contract) = data_contract {
-            Ok(data_contract
-                .tokens()
-                .get(token_contract_position)
-                .cloned()
-                .map(Arc::new))
-        } else {
-            Ok(None)
-        }
+        Ok(data_contract
+            .and_then(|dc| dc.tokens().get(token_contract_position).cloned())
+            .map(Arc::new))
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
