@@ -59,6 +59,7 @@ impl GrpcContextProvider {
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     ///
     /// Sdk can be set later with [`GrpcContextProvider::set_sdk`].
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sdk: Option<Sdk>,
         core_ip: &str,
@@ -229,11 +230,11 @@ impl ContextProvider for GrpcContextProvider {
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         if let Some(config) = self.token_configurations_cache.get(token_id) {
-            return Ok(Some((*config).clone()));
+            Ok(Some((*config).clone()))
         } else {
             tracing::warn!("token config cache miss");
-            return Ok(None);
-        };
+            Ok(None)
+        }
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
