@@ -47,6 +47,8 @@ use zeroize::Zeroizing;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
+/// How many token configs fit in the cache.
+pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
@@ -787,7 +789,7 @@ impl Default for SdkBuilder {
                 .expect("data contract cache size must be positive"),
 
             #[cfg(feature = "mocks")]
-            token_config_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
+            token_config_cache_size: NonZeroUsize::new(DEFAULT_TOKEN_CONFIG_CACHE_SIZE)
                 .expect("token config cache size must be positive"),
 
             #[cfg(feature = "mocks")]

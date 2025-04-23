@@ -2,7 +2,6 @@ use crate::error::ContextProviderError;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
@@ -314,35 +313,10 @@ impl ContextProvider for MockContextProvider {
 
     fn get_token_configuration(
         &self,
-        token_id: &Identifier,
+        _token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-        let path = self
-            .quorum_keys_dir
-            .as_ref()
-            .ok_or_else(|| ContextProviderError::Config("dump dir not set".to_string()))?;
-
-        let file_path = path.join(format!(
-            "token_config-{}.json",
-            token_id.encode_hex::<String>()
-        ));
-
-        let serialized_form = std::fs::read(file_path.clone()).map_err(|e| {
-            ContextProviderError::TokenConfigurationFailure(format!(
-                "cannot read token config file {}: {}",
-                file_path.to_string_lossy(),
-                e
-            ))
-        })?;
-
-        let config = TokenConfiguration::deserialize_from_bytes(&serialized_form).map_err(|e| {
-            ContextProviderError::TokenConfigurationFailure(format!(
-                "cannot deserialize token config file {}: {}",
-                file_path.to_string_lossy(),
-                e
-            ))
-        })?;
-
-        Ok(Some(config))
+        // Token configuration files are never generated
+        Ok(None)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
