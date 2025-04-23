@@ -7,8 +7,8 @@
 // use dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_request::ContractTokenInfo;
 // use dash_sdk::platform::query::TokenLastClaimQuery;
 // use dash_sdk::platform::Fetch;
+// use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 // use dpp::tokens::calculate_token_id;
-// use drive_proof_verifier::types::TokenPerpetualDistributionLastClaim;
 
 // /// Fetches the last‑claim moment (raw value, no proof)
 // #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -24,17 +24,15 @@
 //     let query = TokenLastClaimQuery {
 //         token_id: *TOKEN_ID_0,
 //         identity_id: IDENTITY_ID_2,
-//         contract_info: None, // raw value → we don’t need contract info
 //     };
 
-//     let last_claim: Option<TokenPerpetualDistributionLastClaim> =
-//         TokenPerpetualDistributionLastClaim::fetch(&sdk, query)
-//             .await
-//             .expect("fetch last claim (raw)");
+//     let last_claim: Option<RewardDistributionMoment> = RewardDistributionMoment::fetch(&sdk, query)
+//         .await
+//         .expect("fetch last claim (raw)");
 
 //     assert_matches!(
 //         last_claim,
-//         Some(TokenPerpetualDistributionLastClaim::TimestampMs(ts)) if ts == TODO_LAST_CLAIM_TS_MS
+//         Some(RewardDistributionMoment::TimeBasedMoment(ts)) if ts == TODO_LAST_CLAIM_TS_MS
 //     );
 // }
 
@@ -58,18 +56,16 @@
 //     let query = TokenLastClaimQuery {
 //         token_id: token_id_1,
 //         identity_id: IDENTITY_ID_2,
-//         contract_info: Some(contract_info),
 //     };
 
-//     let last_claim: Option<TokenPerpetualDistributionLastClaim> =
-//         TokenPerpetualDistributionLastClaim::fetch(&sdk, query)
-//             .await
-//             .expect("fetch last claim (with proof)");
+//     let last_claim: Option<RewardDistributionMoment> = RewardDistributionMoment::fetch(&sdk, query)
+//         .await
+//         .expect("fetch last claim (with proof)");
 
 //     // This particular token uses **block‑based** distribution in the generated fixture
 //     assert_matches!(
 //         last_claim,
-//         Some(TokenPerpetualDistributionLastClaim::BlockHeight(h)) if h == TODO_LAST_CLAIM_HEIGHT
+//         Some(RewardDistributionMoment::BlockBasedMoment(h)) if h == TODO_LAST_CLAIM_HEIGHT
 //     );
 // }
 
@@ -84,13 +80,11 @@
 //     let query = TokenLastClaimQuery {
 //         token_id: *TOKEN_ID_2,
 //         identity_id: UNKNOWN_IDENTITY_ID, // no such identity / never claimed
-//         contract_info: None,              // raw bytes are fine here
 //     };
 
-//     let last_claim: Option<TokenPerpetualDistributionLastClaim> =
-//         TokenPerpetualDistributionLastClaim::fetch(&sdk, query)
-//             .await
-//             .expect("fetch last claim (absent)");
+//     let last_claim: Option<RewardDistributionMoment> = RewardDistributionMoment::fetch(&sdk, query)
+//         .await
+//         .expect("fetch last claim (absent)");
 
 //     assert_matches!(last_claim, None);
 // }

@@ -633,21 +633,3 @@ pub struct ProposerBlockCountById(pub u64);
 
 /// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
 pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;
-
-/// Last‑claim information for a perpetual distribution. Retrieved by [TokenPerpetualDistributionLastClaim::fetch()].
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-pub enum TokenPerpetualDistributionLastClaim {
-    /// Last paid time in milliseconds
-    TimestampMs(u64),
-    /// Last paid block height
-    BlockHeight(u64),
-    /// Last paid epoch
-    Epoch(u32),
-    /// Arbitrary encoding
-    Raw(Vec<u8>),
-}
