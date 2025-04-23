@@ -1,10 +1,8 @@
 use crate::error::ContextProviderError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-use dpp::tokens::calculate_token_id;
+use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
@@ -54,14 +52,13 @@ pub trait ContextProvider: Send + Sync {
     ///
     /// # Returns
     ///
-    /// * `Ok(Option<Arc<TokenConfiguration>>)`: On success, returns the token configuration if it exists, or `None` if it does not.
+    /// * `Ok(Option<TokenConfiguration>)`: On success, returns the token configuration if it exists, or `None` if it does not.
     ///   We use Arc to avoid copying the token configuration.
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError>;
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError>;
 
     /// Fetches the public key for a specified quorum.
     ///
@@ -103,10 +100,8 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError> {
-        self.as_ref()
-            .get_token_configuration(token_id, platform_version)
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        self.as_ref().get_token_configuration(token_id)
     }
 
     fn get_quorum_public_key(
@@ -140,10 +135,9 @@ where
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError> {
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
-        lock.get_token_configuration(token_id, platform_version)
+        lock.get_token_configuration(token_id)
     }
 
     fn get_quorum_public_key(
@@ -321,8 +315,7 @@ impl ContextProvider for MockContextProvider {
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError> {
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         let path = self
             .quorum_keys_dir
             .as_ref()
@@ -333,49 +326,23 @@ impl ContextProvider for MockContextProvider {
             token_id.encode_hex::<String>()
         ));
 
-        let file = match std::fs::File::open(&file_path) {
-            Ok(f) => f,
-            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(e) => {
-                return Err(ContextProviderError::TokenConfigurationFailure(format!(
-                    "cannot load token config file {}: {}",
-                    file_path.to_string_lossy(),
-                    e
-                )))
-            }
-        };
-
-        let serialized_contract: DataContractInSerializationFormat = serde_json::from_reader(file)
-            .map_err(|e| {
-                ContextProviderError::TokenConfigurationFailure(format!(
-                    "cannot deserialize contract from {}: {}",
-                    file_path.to_string_lossy(),
-                    e
-                ))
-            })?;
-
-        let contract = DataContract::try_from_platform_versioned(
-            serialized_contract,
-            false,
-            &mut vec![],
-            platform_version,
-        )
-        .map_err(|e| {
+        let serialized_form = std::fs::read(file_path.clone()).map_err(|e| {
             ContextProviderError::TokenConfigurationFailure(format!(
-                "cannot convert to DataContract for {}: {}",
-                token_id, e
+                "cannot read token config file {}: {}",
+                file_path.to_string_lossy(),
+                e
             ))
         })?;
 
-        for (pos, config) in contract.tokens() {
-            let calculated_id = calculate_token_id(contract.id().as_bytes(), *pos);
+        let config = TokenConfiguration::deserialize_from_bytes(&serialized_form).map_err(|e| {
+            ContextProviderError::TokenConfigurationFailure(format!(
+                "cannot deserialize token config file {}: {}",
+                file_path.to_string_lossy(),
+                e
+            ))
+        })?;
 
-            if &calculated_id == token_id {
-                return Ok(Some(Arc::new(config.clone())));
-            }
-        }
-
-        Ok(None)
+        Ok(Some(config))
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

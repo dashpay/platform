@@ -159,6 +159,41 @@ impl GrpcContextProvider {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
         }
     }
+
+    /// Save token configuration to disk.
+    ///
+    /// Files are named: `token_config-<hex_token_id>.json`
+    ///
+    /// Note that this will overwrite files with the same token id.
+    ///
+    /// Any errors are logged on `warn` level and ignored.
+    #[cfg(feature = "mocks")]
+    fn dump_token_configuration(
+        &self,
+        token_id: &Identifier,
+        token_configuration: &TokenConfiguration,
+    ) {
+        use dpp::serialization::PlatformSerializable;
+        use hex::ToHex;
+
+        let path = match &self.dump_dir {
+            Some(p) => p,
+            None => return,
+        };
+
+        let file = path.join(format!(
+            "token_configuration-{}.json",
+            token_id.encode_hex::<String>()
+        ));
+
+        let encoded = token_configuration
+            .serialize_to_bytes()
+            .expect("serialize token config");
+
+        if let Err(e) = std::fs::write(file, encoded) {
+            tracing::warn!("Unable to write dump file {:?}: {}", path, e);
+        }
+    }
 }
 
 impl ContextProvider for GrpcContextProvider {
@@ -227,10 +262,9 @@ impl ContextProvider for GrpcContextProvider {
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<TokenConfiguration>>, ContextProviderError> {
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         if let Some(config) = self.token_configurations_cache.get(token_id) {
-            return Ok(Some(config));
+            return Ok(Some((*config).clone()));
         } else {
             tracing::warn!("token config cache miss");
             return Ok(None);
