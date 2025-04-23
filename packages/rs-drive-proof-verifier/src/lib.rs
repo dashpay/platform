@@ -8,7 +8,6 @@ mod proof;
 mod provider;
 pub mod types;
 mod verify;
-pub use dpp::ProtocolError;
 pub use error::Error;
 pub use proof::{FromProof, Length};
 #[cfg(feature = "mocks")]
