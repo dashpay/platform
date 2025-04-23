@@ -74,6 +74,7 @@ fn setup_sdk(config: &Config) -> Sdk {
         &config.core_user,
         &config.core_password,
         NonZeroUsize::new(100).expect("data contracts cache size"),
+        NonZeroUsize::new(100).expect("token configs cache size"),
         NonZeroUsize::new(100).expect("quorum public keys cache size"),
     )
     .expect("context provider");
