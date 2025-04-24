@@ -47,7 +47,7 @@ impl DistributionFunction {
 
         if step == 0u64 {
             return Err(ProtocolError::InvalidDistributionStep(
-                "evaluate_interval: step cannot be zero".into(),
+                "evaluate_interval: step cannot be zero",
             ));
         }
 
@@ -62,9 +62,9 @@ impl DistributionFunction {
         {
             let steps_count =
                 interval_start_excluded.steps_till(&interval_end_included, &step, false, true)?;
-            return fixed_amount.checked_mul(steps_count).ok_or_else(|| {
-                ProtocolError::Overflow("Overflow in FixedAmount evaluation".into())
-            });
+            return fixed_amount
+                .checked_mul(steps_count)
+                .ok_or_else(|| ProtocolError::Overflow("Overflow in FixedAmount evaluation"));
         }
 
         // Let's say you have a step 10 going from 10 to 20, the first index would be 2
@@ -96,7 +96,7 @@ impl DistributionFunction {
                         .and_then(|v| v.checked_div(ratio.denominator))
                         .ok_or_else(|| {
                             ProtocolError::Overflow(
-                                "Overflow applying reward ratio in evaluate_interval".into(),
+                                "Overflow applying reward ratio in evaluate_interval",
                             )
                         })?
                 } else {

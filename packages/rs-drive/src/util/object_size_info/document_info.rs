@@ -68,7 +68,7 @@ pub trait DocumentInfoV0Methods {
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
 }
 
-impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
+impl DocumentInfoV0Methods for DocumentInfo<'_> {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool {
         matches!(self, DocumentInfo::DocumentRefAndSerialization(..))

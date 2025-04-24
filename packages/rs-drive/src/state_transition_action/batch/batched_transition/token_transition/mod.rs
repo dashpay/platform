@@ -23,13 +23,18 @@ pub mod token_emergency_action_transition_action;
 /// token_claim_transition_action
 pub mod token_claim_transition_action;
 
+/// token_direct_purchase_transition_action
+pub mod token_direct_purchase_transition_action;
+
+/// token_set_price_for_direct_purchase_transition_action
+pub mod token_set_price_for_direct_purchase_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contracts::SystemDataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DataContract, IdentityNonce};
@@ -49,6 +54,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionAction, TokenClaimTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::{TokenDirectPurchaseTransitionAction, TokenDirectPurchaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::{TokenSetPriceForDirectPurchaseTransitionAction, TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -71,6 +78,10 @@ pub enum TokenTransitionAction {
     DestroyFrozenFundsAction(TokenDestroyFrozenFundsTransitionAction),
     /// update the token configuration
     ConfigUpdateAction(TokenConfigUpdateTransitionAction),
+    /// purchases the token from the contract owner
+    DirectPurchaseAction(TokenDirectPurchaseTransitionAction),
+    /// sets the price for direct purchase of the token
+    SetPriceForDirectPurchaseAction(TokenSetPriceForDirectPurchaseTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -86,6 +97,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(action) => action.base(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base(),
             TokenTransitionAction::ConfigUpdateAction(action) => action.base(),
+            TokenTransitionAction::DirectPurchaseAction(action) => action.base(),
+            TokenTransitionAction::SetPriceForDirectPurchaseAction(action) => action.base(),
         }
     }
 
@@ -101,6 +114,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(action) => action.base_owned(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base_owned(),
             TokenTransitionAction::ConfigUpdateAction(action) => action.base_owned(),
+            TokenTransitionAction::DirectPurchaseAction(action) => action.base_owned(),
+            TokenTransitionAction::SetPriceForDirectPurchaseAction(action) => action.base_owned(),
         }
     }
 
@@ -116,6 +131,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(_) => "emergencyAction",
             TokenTransitionAction::DestroyFrozenFundsAction(_) => "destroyFrozenFunds",
             TokenTransitionAction::ConfigUpdateAction(_) => "configUpdate",
+            TokenTransitionAction::DirectPurchaseAction(_) => "directPurchase",
+            TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => "directPricing",
         }
     }
 
@@ -140,7 +157,7 @@ impl TokenTransitionAction {
         )
     }
 
-    /// Historical document id
+    /// Historical document
     pub fn build_historical_document(
         &self,
         token_id: Identifier,
@@ -173,6 +190,12 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(_) => Ok(true),
             TokenTransitionAction::DestroyFrozenFundsAction(_) => Ok(true),
             TokenTransitionAction::ConfigUpdateAction(_) => Ok(true),
+            TokenTransitionAction::DirectPurchaseAction(_) => {
+                Ok(keeps_history.keeps_direct_purchase_history())
+            }
+            TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => {
+                Ok(keeps_history.keeps_direct_pricing_history())
+            }
         }
     }
 }

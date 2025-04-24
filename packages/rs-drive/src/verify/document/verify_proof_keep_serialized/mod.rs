@@ -8,7 +8,7 @@ use crate::query::DriveDocumentQuery;
 
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveDocumentQuery<'a> {
+impl DriveDocumentQuery<'_> {
     /// Verifies the given proof and returns the root hash of the GroveDB tree and a vector
     /// of serialized documents if the verification is successful.
     ///

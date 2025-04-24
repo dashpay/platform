@@ -40,6 +40,7 @@ impl Drive {
     ///   them accordingly.
     /// - Updates to the estimated costs (if provided) are made based on the version of the drive.
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_key_tree_with_keys_operations_v0(
         &self,
         identity_id: [u8; 32],

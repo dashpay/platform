@@ -1,9 +1,8 @@
-use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::token_costs::accessors::{
     TokenCostGettersV0, TokenCostSettersV0,
 };
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
-use crate::data_contract::TokenContractPosition;
+use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use derive_more::From;
 
 pub(crate) mod accessors;
@@ -18,37 +17,37 @@ pub enum TokenCosts {
 
 /// Implementation of the `TokenCostGettersV0` trait for `TokenCosts` enum.
 impl TokenCostGettersV0 for TokenCosts {
-    fn document_creation_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             TokenCosts::V0(inner) => inner.document_creation_token_cost(),
         }
     }
 
-    fn document_replacement_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_replacement_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             TokenCosts::V0(inner) => inner.document_replacement_token_cost(),
         }
     }
 
-    fn document_deletion_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_deletion_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             TokenCosts::V0(inner) => inner.document_deletion_token_cost(),
         }
     }
 
-    fn document_transfer_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_transfer_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             TokenCosts::V0(inner) => inner.document_transfer_token_cost(),
         }
     }
 
-    fn document_price_update_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_price_update_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             TokenCosts::V0(inner) => inner.document_price_update_token_cost(),
         }
     }
 
-    fn document_purchase_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             TokenCosts::V0(inner) => inner.document_purchase_token_cost(),
         }
@@ -56,55 +55,37 @@ impl TokenCostGettersV0 for TokenCosts {
 }
 
 impl TokenCostSettersV0 for TokenCosts {
-    fn set_document_creation_token_cost(
-        &mut self,
-        cost: Option<(TokenContractPosition, TokenAmount)>,
-    ) {
+    fn set_document_creation_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
         match self {
             TokenCosts::V0(inner) => inner.set_document_creation_token_cost(cost),
         }
     }
 
-    fn set_document_replacement_token_cost(
-        &mut self,
-        cost: Option<(TokenContractPosition, TokenAmount)>,
-    ) {
+    fn set_document_replacement_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
         match self {
             TokenCosts::V0(inner) => inner.set_document_replacement_token_cost(cost),
         }
     }
 
-    fn set_document_deletion_token_cost(
-        &mut self,
-        cost: Option<(TokenContractPosition, TokenAmount)>,
-    ) {
+    fn set_document_deletion_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
         match self {
             TokenCosts::V0(inner) => inner.set_document_deletion_token_cost(cost),
         }
     }
 
-    fn set_document_transfer_token_cost(
-        &mut self,
-        cost: Option<(TokenContractPosition, TokenAmount)>,
-    ) {
+    fn set_document_transfer_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
         match self {
             TokenCosts::V0(inner) => inner.set_document_transfer_token_cost(cost),
         }
     }
 
-    fn set_document_price_update_token_cost(
-        &mut self,
-        cost: Option<(TokenContractPosition, TokenAmount)>,
-    ) {
+    fn set_document_price_update_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
         match self {
             TokenCosts::V0(inner) => inner.set_document_price_update_token_cost(cost),
         }
     }
 
-    fn set_document_purchase_token_cost(
-        &mut self,
-        cost: Option<(TokenContractPosition, TokenAmount)>,
-    ) {
+    fn set_document_purchase_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
         match self {
             TokenCosts::V0(inner) => inner.set_document_purchase_token_cost(cost),
         }

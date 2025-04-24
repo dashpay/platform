@@ -41,6 +41,7 @@ impl TokenBurnTransitionActionV0 {
     ///
     /// # Errors
     /// - Returns an `Error` if any error occurs while trying to create the base action or process the burn.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_burn_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -100,7 +101,7 @@ impl TokenBurnTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -145,6 +146,7 @@ impl TokenBurnTransitionActionV0 {
     ///
     /// # Errors
     /// - Returns an `Error` if any error occurs while trying to create the base action or process the burn.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_burn_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -205,7 +207,7 @@ impl TokenBurnTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,

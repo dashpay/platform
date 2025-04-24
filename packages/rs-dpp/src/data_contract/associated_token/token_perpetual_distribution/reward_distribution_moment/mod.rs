@@ -1,6 +1,7 @@
 use crate::block::epoch::EpochIndex;
 use crate::prelude::{BlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Div};
@@ -8,7 +9,21 @@ use crate::block::block_info::BlockInfo;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+)]
+#[platform_serialize(unversioned)]
 pub enum RewardDistributionMoment {
     /// The reward was distributed at a block height
     BlockBasedMoment(BlockHeight),
@@ -35,7 +50,7 @@ impl RewardDistributionMoment {
     /// - The underlying numerical value of the moment as a `u64`.
     pub fn to_u64(&self) -> u64 {
         match self {
-            RewardDistributionMoment::BlockBasedMoment(height) => *height as u64,
+            RewardDistributionMoment::BlockBasedMoment(height) => *height,
             RewardDistributionMoment::TimeBasedMoment(timestamp) => *timestamp,
             RewardDistributionMoment::EpochBasedMoment(epoch) => *epoch as u64,
         }
@@ -289,7 +304,7 @@ impl Div<u64> for RewardDistributionMoment {
     fn div(self, rhs: u64) -> Self::Output {
         if rhs == 0 {
             return Err(ProtocolError::DivideByZero(
-                "Cannot divide RewardDistributionMoment by zero".into(),
+                "Cannot divide RewardDistributionMoment by zero",
             ));
         }
 
@@ -324,7 +339,7 @@ impl Div for RewardDistributionMoment {
             ) => {
                 if b == 0 {
                     return Err(ProtocolError::DivideByZero(
-                        "Cannot divide by zero block height".into(),
+                        "Cannot divide by zero block height",
                     ));
                 }
                 Ok(RewardDistributionMoment::BlockBasedMoment(a / b))
@@ -335,7 +350,7 @@ impl Div for RewardDistributionMoment {
             ) => {
                 if b == 0 {
                     return Err(ProtocolError::DivideByZero(
-                        "Cannot divide by zero timestamp".into(),
+                        "Cannot divide by zero timestamp",
                     ));
                 }
                 Ok(RewardDistributionMoment::TimeBasedMoment(a / b))
@@ -346,7 +361,7 @@ impl Div for RewardDistributionMoment {
             ) => {
                 if b == 0 {
                     return Err(ProtocolError::DivideByZero(
-                        "Cannot divide by zero epoch index".into(),
+                        "Cannot divide by zero epoch index",
                     ));
                 }
                 Ok(RewardDistributionMoment::EpochBasedMoment(a / b))
@@ -375,6 +390,7 @@ impl PartialEq<&u64> for RewardDistributionMoment {
 }
 
 impl PartialEq<u64> for RewardDistributionMoment {
+    #[allow(clippy::op_ref)]
     fn eq(&self, other: &u64) -> bool {
         self == &other
     }
@@ -391,6 +407,7 @@ impl PartialEq<&u32> for RewardDistributionMoment {
 }
 
 impl PartialEq<u32> for RewardDistributionMoment {
+    #[allow(clippy::op_ref)]
     fn eq(&self, other: &u32) -> bool {
         self == &other
     }
@@ -407,6 +424,7 @@ impl PartialEq<&u16> for RewardDistributionMoment {
 }
 
 impl PartialEq<u16> for RewardDistributionMoment {
+    #[allow(clippy::op_ref)]
     fn eq(&self, other: &u16) -> bool {
         self == &other
     }
@@ -423,6 +441,7 @@ impl PartialEq<&usize> for RewardDistributionMoment {
 }
 
 impl PartialEq<usize> for RewardDistributionMoment {
+    #[allow(clippy::op_ref)]
     fn eq(&self, other: &usize) -> bool {
         self == &other
     }

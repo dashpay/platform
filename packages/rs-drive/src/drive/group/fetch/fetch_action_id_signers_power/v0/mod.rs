@@ -88,6 +88,7 @@ impl Drive {
     /// * `Error::Drive(DriveError::CorruptedCodeExecution)` if the element type is unexpected.
     /// * `Error::Drive(DriveError::NotSupportedPrivate)` if stateful batch insertions are attempted.
     /// * `Error::GroveDB` for any underlying GroveDB errors.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn fetch_action_id_signers_power_and_add_operations_v0(
         &self,
         contract_id: Identifier,

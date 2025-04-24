@@ -39,6 +39,8 @@ use crate::state_transition::batch_transition::batched_transition::document_purc
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
     type IterType<'a>
@@ -50,7 +52,7 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
         Self: 'a;
 
     /// Iterator for `BatchedTransitionRef` items in version 0.
-    fn transitions_iter<'a>(&'a self) -> Self::IterType<'a> {
+    fn transitions_iter(&self) -> Self::IterType<'_> {
         self.transitions.iter().map(BatchedTransitionRef::Document)
     }
 
@@ -85,6 +87,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -96,6 +99,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             document,
             document_type,
             entropy,
+            token_payment_info,
             identity_contract_nonce,
             platform_version,
             create_feature_version,
@@ -125,6 +129,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -135,6 +140,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         let replace_transition = DocumentReplaceTransition::from_document(
             document,
             document_type,
+            token_payment_info,
             identity_contract_nonce,
             platform_version,
             replace_feature_version,
@@ -165,6 +171,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -175,6 +182,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         let transfer_transition = DocumentTransferTransition::from_document(
             document,
             document_type,
+            token_payment_info,
             identity_contract_nonce,
             recipient_owner_id,
             platform_version,
@@ -205,6 +213,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -215,6 +224,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         let delete_transition = DocumentDeleteTransition::from_document(
             document,
             document_type,
+            token_payment_info,
             identity_contract_nonce,
             platform_version,
             delete_feature_version,
@@ -245,6 +255,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -256,6 +267,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             document,
             document_type,
             price,
+            token_payment_info,
             identity_contract_nonce,
             platform_version,
             update_price_feature_version,
@@ -287,6 +299,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -297,6 +310,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             document,
             document_type,
             price,
+            token_payment_info,
             identity_contract_nonce,
             platform_version,
             purchase_feature_version,

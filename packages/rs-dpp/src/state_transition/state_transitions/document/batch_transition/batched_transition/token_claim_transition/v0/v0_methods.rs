@@ -38,7 +38,7 @@ pub trait TokenClaimTransitionV0Methods {
 
 impl TokenClaimTransitionV0Methods for TokenClaimTransitionV0 {
     fn distribution_type(&self) -> TokenDistributionType {
-        self.distribution_type.clone()
+        self.distribution_type
     }
 
     fn distribution_type_owned(self) -> TokenDistributionType {

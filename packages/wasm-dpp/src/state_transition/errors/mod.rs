@@ -1,1 +1,2 @@
 pub mod invalid_state_transition_error;
+pub mod state_transition_is_not_active_error;

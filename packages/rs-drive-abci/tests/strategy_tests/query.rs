@@ -266,7 +266,7 @@ impl QueryStrategy {
                                 let (proof_root_hash, identity): (
                                     RootHash,
                                     Option<Identity>,
-                                ) = Drive::verify_full_identity_by_public_key_hash(
+                                ) = Drive::verify_full_identity_by_unique_public_key_hash(
                                     &proof.grovedb_proof,
                                     key_hash,
                                     platform_version,

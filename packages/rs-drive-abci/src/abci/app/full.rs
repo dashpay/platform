@@ -51,13 +51,13 @@ impl<'a, C> FullAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
+impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
     }
 }
 
-impl<'a, C> SnapshotManagerApplication for FullAbciApplication<'a, C> {
+impl<C> SnapshotManagerApplication for FullAbciApplication<'_, C> {
     fn snapshot_manager(&self) -> &SnapshotManager {
         &self.snapshot_manager
     }
@@ -108,13 +108,13 @@ impl<'a, C> TransactionalApplication<'a> for FullAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> Debug for FullAbciApplication<'a, C> {
+impl<C> Debug for FullAbciApplication<'_, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<FullAbciApplication>")
     }
 }
 
-impl<'a, C> tenderdash_abci::Application for FullAbciApplication<'a, C>
+impl<C> tenderdash_abci::Application for FullAbciApplication<'_, C>
 where
     C: CoreRPCLike,
 {

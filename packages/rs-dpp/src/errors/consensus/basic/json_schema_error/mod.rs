@@ -1,4 +1,4 @@
-pub mod json_schema_error;
-mod json_schema_error_data;
+pub mod error;
+mod error_data;
 
-pub use json_schema_error::*;
+pub use error::*;

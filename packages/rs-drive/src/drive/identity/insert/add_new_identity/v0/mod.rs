@@ -57,6 +57,7 @@ impl Drive {
     }
 
     /// Adds identity creation operations to drive operations
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_new_identity_add_to_operations_v0(
         &self,
         identity: Identity,
@@ -93,6 +94,7 @@ impl Drive {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// The operations needed to create an identity
     pub(super) fn add_new_identity_operations_v0(
         &self,

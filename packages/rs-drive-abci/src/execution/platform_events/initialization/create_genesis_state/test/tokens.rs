@@ -1,10 +1,12 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::Network;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
@@ -26,6 +28,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::tokens::status::v0::TokenStatusV0;
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_event::TokenEvent;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use rand::rngs::StdRng;
@@ -104,12 +107,56 @@ impl<C> Platform<C> {
         Ok(())
     }
 
+    /// Create some test data for token direct prices.
+    ///
+    /// Define single price pricing for [TOKEN_ID_1], and pricing schedule for [TOKEN_ID_2].
+    /// Leave [TOKEN_ID_0] without pricing.
+    ///
+    /// Tokens must be already created.
+    pub(crate) fn create_data_for_token_direct_prices(
+        &self,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.token_set_direct_purchase_price(
+            TOKEN_ID_1.to_buffer(),
+            Some(TokenPricingSchedule::SinglePrice(25)),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+
+        let pricing = TokenPricingSchedule::SetPrices(
+            (0..=900)
+                .step_by(100)
+                .map(|amount| (amount, 1000 - amount))
+                .collect(),
+        );
+
+        self.drive.token_set_direct_purchase_price(
+            TOKEN_ID_2.to_buffer(),
+            Some(pricing),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+
+        Ok(())
+    }
+
     fn register_identities(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let non_unique_key =
+            IdentityPublicKey::random_voting_key_with_rng(11, &mut rng, platform_version)?;
+
         for id in [IDENTITY_ID_1, IDENTITY_ID_2, IDENTITY_ID_3] {
             // Create identity without keys
             let mut identity = Identity::create_basic_identity(id, platform_version)?;
@@ -117,7 +164,9 @@ impl<C> Platform<C> {
             // Generate keys
             let seed = id.to_buffer()[0];
             let mut rng = StdRng::seed_from_u64(seed as u64);
-            let keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(3, &mut rng, platform_version)?;
+            let mut keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(3, &mut rng, platform_version)?;
+            // every identity has the same non-unique key
+            keys.push(non_unique_key.clone());
 
             for (key, private_key) in keys.iter() {
                 let private_key = hex::encode(private_key);
@@ -180,7 +229,7 @@ impl<C> Platform<C> {
         ]
         .into();
 
-        let token_configuration = TokenConfiguration::V0(TokenConfigurationV0 {
+        let mut token_configuration = TokenConfiguration::V0(TokenConfigurationV0 {
             conventions: TokenConfigurationConventionV0 {
                 localizations: Default::default(),
                 decimals: 8,
@@ -191,6 +240,7 @@ impl<C> Platform<C> {
             max_supply: None,
             keeps_history: TokenKeepsHistoryRulesV0::default().into(),
             start_as_paused: false,
+            allow_transfer_to_frozen_balance: true,
             max_supply_change_rules: ChangeControlRulesV0::default().into(),
             distribution_rules: TokenDistributionRulesV0 {
                 perpetual_distribution: None,
@@ -200,6 +250,7 @@ impl<C> Platform<C> {
                 new_tokens_destination_identity_rules: ChangeControlRulesV0::default().into(),
                 minting_allow_choosing_destination: true,
                 minting_allow_choosing_destination_rules: ChangeControlRulesV0::default().into(),
+                change_direct_purchase_pricing_rules: ChangeControlRulesV0::default().into(),
             }
             .into(),
             manual_minting_rules: ChangeControlRulesV0 {
@@ -224,7 +275,20 @@ impl<C> Platform<C> {
             emergency_action_rules: ChangeControlRulesV0::default().into(),
             main_control_group: None,
             main_control_group_can_be_modified: Default::default(),
+            description: Some("Some token description".to_string()),
         });
+
+        token_configuration
+            .conventions_mut()
+            .localizations_mut()
+            .insert(
+                "en".to_string(),
+                TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                    should_capitalize: false,
+                    singular_form: "cat".to_string(),
+                    plural_form: "cats".to_string(),
+                }),
+            );
 
         let tokens = [
             (0, token_configuration.clone()),
@@ -248,6 +312,8 @@ impl<C> Platform<C> {
             updated_at_epoch: None,
             groups,
             tokens,
+            keywords: vec!["cat".into(), "white".into()],
+            description: Some("Some contract description".to_string()),
         });
 
         self.drive.apply_contract(
@@ -275,6 +341,7 @@ impl<C> Platform<C> {
                 IDENTITY_ID_1.to_buffer(),
                 mint_amount,
                 false,
+                false,
                 block_info,
                 true,
                 transaction,
@@ -287,6 +354,7 @@ impl<C> Platform<C> {
                 token_id.to_buffer(),
                 IDENTITY_ID_2.to_buffer(),
                 mint_amount,
+                false,
                 false,
                 block_info,
                 true,
@@ -301,6 +369,7 @@ impl<C> Platform<C> {
                 token_id.to_buffer(),
                 IDENTITY_ID_3.to_buffer(),
                 mint_amount,
+                false,
                 false,
                 block_info,
                 true,

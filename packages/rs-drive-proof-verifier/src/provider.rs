@@ -1,5 +1,6 @@
 use crate::error::ContextProviderError;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
@@ -19,25 +20,6 @@ use std::{io::ErrorKind, ops::Deref, sync::Arc};
 /// A ContextProvider should be thread-safe and manage timeouts and other concurrency-related issues internally,
 /// as the [FromProof](crate::FromProof) implementations can block on ContextProvider calls.
 pub trait ContextProvider: Send + Sync {
-    /// Fetches the public key for a specified quorum.
-    ///
-    /// # Arguments
-    ///
-    /// * `quorum_type`: The type of the quorum.
-    /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
-    /// * `core_chain_locked_height`: Core chain locked height for which the quorum must be valid
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Vec<u8>)`: On success, returns a byte vector representing the public key of the quorum.
-    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32], // quorum hash is 32 bytes
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
-
     /// Fetches the data contract for a specified data contract ID.
     /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
     /// referenced in proofs.
@@ -58,6 +40,44 @@ pub trait ContextProvider: Send + Sync {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
 
+    /// Fetches the token configuration for a specified token ID.
+    /// This method is used by [FromProof](crate::FromProof) implementations to fetch token configurations
+    /// referenced in proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `token_id`: The ID of the token to fetch.
+    /// * `platform_version`: The platform version to use.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<TokenConfiguration>)`: On success, returns the token configuration if it exists, or `None` if it does not.
+    ///   We use Arc to avoid copying the token configuration.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError>;
+
+    /// Fetches the public key for a specified quorum.
+    ///
+    /// # Arguments
+    ///
+    /// * `quorum_type`: The type of the quorum.
+    /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
+    /// * `core_chain_locked_height`: Core chain locked height for which the quorum must be valid
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<u8>)`: On success, returns a byte vector representing the public key of the quorum.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32], // quorum hash is 32 bytes
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
+
     /// Gets the platform activation height from core. Once this has happened this can be hardcoded.
     ///
     /// # Returns
@@ -68,6 +88,21 @@ pub trait ContextProvider: Send + Sync {
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        self.as_ref().get_data_contract(id, platform_version)
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        self.as_ref().get_token_configuration(token_id)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -78,20 +113,12 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        self.as_ref().get_data_contract(id, platform_version)
-    }
-
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.as_ref().get_platform_activation_height()
     }
 }
 
-impl<'a, T: ContextProvider + 'a> ContextProvider for std::sync::Mutex<T>
+impl<T: ContextProvider> ContextProvider for std::sync::Mutex<T>
 where
     Self: Sync + Send,
 {
@@ -103,6 +130,15 @@ where
         let lock = self.lock().expect("lock poisoned");
         lock.get_data_contract(id, platform_version)
     }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_token_configuration(token_id)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -273,6 +309,14 @@ impl ContextProvider for MockContextProvider {
         })?;
 
         Ok(Some(Arc::new(dc)))
+    }
+
+    fn get_token_configuration(
+        &self,
+        _token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        // Token configuration files are never generated
+        Ok(None)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

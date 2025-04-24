@@ -7,7 +7,7 @@ use crate::drive::credit_pools::epochs;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, tokens, RootTree};
 use crate::util::batch::grovedb_op_batch::KnownPath::{
-    TokenBalancesRoot, TokenDistributionRoot, TokenIdentityInfoRoot,
+    TokenBalancesRoot, TokenDirectSellPriceRoot, TokenDistributionRoot, TokenIdentityInfoRoot,
     TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot, TokenStatusRoot,
     TokenTimedDistributionRoot,
 };
@@ -57,6 +57,7 @@ enum KnownPath {
     TokenRoot,                                                        //Level 1
     TokenBalancesRoot,                                                //Level 2
     TokenDistributionRoot,                                            //Level 2
+    TokenDirectSellPriceRoot,                                         //Level 2
     TokenTimedDistributionRoot,                                       //Level 3
     TokenPreProgrammedDistributionRoot,                               //Level 3
     TokenPerpetualDistributionRoot,                                   //Level 3
@@ -116,7 +117,7 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::Root => {
                     if let Ok(root_tree) = RootTree::try_from(key[0]) {
                         (
-                            format!("{}({})", root_tree.to_string(), key[0]),
+                            format!("{}({})", root_tree, key[0]),
                             Some(root_tree.into()),
                         )
                     } else {
@@ -151,7 +152,7 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::IdentitiesRoot if key.len() == 1 => {
                     if let Ok(root_tree) = IdentityRootStructure::try_from(key[0]) {
                         (
-                            format!("{}({})", root_tree.to_string(), key[0]),
+                            format!("{}({})", root_tree, key[0]),
                             Some(root_tree.into()),
                         )
                     } else {
@@ -238,6 +239,9 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::TokenRoot if key.len() == 1 => match key[0] {
                     tokens::paths::TOKEN_DISTRIBUTIONS_KEY => {
                             (format!("Distribution({})", tokens::paths::TOKEN_DISTRIBUTIONS_KEY), Some(TokenDistributionRoot))
+                    }
+                    tokens::paths::TOKEN_DIRECT_SELL_PRICE_KEY => {
+                        (format!("SellPrice({})", tokens::paths::TOKEN_DIRECT_SELL_PRICE_KEY), Some(TokenDirectSellPriceRoot))
                     }
                     tokens::paths::TOKEN_BALANCES_KEY => {
                             (format!("Balances({})", tokens::paths::TOKEN_BALANCES_KEY), Some(TokenBalancesRoot))

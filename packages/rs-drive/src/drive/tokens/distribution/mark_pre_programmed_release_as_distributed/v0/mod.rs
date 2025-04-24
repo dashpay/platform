@@ -52,6 +52,7 @@ use std::collections::HashMap;
 /// # Errors
 /// Returns an error if serialization fails or if the underlying batch deletion fails.
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn mark_pre_programmed_release_as_distributed_operations_v0(
         &self,
         token_id: [u8; 32],

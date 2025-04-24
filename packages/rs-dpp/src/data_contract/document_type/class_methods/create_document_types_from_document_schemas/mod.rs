@@ -35,6 +35,7 @@ impl DocumentType {
     ///
     /// * `Result<BTreeMap<String, DocumentType>, ProtocolError>`: On success, a map of document types.
     ///   On failure, a ProtocolError.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_document_types_from_document_schemas(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,

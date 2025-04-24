@@ -53,13 +53,13 @@ impl<'p, C> ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> PlatformApplication<C> for ConsensusAbciApplication<'p, C> {
+impl<C> PlatformApplication<C> for ConsensusAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
     }
 }
 
-impl<'p, C> SnapshotManagerApplication for ConsensusAbciApplication<'p, C> {
+impl<'_, C> SnapshotManagerApplication for ConsensusAbciApplication<'_, C> {
     fn snapshot_manager(&self) -> &SnapshotManager {
         &self.snapshot_manager
     }
@@ -110,13 +110,13 @@ impl<'p, C> TransactionalApplication<'p> for ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> Debug for ConsensusAbciApplication<'p, C> {
+impl<C> Debug for ConsensusAbciApplication<'_, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<ConsensusAbciApplication>")
     }
 }
 
-impl<'p, C> tenderdash_abci::Application for ConsensusAbciApplication<'p, C>
+impl<C> tenderdash_abci::Application for ConsensusAbciApplication<'_, C>
 where
     C: CoreRPCLike,
 {

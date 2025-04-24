@@ -88,8 +88,10 @@ mod tests {
             .prove_identity_ids_by_unique_public_key_hashes(&key_hashes, None, platform_version)
             .expect("should not error when proving an identity");
 
+        // TODO: Use type alias
+        #[allow(clippy::type_complexity)]
         let (_, proved_identity_id): ([u8; 32], BTreeMap<[u8; 20], Option<[u8; 32]>>) =
-            Drive::verify_identity_ids_by_public_key_hashes(
+            Drive::verify_identity_ids_by_unique_public_key_hashes(
                 proof.as_slice(),
                 false,
                 &key_hashes,

@@ -58,6 +58,7 @@ where
     /// This function may return an `Error` variant if there is a problem with processing the block
     /// proposal, updating the core info, processing raw state transitions, or processing block fees.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn run_block_proposal_v0(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,

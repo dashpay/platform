@@ -1,6 +1,4 @@
-use crate::drive::tokens::distribution::queries::{
-    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
-};
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -41,7 +39,7 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
-        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
+        let path_query = Drive::pre_programmed_distributions_query(token_id, start_at, limit);
 
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
@@ -80,7 +78,7 @@ impl Drive {
 
                 let sum_item = match element {
                     Some(SumItem(value, ..)) if value >= 0 => value as TokenAmount,
-                    Some(SumItem(_, ..)) => {
+                    Some(SumItem(..)) => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "negative token amount in pre-programmed distribution".to_string(),
                         )));
@@ -93,9 +91,7 @@ impl Drive {
                 };
 
                 // Push to the vector for this timestamp
-                acc.entry(time)
-                    .or_insert_with(Vec::new)
-                    .push((recipient, sum_item));
+                acc.entry(time).or_default().push((recipient, sum_item));
 
                 Ok(acc)
             },

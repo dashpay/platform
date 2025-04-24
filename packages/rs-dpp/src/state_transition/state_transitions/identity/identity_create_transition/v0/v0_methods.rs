@@ -54,9 +54,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             .collect();
         identity_create_transition.set_public_keys(public_keys);
 
-        identity_create_transition
-            .set_asset_lock_proof(asset_lock_proof)
-            .map_err(ProtocolError::from)?;
+        identity_create_transition.set_asset_lock_proof(asset_lock_proof)?;
 
         //todo: remove clone
         let state_transition: StateTransition = identity_create_transition.clone().into();

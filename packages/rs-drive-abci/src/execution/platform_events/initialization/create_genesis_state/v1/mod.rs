@@ -51,6 +51,10 @@ impl<C> Platform<C> {
                 SystemDataContract::TokenHistory,
                 system_data_contracts.load_token_history(),
             ),
+            (
+                SystemDataContract::KeywordSearch,
+                system_data_contracts.load_keyword_search(),
+            ),
         ]);
         //todo add Wallet Utils (maybe)
 

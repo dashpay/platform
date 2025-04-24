@@ -83,7 +83,9 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
         Option<PrivateEncryptedNote>,
     );
 
+    // TODO: Introduce structs notes
     /// Returns all notes (public, shared, and private) as cloned values in a tuple.
+    #[allow(clippy::type_complexity)]
     fn notes(
         &self,
     ) -> (

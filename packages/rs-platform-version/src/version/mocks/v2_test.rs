@@ -158,11 +158,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         query: DriveAbciQueryVersions {
             max_returned_elements: 100,
             response_metadata: 0,
-            proofs_query: FeatureVersionBounds {
-                min_version: 0,
-                max_version: 0,
-                default_current_version: 0,
-            },
+            proofs_query: 0,
             document_query: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
@@ -211,12 +207,17 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identity_by_public_key_hash: FeatureVersionBounds {
+                identity_by_unique_public_key_hash: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
                 },
                 identities_contract_keys: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identity_by_non_unique_public_key_hash: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -253,7 +254,17 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                token_direct_purchase_prices:FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 token_pre_programmed_distributions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_perpetual_distribution_last_claim: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

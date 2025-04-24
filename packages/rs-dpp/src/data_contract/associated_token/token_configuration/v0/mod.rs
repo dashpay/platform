@@ -7,6 +7,8 @@ use crate::data_contract::associated_token::token_distribution_rules::v0::TokenD
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
@@ -31,9 +33,12 @@ pub struct TokenConfigurationV0 {
     /// The rules for keeping history.
     #[serde(default = "default_token_keeps_history_rules")]
     pub keeps_history: TokenKeepsHistoryRules,
-    /// Do we start off as paused, meaning that we can not transfer till we unpause.
+    /// True if we start off as paused, meaning that we can not transfer till we unpause.
     #[serde(default = "default_starts_as_paused")]
     pub start_as_paused: bool,
+    /// Allow to transfer and mint tokens to frozen identity token balances
+    #[serde(default = "default_allow_transfer_to_frozen_balance")]
+    pub allow_transfer_to_frozen_balance: bool,
     /// Who can change the max supply
     /// Even if set no one can ever change this under the base supply
     #[serde(default = "default_change_control_rules")]
@@ -57,6 +62,8 @@ pub struct TokenConfigurationV0 {
     pub main_control_group: Option<GroupContractPosition>,
     #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 // Default function for `keeps_history`
@@ -69,12 +76,19 @@ fn default_starts_as_paused() -> bool {
     false
 }
 
+// Default function for `allow_transfer_to_frozen_balance`
+fn default_allow_transfer_to_frozen_balance() -> bool {
+    true
+}
+
 fn default_token_keeps_history_rules() -> TokenKeepsHistoryRules {
     TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
         keeps_transfer_history: true,
         keeps_freezing_history: true,
         keeps_minting_history: true,
         keeps_burning_history: true,
+        keeps_direct_pricing_history: true,
+        keeps_direct_purchase_history: true,
     })
 }
 
@@ -99,6 +113,13 @@ fn default_token_distribution_rules() -> TokenDistributionRules {
         }),
         minting_allow_choosing_destination: true,
         minting_allow_choosing_destination_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+        change_direct_purchase_pricing_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: AuthorizedActionTakers::NoOne,
             admin_action_takers: AuthorizedActionTakers::NoOne,
             changing_authorized_action_takers_to_no_one_allowed: false,
@@ -132,13 +153,14 @@ impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  distribution_rules: {},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  allow_transfer_to_frozen_balance: {},\n  max_supply_change_rules: {:?},\n  distribution_rules: {},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
             self.conventions_change_rules,
             self.base_supply,
             self.max_supply,
             self.keeps_history,
             self.start_as_paused,
+            self.allow_transfer_to_frozen_balance,
             self.max_supply_change_rules,
             self.distribution_rules,
             self.manual_minting_rules,
@@ -153,119 +175,211 @@ impl fmt::Display for TokenConfigurationV0 {
     }
 }
 
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum TokenConfigurationPresetFeatures {
+    /// Nothing can be changed once it is set
+    MostRestrictive,
+    /// The action taker can not mint or burn tokens, or any advanced action.
+    /// They can pause the token if needed.
+    WithOnlyEmergencyAction,
+    WithMintingAndBurningActions,
+    /// The action taker can do advanced actions like freezing
+    WithAllAdvancedActions,
+    /// The action taker is a god, he can do everything, even taking away his own power.
+    WithExtremeActions,
+}
+
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub struct TokenConfigurationPreset {
+    features: TokenConfigurationPresetFeatures,
+    action_taker: AuthorizedActionTakers,
+}
+
+impl TokenConfigurationPreset {
+    pub fn default_main_control_group_can_be_modified(&self) -> AuthorizedActionTakers {
+        match self.features {
+            TokenConfigurationPresetFeatures::MostRestrictive
+            | TokenConfigurationPresetFeatures::WithOnlyEmergencyAction
+            | TokenConfigurationPresetFeatures::WithMintingAndBurningActions
+            | TokenConfigurationPresetFeatures::WithAllAdvancedActions => {
+                AuthorizedActionTakers::NoOne
+            }
+            TokenConfigurationPresetFeatures::WithExtremeActions => self.action_taker,
+        }
+    }
+    pub fn default_basic_change_control_rules_v0(&self) -> ChangeControlRulesV0 {
+        match self.features {
+            TokenConfigurationPresetFeatures::MostRestrictive
+            | TokenConfigurationPresetFeatures::WithOnlyEmergencyAction => ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            },
+            TokenConfigurationPresetFeatures::WithMintingAndBurningActions
+            | TokenConfigurationPresetFeatures::WithAllAdvancedActions => ChangeControlRulesV0 {
+                authorized_to_make_change: self.action_taker,
+                admin_action_takers: self.action_taker,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: true,
+            },
+            TokenConfigurationPresetFeatures::WithExtremeActions => ChangeControlRulesV0 {
+                authorized_to_make_change: self.action_taker,
+                admin_action_takers: self.action_taker,
+                changing_authorized_action_takers_to_no_one_allowed: true,
+                changing_admin_action_takers_to_no_one_allowed: true,
+                self_changing_admin_action_takers_allowed: true,
+            },
+        }
+    }
+
+    pub fn default_advanced_change_control_rules_v0(&self) -> ChangeControlRulesV0 {
+        match self.features {
+            TokenConfigurationPresetFeatures::MostRestrictive
+            | TokenConfigurationPresetFeatures::WithOnlyEmergencyAction
+            | TokenConfigurationPresetFeatures::WithMintingAndBurningActions => {
+                ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }
+            }
+            TokenConfigurationPresetFeatures::WithAllAdvancedActions => ChangeControlRulesV0 {
+                authorized_to_make_change: self.action_taker,
+                admin_action_takers: self.action_taker,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: true,
+            },
+            TokenConfigurationPresetFeatures::WithExtremeActions => ChangeControlRulesV0 {
+                authorized_to_make_change: self.action_taker,
+                admin_action_takers: self.action_taker,
+                changing_authorized_action_takers_to_no_one_allowed: true,
+                changing_admin_action_takers_to_no_one_allowed: true,
+                self_changing_admin_action_takers_allowed: true,
+            },
+        }
+    }
+
+    pub fn default_emergency_action_change_control_rules_v0(&self) -> ChangeControlRulesV0 {
+        match self.features {
+            TokenConfigurationPresetFeatures::MostRestrictive => ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            },
+            TokenConfigurationPresetFeatures::WithAllAdvancedActions
+            | TokenConfigurationPresetFeatures::WithMintingAndBurningActions
+            | TokenConfigurationPresetFeatures::WithOnlyEmergencyAction => ChangeControlRulesV0 {
+                authorized_to_make_change: self.action_taker,
+                admin_action_takers: self.action_taker,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: true,
+            },
+            TokenConfigurationPresetFeatures::WithExtremeActions => ChangeControlRulesV0 {
+                authorized_to_make_change: self.action_taker,
+                admin_action_takers: self.action_taker,
+                changing_authorized_action_takers_to_no_one_allowed: true,
+                changing_admin_action_takers_to_no_one_allowed: true,
+                self_changing_admin_action_takers_allowed: true,
+            },
+        }
+    }
+
+    pub fn default_distribution_rules_v0(
+        &self,
+        perpetual_distribution: Option<TokenPerpetualDistribution>,
+        pre_programmed_distribution: Option<TokenPreProgrammedDistribution>,
+        with_direct_pricing: bool,
+    ) -> TokenDistributionRulesV0 {
+        TokenDistributionRulesV0 {
+            perpetual_distribution,
+            perpetual_distribution_rules: self.default_advanced_change_control_rules_v0().into(),
+            pre_programmed_distribution,
+            new_tokens_destination_identity: None,
+            new_tokens_destination_identity_rules: self
+                .default_basic_change_control_rules_v0()
+                .into(),
+            minting_allow_choosing_destination: true,
+            minting_allow_choosing_destination_rules: self
+                .default_basic_change_control_rules_v0()
+                .into(),
+            change_direct_purchase_pricing_rules: if with_direct_pricing {
+                self.default_basic_change_control_rules_v0().into()
+            } else {
+                ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }
+                .into()
+            },
+        }
+    }
+
+    pub fn token_configuration_v0(
+        &self,
+        conventions: TokenConfigurationConvention,
+        base_supply: TokenAmount,
+        max_supply: Option<TokenAmount>,
+        keeps_all_history: bool,
+        with_direct_pricing: bool,
+    ) -> TokenConfigurationV0 {
+        TokenConfigurationV0 {
+            conventions,
+            conventions_change_rules: self.default_basic_change_control_rules_v0().into(),
+            base_supply,
+            max_supply,
+            keeps_history: TokenKeepsHistoryRulesV0::default_for_keeping_all_history(
+                keeps_all_history,
+            )
+            .into(),
+            start_as_paused: false,
+            allow_transfer_to_frozen_balance: true,
+            max_supply_change_rules: self.default_advanced_change_control_rules_v0().into(),
+            distribution_rules: self
+                .default_distribution_rules_v0(None, None, with_direct_pricing)
+                .into(),
+            manual_minting_rules: self.default_basic_change_control_rules_v0().into(),
+            manual_burning_rules: self.default_basic_change_control_rules_v0().into(),
+            freeze_rules: self.default_advanced_change_control_rules_v0().into(),
+            unfreeze_rules: self.default_advanced_change_control_rules_v0().into(),
+            destroy_frozen_funds_rules: self.default_advanced_change_control_rules_v0().into(),
+            emergency_action_rules: self
+                .default_emergency_action_change_control_rules_v0()
+                .into(),
+            main_control_group: None,
+            main_control_group_can_be_modified: self.default_main_control_group_can_be_modified(),
+            description: None,
+        }
+    }
+}
+
 impl TokenConfigurationV0 {
     pub fn default_most_restrictive() -> Self {
-        Self {
-            conventions: TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+        TokenConfigurationPreset {
+            features: TokenConfigurationPresetFeatures::MostRestrictive,
+            action_taker: AuthorizedActionTakers::NoOne,
+        }
+        .token_configuration_v0(
+            TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
                 localizations: Default::default(),
                 decimals: 8,
             }),
-            conventions_change_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            base_supply: 100000,
-            max_supply: None,
-            keeps_history: TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
-                keeps_transfer_history: true,
-                keeps_freezing_history: true,
-                keeps_minting_history: true,
-                keeps_burning_history: true,
-            }),
-            start_as_paused: false,
-            max_supply_change_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            distribution_rules: TokenDistributionRules::V0(TokenDistributionRulesV0 {
-                perpetual_distribution: None,
-                perpetual_distribution_rules: ChangeControlRulesV0 {
-                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                    admin_action_takers: AuthorizedActionTakers::NoOne,
-                    changing_authorized_action_takers_to_no_one_allowed: false,
-                    changing_admin_action_takers_to_no_one_allowed: false,
-                    self_changing_admin_action_takers_allowed: false,
-                }
-                .into(),
-                pre_programmed_distribution: None,
-                new_tokens_destination_identity: None,
-                new_tokens_destination_identity_rules: ChangeControlRulesV0 {
-                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                    admin_action_takers: AuthorizedActionTakers::NoOne,
-                    changing_authorized_action_takers_to_no_one_allowed: false,
-                    changing_admin_action_takers_to_no_one_allowed: false,
-                    self_changing_admin_action_takers_allowed: false,
-                }
-                .into(),
-                minting_allow_choosing_destination: true,
-                minting_allow_choosing_destination_rules: ChangeControlRulesV0 {
-                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                    admin_action_takers: AuthorizedActionTakers::NoOne,
-                    changing_authorized_action_takers_to_no_one_allowed: false,
-                    changing_admin_action_takers_to_no_one_allowed: false,
-                    self_changing_admin_action_takers_allowed: false,
-                }
-                .into(),
-            }),
-            manual_minting_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            manual_burning_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            freeze_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            unfreeze_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            destroy_frozen_funds_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            emergency_action_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            main_control_group: None,
-            main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
-        }
+            100000,
+            None,
+            true,
+            false,
+        )
     }
 
     pub fn with_base_supply(mut self, base_supply: TokenAmount) -> Self {

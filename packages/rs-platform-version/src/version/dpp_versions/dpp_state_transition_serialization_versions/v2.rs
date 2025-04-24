@@ -58,7 +58,7 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
         document_base_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
-            default_current_version: 0,
+            default_current_version: 1,
         },
         document_create_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {

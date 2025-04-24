@@ -18,7 +18,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::v6::DRIVE_A
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_state_sync_versions::v1::DRIVE_ABCI_STATE_SYNC_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v4::DRIVE_ABCI_VALIDATION_VERSIONS_V4;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRIVE_ABCI_VALIDATION_VERSIONS_V6;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
@@ -34,11 +34,11 @@ pub const PROTOCOL_VERSION_9: ProtocolVersion = 9;
 //todo: make changes
 pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_9,
-    drive: DRIVE_VERSION_V4, // changed (for data contract insert)
+    drive: DRIVE_VERSION_V4, // changed (for data contract insert and update)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V6, // changed because of the genesis state
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V4,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V6, // changed
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
         state_sync: DRIVE_ABCI_STATE_SYNC_VERSIONS_V1,
