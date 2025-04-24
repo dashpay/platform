@@ -75,8 +75,12 @@ impl<'de> Deserialize<'de> for AssetLockProof {
         // // Try to parse into chain lock
 
         let raw = RawAssetLockProof::deserialize(deserializer)?;
-        raw.try_into()
-            .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+        raw.try_into().map_err(|e: ProtocolError| {
+            D::Error::custom(format!(
+                "expected to be able to deserialize asset lock proof: {}",
+                e
+            ))
+        })
     }
 }
 
