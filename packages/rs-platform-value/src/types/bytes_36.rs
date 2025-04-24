@@ -101,7 +101,7 @@ impl<'de> Deserialize<'de> for Bytes36 {
                 {
                     let bytes = BASE64_STANDARD
                         .decode(v)
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                        .map_err(|e| E::custom(format!("expected base 64 for bytes36: {}", e)))?;
                     if bytes.len() != 36 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }

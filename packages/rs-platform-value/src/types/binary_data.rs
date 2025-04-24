@@ -49,9 +49,9 @@ impl<'de> Deserialize<'de> for BinaryData {
                 where
                     E: serde::de::Error,
                 {
-                    let bytes = BASE64_STANDARD
-                        .decode(v)
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                    let bytes = BASE64_STANDARD.decode(v).map_err(|e| {
+                        E::custom(format!("expected base64 for binary data: {}", e))
+                    })?;
                     Ok(BinaryData(bytes))
                 }
             }
