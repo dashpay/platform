@@ -37,9 +37,9 @@ impl<'a, C> FullAbciApplication<'a, C> {
     /// Create new ABCI app
     pub fn new(platform: &'a Platform<C>) -> Self {
         let snapshot_manager = SnapshotManager::new(
-            platform.config.state_sync_config.checkpoints_path.clone(),
-            platform.config.state_sync_config.max_num_snapshots,
-            platform.config.state_sync_config.snapshots_frequency,
+            platform.config.abci.state_sync.checkpoints_path.clone(),
+            platform.config.abci.state_sync.max_num_snapshots,
+            platform.config.abci.state_sync.snapshots_frequency,
         );
         Self {
             platform,
@@ -73,7 +73,7 @@ impl<'a, C> StateSyncApplication<'a, C> for FullAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> BlockExecutionApplication for FullAbciApplication<'a, C> {
+impl<C> BlockExecutionApplication for FullAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }

@@ -97,8 +97,8 @@ transport = "routed"
 #]
 grpc-concurrency = [
   { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
-  { "list_snapshots" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
-  { "load_snapshot_chunk" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
+  { "list_snapshots" = {{= it.platform.drive.tenderdash.stateSync.maxConcurrentListSnapshots }} },
+  { "load_snapshot_chunk" = {{= it.platform.drive.tenderdash.stateSync.maxConcurrentSnapshotChunk }} },
   { "offer_snapshot" = 1 },
   { "apply_snapshot_chunk" = 1 },
 ]
@@ -418,7 +418,7 @@ ttl-num-blocks = {{=it.platform.drive.tenderdash.mempool.ttlNumBlocks}}
 # the network to take and serve state machine snapshots. State sync is not attempted if the node
 # has any local state (LastBlockHeight > 0). The node will have a truncated block history,
 # starting from the height of the snapshot.
-enable = true
+enable = {{= it.platform.drive.tenderdash.stateSync.enabled.toString() }}
 
 # State sync uses light client verification to verify state. This can be done either through the
 # P2P layer or RPC layer. Set this to true to use the P2P layer. If false (default), RPC layer
@@ -432,6 +432,12 @@ rpc-servers = ""
 # Time to spend discovering snapshots before initiating a restore.
 discovery-time = "15s"
 
+# Number of times to retry state sync. When retries are exhausted, the node will
+# fall back to the regular block sync. Set to 0 to disable retries. Default is 3.
+# Note that in pessimistic case, it will take at least (discovery-time * retries) before
+# falling back to block sync.
+retries = {{= it.platform.drive.tenderdash.stateSync.retries }}
+
 # Temporary directory for state sync snapshot chunks, defaults to os.TempDir().
 # The synchronizer will create a new, randomly named directory within this directory
 # and remove it when the sync is complete.
@@ -439,10 +445,10 @@ temp-dir = ""
 
 # The timeout duration before re-requesting a chunk, possibly from a different
 # peer (default: 15 seconds).
-chunk-request-timeout = "15s"
+chunk-request-timeout = "{{= it.platform.drive.tenderdash.stateSync.chunkRequestTimeout }}"
 
 # The number of concurrent chunk and block fetchers to run (default: 4).
-fetchers = "4"
+fetchers = "{{= it.platform.drive.tenderdash.stateSync.fetchersCount }}"
 
 #######################################################
 ###         Consensus Configuration Options         ###

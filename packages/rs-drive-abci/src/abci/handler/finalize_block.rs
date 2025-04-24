@@ -102,7 +102,7 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
-    if app.platform().config.state_sync_config.snapshots_enabled {
+    if app.platform().config.abci.state_sync.snapshots_enabled {
         app.snapshot_manager()
             .create_snapshot(&app.platform().drive.grove, block_height as i64)
             .map_err(|e| {

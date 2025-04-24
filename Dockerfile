@@ -609,6 +609,7 @@ COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
+VOLUME /var/lib/dash/rs-drive-abci/db-checkpoints
 VOLUME /var/log/dash
 
 # Ensure required paths do exist
