@@ -57,7 +57,7 @@ impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
     }
 }
 
-impl<'a, C> SnapshotManagerApplication for FullAbciApplication<'a, C> {
+impl<C> SnapshotManagerApplication for FullAbciApplication<'_, C> {
     fn snapshot_manager(&self) -> &SnapshotManager {
         &self.snapshot_manager
     }

@@ -73,10 +73,11 @@ type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 
-// Define static empty BTreeMaps
+// Define static empty BTreeMaps and Vecs
 static EMPTY_GROUPS: Lazy<BTreeMap<GroupContractPosition, Group>> = Lazy::new(BTreeMap::new);
 static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
     Lazy::new(BTreeMap::new);
+static EMPTY_KEYWORDS: Lazy<Vec<String>> = Lazy::new(Vec::new);
 
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.

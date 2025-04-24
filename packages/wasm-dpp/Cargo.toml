@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "2.0.0-dev.1"
+version = "2.0.0-rc.2"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 dead_code = "allow"
 
 [dependencies]
-serde = { version = "1.0.197", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 # TODO: Build wasm with build.rs
 # Meantime if you want to update wasm-bindgen you also need to update version in:
@@ -21,7 +21,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 wasm-bindgen = { version = "=0.2.100" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
-thiserror = { version = "1.0.63" }
+thiserror = { version = "2.0.12" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-serde-conversion",

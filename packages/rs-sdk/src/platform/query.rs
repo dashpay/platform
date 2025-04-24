@@ -25,7 +25,8 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::platform::v0::{
     get_status_request, GetContestedResourceIdentityVotesRequest,
-    GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
+    GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
+    GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::version::PlatformVersionError;
@@ -674,6 +675,57 @@ impl Query<GetStatusRequest> for EvoNode {
 
         let request: GetStatusRequest = GetStatusRequest {
             version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetTokenDirectPurchasePricesRequest> for &[Identifier] {
+    fn query(self, prove: bool) -> Result<GetTokenDirectPurchasePricesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request: GetTokenDirectPurchasePricesRequest = GetTokenDirectPurchasePricesRequest {
+            version: Some(proto::get_token_direct_purchase_prices_request::Version::V0(
+                proto::get_token_direct_purchase_prices_request::GetTokenDirectPurchasePricesRequestV0 {
+                    token_ids: self
+                        .iter()
+                        .map(|identifier| identifier.to_vec())
+                        .collect(),
+                    prove,
+                },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TokenLastClaimQuery {
+    pub token_id: Identifier,
+    pub identity_id: Identifier,
+}
+
+impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuery {
+    fn query(self, prove: bool) -> Result<GetTokenPerpetualDistributionLastClaimRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request = GetTokenPerpetualDistributionLastClaimRequest {
+            version: Some(
+                proto::get_token_perpetual_distribution_last_claim_request::Version::V0(
+                    proto::get_token_perpetual_distribution_last_claim_request::GetTokenPerpetualDistributionLastClaimRequestV0 {
+                        token_id: self.token_id.to_vec(),
+                        identity_id: self.identity_id.to_vec(),
+                        contract_info: None, // This field is only used in drive-abci `query_token_perpetual_distribution_last_claim`
+                        prove,
+                    },
+                ),
+            ),
         };
 
         Ok(request)

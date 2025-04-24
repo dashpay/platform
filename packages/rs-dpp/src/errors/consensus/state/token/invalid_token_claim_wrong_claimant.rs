@@ -10,10 +10,10 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Token claim error: expected claimant '{}' for token ID '{}', but received claim from '{}'",
-    expected_claimant_id,
+    "Token claim error: Identity '{}' is not a valid claimant for this distribution type of token '{}'. The valid claimaint is '{}'.",
+    claimant_id,
     token_id,
-    claimant_id
+    expected_claimant_id
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenClaimWrongClaimant {

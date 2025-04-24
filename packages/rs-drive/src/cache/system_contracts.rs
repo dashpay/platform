@@ -17,6 +17,8 @@ pub struct SystemDataContracts {
     masternode_reward_shares: ArcSwap<DataContract>,
     /// Token history contract
     token_history: ArcSwap<DataContract>,
+    /// Search contract
+    keyword_search: ArcSwap<DataContract>,
 }
 
 impl SystemDataContracts {
@@ -45,6 +47,10 @@ impl SystemDataContracts {
                 SystemDataContract::TokenHistory,
                 platform_version,
             )?),
+            keyword_search: ArcSwap::from_pointee(load_system_data_contract(
+                SystemDataContract::KeywordSearch,
+                platform_version,
+            )?),
         })
     }
 
@@ -71,5 +77,10 @@ impl SystemDataContracts {
     /// Returns Masternode reward shares contract
     pub fn load_masternode_reward_shares(&self) -> Guard<Arc<DataContract>> {
         self.masternode_reward_shares.load()
+    }
+
+    /// Returns the search contract
+    pub fn load_keyword_search(&self) -> Guard<Arc<DataContract>> {
+        self.keyword_search.load()
     }
 }

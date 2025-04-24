@@ -2,9 +2,11 @@ pub mod burn;
 mod claim;
 pub mod config;
 pub mod destroy;
+pub mod direct_purchase;
 pub mod emergency_action;
 pub mod freeze;
 pub mod mint;
+pub mod set_price_for_direct_purchase;
 pub mod transfer;
 pub mod unfreeze;
 
@@ -12,9 +14,11 @@ use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
 use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destroy::TokenDestroyFrozenFundsTransitionWasm;
+use crate::batch_transition::token_transition::direct_purchase::TokenDirectPurchaseTransitionWasm;
 use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
+use crate::batch_transition::token_transition::set_price_for_direct_purchase::TokenSetPriceForDirectPurchaseTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
 use crate::identifier::IdentifierWrapper;
@@ -38,6 +42,8 @@ pub enum TokenTransitionType {
     Claim,
     EmergencyAction,
     ConfigUpdate,
+    DirectPurchase,
+    SetPriceForDirectPurchase,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -52,6 +58,10 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::EmergencyAction(_) => TokenTransitionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionType::ConfigUpdate,
             TokenTransition::Claim(_) => TokenTransitionType::Claim,
+            TokenTransition::DirectPurchase(_) => TokenTransitionType::DirectPurchase,
+            TokenTransition::SetPriceForDirectPurchase(_) => {
+                TokenTransitionType::SetPriceForDirectPurchase
+            }
         }
     }
 }
@@ -133,6 +143,12 @@ impl TokenTransitionWasm {
                 TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
             }
             TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
+            TokenTransition::DirectPurchase(direct_purchase) => {
+                TokenDirectPurchaseTransitionWasm::from(direct_purchase.clone()).into()
+            }
+            TokenTransition::SetPriceForDirectPurchase(set_price) => {
+                TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into()
+            }
         }
     }
 }

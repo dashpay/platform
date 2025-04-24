@@ -10,7 +10,7 @@ use bincode::{Decode, Encode};
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Incoherent parameters in token distribution function: {}.", message)]
+#[error("Incoherent parameters in token distribution function: {}", message)]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenDistributionFunctionIncoherenceError {
     /*

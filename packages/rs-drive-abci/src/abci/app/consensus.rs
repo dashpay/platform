@@ -10,7 +10,6 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
-use dapi_grpc::tonic;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
@@ -53,13 +52,13 @@ impl<'p, C> ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> PlatformApplication<C> for ConsensusAbciApplication<'p, C> {
+impl<C> PlatformApplication<C> for ConsensusAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
     }
 }
 
-impl<'p, C> SnapshotManagerApplication for ConsensusAbciApplication<'p, C> {
+impl<C> SnapshotManagerApplication for ConsensusAbciApplication<'_, C> {
     fn snapshot_manager(&self) -> &SnapshotManager {
         &self.snapshot_manager
     }
@@ -75,7 +74,7 @@ impl<'p, C> StateSyncApplication<'p, C> for ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> BlockExecutionApplication for ConsensusAbciApplication<'p, C> {
+impl<C> BlockExecutionApplication for ConsensusAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }
@@ -110,13 +109,13 @@ impl<'p, C> TransactionalApplication<'p> for ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> Debug for ConsensusAbciApplication<'p, C> {
+impl<C> Debug for ConsensusAbciApplication<'_, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<ConsensusAbciApplication>")
     }
 }
 
-impl<'p, C> tenderdash_abci::Application for ConsensusAbciApplication<'p, C>
+impl<C> tenderdash_abci::Application for ConsensusAbciApplication<'_, C>
 where
     C: CoreRPCLike,
 {

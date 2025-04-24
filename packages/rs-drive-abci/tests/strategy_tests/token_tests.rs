@@ -152,7 +152,7 @@ mod tests {
             )
             .expect("expected to get balances");
 
-        for (identity_id, token_balance) in balances {
+        for (_identity_id, token_balance) in balances {
             assert!(token_balance.is_some())
         }
 

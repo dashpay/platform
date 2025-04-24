@@ -195,7 +195,7 @@ jobs:
         uses: ./.github/actions/librocksdb
 
       - name: Run tests
-        run: cargo test --package=${{ inputs.package }} --all-features --locked
+        run: RUST_MIN_STACK=16777216 cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"

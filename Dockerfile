@@ -68,25 +68,25 @@ FROM node:20-alpine${ALPINE_VERSION} AS deps-base
 # Install some dependencies
 #
 RUN apk add --no-cache \
-        alpine-sdk \
-        bash \
-        binutils \
-        ca-certificates \
-        clang-static clang-dev \
-        cmake \
-        curl \
-        git \
-        libc-dev \
-        linux-headers \
-        llvm-static llvm-dev  \
-        openssl-dev \
-        snappy-static snappy-dev \
-        perl \
-        python3 \
-        unzip \
-        wget \
-        xz \
-        zeromq-dev
+    alpine-sdk \
+    bash \
+    binutils \
+    ca-certificates \
+    clang-static clang-dev \
+    cmake \
+    curl \
+    git \
+    libc-dev \
+    linux-headers \
+    llvm-static llvm-dev  \
+    openssl-dev \
+    snappy-static snappy-dev \
+    perl \
+    python3 \
+    unzip \
+    wget \
+    xz \
+    zeromq-dev
 
 # Configure snappy, dependency of librocksdb-sys
 RUN <<EOS
@@ -109,10 +109,10 @@ WORKDIR /platform
 COPY rust-toolchain.toml .
 RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
-        --profile minimal \
-        -y \
-        --default-toolchain "${TOOLCHAIN_VERSION}" \
-        --target wasm32-unknown-unknown
+    --profile minimal \
+    -y \
+    --default-toolchain "${TOOLCHAIN_VERSION}" \
+    --target wasm32-unknown-unknown
 
 ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
@@ -145,7 +145,7 @@ EOS
 ARG PROTOC_VERSION=27.3
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
-        -o /tmp/protoc.zip && \
+    -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
@@ -180,9 +180,9 @@ ARG SCCHACHE_VERSION=0.9.1
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
-        tar -C /tmp -xz && \
-        mv /tmp/sccache-*/sccache /usr/bin/
+    https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+    tar -C /tmp -xz && \
+    mv /tmp/sccache-*/sccache /usr/bin/
 
 #
 # Configure sccache
@@ -327,11 +327,11 @@ RUN --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env; \
     if [ "$TARGETARCH" = "amd64" ]; then \
-        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
     else \
-        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
     fi; \
     # Construct download URL
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
@@ -380,6 +380,7 @@ COPY --parents \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/keyword-search-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -421,19 +422,19 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml; \
+    mv .cargo/config-release.toml .cargo/config.toml; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg"; \
+    export FEATURES_FLAG="--features=console,grovedbg"; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
-        mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     cargo chef cook \
-        --recipe-path recipe.json \
-        --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci \
-        ${FEATURES_FLAG} \
-        --locked && \
+    --recipe-path recipe.json \
+    --profile "$CARGO_BUILD_PROFILE" \
+    --package drive-abci \
+    ${FEATURES_FLAG} \
+    --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
@@ -455,6 +456,7 @@ COPY --parents \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
@@ -483,22 +485,22 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml; \
-        export OUT_DIRECTORY=release; \
+    mv .cargo/config-release.toml .cargo/config.toml; \
+    export OUT_DIRECTORY=release; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg"; \
-        export OUT_DIRECTORY=debug; \
+    export FEATURES_FLAG="--features=console,grovedbg"; \
+    export OUT_DIRECTORY=debug; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
-        mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
     cargo build \
-        --profile "${CARGO_BUILD_PROFILE}" \
-        --package drive-abci \
-        ${FEATURES_FLAG} \
-        --locked && \
+    --profile "${CARGO_BUILD_PROFILE}" \
+    --package drive-abci \
+    ${FEATURES_FLAG} \
+    --locked && \
     cp target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove /platform to reduce layer size
@@ -523,11 +525,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
     cargo chef cook \
-        --recipe-path recipe.json \
-        --profile "$CARGO_BUILD_PROFILE" \
-        --package wasm-dpp \
-        --target wasm32-unknown-unknown \
-        --locked && \
+    --recipe-path recipe.json \
+    --profile "$CARGO_BUILD_PROFILE" \
+    --package wasm-dpp \
+    --target wasm32-unknown-unknown \
+    --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 
@@ -551,6 +553,7 @@ COPY --parents \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
@@ -679,6 +682,7 @@ COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grp
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
 COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
 COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
+COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
@@ -755,6 +759,7 @@ COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
 COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
+COPY --from=build-dapi /platform/packages/keyword-search-contract /platform/packages/keyword-search-contract
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

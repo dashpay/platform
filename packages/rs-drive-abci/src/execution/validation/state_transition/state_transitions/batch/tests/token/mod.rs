@@ -1,4 +1,6 @@
+mod direct_selling;
 mod distribution;
+
 use super::*;
 use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -12,7 +14,6 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
-use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -4348,6 +4349,194 @@ mod token_tests {
             let expected_amount = 1337 - 300;
             assert_eq!(token_balance, Some(expected_amount));
         }
+
+        #[test]
+        fn test_token_frozen_receive_balance_may_not_be_allowed() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (recipient, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.allow_transfer_to_frozen_balance(false);
+
+                    token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                    token_configuration.set_unfreeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                platform_version,
+            );
+
+            let freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                recipient.id(),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let freeze_serialized_transition = freeze_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![freeze_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    recipient.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token info")
+                .map(|info| info.frozen());
+            assert_eq!(token_frozen, Some(true));
+
+            let token_transfer_transition = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                recipient.id(),
+                None,
+                None,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_transfer_serialized_transition = token_transfer_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![token_transfer_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            let expected_amount = 100000;
+            assert_eq!(token_balance, Some(expected_amount));
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    recipient.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, None);
+        }
     }
 
     mod token_config_update_tests {
@@ -6064,13 +6253,12 @@ mod token_tests {
                         TokenConfigurationConventionV0 {
                             localizations: [(
                                 "en".to_string(),
-                                TokenConfigurationLocalization::V0(
-                                    TokenConfigurationLocalizationV0 {
-                                        should_capitalize: true,
-                                        singular_form: "garzon".to_string(),
-                                        plural_form: "garzons".to_string(),
-                                    },
-                                ),
+                                TokenConfigurationLocalizationV0 {
+                                    should_capitalize: true,
+                                    singular_form: "garzon".to_string(),
+                                    plural_form: "garzons".to_string(),
+                                }
+                                .into(),
                             )]
                             .into(),
                             decimals: 8,

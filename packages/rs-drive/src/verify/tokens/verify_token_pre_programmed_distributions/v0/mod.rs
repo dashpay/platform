@@ -1,6 +1,4 @@
-use crate::drive::tokens::distribution::queries::{
-    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
-};
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -41,7 +39,7 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
-        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
+        let path_query = Drive::pre_programmed_distributions_query(token_id, start_at, limit);
 
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
