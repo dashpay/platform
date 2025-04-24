@@ -15,7 +15,7 @@ pub enum ReducedPlatformStateForSaving {
 impl ReducedPlatformDeserializable for ReducedPlatformStateForSaving {
     fn versioned_deserialize(
         data: &[u8],
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
