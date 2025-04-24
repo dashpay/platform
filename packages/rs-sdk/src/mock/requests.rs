@@ -1,6 +1,7 @@
 use super::MockDashPlatformSdk;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::bincode::config::standard;
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::data_contract::group::Group;
 use dpp::group::group_action::GroupAction;
 use dpp::tokens::info::IdentityTokenInfo;
@@ -448,3 +449,4 @@ impl_mock_response!(EvoNodeStatus);
 impl_mock_response!(CurrentQuorumsInfo);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
+impl_mock_response!(RewardDistributionMoment);

@@ -3,6 +3,8 @@ use dpp::consensus::basic::data_contract::{
     InvalidTokenBaseSupplyError, NonContiguousContractTokenPositionsError,
 };
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -64,6 +66,21 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
             )?;
             if !validation_result.is_valid() {
                 return Ok(validation_result);
+            }
+
+            if let Some(perpetual_distribution) = token_configuration
+                .distribution_rules()
+                .perpetual_distribution()
+            {
+                // We use 0 as the start moment to show that we are starting now with no offset
+                let validation_result = perpetual_distribution
+                    .distribution_type()
+                    .function()
+                    .validate(0, platform_version)?;
+
+                if !validation_result.is_valid() {
+                    return Ok(validation_result);
+                }
             }
         }
 

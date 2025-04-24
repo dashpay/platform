@@ -1083,6 +1083,26 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.0.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.core.miner.mediantime;
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
+          });
+        return configFile;
+      },
+      '2.0.0-rc.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.core.miner.mediantime;
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
+          });
+        return configFile;
+      },
     };
   }
 

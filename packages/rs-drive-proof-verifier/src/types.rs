@@ -38,6 +38,7 @@ use dpp::{
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
+    ProtocolError,
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
@@ -49,7 +50,7 @@ use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{version as platform_version, ProtocolError},
+    dpp::version as platform_version,
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };

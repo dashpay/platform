@@ -1,5 +1,8 @@
 use crate::balances::credits::TokenAmount;
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
+    DistributionFunction, DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+    MAX_DISTRIBUTION_PARAM,
+};
 use crate::ProtocolError;
 
 impl DistributionFunction {
@@ -39,7 +42,7 @@ impl DistributionFunction {
                 z = z ^ (z >> 31);
 
                 // Calculate the range size: (max - min + 1)
-                let range = max.wrapping_sub(*min).wrapping_add(1);
+                let range = max.saturating_sub(*min).saturating_add(1);
 
                 // Map the pseudorandom number into the desired range.
                 let value = min.wrapping_add(z % range);
@@ -51,42 +54,52 @@ impl DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
-                n,
+                start_decreasing_offset,
+                max_interval_count,
+                distribution_start_amount,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
-                // Check for division by zero in the denominator:
                 if *decrease_per_interval_denominator == 0 {
                     return Err(ProtocolError::DivideByZero(
                         "StepDecreasingAmount: denominator is 0",
                     ));
                 }
-                let s_val = s.unwrap_or(contract_registration_step);
-                // Compute the number of steps passed.
-                let steps = if x > s_val {
-                    (x - s_val) / (*step_count as u64)
-                } else {
-                    0
-                };
-                let reduction = 1.0
-                    - ((*decrease_per_interval_numerator as f64)
-                        / (*decrease_per_interval_denominator as f64));
-                let factor = reduction.powf(steps as f64);
-                let result = (*n as f64) * factor;
-                // Clamp to min_value if provided.
-                let clamped = if let Some(min) = min_value {
-                    result.max(*min as f64)
-                } else {
-                    result
-                };
-                if !clamped.is_finite() || clamped > (u64::MAX as f64) || clamped < 0.0 {
-                    return Err(ProtocolError::Overflow(
-                        "StepDecreasingAmount evaluation overflow or negative",
-                    ));
-                }
-                Ok(clamped as TokenAmount)
-            }
 
+                let s_val = start_decreasing_offset.unwrap_or(contract_registration_step);
+
+                if x <= s_val {
+                    return Ok(*distribution_start_amount);
+                }
+
+                let steps_passed = (x - s_val) / (*step_count as u64);
+                let max_intervals = max_interval_count.unwrap_or(
+                    DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+                ) as u64;
+
+                if steps_passed > max_intervals {
+                    return Ok(*trailing_distribution_interval_amount);
+                }
+
+                let mut numerator = *distribution_start_amount;
+                let denominator = *decrease_per_interval_denominator as u64;
+                let reduction_numerator =
+                    denominator.saturating_sub(*decrease_per_interval_numerator as u64);
+
+                for _ in 0..steps_passed {
+                    numerator = numerator * reduction_numerator / denominator;
+                }
+
+                let mut result = numerator;
+
+                if let Some(min) = min_value {
+                    if result < *min {
+                        result = *min;
+                    }
+                }
+
+                Ok(result)
+            }
             DistributionFunction::Stepwise(steps) => {
                 // Return the emission corresponding to the greatest key <= x.
                 Ok(steps
@@ -192,10 +205,12 @@ impl DistributionFunction {
                 let exponent = (*m as f64) / (*n as f64);
                 let diff = x as i128 - s_val as i128 + *o as i128;
 
-                if diff < 0 {
-                    return Err(ProtocolError::Overflow(
-                        "Polynomial function: argument is non-positive",
-                    ));
+                if diff <= 0 {
+                    return if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    };
                 }
 
                 if diff > u64::MAX as i128 {
@@ -206,19 +221,50 @@ impl DistributionFunction {
 
                 let diff_exp = (diff as f64).powf(exponent);
 
-                if !diff_exp.is_finite() || diff_exp.abs() > (u64::MAX as f64) {
-                    return Err(ProtocolError::Overflow(
-                        "Polynomial function evaluation overflow or negative",
-                    ));
+                if !diff_exp.is_finite() {
+                    return if diff_exp.is_sign_positive() {
+                        if let Some(max_value) = max_value {
+                            Ok(*max_value)
+                        } else {
+                            Ok(MAX_DISTRIBUTION_PARAM)
+                        }
+                    } else if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    };
                 }
 
                 let pol = diff_exp as i128;
 
-                let value = (((*a as i128) * pol / (*d as i128)) as i64)
-                    .checked_add(*b as i64)
-                    .ok_or(ProtocolError::Overflow(
-                        "Polynomial function evaluation overflow or negative",
-                    ))?;
+                let intermediate = if *d == 1 {
+                    (*a as i128).saturating_mul(pol)
+                } else {
+                    ((*a as i128).saturating_mul(pol)) / *d as i128
+                };
+
+                if intermediate > MAX_DISTRIBUTION_PARAM as i128
+                    || intermediate < -(MAX_DISTRIBUTION_PARAM as i128)
+                {
+                    return if intermediate > 0 {
+                        if let Some(max_value) = max_value {
+                            Ok(*max_value)
+                        } else {
+                            Ok(MAX_DISTRIBUTION_PARAM)
+                        }
+                    } else if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    };
+                }
+
+                let value =
+                    (intermediate as i64)
+                        .checked_add(*b as i64)
+                        .ok_or(ProtocolError::Overflow(
+                            "Polynomial function evaluation overflow",
+                        ))?;
 
                 let value = if value < 0 { 0 } else { value as u64 };
 
@@ -232,7 +278,12 @@ impl DistributionFunction {
                         return Ok(*max_value);
                     }
                 }
-                Ok(value)
+
+                if value > MAX_DISTRIBUTION_PARAM {
+                    Ok(MAX_DISTRIBUTION_PARAM)
+                } else {
+                    Ok(value)
+                }
             }
 
             DistributionFunction::Exponential {
@@ -242,7 +293,7 @@ impl DistributionFunction {
                 n,
                 o,
                 start_moment,
-                c,
+                b,
                 min_value,
                 max_value,
             } => {
@@ -272,7 +323,7 @@ impl DistributionFunction {
                 }
 
                 let exponent = (*m as f64) * (diff as f64) / (*n as f64);
-                let value = ((*a as f64) * exponent.exp() / (*d as f64)) + (*c as f64);
+                let value = ((*a as f64) * exponent.exp() / (*d as f64)) + (*b as f64);
                 if let Some(max_value) = max_value {
                     if value.is_infinite() && value.is_sign_positive() || value > *max_value as f64
                     {
@@ -334,22 +385,73 @@ impl DistributionFunction {
                     return Err(ProtocolError::Overflow("Logarithmic function: argument for log is too big (max should be u64::MAX)"));
                 }
 
-                let argument = (*m as f64) * (diff as f64) / (*n as f64);
+                let argument = if *m == 1 {
+                    if *n == 1 {
+                        diff as f64
+                    } else {
+                        (diff as f64) / (*n as f64)
+                    }
+                } else if *n == 1 {
+                    (*m as f64) * (diff as f64)
+                } else {
+                    (*m as f64) * (diff as f64) / (*n as f64)
+                };
 
                 let log_val = argument.ln();
-                let value = ((*a as f64) * log_val / (*d as f64)) + (*b as f64);
-                if let Some(max_value) = max_value {
-                    if value.is_infinite() && value.is_sign_positive() || value > *max_value as f64
-                    {
-                        return Ok(*max_value);
-                    }
-                }
-                if !value.is_finite() || value > (u64::MAX as f64) {
+
+                // Ensure the computed value is finite and within the u64 range.
+                if !log_val.is_finite() || log_val > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
-                        "Logarithmic function evaluation overflow or negative",
+                        "InvertedLogarithmic: evaluation overflow",
                     ));
                 }
-                if value < 0.0 {
+
+                let intermediate = if *a == 1 {
+                    log_val
+                } else if *a == -1 {
+                    -log_val
+                } else {
+                    (*a as f64) * log_val
+                };
+
+                let value = if d == &1 {
+                    if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
+                        if let Some(max_value) = max_value {
+                            if intermediate.is_sign_positive() {
+                                *max_value as i64
+                            } else {
+                                return Err(ProtocolError::Overflow(
+                                    "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                                ));
+                            }
+                        } else {
+                            return Err(ProtocolError::Overflow(
+                                "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                            ));
+                        }
+                    } else {
+                        (intermediate.floor() as i64)
+                            .checked_add(*b as i64)
+                            .or(max_value.map(|max| max as i64))
+                            .ok_or(ProtocolError::Overflow(
+                                "InvertedLogarithmic: evaluation overflow when adding b",
+                            ))?
+                    }
+                } else {
+                    if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
+                        return Err(ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                        ));
+                    }
+                    ((intermediate / (*d as f64)).floor() as i64)
+                        .checked_add(*b as i64)
+                        .or(max_value.map(|max| max as i64))
+                        .ok_or(ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow when adding b",
+                        ))?
+                };
+
+                if value < 0 {
                     return if let Some(min_value) = min_value {
                         Ok(*min_value)
                     } else {
@@ -360,6 +462,12 @@ impl DistributionFunction {
                 if let Some(min_value) = min_value {
                     if value_u64 < *min_value {
                         return Ok(*min_value);
+                    }
+                }
+
+                if let Some(max_value) = max_value {
+                    if value_u64 > *max_value {
+                        return Ok(*max_value);
                     }
                 }
                 Ok(value_u64)
@@ -408,7 +516,11 @@ impl DistributionFunction {
                 }
 
                 // Calculate the denominator for the logarithm: m * (x - s + o)
-                let denom_f = (*m as f64) * (diff as f64);
+                let denom_f = if *m == 1 {
+                    diff as f64
+                } else {
+                    (*m as f64) * (diff as f64)
+                };
                 if denom_f <= 0.0 {
                     return Err(ProtocolError::Overflow(
                         "InvertedLogarithmic: computed denominator is non-positive",
@@ -425,26 +537,48 @@ impl DistributionFunction {
 
                 let log_val = argument.ln();
 
-                // Compute the final value: (a * ln(...)) / d + b.
-                let value = ((*a as f64) * log_val / (*d as f64)) + (*b as f64);
-
-                // Clamp to max_value if provided.
-                if let Some(max_value) = max_value {
-                    if value > *max_value as f64
-                        || (value.is_infinite() && value.is_sign_positive())
-                    {
-                        return Ok(*max_value);
-                    }
-                }
-
                 // Ensure the computed value is finite and within the u64 range.
-                if !value.is_finite() || value > (u64::MAX as f64) {
+                if !log_val.is_finite() || log_val > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
                         "InvertedLogarithmic: evaluation overflow",
                     ));
                 }
 
-                if value < 0.0 {
+                let intermediate = if *a == 1 {
+                    log_val
+                } else if *a == -1 {
+                    -log_val
+                } else {
+                    (*a as f64) * log_val
+                };
+                if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
+                    return Err(ProtocolError::Overflow(
+                        "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                    ));
+                }
+
+                let value = if d == &1 {
+                    (intermediate.floor() as i64).checked_add(*b as i64).ok_or(
+                        ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow when adding b",
+                        ),
+                    )?
+                } else {
+                    ((intermediate / (*d as f64)).floor() as i64)
+                        .checked_add(*b as i64)
+                        .ok_or(ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow when adding b",
+                        ))?
+                };
+
+                // Clamp to max_value if provided.
+                if let Some(max_value) = max_value {
+                    if value > *max_value as i64 {
+                        return Ok(*max_value);
+                    }
+                }
+
+                if value < 0 {
                     return if let Some(min_value) = min_value {
                         Ok(*min_value)
                     } else {
@@ -501,8 +635,10 @@ mod tests {
             step_count: 10,
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 2, // 50% reduction per step
-            s: Some(0),
-            n: 100,
+            start_decreasing_offset: Some(0),
+            max_interval_count: None,
+            distribution_start_amount: 100,
+            trailing_distribution_interval_amount: 0,
             min_value: Some(10),
         };
 
@@ -520,8 +656,10 @@ mod tests {
             step_count: 10,
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 0, // Invalid denominator
-            s: Some(0),
-            n: 100,
+            start_decreasing_offset: Some(0),
+            max_interval_count: None,
+            distribution_start_amount: 100,
+            trailing_distribution_interval_amount: 0,
             min_value: Some(10),
         };
 
@@ -653,6 +791,7 @@ mod tests {
         }
     }
     mod polynomial {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_POL_A_PARAM, MAX_POL_M_PARAM};
         use super::*;
         #[test]
         fn test_polynomial_function() {
@@ -668,18 +807,18 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 0);
             assert_eq!(distribution.evaluate(0, 2).unwrap(), 18);
             assert_eq!(distribution.evaluate(0, 3).unwrap(), 28);
             assert_eq!(distribution.evaluate(0, 4).unwrap(), 42);
         }
 
         #[test]
-        fn test_polynomial_function_overflow() {
+        fn test_polynomial_function_should_not_overflow() {
             let distribution = DistributionFunction::Polynomial {
-                a: i64::MAX,
+                a: MAX_POL_A_PARAM,
                 d: 1,
-                m: 2,
+                m: MAX_POL_M_PARAM,
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
@@ -688,12 +827,8 @@ mod tests {
                 max_value: None,
             };
 
-            let result = distribution.evaluate(0, 1);
-            assert!(
-                matches!(result, Err(ProtocolError::Overflow(_))),
-                "Expected overflow but got {:?}",
-                result
-            );
+            let result = distribution.evaluate(0, 100000).expect("expected value");
+            assert_eq!(result, MAX_DISTRIBUTION_PARAM);
         }
 
         // Test: Fractional exponent (exponent = 3/2)
@@ -746,9 +881,8 @@ mod tests {
                 min_value: None,
                 max_value: None,
             };
-            // f(x) = 2 * ((x - 2)^2) + 10.
-            // At x = 2: (0)^2 = 0, f(2) = 10.
-            assert_eq!(distribution.evaluate(0, 2).unwrap(), 10);
+            // since it starts at 2 (that's like the contract registration at 2, so we should get 0
+            assert_eq!(distribution.evaluate(0, 2).unwrap(), 0);
             // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
             assert_eq!(distribution.evaluate(0, 3).unwrap(), 12);
         }
@@ -770,26 +904,6 @@ mod tests {
             // f(x) = 2 * ((x - 0 + 3)^2) + 10.
             // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
             assert_eq!(distribution.evaluate(0, 1).unwrap(), 42);
-        }
-
-        // Test: Constant function when m = 0 (should ignore x)
-        #[test]
-        fn test_polynomial_function_constant() {
-            let distribution = DistributionFunction::Polynomial {
-                a: 5,
-                d: 1,
-                m: 0, // exponent 0 => (x-s+o)^0 = 1 (for any x where x-s+o ≠ 0)
-                n: 1,
-                o: 0,
-                start_moment: Some(0),
-                b: 3,
-                min_value: None,
-                max_value: None,
-            };
-            // f(x) = 5*1 + 3 = 8 for any x.
-            for x in [0, 10, 100].iter() {
-                assert_eq!(distribution.evaluate(0, *x).unwrap(), 8);
-            }
         }
 
         // Test: Linear function when exponent is 1 (m = 1, n = 1)
@@ -858,7 +972,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: None,
                 max_value: None,
             };
@@ -876,7 +990,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: None,
                 max_value: None,
             };
@@ -896,7 +1010,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: None,
                 max_value: None,
             };
@@ -915,7 +1029,7 @@ mod tests {
                 n: 10,
                 o: 0,
                 start_moment: Some(0),
-                c: 0,
+                b: 0,
                 min_value: None,
                 max_value: None,
             };
@@ -934,7 +1048,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 0,
+                b: 0,
                 min_value: None,
                 max_value: Some(100000000),
             };
@@ -955,7 +1069,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: None,
                 max_value: None,
             };
@@ -974,7 +1088,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(11),
                 max_value: None,
             };
@@ -993,7 +1107,7 @@ mod tests {
                 n: 2,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(11), // Set max at the starting value
             };
@@ -1019,7 +1133,7 @@ mod tests {
                 n: 10,
                 o: 0,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: None,
                 max_value: None,
             };

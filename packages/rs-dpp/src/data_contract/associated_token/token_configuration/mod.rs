@@ -15,7 +15,6 @@ pub enum TokenConfiguration {
     #[serde(rename = "0")]
     V0(TokenConfigurationV0),
 }
-
 impl TokenConfiguration {
     pub fn as_cow_v0(&self) -> Cow<TokenConfigurationV0> {
         match self {

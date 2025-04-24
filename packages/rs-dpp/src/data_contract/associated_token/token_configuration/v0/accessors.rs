@@ -45,6 +45,11 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         self.start_as_paused
     }
 
+    /// Allow to transfer and mint tokens to frozen identity token balances
+    fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
+        self.allow_transfer_to_frozen_balance
+    }
+
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<TokenAmount> {
         self.max_supply
@@ -166,6 +171,11 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the new conventions change rules.
     fn set_conventions_change_rules(&mut self, rules: ChangeControlRules) {
         self.conventions_change_rules = rules;
+    }
+
+    /// Allow or not a transfer and mint tokens to frozen identity token balances
+    fn allow_transfer_to_frozen_balance(&mut self, allow: bool) {
+        self.allow_transfer_to_frozen_balance = allow;
     }
 
     /// Sets the base supply.
