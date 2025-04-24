@@ -83,11 +83,6 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
                 })?
                 .0;
 
-        println!(
-            "platform_state_in_save_format: {:?}",
-            platform_state_in_save_format
-        );
-
         platform_state_in_save_format
             .try_into_platform_versioned(platform_version)
             .map_err(|e: Error| ProtocolError::Generic(e.to_string()))
@@ -581,9 +576,8 @@ mod tests {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
 
-            let platform_state =
-                PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
-                    .expect("failed to deserialize state");
+            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
+                .expect("failed to deserialize state");
         }
     }
 }
