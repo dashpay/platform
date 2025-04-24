@@ -30,6 +30,7 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
@@ -40,6 +41,7 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
     GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
     GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
     GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
     GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
@@ -402,6 +404,18 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_identity_by_non_unique_public_key_hash(
+        &self,
+        request: Request<GetIdentityByNonUniquePublicKeyHashRequest>,
+    ) -> Result<Response<GetIdentityByNonUniquePublicKeyHashResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_by_non_unique_public_key_hash,
+            "get_identity_by_non_unique_public_key_hash",
+        )
+        .await
+    }
+
     async fn wait_for_state_transition_result(
         &self,
         _request: Request<WaitForStateTransitionResultRequest>,
@@ -742,9 +756,26 @@ impl PlatformService for QueryService {
 
     async fn get_token_direct_purchase_prices(
         &self,
-        _request: Request<GetTokenDirectPurchasePricesRequest>,
+        request: Request<GetTokenDirectPurchasePricesRequest>,
     ) -> Result<Response<GetTokenDirectPurchasePricesResponse>, Status> {
-        todo!()
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_direct_purchase_prices,
+            "get_token_direct_purchase_prices",
+        )
+        .await
+    }
+
+    async fn get_token_perpetual_distribution_last_claim(
+        &self,
+        request: Request<GetTokenPerpetualDistributionLastClaimRequest>,
+    ) -> Result<Response<GetTokenPerpetualDistributionLastClaimResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_perpetual_distribution_last_claim,
+            "get_token_perpetual_distribution_last_claim",
+        )
+        .await
     }
 }
 

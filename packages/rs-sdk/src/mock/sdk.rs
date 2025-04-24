@@ -229,6 +229,14 @@ impl MockDashPlatformSdk {
                     load_expectation::<proto::GetGroupActionSignersRequest>(&mut dapi, filename)?
                 }
                 "EvoNode" => load_expectation::<EvoNode>(&mut dapi, filename)?,
+                "GetTokenDirectPurchasePricesRequest" => load_expectation::<
+                    proto::GetTokenDirectPurchasePricesRequest,
+                >(&mut dapi, filename)?,
+                "GetTokenPerpetualDistributionLastClaimRequest" => {
+                    load_expectation::<proto::GetTokenPerpetualDistributionLastClaimRequest>(
+                        &mut dapi, filename,
+                    )?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}, missing match arm in load_expectations?",

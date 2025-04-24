@@ -56,6 +56,12 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
+    fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
+        match self {
+            TokenConfiguration::V0(v0) => v0.is_allowed_transfer_to_frozen_balance(),
+        }
+    }
+
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<TokenAmount> {
         match self {
@@ -142,6 +148,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
             TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
         }
     }
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.description(),
+        }
+    }
 }
 
 /// Implementing TokenConfigurationV0Setters for TokenConfiguration
@@ -157,6 +170,13 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     fn set_conventions_change_rules(&mut self, rules: ChangeControlRules) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_conventions_change_rules(rules),
+        }
+    }
+
+    /// Allow or not a transfer and mint tokens to frozen identity token balances
+    fn allow_transfer_to_frozen_balance(&mut self, allow: bool) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.allow_transfer_to_frozen_balance(allow),
         }
     }
 
@@ -238,6 +258,13 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_main_control_group_can_be_modified(action_takers),
+        }
+    }
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.set_description(description),
         }
     }
 }

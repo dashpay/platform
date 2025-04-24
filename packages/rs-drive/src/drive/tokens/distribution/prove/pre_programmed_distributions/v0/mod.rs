@@ -1,6 +1,4 @@
-use crate::drive::tokens::distribution::queries::{
-    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
-};
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -38,7 +36,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
+        let path_query = Drive::pre_programmed_distributions_query(token_id, start_at, limit);
 
         self.grove_get_proved_path_query(
             &path_query,

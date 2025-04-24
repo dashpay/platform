@@ -31,7 +31,9 @@ pub struct DriveAbciQueryTokenVersions {
     pub identity_token_infos: FeatureVersionBounds,
     pub token_statuses: FeatureVersionBounds,
     pub token_total_supply: FeatureVersionBounds,
+    pub token_direct_purchase_prices: FeatureVersionBounds,
     pub token_pre_programmed_distributions: FeatureVersionBounds,
+    pub token_perpetual_distribution_last_claim: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,7 +54,8 @@ pub struct DriveAbciQueryIdentityVersions {
     pub balance: FeatureVersionBounds,
     pub identities_balances: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
-    pub identity_by_public_key_hash: FeatureVersionBounds,
+    pub identity_by_unique_public_key_hash: FeatureVersionBounds,
+    pub identity_by_non_unique_public_key_hash: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

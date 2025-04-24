@@ -35,6 +35,7 @@ pub struct DriveTokenFetchMethodVersions {
     pub perpetual_distribution_last_paid_time: FeatureVersion,
     pub pre_programmed_distribution_last_paid_time: FeatureVersion,
     pub token_direct_purchase_price: FeatureVersion,
+    pub token_direct_purchase_prices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -48,6 +49,8 @@ pub struct DriveTokenProveMethodVersions {
     pub token_statuses: FeatureVersion,
     pub total_supply_and_aggregated_identity_balances: FeatureVersion,
     pub pre_programmed_distributions: FeatureVersion,
+    pub token_direct_purchase_prices: FeatureVersion,
+    pub perpetual_distribution_last_paid_time: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

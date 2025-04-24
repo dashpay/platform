@@ -6636,62 +6636,6 @@ export namespace GetTokenStatusesResponse {
   }
 }
 
-export class GetTokenDirectPurchasePricesRequest extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0 | undefined;
-  setV0(value?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0): void;
-
-  getVersionCase(): GetTokenDirectPurchasePricesRequest.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequest): GetTokenDirectPurchasePricesRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequest;
-  static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequest, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequest;
-}
-
-export namespace GetTokenDirectPurchasePricesRequest {
-  export type AsObject = {
-    v0?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0.AsObject,
-  }
-
-  export class GetTokenDirectPurchasePricesRequestV0 extends jspb.Message {
-    clearTokenIdsList(): void;
-    getTokenIdsList(): Array<Uint8Array | string>;
-    getTokenIdsList_asU8(): Array<Uint8Array>;
-    getTokenIdsList_asB64(): Array<string>;
-    setTokenIdsList(value: Array<Uint8Array | string>): void;
-    addTokenIds(value: Uint8Array | string, index?: number): Uint8Array | string;
-
-    getProve(): boolean;
-    setProve(value: boolean): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequestV0): GetTokenDirectPurchasePricesRequestV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequestV0;
-    static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequestV0, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequestV0;
-  }
-
-  export namespace GetTokenDirectPurchasePricesRequestV0 {
-    export type AsObject = {
-      tokenIdsList: Array<Uint8Array | string>,
-      prove: boolean,
-    }
-  }
-
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
 export class GetTokenDirectPurchasePricesResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -6794,7 +6738,12 @@ export namespace GetTokenDirectPurchasePricesResponse {
       }
     }
 
-    export class Price extends jspb.Message {
+    export class TokenDirectPurchasePriceEntry extends jspb.Message {
+      getTokenId(): Uint8Array | string;
+      getTokenId_asU8(): Uint8Array;
+      getTokenId_asB64(): string;
+      setTokenId(value: Uint8Array | string): void;
+
       hasFixedPrice(): boolean;
       clearFixedPrice(): void;
       getFixedPrice(): number;
@@ -6805,41 +6754,7 @@ export namespace GetTokenDirectPurchasePricesResponse {
       getVariablePrice(): GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PricingSchedule | undefined;
       setVariablePrice(value?: GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PricingSchedule): void;
 
-      getPriceCase(): Price.PriceCase;
-      serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): Price.AsObject;
-      static toObject(includeInstance: boolean, msg: Price): Price.AsObject;
-      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: Price, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): Price;
-      static deserializeBinaryFromReader(message: Price, reader: jspb.BinaryReader): Price;
-    }
-
-    export namespace Price {
-      export type AsObject = {
-        fixedPrice: number,
-        variablePrice?: GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PricingSchedule.AsObject,
-      }
-
-      export enum PriceCase {
-        PRICE_NOT_SET = 0,
-        FIXED_PRICE = 1,
-        VARIABLE_PRICE = 2,
-      }
-    }
-
-    export class TokenDirectPurchasePriceEntry extends jspb.Message {
-      getTokenId(): Uint8Array | string;
-      getTokenId_asU8(): Uint8Array;
-      getTokenId_asB64(): string;
-      setTokenId(value: Uint8Array | string): void;
-
-      hasPrice(): boolean;
-      clearPrice(): void;
-      getPrice(): GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.Price | undefined;
-      setPrice(value?: GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.Price): void;
-
+      getPriceCase(): TokenDirectPurchasePriceEntry.PriceCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): TokenDirectPurchasePriceEntry.AsObject;
       static toObject(includeInstance: boolean, msg: TokenDirectPurchasePriceEntry): TokenDirectPurchasePriceEntry.AsObject;
@@ -6853,7 +6768,14 @@ export namespace GetTokenDirectPurchasePricesResponse {
     export namespace TokenDirectPurchasePriceEntry {
       export type AsObject = {
         tokenId: Uint8Array | string,
-        price?: GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.Price.AsObject,
+        fixedPrice: number,
+        variablePrice?: GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PricingSchedule.AsObject,
+      }
+
+      export enum PriceCase {
+        PRICE_NOT_SET = 0,
+        FIXED_PRICE = 2,
+        VARIABLE_PRICE = 3,
       }
     }
 
@@ -6883,6 +6805,62 @@ export namespace GetTokenDirectPurchasePricesResponse {
       RESULT_NOT_SET = 0,
       TOKEN_DIRECT_PURCHASE_PRICES = 1,
       PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetTokenDirectPurchasePricesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0 | undefined;
+  setV0(value?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0): void;
+
+  getVersionCase(): GetTokenDirectPurchasePricesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequest): GetTokenDirectPurchasePricesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequest;
+  static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequest, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequest;
+}
+
+export namespace GetTokenDirectPurchasePricesRequest {
+  export type AsObject = {
+    v0?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0.AsObject,
+  }
+
+  export class GetTokenDirectPurchasePricesRequestV0 extends jspb.Message {
+    clearTokenIdsList(): void;
+    getTokenIdsList(): Array<Uint8Array | string>;
+    getTokenIdsList_asU8(): Array<Uint8Array>;
+    getTokenIdsList_asB64(): Array<string>;
+    setTokenIdsList(value: Array<Uint8Array | string>): void;
+    addTokenIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequestV0): GetTokenDirectPurchasePricesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequestV0;
+    static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequestV0, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequestV0;
+  }
+
+  export namespace GetTokenDirectPurchasePricesRequestV0 {
+    export type AsObject = {
+      tokenIdsList: Array<Uint8Array | string>,
+      prove: boolean,
     }
   }
 

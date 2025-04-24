@@ -19,6 +19,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         perpetual_distribution_last_paid_time: 0,
         pre_programmed_distribution_last_paid_time: 0,
         token_direct_purchase_price: 0,
+        token_direct_purchase_prices: 0,
     },
     prove: DriveTokenProveMethodVersions {
         identity_token_balance: 0,
@@ -30,6 +31,8 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         token_statuses: 0,
         total_supply_and_aggregated_identity_balances: 0,
         pre_programmed_distributions: 0,
+        token_direct_purchase_prices: 0,
+        perpetual_distribution_last_paid_time: 0,
     },
     update: DriveTokenUpdateMethodVersions {
         create_token_trees: 0,

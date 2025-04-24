@@ -187,6 +187,7 @@ impl Drive {
                             block_time_ms: None,
                         };
 
+                        // todo: deal with cost of this operation
                         let query_result = self.query_documents(
                             query,
                             None,
