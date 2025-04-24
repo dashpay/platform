@@ -1,4 +1,3 @@
-use crate::abci::config::StateSyncAbciConfig;
 use crate::logging::LogConfigs;
 use crate::utils::from_str_or_number;
 use crate::{abci::config::AbciConfig, error::Error};
@@ -219,8 +218,6 @@ struct PlatformConfigIntermediate {
     pub core: CoreConfig,
     #[serde(flatten)]
     pub abci: AbciConfig,
-    #[serde(flatten)]
-    pub state_sync: StateSyncAbciConfig,
     pub prometheus_bind_address: Option<String>,
     pub grpc_bind_address: String,
     #[serde(flatten)]

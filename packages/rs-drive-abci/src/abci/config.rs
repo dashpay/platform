@@ -53,6 +53,7 @@ impl AbciConfig {
         1
     }
 
+    /// Default ABCI configuration for mainnet
     pub fn default_mainnet() -> Self {
         Self {
             consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
@@ -65,6 +66,7 @@ impl AbciConfig {
         }
     }
 
+    /// Default ABCI configuration for local development
     pub fn default_local() -> Self {
         Self {
             consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
@@ -77,6 +79,7 @@ impl AbciConfig {
         }
     }
 
+    /// Default ABCI configuration for testnet
     pub fn default_testnet() -> Self {
         Self {
             consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
