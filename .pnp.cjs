@@ -2614,7 +2614,7 @@ const RAW_RUNTIME_STATE =
           ["bloom-filter", "npm:0.2.0"],\
           ["bn.js", "npm:4.12.0"],\
           ["bs58", "npm:4.0.1"],\
-          ["elliptic", "npm:6.5.7"],\
+          ["elliptic", "npm:6.6.1"],\
           ["inherits", "npm:2.0.1"],\
           ["lodash", "npm:4.17.21"],\
           ["ripemd160", "npm:2.0.2"],\
@@ -6818,7 +6818,7 @@ const RAW_RUNTIME_STATE =
           ["browserify-rsa", "npm:4.1.0"],\
           ["create-hash", "npm:1.2.0"],\
           ["create-hmac", "npm:1.1.7"],\
-          ["elliptic", "npm:6.5.7"],\
+          ["elliptic", "npm:6.6.1"],\
           ["inherits", "npm:2.0.4"],\
           ["parse-asn1", "npm:5.1.6"],\
           ["readable-stream", "npm:3.6.2"],\
@@ -8279,7 +8279,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["create-ecdh", "npm:4.0.4"],\
           ["bn.js", "npm:4.12.0"],\
-          ["elliptic", "npm:6.5.7"]\
+          ["elliptic", "npm:6.6.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -9246,10 +9246,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["elliptic", [\
-      ["npm:6.5.7", {\
-        "packageLocation": "./.yarn/cache/elliptic-npm-6.5.7-df8e79dc1f-fbad1fad0a.zip/node_modules/elliptic/",\
+      ["npm:6.6.1", {\
+        "packageLocation": "./.yarn/cache/elliptic-npm-6.6.1-87bb857cbc-dc678c9feb.zip/node_modules/elliptic/",\
         "packageDependencies": [\
-          ["elliptic", "npm:6.5.7"],\
+          ["elliptic", "npm:6.6.1"],\
           ["bn.js", "npm:4.12.0"],\
           ["brorand", "npm:1.1.0"],\
           ["hash.js", "npm:1.1.7"],\
