@@ -375,7 +375,7 @@ impl Drive {
                                 ignore_fields,
                                 platform_version,
                             )? {
-                                return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, token_transition))));
+                                return Err(Error::Proof(ProofError::UnexpectedResultProof(format!("proof of state transition execution did not show the correct historical document got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, token_transition))));
                             }
                             Ok((root_hash, VerifiedTokenActionWithDocument(document)))
                         };

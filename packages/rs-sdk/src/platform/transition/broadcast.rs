@@ -14,8 +14,8 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use rs_dapi_client::{ExecutionResponse, WrapToExecutionResult};
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -128,14 +128,29 @@ impl BroadcastStateTransition for StateTransition {
                 retries: response.retries,
             })?;
 
-            let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
+            let (_, result) = match Drive::verify_state_transition_was_executed_with_proof(
                 self,
                 &block_info,
                 proof.grovedb_proof.as_slice(),
                 &context_provider.as_contract_lookup_fn(sdk.version()),
                 sdk.version(),
-            )
-            .wrap_to_execution_result(&response)?
+            ) {
+                Ok(r) => Ok(ExecutionResponse {
+                    inner: r,
+                    retries: response.retries,
+                    address: response.address.clone(),
+                }),
+                Err(drive::error::Error::Proof(proof_error)) => Err(ExecutionError {
+                    inner: Error::DriveProofError(proof_error, proof.grovedb_proof.clone()),
+                    retries: response.retries,
+                    address: Some(response.address.clone()),
+                }),
+                Err(e) => Err(ExecutionError {
+                    inner: e.into(),
+                    retries: response.retries,
+                    address: Some(response.address.clone()),
+                }),
+            }?
             .inner;
 
             let variant_name = result.to_string();
