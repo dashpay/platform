@@ -10,6 +10,7 @@ use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
+use dpp::block::block_info::BlockInfo;
 
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
@@ -23,7 +24,7 @@ pub enum Error {
     Drive(#[from] drive::error::Error),
     /// Drive error
     #[error("Drive error with associated proof: {0}")]
-    DriveProofError(drive::error::proof::ProofError, Vec<u8>),
+    DriveProofError(drive::error::proof::ProofError, Vec<u8>, BlockInfo),
     /// DPP error
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),

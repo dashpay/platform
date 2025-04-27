@@ -141,7 +141,7 @@ impl BroadcastStateTransition for StateTransition {
                     address: response.address.clone(),
                 }),
                 Err(drive::error::Error::Proof(proof_error)) => Err(ExecutionError {
-                    inner: Error::DriveProofError(proof_error, proof.grovedb_proof.clone()),
+                    inner: Error::DriveProofError(proof_error, proof.grovedb_proof.clone(), block_info),
                     retries: response.retries,
                     address: Some(response.address.clone()),
                 }),
