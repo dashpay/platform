@@ -49,6 +49,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules {
+        match self {
+            TokenConfiguration::V0(v0) => v0.keeps_history_mut(),
+        }
+    }
+
     /// Returns if we start as paused.
     fn start_as_paused(&self) -> bool {
         match self {

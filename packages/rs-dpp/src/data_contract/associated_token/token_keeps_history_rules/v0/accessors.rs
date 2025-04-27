@@ -55,4 +55,13 @@ impl TokenKeepsHistoryRulesV0Setters for TokenKeepsHistoryRulesV0 {
     fn set_keeps_direct_purchase_history(&mut self, value: bool) {
         self.keeps_direct_purchase_history = value;
     }
+
+    fn set_all_keeps_history(&mut self, value: bool) {
+        self.keeps_transfer_history = value;
+        self.keeps_freezing_history = value;
+        self.keeps_minting_history = value;
+        self.keeps_burning_history = value;
+        self.keeps_direct_pricing_history = value;
+        self.keeps_direct_purchase_history = value;
+    }
 }

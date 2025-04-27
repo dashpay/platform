@@ -1,2 +1,3 @@
 mod prove_elements;
 mod prove_multiple_state_transition_results;
+mod prove_state_transition;

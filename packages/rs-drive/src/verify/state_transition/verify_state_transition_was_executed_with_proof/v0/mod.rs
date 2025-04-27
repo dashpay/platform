@@ -338,6 +338,10 @@ impl Drive {
                                     SingleDocumentDriveQueryContestedStatus::NotContested,
                             };
 
+                            // println!("query used to verify {:?}", query);
+                            //
+                            // println!("proof bytes are {}", hex::encode(proof));
+
                             let (root_hash, document) = query.verify_proof(
                                 false,
                                 proof,
@@ -345,7 +349,7 @@ impl Drive {
                                 platform_version,
                             )?;
 
-                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document of type `{}` expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
 
                             let expected_document = token_transition.build_historical_document(
                                 token_id,
@@ -371,7 +375,7 @@ impl Drive {
                                 ignore_fields,
                                 platform_version,
                             )? {
-                                return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
+                                return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, token_transition))));
                             }
                             Ok((root_hash, VerifiedTokenActionWithDocument(document)))
                         };
