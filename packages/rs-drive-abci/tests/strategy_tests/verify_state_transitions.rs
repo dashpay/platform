@@ -462,6 +462,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         token_transition_action
                                             .historical_document_type(&token_history)
                                             .expect("expected document type"),
+                                        &token_history,
                                         platform_version,
                                     )
                                     .expect("expected to serialize");
