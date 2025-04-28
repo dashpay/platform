@@ -14,6 +14,8 @@ pub trait TokenKeepsHistoryRulesV0Getters {
 
     /// Returns whether direct pricing history is kept.
     fn keeps_direct_pricing_history(&self) -> bool;
+
+    /// Returns whether direct purchase history is kept.
     fn keeps_direct_purchase_history(&self) -> bool;
 }
 
@@ -34,4 +36,5 @@ pub trait TokenKeepsHistoryRulesV0Setters {
     /// Sets whether direct pricing history is kept.
     fn set_keeps_direct_pricing_history(&mut self, value: bool);
     fn set_keeps_direct_purchase_history(&mut self, value: bool);
+    fn set_all_keeps_history(&mut self, value: bool);
 }

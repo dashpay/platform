@@ -23,6 +23,8 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the KeepsHistory rules.
     fn keeps_history(&self) -> &TokenKeepsHistoryRules;
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules;
 
     /// Returns if we start as paused.
     fn start_as_paused(&self) -> bool;
