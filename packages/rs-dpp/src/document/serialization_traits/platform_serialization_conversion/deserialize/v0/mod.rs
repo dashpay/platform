@@ -15,16 +15,6 @@ pub(in crate::document) trait DocumentPlatformDeserializationMethodsV0 {
         Self: Sized;
 }
 
-pub(in crate::document) trait DocumentPlatformDeserializationExplanationMethodsV0 {
-    /// Reads a serialized document and creates a Document from it.
-    fn from_bytes_fields_with_explanation_v0(
-        serialized_document: &[u8],
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, DataContractError>
-    where
-        Self: Sized;
-}
 
 #[cfg(feature = "extended-document")]
 pub(in crate::document) trait ExtendedDocumentPlatformDeserializationMethodsV0 {
