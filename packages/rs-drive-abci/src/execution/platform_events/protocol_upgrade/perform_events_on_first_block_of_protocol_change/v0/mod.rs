@@ -66,6 +66,10 @@ impl<C> Platform<C> {
         previous_protocol_version: ProtocolVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        self.drive
+            .cache
+            .system_data_contracts
+            .reload_system_contracts(platform_version)?;
         if previous_protocol_version < 4 && platform_version.protocol_version >= 4 {
             self.transition_to_version_4(
                 platform_state,

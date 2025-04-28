@@ -915,6 +915,7 @@ mod tests {
         let document_serialized = DocumentPlatformConversionMethodsV0::serialize(
             &document,
             document_type,
+            &contract,
             platform_version,
         )
         .expect("expected to serialize document");
