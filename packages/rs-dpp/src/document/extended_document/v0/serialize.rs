@@ -31,7 +31,7 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// The serialization of an extended document follows the pattern:
     /// data contract | document type name | document
     fn serialize_v0(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
+        let mut buffer: Vec<u8> = 0u64.encode_var_vec(); //version 0
 
         buffer.append(
             &mut self
@@ -40,11 +40,11 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
         );
         buffer.push(self.document_type_name.len() as u8);
         buffer.extend(self.document_type_name.as_bytes());
-        buffer.append(
-            &mut self
-                .document
-                .serialize(self.document_type()?, platform_version)?,
-        );
+        buffer.append(&mut self.document.serialize(
+            self.document_type()?,
+            &self.data_contract,
+            platform_version,
+        )?);
         Ok(buffer)
     }
 }
@@ -110,7 +110,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
         match platform_version
             .dpp
             .document_versions
-            .document_serialization_version
+            .extended_document_serialization_version
             .default_current_version
         {
             0 => self.serialize_v0(platform_version),

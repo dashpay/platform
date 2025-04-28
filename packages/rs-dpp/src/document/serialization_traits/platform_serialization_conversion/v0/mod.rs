@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::prelude::DataContract;
 #[cfg(feature = "validation")]
 use crate::validation::ConsensusValidationResult;
 use crate::version::PlatformVersion;
@@ -13,6 +14,7 @@ pub trait DocumentPlatformConversionMethodsV0: Clone {
     fn serialize(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
@@ -23,6 +25,7 @@ pub trait DocumentPlatformConversionMethodsV0: Clone {
     fn serialize_specific_version(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         feature_version: FeatureVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 

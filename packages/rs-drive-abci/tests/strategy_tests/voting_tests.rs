@@ -319,7 +319,8 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block() {
+    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block_version_8(
+    ) {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -337,9 +338,10 @@ mod tests {
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(8)
             .build_with_mock_rpc();
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(8).expect("failed to get platform_version");
 
         let mut rng = StdRng::seed_from_u64(567);
 

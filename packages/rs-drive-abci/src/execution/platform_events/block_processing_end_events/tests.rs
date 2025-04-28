@@ -134,6 +134,7 @@ mod refund_tests {
 
     fn setup_initial_document(
         platform: &TempPlatform<MockCoreRPCLike>,
+        dashpay: &DataContract,
         profile: DocumentTypeRef,
         rng: &mut StdRng,
         identity: &Identity,
@@ -173,7 +174,7 @@ mod refund_tests {
         altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
         let serialized_len = document
-            .serialize(profile, platform_version)
+            .serialize(profile, dashpay, platform_version)
             .expect("expected to serialize")
             .len() as u64;
 
@@ -298,8 +299,15 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, insertion_fee_result, current_user_balance) =
-            setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+        let (document, insertion_fee_result, current_user_balance) = setup_initial_document(
+            &platform,
+            &dashpay_contract_no_indexes,
+            profile,
+            &mut rng,
+            &identity,
+            &key,
+            &signer,
+        );
 
         let documents_batch_delete_transition =
             BatchTransition::new_document_deletion_transition_from_document(
@@ -396,8 +404,15 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, insertion_fee_result, current_user_balance) =
-            setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+        let (document, insertion_fee_result, current_user_balance) = setup_initial_document(
+            &platform,
+            &dashpay_contract_no_indexes,
+            profile,
+            &mut rng,
+            &identity,
+            &key,
+            &signer,
+        );
 
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
@@ -499,8 +514,15 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, insertion_fee_result, current_user_balance) =
-            setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+        let (document, insertion_fee_result, current_user_balance) = setup_initial_document(
+            &platform,
+            &dashpay_contract_no_indexes,
+            profile,
+            &mut rng,
+            &identity,
+            &key,
+            &signer,
+        );
 
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 40, false); //a year later
 
@@ -598,8 +620,15 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, insertion_fee_result, current_user_balance) =
-            setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+        let (document, insertion_fee_result, current_user_balance) = setup_initial_document(
+            &platform,
+            &dashpay_contract_no_indexes,
+            profile,
+            &mut rng,
+            &identity,
+            &key,
+            &signer,
+        );
 
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 25, false); //25 years later
 
@@ -697,8 +726,15 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, _, current_user_balance) =
-            setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+        let (document, _, current_user_balance) = setup_initial_document(
+            &platform,
+            &dashpay_contract_no_indexes,
+            profile,
+            &mut rng,
+            &identity,
+            &key,
+            &signer,
+        );
 
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 50, false); //50 years later
 
@@ -797,8 +833,15 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, insertion_fee_result, current_user_balance) =
-            setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+        let (document, insertion_fee_result, current_user_balance) = setup_initial_document(
+            &platform,
+            &dashpay_contract_no_indexes,
+            profile,
+            &mut rng,
+            &identity,
+            &key,
+            &signer,
+        );
 
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 10, false); //next epoch
 
