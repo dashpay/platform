@@ -78,7 +78,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
             |documents| {
                 documents.into_iter().for_each(|document| {
                     document
-                        .serialize_consume(document_type, platform_version)
+                        .serialize(document_type, platform_version)
                         .expect("expected to serialize");
                 })
             },

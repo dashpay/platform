@@ -26,16 +26,6 @@ pub trait DocumentPlatformConversionMethodsV0: Clone {
         feature_version: FeatureVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume(
-        self,
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
-
     /// Reads a serialized document and creates a Document from it.
     fn from_bytes(
         serialized_document: &[u8],
@@ -75,15 +65,6 @@ pub trait ExtendedDocumentPlatformConversionMethodsV0 {
     fn serialize_specific_version_to_bytes(
         &self,
         feature_version: FeatureVersion,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
-
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume_to_bytes(
-        self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
