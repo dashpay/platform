@@ -1,6 +1,7 @@
 //! Definitions of errors
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
@@ -10,7 +11,6 @@ use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
-use dpp::block::block_info::BlockInfo;
 
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
