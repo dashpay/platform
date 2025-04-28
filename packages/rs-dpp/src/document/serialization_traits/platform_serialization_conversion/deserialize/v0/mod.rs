@@ -15,7 +15,6 @@ pub(in crate::document) trait DocumentPlatformDeserializationMethodsV0 {
         Self: Sized;
 }
 
-
 #[cfg(feature = "extended-document")]
 pub(in crate::document) trait ExtendedDocumentPlatformDeserializationMethodsV0 {
     /// Reads a serialized document and creates a Document from it.
