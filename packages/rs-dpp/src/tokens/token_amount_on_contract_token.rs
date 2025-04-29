@@ -62,6 +62,7 @@ impl TryFrom<u64> for DocumentActionTokenEffect {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentActionTokenCost {
     /// If this is not set, it means that we are using our own contract id
     pub contract_id: Option<Identifier>,

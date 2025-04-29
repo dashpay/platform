@@ -10,6 +10,7 @@ pub mod v0;
 
 /// The token costs for various document operations
 #[derive(Debug, PartialEq, Clone, From)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenCosts {
     /// Version 0 of token costs
     V0(TokenCostsV0),

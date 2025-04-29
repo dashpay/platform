@@ -10,7 +10,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::TokenContractPosition;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::group::GroupStateTransitionInfoStatus;
 #[cfg(feature = "state-transition-signing")]

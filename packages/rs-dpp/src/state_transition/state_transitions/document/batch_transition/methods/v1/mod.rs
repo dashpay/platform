@@ -5,7 +5,7 @@ use crate::data_contract::associated_token::token_configuration_item::TokenConfi
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 #[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::group::GroupStateTransitionInfoStatus;
 #[cfg(feature = "state-transition-signing")]

@@ -5,6 +5,7 @@ use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 
 /// Token costs for various document operations.
 #[derive(Debug, PartialEq, Clone, Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenCostsV0 {
     /// Cost of creating a document.
     pub create: Option<DocumentActionTokenCost>,

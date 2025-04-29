@@ -27,47 +27,48 @@ mod accessors;
 pub mod random_document_type;
 
 #[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentTypeV1 {
-    pub(in crate::data_contract) name: String,
-    pub(in crate::data_contract) schema: Value,
-    pub(in crate::data_contract) indices: BTreeMap<String, Index>,
-    pub(in crate::data_contract) index_structure: IndexLevel,
+    pub name: String,
+    pub schema: Value,
+    pub indices: BTreeMap<String, Index>,
+    pub index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
-    pub(in crate::data_contract) flattened_properties: IndexMap<String, DocumentProperty>,
+    pub flattened_properties: IndexMap<String, DocumentProperty>,
     /// Document field can contain sub objects.
-    pub(in crate::data_contract) properties: IndexMap<String, DocumentProperty>,
-    pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
-    pub(in crate::data_contract) binary_paths: BTreeSet<String>,
+    pub properties: IndexMap<String, DocumentProperty>,
+    pub identifier_paths: BTreeSet<String>,
+    pub binary_paths: BTreeSet<String>,
     /// The required fields on the document type
-    pub(in crate::data_contract) required_fields: BTreeSet<String>,
+    pub required_fields: BTreeSet<String>,
     /// The transient fields on the document type
-    pub(in crate::data_contract) transient_fields: BTreeSet<String>,
+    pub transient_fields: BTreeSet<String>,
     /// Should documents keep history?
-    pub(in crate::data_contract) documents_keep_history: bool,
+    pub documents_keep_history: bool,
     /// Are documents mutable?
-    pub(in crate::data_contract) documents_mutable: bool,
+    pub documents_mutable: bool,
     /// Can documents of this type be deleted?
-    pub(in crate::data_contract) documents_can_be_deleted: bool,
+    pub documents_can_be_deleted: bool,
     /// Can documents be transferred without a trade?
-    pub(in crate::data_contract) documents_transferable: Transferable,
+    pub documents_transferable: Transferable,
     /// How are these documents traded?
-    pub(in crate::data_contract) trade_mode: TradeMode,
+    pub trade_mode: TradeMode,
     /// Is document creation restricted?
-    pub(in crate::data_contract) creation_restriction_mode: CreationRestrictionMode,
+    pub creation_restriction_mode: CreationRestrictionMode,
     /// The data contract id
-    pub(in crate::data_contract) data_contract_id: Identifier,
+    pub data_contract_id: Identifier,
     /// Encryption key storage requirements
-    pub(in crate::data_contract) requires_identity_encryption_bounded_key:
+    pub requires_identity_encryption_bounded_key:
         Option<StorageKeyRequirements>,
     /// Decryption key storage requirements
-    pub(in crate::data_contract) requires_identity_decryption_bounded_key:
+    pub requires_identity_decryption_bounded_key:
         Option<StorageKeyRequirements>,
-    pub(in crate::data_contract) security_level_requirement: SecurityLevel,
+    pub security_level_requirement: SecurityLevel,
     #[cfg(feature = "validation")]
-    pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
+    pub json_schema_validator: StatelessJsonSchemaLazyValidator,
     /// The token costs associated with state transitions on this document type
-    pub(in crate::data_contract) token_costs: TokenCosts,
+    pub token_costs: TokenCosts,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV1 {}
