@@ -7,7 +7,6 @@ use std::ops::Deref;
 /// re-build on the next validation
 
 #[derive(Debug)]
-#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct StatelessJsonSchemaLazyValidator(pub JsonSchemaValidator);
 
 impl Default for StatelessJsonSchemaLazyValidator {
