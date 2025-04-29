@@ -3,7 +3,7 @@ use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use crate::state_transition::state_transitions::document::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
-use crate::state_transition::state_transitions::document::batch_transition::TokenDirectPurchaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 

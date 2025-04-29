@@ -33,7 +33,7 @@ use crate::state_transition::state_transitions::document::batch_transition::toke
 use crate::state_transition::state_transitions::document::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
-use crate::state_transition::state_transitions::document::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
