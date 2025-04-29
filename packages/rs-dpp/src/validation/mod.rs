@@ -1,5 +1,4 @@
 #[cfg(feature = "validation")]
-// pub(crate) use json_schema_validator::JsonSchemaValidator;
 pub use json_schema_validator::JsonSchemaValidator;
 
 pub use validation_result::{
