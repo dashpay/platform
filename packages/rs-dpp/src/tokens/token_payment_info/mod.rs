@@ -47,6 +47,7 @@ pub mod v0;
     ),
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
     V0(TokenPaymentInfoV0),

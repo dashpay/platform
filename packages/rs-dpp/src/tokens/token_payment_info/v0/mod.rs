@@ -4,7 +4,7 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode_derive::{Decode, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -38,6 +38,7 @@ use std::collections::BTreeMap;
     maximum_token_cost,
     gas_fees_paid_by
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenPaymentInfoV0 {
     /// By default, we use a token in the same contract, this field must be set if the document
     /// requires payment using another contracts token.
