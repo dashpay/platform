@@ -20,7 +20,7 @@ pub mod token_costs;
 pub mod v0;
 pub mod v1;
 #[cfg(feature = "validation")]
-pub(crate) mod validator;
+pub mod validator;
 
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
