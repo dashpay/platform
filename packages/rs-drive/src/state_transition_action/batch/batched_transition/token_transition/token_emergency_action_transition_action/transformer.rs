@@ -31,6 +31,7 @@ impl TokenEmergencyActionTransitionAction {
     /// # Returns
     ///
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenEmergencyActionTransitionAction` if successful, otherwise `ProtocolError`.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_emergency_action_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -80,6 +81,7 @@ impl TokenEmergencyActionTransitionAction {
     ///
     /// # Returns
     ///
+    #[allow(clippy::too_many_arguments)]
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenEmergencyActionTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_borrowed_token_emergency_action_transition_with_contract_lookup(
         drive: &Drive,

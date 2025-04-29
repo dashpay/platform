@@ -12,6 +12,12 @@ use thiserror::Error;
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MissingDefaultLocalizationError {}
 
+impl Default for MissingDefaultLocalizationError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MissingDefaultLocalizationError {
     pub fn new() -> Self {
         Self {}

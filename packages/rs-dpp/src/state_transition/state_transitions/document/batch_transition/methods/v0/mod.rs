@@ -24,9 +24,12 @@ use versioned_feature_core::FeatureVersion;
 use std::convert::TryFrom;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -34,6 +37,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -42,12 +46,14 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_replacement_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -56,12 +62,14 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_deletion_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -70,6 +78,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_transfer_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -77,6 +86,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -85,6 +95,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_update_price_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -92,6 +103,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -100,6 +112,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_purchase_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -108,6 +121,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,

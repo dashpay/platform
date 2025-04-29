@@ -18,7 +18,7 @@ pub trait DocumentHashV0Method: DocumentPlatformConversionMethodsV0 {
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = contract.id().to_vec();
         buf.extend(document_type.name().as_bytes()); // TODO: Why we put it here?
-        buf.extend(self.serialize(document_type, platform_version)?);
+        buf.extend(self.serialize(document_type, contract, platform_version)?);
         Ok(hash_double_to_vec(buf))
     }
 }

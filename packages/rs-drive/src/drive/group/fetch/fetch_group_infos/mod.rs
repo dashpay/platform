@@ -71,6 +71,8 @@ impl Drive {
     ///
     /// # Errors
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub(crate) fn fetch_group_infos_operations(
         &self,
         contract_id: Identifier,

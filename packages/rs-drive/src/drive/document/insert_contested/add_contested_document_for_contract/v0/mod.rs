@@ -14,6 +14,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Adds a contested document to a contract.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contested_document_for_contract_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,

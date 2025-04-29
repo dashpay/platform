@@ -35,8 +35,12 @@ impl Drive {
                     )))
                     .map(|(value, _)| value),
                 Element::SumItem(value, ..) => Ok(value as u64),
-                _ => Err(Error::Drive(DriveError::CorruptedQueryReturnedNonItem(
-                    "expected an item",
+                Element::SumTree(_, value, _) => Ok(value as u64),
+                element => Err(Error::Drive(DriveError::CorruptedQueryReturnedNonItem(
+                    format!(
+                        "expected an item, sum item or sum tree, got a {}",
+                        element.type_str()
+                    ),
                 ))),
             })
             .transpose()

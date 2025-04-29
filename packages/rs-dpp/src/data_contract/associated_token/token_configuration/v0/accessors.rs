@@ -40,9 +40,19 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         &self.keeps_history
     }
 
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules {
+        &mut self.keeps_history
+    }
+
     /// Returns if we start off as paused
     fn start_as_paused(&self) -> bool {
         self.start_as_paused
+    }
+
+    /// Allow to transfer and mint tokens to frozen identity token balances
+    fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
+        self.allow_transfer_to_frozen_balance
     }
 
     /// Returns the maximum supply.
@@ -149,6 +159,11 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
 
         group_positions
     }
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String> {
+        &self.description
+    }
 }
 
 /// Implementing `TokenConfigurationV0Setters` for `TokenConfigurationV0`
@@ -161,6 +176,11 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the new conventions change rules.
     fn set_conventions_change_rules(&mut self, rules: ChangeControlRules) {
         self.conventions_change_rules = rules;
+    }
+
+    /// Allow or not a transfer and mint tokens to frozen identity token balances
+    fn allow_transfer_to_frozen_balance(&mut self, allow: bool) {
+        self.allow_transfer_to_frozen_balance = allow;
     }
 
     /// Sets the base supply.
@@ -219,5 +239,10 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         self.main_control_group_can_be_modified = action_takers;
+    }
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
     }
 }

@@ -23,26 +23,26 @@ impl Drive {
     /// * `transaction` - A transaction that requests the contract.
     ///
     /// * `start_at_date` - A `u64` representing the timestamp in Unix Epoch format from which to
-    /// start fetching the contract's history.
+    ///   start fetching the contract's history.
     ///
     /// * `limit` - An `Option<u16>` that sets the maximum number of contract history entries
-    /// to return. If `None`, the limit is set to 10. Should be between 1 and 10.
+    ///   to return. If `None`, the limit is set to 10. Should be between 1 and 10.
     ///
     /// * `offset` - An `Option<u16>` that sets the number of contract history entries to skip
-    /// before starting to return them. If `None`, no entries are skipped.
+    ///   before starting to return them. If `None`, no entries are skipped.
     ///
     /// # Returns
     ///
     /// * `Result<BTreeMap<u64,DataContract>, Error>` - A `Result` type, where `Ok` variant contains
-    /// a `BTreeMap` with Unix timestamp as the key and contract as the value, representing
-    /// the contract's history. The `Err` variant contains an `Error` in case of a failure.
+    ///   a `BTreeMap` with Unix timestamp as the key and contract as the value, representing
+    ///   the contract's history. The `Err` variant contains an `Error` in case of a failure.
     ///
     /// # Errors
     ///
     /// This function will return an `Error` in the following situations:
     ///
     /// * If the contract ID, start date, limit, or offset parameters are invalid for querying
-    /// contract history.
+    ///   contract history.
     ///
     /// * If the contract cannot be deserialized due to protocol errors.
     ///

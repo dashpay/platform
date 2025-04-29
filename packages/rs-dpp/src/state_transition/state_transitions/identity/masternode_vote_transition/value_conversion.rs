@@ -14,9 +14,9 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::PlatformVersion;
 use versioned_feature_core::FeatureVersion;
 
-impl<'a> ValueConvertible<'a> for MasternodeVoteTransition {}
+impl ValueConvertible<'_> for MasternodeVoteTransition {}
 
-impl<'a> StateTransitionValueConvert<'a> for MasternodeVoteTransition {
+impl StateTransitionValueConvert<'_> for MasternodeVoteTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             MasternodeVoteTransition::V0(transition) => {

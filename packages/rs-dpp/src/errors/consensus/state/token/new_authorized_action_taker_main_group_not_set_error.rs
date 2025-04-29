@@ -15,6 +15,12 @@ use thiserror::Error;
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct NewAuthorizedActionTakerMainGroupNotSetError {}
 
+impl Default for NewAuthorizedActionTakerMainGroupNotSetError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NewAuthorizedActionTakerMainGroupNotSetError {
     pub fn new() -> Self {
         Self {}

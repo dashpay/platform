@@ -5,21 +5,13 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode};
 use crate::prelude::{IdentityNonce, Revision};
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_burn_transition::TokenBurnTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_claim_transition::TokenClaimTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_config_update_transition::TokenConfigUpdateTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_emergency_action_transition::TokenEmergencyActionTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::TokenFreezeTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_mint_transition::TokenMintTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentPurchaseTransition, DocumentReplaceTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
+use crate::state_transition::state_transitions::document::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition};
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
@@ -126,6 +118,16 @@ impl BatchTransitionResolversV0 for DocumentTransition {
     }
 
     fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition> {
+        None
+    }
+
+    fn as_transition_token_direct_purchase(&self) -> Option<&TokenDirectPurchaseTransition> {
+        None
+    }
+
+    fn as_transition_token_set_price_for_direct_purchase(
+        &self,
+    ) -> Option<&TokenSetPriceForDirectPurchaseTransition> {
         None
     }
 }

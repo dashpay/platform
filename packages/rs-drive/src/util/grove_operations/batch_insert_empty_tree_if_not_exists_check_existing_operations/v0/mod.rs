@@ -15,6 +15,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn batch_insert_empty_tree_if_not_exists_check_existing_operations_v0<
         const N: usize,
     >(

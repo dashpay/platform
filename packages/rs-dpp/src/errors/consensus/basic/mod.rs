@@ -15,9 +15,7 @@ pub mod unsupported_protocol_version_error;
 pub mod basic_error;
 pub mod group;
 pub mod invalid_identifier_error;
-#[cfg(feature = "json-schema-validation")]
 pub mod json_schema_compilation_error;
-#[cfg(feature = "json-schema-validation")]
 pub mod json_schema_error;
 pub mod overflow_error;
 pub mod state_transition;

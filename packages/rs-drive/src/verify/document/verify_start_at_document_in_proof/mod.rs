@@ -8,7 +8,7 @@ use crate::query::DriveDocumentQuery;
 use dpp::document::Document;
 use platform_version::version::PlatformVersion;
 
-impl<'a> DriveDocumentQuery<'a> {
+impl DriveDocumentQuery<'_> {
     /// Verifies if a document exists at the beginning of a proof,
     /// and returns the root hash and the optionally found document.
     ///

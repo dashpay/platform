@@ -14,14 +14,15 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds to the token's total supply
+    #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_total_supply(
         &self,
         token_id: [u8; 32],
         amount: TokenAmount,
         allow_first_mint: bool,
         allow_saturation: bool,
-        block_info: &BlockInfo,
         apply: bool,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(FeeResult, TokenAmount), Error> {
@@ -37,8 +38,8 @@ impl Drive {
                 amount,
                 allow_first_mint,
                 allow_saturation,
-                block_info,
                 apply,
+                block_info,
                 transaction,
                 platform_version,
             ),
@@ -50,6 +51,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds the operations of adding to the token total supply
     pub fn add_to_token_total_supply_add_to_operations(
         &self,
@@ -88,6 +90,7 @@ impl Drive {
     }
 
     /// The operations needed to add to the token total supply
+    #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_total_supply_operations(
         &self,
         token_id: [u8; 32],

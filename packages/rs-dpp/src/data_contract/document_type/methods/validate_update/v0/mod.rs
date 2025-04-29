@@ -8,7 +8,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-impl<'a> DocumentTypeRef<'a> {
+impl DocumentTypeRef<'_> {
     #[inline(always)]
     pub(super) fn validate_update_v0(
         &self,

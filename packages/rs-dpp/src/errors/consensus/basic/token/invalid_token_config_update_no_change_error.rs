@@ -13,6 +13,12 @@ use thiserror::Error;
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenConfigUpdateNoChangeError;
 
+impl Default for InvalidTokenConfigUpdateNoChangeError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InvalidTokenConfigUpdateNoChangeError {
     /// Creates a new `InvalidTokenConfigUpdateError`.
     pub fn new() -> Self {

@@ -92,7 +92,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
         if deserializer.is_human_readable() {
             struct StringVisitor;
 
-            impl<'de> Visitor<'de> for StringVisitor {
+            impl Visitor<'_> for StringVisitor {
                 type Value = IdentifierBytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -105,7 +105,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 {
                     let bytes = bs58::decode(v)
                         .into_vec()
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                        .map_err(|e| E::custom(format!("expected base 58: {}", e)))?;
                     if bytes.len() != 32 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }
@@ -119,7 +119,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
         } else {
             struct BytesVisitor;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
+            impl Visitor<'_> for BytesVisitor {
                 type Value = IdentifierBytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

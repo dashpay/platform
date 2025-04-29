@@ -22,9 +22,9 @@ use crate::{
 };
 use dpp::identifier::Identifier;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
-use std::str::FromStr;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -155,13 +155,20 @@ impl DocumentFactoryWASM {
             }
         }
 
+        // TODO: use types or structs
+        #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef, Bytes32)>,
+            Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)>,
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32)> = documents
+                let documents_with_refs: Vec<(
+                    Document,
+                    DocumentTypeRef,
+                    Bytes32,
+                    Option<TokenPaymentInfo>,
+                )> = documents
                     .iter()
                     .map(|extended_document| {
                         (
@@ -171,6 +178,7 @@ impl DocumentFactoryWASM {
                                 .document_type_for_name(extended_document.document_type_name())
                                 .expect("should be able to get document type"),
                             extended_document.entropy().to_owned(),
+                            extended_document.token_payment_info(),
                         )
                     })
                     .collect();
@@ -325,6 +333,7 @@ fn extract_documents_of_action(
         return Ok(vec![]);
     }
 
+    #[allow(clippy::unnecessary_fallible_conversions)]
     let documents_array = js_sys::Array::try_from(documents_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 

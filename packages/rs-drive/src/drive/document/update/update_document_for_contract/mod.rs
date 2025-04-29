@@ -35,6 +35,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(FeeResult)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_document_for_contract(
         &self,
         document: &Document,

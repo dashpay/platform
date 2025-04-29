@@ -14,6 +14,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Insert a new key into an identity operations
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn insert_new_unique_key_operations_v0(
         &self,
         identity_id: [u8; 32],

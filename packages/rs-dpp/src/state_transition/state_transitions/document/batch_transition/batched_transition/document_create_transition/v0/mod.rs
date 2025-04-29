@@ -20,11 +20,12 @@ use crate::{document, errors::ProtocolError};
 
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::balances::credits::Credits;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
@@ -35,6 +36,7 @@ use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::state_transitions::document::batch_transition;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -196,92 +198,86 @@ impl DocumentFromCreateTransitionV0 for Document {
     {
         let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
-        match base {
-            DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 { id, .. } = base_v0;
+        let requires_created_at = document_type
+            .required_fields()
+            .contains(document::property_names::CREATED_AT);
+        let requires_updated_at = document_type
+            .required_fields()
+            .contains(document::property_names::UPDATED_AT);
 
-                let requires_created_at = document_type
-                    .required_fields()
-                    .contains(document::property_names::CREATED_AT);
-                let requires_updated_at = document_type
-                    .required_fields()
-                    .contains(document::property_names::UPDATED_AT);
+        let requires_created_at_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::CREATED_AT_BLOCK_HEIGHT);
+        let requires_updated_at_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
 
-                let requires_created_at_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::CREATED_AT_BLOCK_HEIGHT);
-                let requires_updated_at_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
+        let requires_created_at_core_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::CREATED_AT_CORE_BLOCK_HEIGHT);
+        let requires_updated_at_core_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
 
-                let requires_created_at_core_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::CREATED_AT_CORE_BLOCK_HEIGHT);
-                let requires_updated_at_core_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
+        let created_at = if requires_created_at {
+            Some(block_info.time_ms)
+        } else {
+            None
+        };
+        let updated_at = if requires_updated_at {
+            Some(block_info.time_ms)
+        } else {
+            None
+        };
 
-                let created_at = if requires_created_at {
-                    Some(block_info.time_ms)
-                } else {
-                    None
-                };
-                let updated_at = if requires_updated_at {
-                    Some(block_info.time_ms)
-                } else {
-                    None
-                };
+        let created_at_block_height = if requires_created_at_block_height {
+            Some(block_info.height)
+        } else {
+            None
+        };
+        let updated_at_block_height = if requires_updated_at_block_height {
+            Some(block_info.height)
+        } else {
+            None
+        };
 
-                let created_at_block_height = if requires_created_at_block_height {
-                    Some(block_info.height)
-                } else {
-                    None
-                };
-                let updated_at_block_height = if requires_updated_at_block_height {
-                    Some(block_info.height)
-                } else {
-                    None
-                };
+        let created_at_core_block_height = if requires_created_at_core_block_height {
+            Some(block_info.core_height)
+        } else {
+            None
+        };
+        let updated_at_core_block_height = if requires_updated_at_core_block_height {
+            Some(block_info.core_height)
+        } else {
+            None
+        };
 
-                let created_at_core_block_height = if requires_created_at_core_block_height {
-                    Some(block_info.core_height)
-                } else {
-                    None
-                };
-                let updated_at_core_block_height = if requires_updated_at_core_block_height {
-                    Some(block_info.core_height)
-                } else {
-                    None
-                };
-
-                match platform_version
-                    .dpp
-                    .document_versions
-                    .document_structure_version
-                {
-                    0 => Ok(DocumentV0 {
-                        id,
-                        owner_id,
-                        properties: data,
-                        revision: document_type.initial_revision(),
-                        created_at,
-                        updated_at,
-                        transferred_at: None,
-                        created_at_block_height,
-                        updated_at_block_height,
-                        transferred_at_block_height: None,
-                        created_at_core_block_height,
-                        updated_at_core_block_height,
-                        transferred_at_core_block_height: None,
-                    }
-                    .into()),
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "Document::try_from_create_transition_v0".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id: base.id(),
+                owner_id,
+                properties: data,
+                revision: document_type.initial_revision(),
+                created_at,
+                updated_at,
+                transferred_at: None,
+                created_at_block_height,
+                updated_at_block_height,
+                transferred_at_block_height: None,
+                created_at_core_block_height,
+                updated_at_core_block_height,
+                transferred_at_core_block_height: None,
             }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_create_transition_v0".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -297,92 +293,86 @@ impl DocumentFromCreateTransitionV0 for Document {
     {
         let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
-        match base {
-            DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 { id, .. } = base_v0;
+        let requires_created_at = document_type
+            .required_fields()
+            .contains(document::property_names::CREATED_AT);
+        let requires_updated_at = document_type
+            .required_fields()
+            .contains(document::property_names::UPDATED_AT);
 
-                let requires_created_at = document_type
-                    .required_fields()
-                    .contains(document::property_names::CREATED_AT);
-                let requires_updated_at = document_type
-                    .required_fields()
-                    .contains(document::property_names::UPDATED_AT);
+        let requires_created_at_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::CREATED_AT_BLOCK_HEIGHT);
+        let requires_updated_at_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
 
-                let requires_created_at_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::CREATED_AT_BLOCK_HEIGHT);
-                let requires_updated_at_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
+        let requires_created_at_core_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::CREATED_AT_CORE_BLOCK_HEIGHT);
+        let requires_updated_at_core_block_height = document_type
+            .required_fields()
+            .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
 
-                let requires_created_at_core_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::CREATED_AT_CORE_BLOCK_HEIGHT);
-                let requires_updated_at_core_block_height = document_type
-                    .required_fields()
-                    .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
+        let created_at = if requires_created_at {
+            Some(block_info.time_ms)
+        } else {
+            None
+        };
+        let updated_at = if requires_updated_at {
+            Some(block_info.time_ms)
+        } else {
+            None
+        };
 
-                let created_at = if requires_created_at {
-                    Some(block_info.time_ms)
-                } else {
-                    None
-                };
-                let updated_at = if requires_updated_at {
-                    Some(block_info.time_ms)
-                } else {
-                    None
-                };
+        let created_at_block_height = if requires_created_at_block_height {
+            Some(block_info.height)
+        } else {
+            None
+        };
+        let updated_at_block_height = if requires_updated_at_block_height {
+            Some(block_info.height)
+        } else {
+            None
+        };
 
-                let created_at_block_height = if requires_created_at_block_height {
-                    Some(block_info.height)
-                } else {
-                    None
-                };
-                let updated_at_block_height = if requires_updated_at_block_height {
-                    Some(block_info.height)
-                } else {
-                    None
-                };
+        let created_at_core_block_height = if requires_created_at_core_block_height {
+            Some(block_info.core_height)
+        } else {
+            None
+        };
+        let updated_at_core_block_height = if requires_updated_at_core_block_height {
+            Some(block_info.core_height)
+        } else {
+            None
+        };
 
-                let created_at_core_block_height = if requires_created_at_core_block_height {
-                    Some(block_info.core_height)
-                } else {
-                    None
-                };
-                let updated_at_core_block_height = if requires_updated_at_core_block_height {
-                    Some(block_info.core_height)
-                } else {
-                    None
-                };
-
-                match platform_version
-                    .dpp
-                    .document_versions
-                    .document_structure_version
-                {
-                    0 => Ok(DocumentV0 {
-                        id: *id,
-                        owner_id,
-                        properties: data.clone(),
-                        revision: document_type.initial_revision(),
-                        created_at,
-                        updated_at,
-                        transferred_at: None,
-                        created_at_block_height,
-                        updated_at_block_height,
-                        transferred_at_block_height: None,
-                        created_at_core_block_height,
-                        updated_at_core_block_height,
-                        transferred_at_core_block_height: None,
-                    }
-                    .into()),
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "Document::try_from_owned_create_transition_v0".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id: base.id(),
+                owner_id,
+                properties: data.clone(),
+                revision: document_type.initial_revision(),
+                created_at,
+                updated_at,
+                transferred_at: None,
+                created_at_block_height,
+                updated_at_block_height,
+                transferred_at_block_height: None,
+                created_at_core_block_height,
+                updated_at_core_block_height,
+                transferred_at_core_block_height: None,
             }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_owned_create_transition_v0".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 }

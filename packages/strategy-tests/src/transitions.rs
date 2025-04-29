@@ -387,7 +387,7 @@ pub fn create_identity_update_transition_add_keys(
         .values()
         .map(|pk| pk.id())
         .max()
-        .expect("Expected a max public key id") as u32
+        .expect("Expected a max public key id")
         + keys_already_added_this_block_count
         + 1) as KeyID;
 
@@ -880,6 +880,7 @@ pub fn create_identity_credit_transfer_transition(
 /// This function may panic under the following conditions:
 /// - When unable to generate random cryptographic keys or identities.
 /// - Conversion and encoding errors related to the cryptographic data.
+#[allow(clippy::too_many_arguments)]
 pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
@@ -907,7 +908,7 @@ pub fn create_identities_state_transitions(
 
     for (i, identity) in identities.iter_mut().enumerate() {
         // TODO: deal with the case where there's more than one extra key
-        for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
+        for (purpose, security_to_key_type_map) in extra_keys.iter() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
                     let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
@@ -1036,8 +1037,7 @@ where
             let (_, pk) = ECDSA_SECP256K1
                 .random_public_and_private_key_data(rng, platform_version)
                 .unwrap();
-            let sk: [u8; 32] = pk.try_into().unwrap();
-            let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+            let secret_key = SecretKey::from_str(hex::encode(pk).as_str()).unwrap();
             let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
                 PrivateKey::new(secret_key, Network::Dash),
                 amount_range,
@@ -1047,7 +1047,7 @@ where
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
                     asset_lock_proof,
-                    &sk,
+                    &pk,
                     signer,
                     &NativeBlsModule,
                     0,

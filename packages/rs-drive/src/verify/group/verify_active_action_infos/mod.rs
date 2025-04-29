@@ -44,6 +44,7 @@ impl Drive {
     /// - [`Error::Proof`]: If the proof is invalid, corrupted, or contains unexpected data structures.
     /// - [`Error::Drive(DriveError::UnknownVersionMismatch)`]: If the method is called with an unsupported platform version.
     /// - Any other errors propagated from the versioned implementation.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_action_infos_in_contract<T: FromIterator<(Identifier, GroupAction)>>(
         proof: &[u8],
         contract_id: Identifier,

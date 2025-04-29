@@ -25,7 +25,7 @@ where
     /// # Returns
     ///
     /// * Result<Identity, Error> - Returns the constructed identity for the operator if successful.
-    /// Otherwise, returns an error.
+    ///   Otherwise, returns an error.
     pub(crate) fn create_operator_identity(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,

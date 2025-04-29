@@ -19,6 +19,8 @@ use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
 
+use super::EMPTY_KEYWORDS;
+
 pub mod v0;
 pub mod v1;
 
@@ -269,6 +271,34 @@ impl DataContractV1Getters for DataContract {
         }
     }
 
+    fn keywords(&self) -> &Vec<String> {
+        match self {
+            DataContract::V0(_) => &EMPTY_KEYWORDS,
+            DataContract::V1(v1) => &v1.keywords,
+        }
+    }
+
+    fn keywords_mut(&mut self) -> Option<&mut Vec<String>> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => Some(&mut v1.keywords),
+        }
+    }
+
+    fn description(&self) -> Option<&String> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.description.as_ref(),
+        }
+    }
+
+    fn description_mut(&mut self) -> Option<&mut String> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.description.as_mut(),
+        }
+    }
+
     /// Returns the timestamp in milliseconds when the contract was created.
     fn created_at(&self) -> Option<TimestampMillis> {
         match self {
@@ -398,6 +428,20 @@ impl DataContractV1Setters for DataContract {
     fn set_updated_at_epoch(&mut self, epoch: Option<EpochIndex>) {
         if let DataContract::V1(v1) = self {
             v1.updated_at_epoch = epoch;
+        }
+    }
+
+    /// Sets the keywords for the contract.
+    fn set_keywords(&mut self, keywords: Vec<String>) {
+        if let DataContract::V1(v1) = self {
+            v1.keywords = keywords;
+        }
+    }
+
+    /// Sets the description for the contract.
+    fn set_description(&mut self, description: Option<String>) {
+        if let DataContract::V1(v1) = self {
+            v1.description = description;
         }
     }
 }

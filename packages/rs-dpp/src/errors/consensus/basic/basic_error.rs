@@ -2,10 +2,8 @@ use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-
+use crate::data_contract::errors::DataContractError;
 use crate::errors::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-#[cfg(feature = "json-schema-validation")]
-use crate::errors::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::errors::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
@@ -25,8 +23,12 @@ use crate::errors::consensus::basic::data_contract::{
     NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
+};
+use crate::errors::consensus::basic::data_contract::{
+    InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
+    UnknownDocumentActionTokenEffectError,
 };
 use crate::errors::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -74,7 +76,10 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::consensus::ConsensusError;
 
-use crate::data_contract::errors::contract::DataContractError;
+use super::data_contract::{
+    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
+    TooManyKeywordsError,
+};
 use crate::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::errors::consensus::basic::overflow_error::OverflowError;
 use crate::errors::consensus::basic::token::{
@@ -85,7 +90,6 @@ use crate::errors::consensus::basic::token::{
 };
 use crate::errors::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::errors::consensus::basic::value_error::ValueError;
-#[cfg(feature = "json-schema-validation")]
 use crate::errors::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
@@ -138,12 +142,10 @@ pub enum BasicError {
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
-    #[cfg(feature = "json-schema-validation")]
     // Structure error
     #[error(transparent)]
     JsonSchemaCompilationError(JsonSchemaCompilationError),
 
-    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
 
@@ -175,7 +177,6 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError),
 
-    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     InvalidJsonSchemaRefError(InvalidJsonSchemaRefError),
 
@@ -508,6 +509,29 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingDefaultLocalizationError(MissingDefaultLocalizationError),
+
+    #[error(transparent)]
+    UnknownGasFeesPaidByError(UnknownGasFeesPaidByError),
+
+    #[error(transparent)]
+    UnknownDocumentActionTokenEffectError(UnknownDocumentActionTokenEffectError),
+
+    #[error(transparent)]
+    TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+        TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
+    ),
+
+    #[error(transparent)]
+    TooManyKeywordsError(TooManyKeywordsError),
+
+    #[error(transparent)]
+    DuplicateKeywordsError(DuplicateKeywordsError),
+
+    #[error(transparent)]
+    InvalidKeywordLengthError(InvalidKeywordLengthError),
+
+    #[error(transparent)]
+    InvalidDescriptionLengthError(InvalidDescriptionLengthError),
 }
 
 impl From<BasicError> for ConsensusError {

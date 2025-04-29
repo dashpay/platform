@@ -2,16 +2,18 @@ use dpp::block::block_info::BlockInfo;
 use dpp::errors::consensus::ConsensusError;
 use dpp::errors::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::errors::consensus::state::state_error::StateError;
-use dpp::errors::consensus::state::token::TokenMintPastMaxSupplyError;
+use dpp::errors::consensus::state::token::{IdentityTokenAccountFrozenError, TokenMintPastMaxSupplyError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::prelude::Identifier;
+use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
@@ -140,6 +142,39 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
                     )),
                 ));
             }
+        }
+
+        // We need to verify that account we are transferring to not frozen
+        if !self
+            .base()
+            .token_configuration()?
+            .is_allowed_transfer_to_frozen_balance()
+        {
+            let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
+                self.token_id().to_buffer(),
+                recipient.to_buffer(),
+                block_info,
+                true,
+                transaction,
+                platform_version,
+            )?;
+
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+            if let Some(info) = info {
+                if info.frozen() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                            IdentityTokenAccountFrozenError::new(
+                                self.token_id(),
+                                recipient,
+                                "mint".to_string(),
+                            ),
+                        )),
+                    ));
+                }
+            };
         }
 
         Ok(SimpleConsensusValidationResult::new())

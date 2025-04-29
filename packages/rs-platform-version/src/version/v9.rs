@@ -2,7 +2,7 @@ use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v2::CONTRACT_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_document_versions::v1::DOCUMENT_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_document_versions::v2::DOCUMENT_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v1::DPP_METHOD_VERSIONS_V1;
@@ -17,7 +17,7 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v6::DRIVE_ABCI_METHOD_VERSIONS_V6;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v4::DRIVE_ABCI_VALIDATION_VERSIONS_V4;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRIVE_ABCI_VALIDATION_VERSIONS_V6;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
@@ -33,11 +33,11 @@ pub const PROTOCOL_VERSION_9: ProtocolVersion = 9;
 //todo: make changes
 pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_9,
-    drive: DRIVE_VERSION_V4, // changed (for data contract insert)
+    drive: DRIVE_VERSION_V4, // changed (for data contract insert and update)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V6, // changed because of the genesis state
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V4,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V6, // changed
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
     },
@@ -49,7 +49,7 @@ pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V2,
         contract_versions: CONTRACT_VERSIONS_V2, // changed
-        document_versions: DOCUMENT_VERSIONS_V1,
+        document_versions: DOCUMENT_VERSIONS_V2, // changed to support new serialization
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V1,

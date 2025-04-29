@@ -7,12 +7,15 @@ use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentUpdatePriceTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentUpdatePriceTransition {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
         price: Credits,
+        token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
@@ -30,6 +33,7 @@ impl DocumentUpdatePriceTransition {
                 document,
                 document_type,
                 price,
+                token_payment_info,
                 identity_contract_nonce,
                 platform_version,
                 base_feature_version,

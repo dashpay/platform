@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
-use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation, TokenOperation};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
@@ -9,10 +9,13 @@ use dpp::block::epoch::Epoch;
 
 use platform_value::Identifier;
 use std::borrow::Cow;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::{DocumentPurchaseTransitionAction, DocumentPurchaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::drive::DriveError;
+use crate::util::batch::drive_op_batch::TokenOperationType;
 
 impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
@@ -35,6 +38,11 @@ impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction 
                 let original_owner_id = self.original_owner_id();
                 let purchase_amount = self.price();
                 let contract_fetch_info = self.base().data_contract_fetch_info();
+
+                let contract_owner_id = contract_fetch_info.contract.owner_id();
+
+                let document_purchase_token_cost = self.base().token_cost();
+
                 let document = self.document_owned();
 
                 // we are purchasing the document so the new storage flags should be on the new owner
@@ -46,7 +54,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction 
                     Some(new_document_owner_id.to_buffer()),
                 );
 
-                Ok(vec![
+                let mut ops = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: owner_id.into_buffer(),
                         contract_id: data_contract_id.into_buffer(),
@@ -71,7 +79,29 @@ impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction 
                         identity_id: original_owner_id.to_buffer(),
                         added_balance: purchase_amount,
                     }),
-                ])
+                ];
+
+                if let Some((token_id, effect, cost)) = document_purchase_token_cost {
+                    match effect {
+                        DocumentActionTokenEffect::TransferTokenToContractOwner => {
+                            ops.push(TokenOperation(TokenOperationType::TokenTransfer {
+                                token_id,
+                                sender_id: owner_id,
+                                recipient_id: contract_owner_id,
+                                amount: cost,
+                            }));
+                        }
+                        DocumentActionTokenEffect::BurnToken => {
+                            ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                                token_id,
+                                identity_balance_holder_id: owner_id,
+                                burn_amount: cost,
+                            }));
+                        }
+                    }
+                }
+
+                Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method:

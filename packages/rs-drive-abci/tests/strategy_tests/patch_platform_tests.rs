@@ -419,15 +419,11 @@ mod tests {
         // Wait for the thread to finish and assert that it didn't panic.
         handler
             .join()
-            .map(|result| {
+            .inspect(|result| {
                 cleanup_version_patches();
-
-                result
             })
-            .map_err(|e| {
+            .inspect_err(|e| {
                 cleanup_version_patches();
-
-                e
             })
             .expect("Thread has panicked");
     }

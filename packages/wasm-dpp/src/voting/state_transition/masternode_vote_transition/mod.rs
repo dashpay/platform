@@ -222,7 +222,7 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
-        self.0.user_fee_increase() as u16
+        self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(js_name=setUserFeeIncrease)]
@@ -253,7 +253,7 @@ impl MasternodeVoteTransitionWasm {
                         contested_document_resource_vote_poll,
                     ) => {
                         let contract_id = IdentifierWrapper::from(
-                            contested_document_resource_vote_poll.contract_id.clone(),
+                            contested_document_resource_vote_poll.contract_id,
                         );
 
                         Reflect::set(&js_object, &"contractId".into(), &contract_id.into())

@@ -53,7 +53,7 @@ pub struct DriveContestedDocumentQuery<'a> {
     pub internal_clauses: PrimaryContestedInternalClauses,
 }
 
-impl<'a> DriveContestedDocumentQuery<'a> {
+impl DriveContestedDocumentQuery<'_> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn construct_path_query(

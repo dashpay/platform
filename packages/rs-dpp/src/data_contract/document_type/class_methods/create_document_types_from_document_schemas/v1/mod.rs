@@ -11,6 +11,7 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 impl DocumentTypeV0 {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v1(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,

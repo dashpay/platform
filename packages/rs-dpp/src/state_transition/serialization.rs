@@ -328,6 +328,7 @@ mod tests {
                         .document_type_for_name(extended_document.document_type_name())
                         .unwrap(),
                     *extended_document.entropy(),
+                    None,
                 )
             })
             .collect::<Vec<_>>();

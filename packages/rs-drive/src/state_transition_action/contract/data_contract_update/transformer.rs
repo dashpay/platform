@@ -34,7 +34,6 @@ impl DataContractUpdateTransitionAction {
     /// tries to transform the borrowed DataContractUpdateTransition into a DataContractUpdateTransitionAction
     /// if validation is true the data contract transformation verifies that the data contract is valid
     /// if validation is false, the data contract base structure is created regardless of if it is valid
-
     pub fn try_from_borrowed_transition(
         value: &DataContractUpdateTransition,
         block_info: &BlockInfo,

@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the terminal reference.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_reference_for_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,

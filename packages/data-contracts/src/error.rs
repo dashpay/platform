@@ -136,3 +136,20 @@ impl From<token_history_contract::Error> for Error {
         }
     }
 }
+
+impl From<keyword_search_contract::Error> for Error {
+    fn from(e: keyword_search_contract::Error) -> Self {
+        match e {
+            keyword_search_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            keyword_search_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}

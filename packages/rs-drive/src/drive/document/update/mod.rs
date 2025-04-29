@@ -912,11 +912,15 @@ mod tests {
         let document =
             Document::from_platform_value(value, platform_version).expect("value to document");
 
-        let document_serialized = document
-            .serialize_consume(document_type, platform_version)
-            .expect("expected to serialize document");
+        let document_serialized = DocumentPlatformConversionMethodsV0::serialize(
+            &document,
+            document_type,
+            &contract,
+            platform_version,
+        )
+        .expect("expected to serialize document");
 
-        assert_eq!(document_serialized.len(), 120);
+        assert_eq!(document_serialized.len(), 121);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -1889,7 +1893,7 @@ mod tests {
         drive
             .apply_contract(
                 &contract,
-                block_info.clone(),
+                block_info,
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,

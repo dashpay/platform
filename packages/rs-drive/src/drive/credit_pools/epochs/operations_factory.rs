@@ -959,8 +959,8 @@ mod tests {
             assert_eq!(stored_proposers, awaited_result);
 
             let deleted_pro_tx_hashes = vec![
-                awaited_result.first().unwrap().0.clone(),
-                awaited_result.get(1).unwrap().0.clone(),
+                awaited_result.first().unwrap().0,
+                awaited_result.get(1).unwrap().0,
             ];
 
             // remove items we deleted

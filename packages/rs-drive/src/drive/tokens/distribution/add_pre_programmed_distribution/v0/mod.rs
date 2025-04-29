@@ -2,7 +2,6 @@ use crate::drive::tokens::paths::{
     token_ms_timed_at_time_distributions_path_vec, token_ms_timed_distributions_path_vec,
     token_pre_programmed_at_time_distribution_path_vec, token_pre_programmed_distributions_path,
     token_root_pre_programmed_distributions_path,
-    TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
 };
@@ -18,7 +17,7 @@ use dpp::data_contract::associated_token::token_distribution_key::{
     TokenDistributionKey, TokenDistributionType,
 };
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::methods::v0::TokenPreProgrammedDistributionV0Methods;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
@@ -118,6 +117,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Version 0 of `add_perpetual_distribution`
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_pre_programmed_distributions_v0(
         &self,
         token_id: [u8; 32],

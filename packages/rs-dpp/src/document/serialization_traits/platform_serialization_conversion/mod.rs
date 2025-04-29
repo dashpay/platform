@@ -3,6 +3,7 @@ pub(in crate::document) mod serialize;
 mod v0;
 
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0};
 use crate::errors::ProtocolError;
 #[cfg(feature = "validation")]
@@ -19,38 +20,28 @@ impl DocumentPlatformConversionMethodsV0 for Document {
     fn serialize(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            Document::V0(document_v0) => document_v0.serialize(document_type, platform_version),
+            Document::V0(document_v0) => {
+                document_v0.serialize(document_type, data_contract, platform_version)
+            }
         }
     }
 
     fn serialize_specific_version(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         feature_version: FeatureVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            Document::V0(document_v0) => {
-                document_v0.serialize_specific_version(document_type, feature_version)
-            }
-        }
-    }
-
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume(
-        self,
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        match self {
-            Document::V0(document_v0) => {
-                document_v0.serialize_consume(document_type, platform_version)
-            }
+            Document::V0(document_v0) => document_v0.serialize_specific_version(
+                document_type,
+                data_contract,
+                feature_version,
+            ),
         }
     }
 
@@ -133,7 +124,7 @@ mod tests {
             .expect("expected to get a random document");
 
         let serialized_document = document
-            .serialize(document_type, platform_version)
+            .serialize(document_type, &contract, platform_version)
             .expect("expected to serialize");
 
         let deserialized_document = Document::from_bytes(
@@ -148,7 +139,7 @@ mod tests {
                 .random_document(Some(3333), platform_version)
                 .expect("expected to get a random document");
             document
-                .serialize_consume(document_type, platform_version)
+                .serialize(document_type, &contract, platform_version)
                 .expect("expected to serialize consume");
         }
     }

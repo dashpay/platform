@@ -85,7 +85,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -345,7 +345,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -460,7 +460,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -574,7 +574,7 @@ mod tests {
             expected_estimated_fee_result: FeeResult,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -693,7 +693,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");

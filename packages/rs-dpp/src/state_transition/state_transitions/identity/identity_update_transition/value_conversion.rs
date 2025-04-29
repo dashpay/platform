@@ -14,8 +14,8 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::PlatformVersion;
 use versioned_feature_core::FeatureVersion;
 
-impl<'a> ValueConvertible<'a> for IdentityUpdateTransition {}
-impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransition {
+impl ValueConvertible<'_> for IdentityUpdateTransition {}
+impl StateTransitionValueConvert<'_> for IdentityUpdateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             IdentityUpdateTransition::V0(transition) => {

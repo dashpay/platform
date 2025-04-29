@@ -81,6 +81,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function may return an `Error` if the addition process fails or if the drive version does not match any of the implemented method versions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn insert_contract_add_operations(
         &self,
         contract_element: Element,

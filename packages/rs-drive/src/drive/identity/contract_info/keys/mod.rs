@@ -42,6 +42,9 @@ impl IdentityDataContractKeyApplyInfo {
             // } => contracts_owner_id.to_buffer(),
         }
     }
+
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     fn keys(
         self,
     ) -> (
@@ -57,6 +60,7 @@ impl IdentityDataContractKeyApplyInfo {
             // ContractFamilyBased { family_keys, .. } => (BTreeMap::new(), family_keys),
         }
     }
+    #[allow(clippy::too_many_arguments)]
     fn new_from_single_key(
         key_id: KeyID,
         purpose: Purpose,

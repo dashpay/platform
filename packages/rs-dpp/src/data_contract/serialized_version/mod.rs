@@ -21,6 +21,8 @@ use platform_versioning::PlatformVersioned;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use super::EMPTY_KEYWORDS;
+
 pub mod v0;
 pub mod v1;
 
@@ -95,6 +97,51 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_TOKENS,
             DataContractInSerializationFormat::V1(v1) => &v1.tokens,
+        }
+    }
+
+    pub fn keywords(&self) -> &Vec<String> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &EMPTY_KEYWORDS,
+            DataContractInSerializationFormat::V1(v1) => &v1.keywords,
+        }
+    }
+
+    pub fn description(&self) -> &Option<String> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &None,
+            DataContractInSerializationFormat::V1(v1) => &v1.description,
+        }
+    }
+
+    pub fn eq_without_auto_fields(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                DataContractInSerializationFormat::V0(v0_self),
+                DataContractInSerializationFormat::V0(v0_other),
+            ) => v0_self == v0_other,
+            (
+                DataContractInSerializationFormat::V1(v1_self),
+                DataContractInSerializationFormat::V1(v1_other),
+            ) => {
+                v1_self.id == v1_other.id
+                    && v1_self.config == v1_other.config
+                    && v1_self.version == v1_other.version
+                    && v1_self.owner_id == v1_other.owner_id
+                    && v1_self.schema_defs == v1_other.schema_defs
+                    && v1_self.document_schemas == v1_other.document_schemas
+                    && v1_self.groups == v1_other.groups
+                    && v1_self.tokens == v1_other.tokens
+            }
+            // Cross-version comparisons return false
+            (
+                DataContractInSerializationFormat::V0(_),
+                DataContractInSerializationFormat::V1(_),
+            )
+            | (
+                DataContractInSerializationFormat::V1(_),
+                DataContractInSerializationFormat::V0(_),
+            ) => false,
         }
     }
 }

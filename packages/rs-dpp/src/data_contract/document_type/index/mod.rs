@@ -128,7 +128,7 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
 
         struct FieldVisitor;
 
-        impl<'de> Visitor<'de> for FieldVisitor {
+        impl Visitor<'_> for FieldVisitor {
             type Value = Field;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -185,6 +185,7 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ContestedIndexFieldMatch {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         use ContestedIndexFieldMatch::*;
@@ -535,7 +536,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                                 Regex::new(&regex_str).map_err(|e| {
                                                     RegexError(format!(
                                                         "invalid field match regex: {}",
-                                                        e.to_string()
+                                                        e
                                                     ))
                                                 })?;
 

@@ -14,6 +14,7 @@ use platform_version::version::PlatformVersion;
 impl Drive {
     /// Adds a document using bincode serialization
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_v0(
         &self,
         owned_document_info: OwnedDocumentInfo,

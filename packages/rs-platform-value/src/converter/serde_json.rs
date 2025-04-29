@@ -297,12 +297,6 @@ impl From<&serde_json::Value> for Value {
     }
 }
 
-impl From<Box<serde_json::Value>> for Box<Value> {
-    fn from(value: Box<serde_json::Value>) -> Self {
-        value.into()
-    }
-}
-
 impl TryInto<serde_json::Value> for Value {
     type Error = Error;
 

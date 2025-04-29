@@ -4,6 +4,7 @@ use crate::document::Document;
 use crate::identity::{Identity, PartialIdentity};
 use crate::tokens::info::IdentityTokenInfo;
 use crate::tokens::status::TokenStatus;
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::voting::votes::Vote;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -16,6 +17,7 @@ pub enum StateTransitionProofResult {
     VerifiedTokenBalanceAbsence(Identifier),
     VerifiedTokenBalance(Identifier, TokenAmount),
     VerifiedTokenIdentityInfo(Identifier, IdentityTokenInfo),
+    VerifiedTokenPricingSchedule(Identifier, Option<TokenPricingSchedule>),
     VerifiedTokenStatus(TokenStatus),
     VerifiedTokenIdentitiesBalances(BTreeMap<Identifier, TokenAmount>),
     VerifiedPartialIdentity(PartialIdentity),

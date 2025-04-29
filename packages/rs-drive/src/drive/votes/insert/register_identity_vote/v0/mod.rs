@@ -12,6 +12,7 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn register_identity_vote_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],

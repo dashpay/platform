@@ -23,8 +23,10 @@ pub mod instant;
 pub mod validate_asset_lock_transaction_structure;
 
 // TODO: Serialization with bincode
+// TODO: Consider use Box for InstantAssetLockProof
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
@@ -74,8 +76,12 @@ impl<'de> Deserialize<'de> for AssetLockProof {
         // // Try to parse into chain lock
 
         let raw = RawAssetLockProof::deserialize(deserializer)?;
-        raw.try_into()
-            .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+        raw.try_into().map_err(|e: ProtocolError| {
+            D::Error::custom(format!(
+                "expected to be able to deserialize asset lock proof: {}",
+                e
+            ))
+        })
     }
 }
 

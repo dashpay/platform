@@ -19,11 +19,10 @@ use dapi_grpc::platform::v0::{
     GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
     GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest, Proof,
-    ResponseMetadata,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetTokenDirectPurchasePricesRequest,
+    GetVotePollsByEndDateRequest, Proof, ResponseMetadata,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::{IdentityPublicKey, KeyID};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
@@ -31,6 +30,7 @@ use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
+use dpp::{data_contract::DataContract, tokens::token_pricing_schedule::TokenPricingSchedule};
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
 use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
@@ -38,7 +38,8 @@ use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
     IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
     ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
-    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+    ProtocolVersionUpgrades, ResourceVotesByIdentity, TokenDirectPurchasePrices,
+    VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use platform_value::Identifier;
@@ -539,4 +540,13 @@ impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::Id
 /// * [KeysInPath]
 impl FetchMany<Key, Elements> for Element {
     type Request = GetPathElementsRequest;
+}
+
+/// Fetch multiple prices for token direct purchase.
+///
+/// ## Supported query types
+///
+/// * [`&\[Identifier\]`](dpp::prelude::Identifier) - list of identifiers of tokens whose prices we want to fetch
+impl FetchMany<Identifier, TokenDirectPurchasePrices> for TokenPricingSchedule {
+    type Request = GetTokenDirectPurchasePricesRequest;
 }

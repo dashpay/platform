@@ -165,7 +165,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         block_time_ms: None,
     };
 
-    //todo: deal with cost of this operation
+    // todo: deal with cost of this operation
     let documents_outcome = drive.query_documents(
         drive_query,
         None,
@@ -209,6 +209,7 @@ pub(crate) fn fetch_document_with_id(
         block_time_ms: None,
     };
 
+    // todo: deal with cost of this operation
     let documents_outcome = drive.query_documents(
         drive_query,
         None,

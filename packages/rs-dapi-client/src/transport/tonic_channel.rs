@@ -23,7 +23,9 @@ pub fn create_channel(
     let mut builder = Channel::builder(uri);
     let mut tls_config = ClientTlsConfig::new();
     #[cfg(not(target_os = "ios"))]
-    tls_config = tls_config.with_native_roots();
+    {
+        tls_config = tls_config.with_native_roots();
+    }
     tls_config = tls_config.with_webpki_roots()
         .assume_http2(true);
 

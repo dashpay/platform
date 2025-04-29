@@ -22,9 +22,9 @@ pub trait ToSerdeJSONExt {
     /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue>;
-    fn with_serde_into<D: DeserializeOwned>(&self) -> Result<D, JsValue>
+    fn with_serde_into<D>(&self) -> Result<D, JsValue>
     where
-        D: for<'de> serde::de::Deserialize<'de> + 'static;
+        D: DeserializeOwned + for<'de> serde::de::Deserialize<'de> + 'static;
 }
 
 impl ToSerdeJSONExt for JsValue {
@@ -284,8 +284,10 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
 pub(crate) trait Inner {
     type InnerItem;
 
+    #[allow(dead_code)]
     fn into_inner(self) -> Self::InnerItem;
     fn inner(&self) -> &Self::InnerItem;
+    #[allow(dead_code)]
     fn inner_mut(&mut self) -> &mut Self::InnerItem;
 }
 

@@ -8,10 +8,22 @@ use std::fmt;
 pub mod accessors;
 pub mod v0;
 
+/// Versioned wrapper for token name localization data.
+///
+/// `TokenConfigurationLocalization` allows extensibility for future schema upgrades
+/// while preserving backward compatibility. Each variant represents a specific format
+/// version for localization information.
+///
+/// This structure is used to map language codes to localized token names in a flexible,
+/// forward-compatible manner.
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
 #[serde(tag = "$format_version")]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenConfigurationLocalization {
+    /// Version 0 of the token localization schema.
+    ///
+    /// Defines basic capitalization preference, singular form, and plural form
+    /// for displaying token names.
     #[serde(rename = "0")]
     V0(TokenConfigurationLocalizationV0),
 }

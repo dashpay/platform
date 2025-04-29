@@ -7,6 +7,12 @@ use jsonschema::JSONSchema;
 use platform_version::version::PlatformVersion;
 use std::sync::RwLock;
 
+impl Default for JsonSchemaValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JsonSchemaValidator {
     pub fn new() -> Self {
         Self {

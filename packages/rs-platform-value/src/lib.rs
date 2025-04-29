@@ -1378,7 +1378,7 @@ impl Value {
                 }
             }
             Value::EnumString(strings) => {
-                let max_len = strings.iter().map(|string| string.as_bytes().len()).max();
+                let max_len = strings.iter().map(|string| string.len()).max();
                 if let Some(max) = max_len {
                     if max > size as usize {
                         Some((None, max as u32))
@@ -1404,8 +1404,8 @@ impl Value {
                 }
             }
             Value::Text(string) => {
-                if string.as_bytes().len() > size as usize {
-                    Some((None, string.as_bytes().len() as u32))
+                if string.len() > size as usize {
+                    Some((None, string.len() as u32))
                 } else {
                     None
                 }

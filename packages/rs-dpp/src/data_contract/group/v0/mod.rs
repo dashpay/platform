@@ -140,7 +140,9 @@ impl GroupMethodsV0 for GroupV0 {
         }
 
         // Check if the total power without unilateral members meets the required power
-        if total_power_without_unilateral_members < self.required_power {
+        if total_power_without_unilateral_members < self.required_power
+            && total_power_without_unilateral_members > 0
+        {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError::new(
                     total_power_without_unilateral_members,
@@ -152,5 +154,33 @@ impl GroupMethodsV0 for GroupV0 {
 
         // If all validations pass, return an empty validation result
         Ok(SimpleConsensusValidationResult::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod validate {
+        use super::*;
+
+        #[test]
+        fn test_group_with_all_unilateral_members() {
+            let member1 = Identifier::random();
+            let member2 = Identifier::random();
+
+            let group = GroupV0 {
+                members: [(member1, 1), (member2, 1)].into(),
+                required_power: 1,
+            };
+
+            let platform_version = PlatformVersion::latest();
+
+            let result = group
+                .validate(platform_version)
+                .expect("group should be valid");
+
+            assert!(result.is_valid());
+        }
     }
 }

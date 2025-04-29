@@ -5,6 +5,8 @@ mod replacement_tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::identifier::Identifier;
     use dpp::prelude::IdentityNonce;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use std::collections::BTreeMap;
 
     #[test]
@@ -61,6 +63,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -104,6 +107,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -213,6 +217,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -269,6 +274,7 @@ mod replacement_tests {
                     &key,
                     3 + i as IdentityNonce,
                     0,
+                    None,
                     &signer,
                     platform_version,
                     None,
@@ -559,6 +565,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -602,6 +609,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -689,6 +697,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -784,6 +793,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -891,6 +901,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -994,6 +1005,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1058,6 +1070,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1077,6 +1090,7 @@ mod replacement_tests {
                 &key,
                 4,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1210,6 +1224,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1278,6 +1293,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1297,6 +1313,7 @@ mod replacement_tests {
                 &key,
                 4,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1467,6 +1484,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1535,6 +1553,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1554,6 +1573,7 @@ mod replacement_tests {
                 &key,
                 4,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1728,6 +1748,7 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1796,6 +1817,7 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1815,6 +1837,7 @@ mod replacement_tests {
                 &key,
                 4,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1927,5 +1950,186 @@ mod replacement_tests {
                 .collect::<Vec<_>>()
                 .join(" | ")
         );
+    }
+
+    #[test]
+    fn test_document_replace_on_document_type_that_requires_a_token() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (contract_owner_id, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let (creator, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
+
+        let (contract, gold_token_id, gas_token_id) =
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
+                &mut platform,
+                contract_owner_id.id(),
+                platform_version,
+            );
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(0));
+
+        assert_eq!(contract.tokens().len(), 2);
+
+        add_tokens_to_identity(&mut platform, gold_token_id, creator.id(), 15);
+        add_tokens_to_identity(&mut platform, gas_token_id, creator.id(), 5);
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                creator.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let mut altered_document = document.clone();
+
+        altered_document.increment_revision().unwrap();
+        altered_document.set("attack", 5.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let documents_batch_update_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                card_document_type,
+                &key,
+                3,
+                0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 1,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(2),
+                    gas_fees_paid_by: Default::default(),
+                })),
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_update_serialized_transition = documents_batch_update_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_update_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gas_token_id.to_buffer(),
+                creator.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // He had 5, but spent 2
+        assert_eq!(token_balance, Some(3));
     }
 }

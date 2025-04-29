@@ -39,6 +39,8 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_destroy_frozen_funds_transition: FeatureVersion,
     pub token_config_update_transition: FeatureVersion,
     pub token_claim_transition: FeatureVersion,
+    pub token_direct_purchase_transition: FeatureVersion,
+    pub token_set_price_for_direct_purchase_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

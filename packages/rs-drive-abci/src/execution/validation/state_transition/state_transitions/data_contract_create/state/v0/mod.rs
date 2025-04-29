@@ -5,6 +5,10 @@ use dpp::block::block_info::BlockInfo;
 
 use dpp::errors::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::errors::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
@@ -61,6 +65,25 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
         if !action.is_valid() {
             return Ok(action);
+        }
+
+        // Validate token distribution rules
+        for (position, config) in self.data_contract().tokens() {
+            if let Some(distribution) = config.distribution_rules().pre_programmed_distribution() {
+                if let Some((timestamp, _)) = distribution.distributions().iter().next() {
+                    if timestamp < &block_info.time_ms {
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            StateTransitionAction::BumpIdentityNonceAction(
+                                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                            ),
+                            vec![StateError::PreProgrammedDistributionTimestampInPastError(
+                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), *position, *timestamp, block_info.time_ms),
+                            )
+                            .into()],
+                        ));
+                    }
+                }
+            }
         }
 
         let contract_fetch_info = platform.drive.get_contract_with_fetch_info_and_fee(

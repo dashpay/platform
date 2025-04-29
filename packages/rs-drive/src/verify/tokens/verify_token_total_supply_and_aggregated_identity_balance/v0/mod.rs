@@ -39,7 +39,7 @@ impl Drive {
                 _aggregated_identity_balances_path,
                 _aggregated_identity_balances_key,
                 Some(aggregated_identity_balances_element),
-            ) = proved_key_values.get(0).unwrap()
+            ) = proved_key_values.first().unwrap()
             else {
                 return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
                     "Token {} most likely does not exist",

@@ -67,6 +67,7 @@ impl<S: Signer> PutDocument<S> for Document {
             &identity_public_key,
             new_identity_contract_nonce,
             settings.user_fee_increase.unwrap_or_default(),
+            None,
             signer,
             sdk.version(),
             None,

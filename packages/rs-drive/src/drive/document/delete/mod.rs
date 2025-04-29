@@ -323,7 +323,7 @@ mod tests {
         .expect("expected to get document");
 
         let serialized = person_document0
-            .serialize(document_type, platform_version)
+            .serialize(document_type, &contract, platform_version)
             .expect("expected to serialize");
         let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
             .expect("expected to deserialize");

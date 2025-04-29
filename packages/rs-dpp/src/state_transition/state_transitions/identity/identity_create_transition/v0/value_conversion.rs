@@ -22,7 +22,7 @@ use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityCreateTransitionV0 {
+impl StateTransitionValueConvert<'_> for IdentityCreateTransitionV0 {
     fn from_object(
         raw_object: Value,
         platform_version: &PlatformVersion,

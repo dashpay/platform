@@ -10,8 +10,36 @@ pub mod reward_ratio;
 mod validation;
 
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
+/// The max cycles param is the upper limit of cycles the system can ever support
+/// This is applied to linear distribution.
+/// For all other distributions we use a versioned max cycles contained in the platform version.
+/// That other version is much lower because the calculations for other distributions are more
+/// complex.
+pub const MAX_DISTRIBUTION_CYCLES_PARAM: u64 = 32_767; //u15::Max 2^(63 - 48) - 1
 
-pub const MAX_LINEAR_SLOPE_PARAM: u64 = 256;
+pub const DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION: u16 = 128;
+
+pub const MAX_LINEAR_SLOPE_A_PARAM: u64 = 256;
+
+pub const MIN_LINEAR_SLOPE_A_PARAM: i64 = -255;
+
+pub const MIN_POL_M_PARAM: i64 = -8;
+pub const MAX_POL_M_PARAM: i64 = 8;
+
+pub const MAX_POL_N_PARAM: u64 = 32;
+
+pub const MIN_LOG_A_PARAM: i64 = -32_766;
+pub const MAX_LOG_A_PARAM: i64 = 32_767;
+pub const MAX_EXP_A_PARAM: u64 = 256;
+
+pub const MAX_EXP_M_PARAM: u64 = 8;
+
+pub const MIN_EXP_M_PARAM: i64 = -8;
+
+pub const MAX_EXP_N_PARAM: u64 = 32;
+
+pub const MIN_POL_A_PARAM: i64 = -255;
+pub const MAX_POL_A_PARAM: i64 = 256;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
@@ -86,11 +114,18 @@ pub enum DistributionFunction {
     /// f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
     /// ```
     ///
+    /// For `x <= s`, `f(x) = n`
+    ///
     /// # Parameters
     /// - `step_count`: The number of periods between each step.
     /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.
-    /// - `s`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
-    /// - `n`: The initial token emission.
+    /// - `start_decreasing_offset`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
+    ///     If this is provided before this number we give out the distribution start amount every interval.
+    /// - `max_interval_count`: The maximum amount of intervals there can be. Can be up to 1024.
+    ///     !!!Very important!!! -> This will default to 128 is default if not set.
+    ///     This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
+    /// - `distribution_start_amount`: The initial token emission.
+    /// - `trailing_distribution_interval_amount`: The token emission after all decreasing intervals.
     /// - `min_value`: Optional minimum emission value.
     ///
     /// # Use Case
@@ -104,8 +139,10 @@ pub enum DistributionFunction {
         step_count: u32,
         decrease_per_interval_numerator: u16,
         decrease_per_interval_denominator: u16,
-        s: Option<u64>,
-        n: TokenAmount,
+        start_decreasing_offset: Option<u64>,
+        max_interval_count: Option<u16>,
+        distribution_start_amount: TokenAmount,
+        trailing_distribution_interval_amount: TokenAmount,
         min_value: Option<u64>,
     },
 
@@ -115,6 +152,8 @@ pub enum DistributionFunction {
     /// - Within each step, the emission remains constant.
     /// - The keys in the `BTreeMap` represent the starting period for each interval,
     ///   and the corresponding values are the fixed token amounts to emit during that interval.
+    /// - VERY IMPORTANT: the steps are the amount of intervals, not the time or the block count.
+    ///   So if you have step 5 with interval 10 using blocks that's 50 blocks.
     ///
     /// # Use Case
     /// - Adjusting rewards at specific milestones or time intervals.
@@ -130,7 +169,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * (x - start_moment) / d) + starting_amount
+    /// f(x) = (a * (x - start_step) / d) + starting_amount
     /// ```
     ///
     /// # Parameters
@@ -334,7 +373,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * e^(m * (x - s) / n)) / d + c
+    /// f(x) = (a * e^(m * (x - s + o) / n)) / d + b
     /// ```
     ///
     /// # Parameters
@@ -343,7 +382,7 @@ pub enum DistributionFunction {
     /// - `d`: A divisor used to scale the exponential term.
     /// - `s`: Optional start period offset. If not set, the contract creation start is assumed.
     /// - `o`: An offset for the exp function, this is useful if s is in None.
-    /// - `c`: An offset added to the result.
+    /// - `b`: An offset added to the result.
     /// - `min_value` / `max_value`: Optional constraints on the emitted tokens.
     ///
     /// # Use Cases
@@ -369,7 +408,7 @@ pub enum DistributionFunction {
     ///
     /// ## **Example 2: Exponential Decay (`m < 0`)**
     /// - **Use Case**: A deflationary model where emissions start high and gradually decrease to ensure scarcity.
-    /// - **Parameters**: `a = 500`, `m = -3`, `n = 100`, `d = 20`, `c = 10`
+    /// - **Parameters**: `a = 500`, `m = -3`, `n = 100`, `d = 20`, `b = 10`
     /// - **Formula**:
     ///   ```text
     ///   f(x) = (500 * e^(-3 * (x - s) / 100)) / 20 + 10
@@ -382,18 +421,18 @@ pub enum DistributionFunction {
         n: u64,
         o: i64,
         start_moment: Option<u64>,
-        c: TokenAmount,
+        b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
 
-    /// Emits tokens following a logarithmic function.
+    /// Emits tokens following a natural logarithmic (ln) function.
     ///
     /// # Formula
     /// The emission at period `x` is computed as:
     ///
     /// ```text
-    /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
+    /// f(x) = (a * ln(m * (x - s + o) / n)) / d + b
     /// ```
     ///
     /// # Parameters
@@ -419,7 +458,7 @@ pub enum DistributionFunction {
     ///
     /// - Given the formula:
     ///   ```text
-    ///   f(x) = (a * log(m * (x - s + o) / n)) / d + b
+    ///   f(x) = (a * ln(m * (x - s + o) / n)) / d + b
     ///   ```
     ///
     /// - Let’s assume the following parameters:
@@ -431,7 +470,7 @@ pub enum DistributionFunction {
     ///
     /// - This results in:
     ///   ```text
-    ///   f(x) = (100 * log(2 * (x + 1) / 1)) / 10 + 50
+    ///   f(x) = (100 * ln(2 * (x + 1) / 1)) / 10 + 50
     ///   ```
     ///
     /// - **Expected Behavior:**
@@ -455,13 +494,13 @@ pub enum DistributionFunction {
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
-    /// Emits tokens following an inverted logarithmic function.
+    /// Emits tokens following an inverted natural logarithmic function.
     ///
     /// # Formula
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
+    /// f(x) = (a * ln( n / (m * (x - s + o)) )) / d + b
     /// ```
     ///
     /// # Parameters
@@ -482,22 +521,24 @@ pub enum DistributionFunction {
     ///   claimants receive diminishing rewards.
     ///
     /// # Example
-    /// - Suppose a system starts with **500 tokens per period** and gradually reduces over time:
-    ///
     ///   ```text
-    ///   f(x) = (1000 * log(5000 / (5 * (x - 1000)))) / 10 + 10
+    ///   f(x) = 10000 * ln(5000 / x)
     ///   ```
-    ///
-    ///   Example values:
-    ///
-    ///   | Period (x) | Emission (f(x)) |
-    ///   |------------|----------------|
-    ///   | 1000       | 500 tokens      |
-    ///   | 1500       | 230 tokens      |
-    ///   | 2000       | 150 tokens      |
-    ///   | 5000       | 50 tokens       |
-    ///   | 10,000     | 20 tokens       |
-    ///   | 50,000     | 10 tokens       |
+    /// - Values: a = 10000 n = 5000 m = 1 o = 0 b = 0 d = 0
+    ///           y
+    ///           ↑
+    ///          10000 |*
+    ///           9000 | *
+    ///           8000 |  *
+    ///           7000 |   *
+    ///           6000 |    *
+    ///           5000 |     *
+    ///           4000 |       *
+    ///           3000 |         *
+    ///           2000 |           *
+    ///           1000 |              *
+    ///              0 +-------------------*----------→ x
+    ///                  0     2000   4000   6000   8000
     ///
     ///   - The emission **starts high** and **gradually decreases**, ensuring early adopters receive
     ///     more tokens while later participants still get rewards.
@@ -529,23 +570,35 @@ impl fmt::Display for DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
-                n,
+                start_decreasing_offset: s,
+                max_interval_count,
+                distribution_start_amount,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
                 write!(
                     f,
                     "StepDecreasingAmount: {} tokens, decreasing by {}/{} every {} steps",
-                    n,
+                    distribution_start_amount,
                     decrease_per_interval_numerator,
                     decrease_per_interval_denominator,
                     step_count
                 )?;
                 if let Some(start) = s {
-                    write!(f, " starting at period {}", start)?;
+                    write!(f, ", starting at period {}", start)?;
                 }
+                if let Some(max_intervals) = max_interval_count {
+                    write!(f, ", with a maximum of {} intervals", max_intervals)?;
+                } else {
+                    write!(f, ", with a maximum of 128 intervals (default)")?;
+                }
+                write!(
+                    f,
+                    ", trailing distribution amount {} tokens",
+                    trailing_distribution_interval_amount
+                )?;
                 if let Some(min) = min_value {
-                    write!(f, ", with a minimum emission of {}", min)?;
+                    write!(f, ", minimum emission {} tokens", min)?;
                 }
                 Ok(())
             }
@@ -616,18 +669,18 @@ impl fmt::Display for DistributionFunction {
                 m,
                 n,
                 o,
-                start_moment: s,
-                c,
+                start_moment,
+                b,
                 min_value,
                 max_value,
             } => {
                 write!(f, "Exponential: f(x) = {} * e^( {} * (x", a, m)?;
-                if let Some(start) = s {
+                if let Some(start) = start_moment {
                     write!(f, " - {} + {})", start, o)?;
                 } else {
                     write!(f, " + {})", o)?;
                 }
-                write!(f, " / {} ) / {} + {}", n, d, c)?;
+                write!(f, " / {} ) / {} + {}", n, d, b)?;
                 if let Some(min) = min_value {
                     write!(f, ", min: {}", min)?;
                 }

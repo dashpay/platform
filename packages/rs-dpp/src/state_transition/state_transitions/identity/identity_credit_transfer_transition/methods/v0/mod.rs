@@ -16,6 +16,7 @@ use crate::state_transition::StateTransitionType;
 
 pub trait IdentityCreditTransferTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn try_from_identity<S: Signer>(
         identity: &Identity,
         to_identity_with_identifier: Identifier,

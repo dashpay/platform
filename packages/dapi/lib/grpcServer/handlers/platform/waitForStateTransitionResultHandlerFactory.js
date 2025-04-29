@@ -23,7 +23,6 @@ const TransactionErrorResult = require('../../../externalApis/tenderdash/waitFor
  * @param {fetchProofForStateTransition} fetchProofForStateTransition
  * @param {waitForTransactionToBeProvable} waitForTransactionToBeProvable
  * @param {BlockchainListener} blockchainListener
- * @param {DashPlatformProtocol} dpp
  * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
  * @param {number} stateTransitionWaitTimeout
  * @return {waitForStateTransitionResultHandler}
@@ -32,7 +31,6 @@ function waitForStateTransitionResultHandlerFactory(
   fetchProofForStateTransition,
   waitForTransactionToBeProvable,
   blockchainListener,
-  dpp,
   createGrpcErrorFromDriveResponse,
   stateTransitionWaitTimeout,
 ) {
@@ -112,19 +110,17 @@ function waitForStateTransitionResultHandlerFactory(
 
       v0.setError(error);
       response.setV0(v0);
+
       return response;
     }
 
     if (prove) {
-      const stateTransition = await dpp.stateTransition.createFromBuffer(
-        result.getTransaction(),
-        { skipValidation: true },
-      );
+      const stateTransitionProof = await fetchProofForStateTransition(result.getTransaction());
 
-      const stateTransitionProof = await fetchProofForStateTransition(stateTransition);
-      v0.setMetadata(stateTransitionProof.getV0().getMetadata());
-      v0.setProof(stateTransitionProof.getV0().getProof());
+      v0.setMetadata(stateTransitionProof.getMetadata());
+      v0.setProof(stateTransitionProof.getProof());
     }
+
     response.setV0(v0);
 
     return response;

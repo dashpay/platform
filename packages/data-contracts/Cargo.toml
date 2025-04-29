@@ -1,13 +1,13 @@
 [package]
 name = "data-contracts"
 description = "Dash Platform system data contracts"
-version = "2.0.0-dev.1"
+version = "2.0.0-rc.4"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-thiserror = "1.0.64"
+thiserror = "2.0.12"
 platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 withdrawals-contract = { path = "../withdrawals-contract" }
@@ -19,6 +19,7 @@ platform-value = { path = "../rs-platform-value" }
 versioned-feature-core = "1.0.0"
 wallet-utils-contract = { path = "../wallet-utils-contract" }
 token-history-contract = { path = "../token-history-contract" }
+keyword-search-contract = { path = "../keyword-search-contract" }
 ferment-macro = { version = "0.2", package = "ferment-macro", optional = true }
 
 [features]

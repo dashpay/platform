@@ -25,6 +25,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the platform version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn grove_insert<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,

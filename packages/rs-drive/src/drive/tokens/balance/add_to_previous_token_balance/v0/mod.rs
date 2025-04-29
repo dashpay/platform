@@ -19,6 +19,7 @@ impl Drive {
     /// This function checks for overflows and does not exceed MAX_CREDITS
     ///
     /// Balances are stored in the balance tree under the identity's id
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::tokens) fn add_to_identity_token_balance_v0(
         &self,
         token_id: [u8; 32],

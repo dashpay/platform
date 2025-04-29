@@ -31,6 +31,7 @@ use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::identity::contract_info) fn add_potential_contract_info_for_contract_bounded_key_v0(
         &self,
         identity_id: [u8; 32],
@@ -68,6 +69,7 @@ impl Drive {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds the contract info operations
     fn add_contract_info_operations_v0(
         &self,

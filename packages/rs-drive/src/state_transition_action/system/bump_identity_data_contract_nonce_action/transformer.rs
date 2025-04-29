@@ -101,16 +101,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            DocumentBaseTransition::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_document_base_transition(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_document_base_transition(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from borrowed base transition
@@ -119,16 +115,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            DocumentBaseTransition::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from base transition
@@ -137,16 +129,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            DocumentBaseTransitionAction::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_document_base_transition_action(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_document_base_transition_action(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from borrowed base transition
@@ -155,16 +143,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            DocumentBaseTransitionAction::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition_action(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition_action(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from base transition
@@ -173,16 +157,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            TokenBaseTransition::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_token_base_transition(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_token_base_transition(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from borrowed base transition
@@ -191,16 +171,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            TokenBaseTransition::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_borrowed_token_base_transition(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_borrowed_token_base_transition(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from base transition
@@ -209,16 +185,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            TokenBaseTransitionAction::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_token_base_transition_action(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_token_base_transition_action(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from borrowed base transition
@@ -227,16 +199,12 @@ impl BumpIdentityDataContractNonceAction {
         identity_id: Identifier,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {
-        match value {
-            TokenBaseTransitionAction::V0(v0) => {
-                BumpIdentityDataContractNonceActionV0::from_borrowed_token_base_transition_action(
-                    v0,
-                    identity_id,
-                    user_fee_increase,
-                )
-                .into()
-            }
-        }
+        BumpIdentityDataContractNonceActionV0::from_borrowed_token_base_transition_action(
+            value,
+            identity_id,
+            user_fee_increase,
+        )
+        .into()
     }
 
     /// from data contract update

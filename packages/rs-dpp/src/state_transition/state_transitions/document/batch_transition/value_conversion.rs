@@ -14,7 +14,7 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::protocol_version::PlatformVersion;
 use versioned_feature_core::FeatureVersion;
 
-impl<'a> StateTransitionValueConvert<'a> for BatchTransition {
+impl StateTransitionValueConvert<'_> for BatchTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             BatchTransition::V0(transition) => {

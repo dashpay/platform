@@ -2881,7 +2881,7 @@ mod tests {
                                 ),
                             ),
                         },
-                        &platform_state,
+                        platform_state,
                         platform_version,
                     )
                     .expect("expected to execute query")
@@ -2971,7 +2971,7 @@ mod tests {
                                 ),
                             ),
                         },
-                        &platform_state,
+                        platform_state,
                         platform_version,
                     )
                     .expect("expected to execute query")
@@ -2995,9 +2995,7 @@ mod tests {
                 let resolved_contested_document_vote_poll_drive_query =
                     ResolvedContestedDocumentVotePollVotesDriveQuery {
                         vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
-                            contract: DataContractResolvedInfo::BorrowedDataContract(
-                                &dpns_contract,
-                            ),
+                            contract: DataContractResolvedInfo::BorrowedDataContract(dpns_contract),
                             document_type_name: domain.name().clone(),
                             index_name: index_name.clone(),
                             index_values: vec![
@@ -6894,7 +6892,7 @@ mod tests {
                             );
 
                         // Now check that exactly one of the 'finished_vote_info's is None, and the other two are Some(_)
-                        let finished_vote_infos = vec![
+                        let finished_vote_infos = [
                             finished_vote_info1.is_some(),
                             finished_vote_info2.is_some(),
                             finished_vote_info3.is_some(),

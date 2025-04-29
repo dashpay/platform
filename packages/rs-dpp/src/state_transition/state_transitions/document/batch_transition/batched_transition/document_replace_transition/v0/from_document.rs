@@ -3,7 +3,8 @@ use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::IdentityNonce;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use versioned_feature_core::FeatureVersion;
@@ -12,6 +13,7 @@ impl DocumentReplaceTransitionV0 {
     pub(crate) fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
+        token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
@@ -20,6 +22,7 @@ impl DocumentReplaceTransitionV0 {
             base: DocumentBaseTransition::from_document(
                 &document,
                 document_type,
+                token_payment_info,
                 identity_contract_nonce,
                 platform_version,
                 base_feature_version,

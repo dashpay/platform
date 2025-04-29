@@ -94,6 +94,8 @@ mod tests {
                     TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
                 ),
             ]),
+            keywords: Vec::new(),
+            description: None,
         });
 
         let token_id_1 = contract.token_id(0).expect("expected token at position 0");

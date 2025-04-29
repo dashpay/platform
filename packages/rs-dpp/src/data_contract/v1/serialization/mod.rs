@@ -26,8 +26,12 @@ impl<'de> Deserialize<'de> for DataContractV1 {
         D: Deserializer<'de>,
     {
         let serialization_format = DataContractInSerializationFormatV1::deserialize(deserializer)?;
-        let current_version =
-            PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
+        let current_version = PlatformVersion::get_current().map_err(|e| {
+            serde::de::Error::custom(format!(
+                "expected to be able to get current platform version: {}",
+                e
+            ))
+        })?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
         DataContractV1::try_from_platform_versioned_v1(
             serialization_format,
@@ -111,6 +115,8 @@ impl DataContractV1 {
             updated_at_epoch: None,
             groups: Default::default(),
             tokens: Default::default(),
+            keywords: Default::default(),
+            description: None,
         };
 
         Ok(data_contract)
@@ -137,6 +143,8 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
+            keywords,
+            description,
         } = data_contract_data;
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
@@ -165,6 +173,8 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
+            keywords,
+            description,
         };
 
         Ok(data_contract)

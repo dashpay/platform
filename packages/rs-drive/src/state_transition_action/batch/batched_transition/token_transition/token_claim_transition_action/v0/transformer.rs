@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::process::id;
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::balances::credits::TokenAmount;
@@ -18,7 +17,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::{TokenPerpetualDistributionV0Accessors, TokenPerpetualDistributionV0Methods};
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::methods::v0::TokenPreProgrammedDistributionV0Methods;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::TokenClaimTransitionV0;
 use dpp::ProtocolError;
@@ -61,6 +60,7 @@ impl TokenClaimTransitionActionV0 {
     ///
     /// * `Result<ConsensusValidationResult<TokenClaimTransitionActionV0>, Error>` - Returns the constructed `TokenClaimTransitionActionV0` if successful,
     ///   or an error if any issue arises, such as missing data or an invalid state transition.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_claim_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -118,6 +118,7 @@ impl TokenClaimTransitionActionV0 {
     ///   `TokenClaimTransitionActionV0` and a `FeeResult` if successful. If an error occurs (e.g., missing data or
     ///   invalid state transition), it returns an `Error`.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_claim_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -178,7 +179,7 @@ impl TokenClaimTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -205,7 +206,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimPropertyMismatch(
                                     InvalidTokenClaimPropertyMismatch::new(
@@ -246,20 +247,19 @@ impl TokenClaimTransitionActionV0 {
 
                 fee_result.checked_add_assign(last_paid_time_fee_result)?;
 
-                let mut distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> =
-                    times
-                        .iter()
-                        .filter_map(|(timestamp, distribution)| {
-                            if timestamp > &block_info.time_ms {
-                                // Don't get the ones in the future
-                                None
-                            } else {
-                                distribution
-                                    .get(&owner_id)
-                                    .map(|amount| (*timestamp, *amount))
-                            }
-                        })
-                        .collect();
+                let distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> = times
+                    .iter()
+                    .filter_map(|(timestamp, distribution)| {
+                        if timestamp > &block_info.time_ms {
+                            // Don't get the ones in the future
+                            None
+                        } else {
+                            distribution
+                                .get(&owner_id)
+                                .map(|amount| (*timestamp, *amount))
+                        }
+                    })
+                    .collect();
 
                 let distribution_after_last_paid: Option<(TimestampMillis, TokenAmount)> =
                     if let Some(last_paid) = last_paid_moment {
@@ -287,7 +287,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimNoCurrentRewards(
                                     InvalidTokenClaimNoCurrentRewards::new(
@@ -327,7 +327,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimPropertyMismatch(
                                     InvalidTokenClaimPropertyMismatch::new(
@@ -367,7 +367,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimWrongClaimant(
                                     InvalidTokenClaimWrongClaimant::new(
@@ -513,7 +513,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimNoCurrentRewards(
                                     InvalidTokenClaimNoCurrentRewards::new(

@@ -13,6 +13,7 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 
 impl TokenBaseTransitionAction {
     /// from base transition with contract lookup
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_base_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -40,6 +41,7 @@ impl TokenBaseTransitionAction {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// from borrowed base transition with contract lookup
     pub fn try_from_borrowed_base_transition_with_contract_lookup(
         drive: &Drive,

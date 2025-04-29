@@ -6,6 +6,8 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 
 /// action v0
 #[derive(Default, Debug, Clone)]
@@ -37,8 +39,11 @@ impl BatchTransitionActionV0 {
             .iter()
             .filter_map(|transition| match transition {
                 BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::PurchaseAction(purchase),
-                ) => Some(purchase.price()),
+                    DocumentTransitionAction::PurchaseAction(document_purchase),
+                ) => Some(document_purchase.price()),
+                BatchedTransitionAction::TokenAction(
+                    TokenTransitionAction::DirectPurchaseAction(token_purchase),
+                ) => Some(token_purchase.total_agreed_price()),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {

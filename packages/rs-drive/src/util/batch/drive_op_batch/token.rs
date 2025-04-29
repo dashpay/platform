@@ -12,8 +12,8 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
-use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 /// Operations on Tokens
 #[derive(Clone, Debug)]
@@ -115,6 +115,14 @@ pub enum TokenOperationType {
         nonce: IdentityNonce,
         /// The token event
         event: TokenEvent,
+    },
+    /// Sets the price of a token for direct purchase
+    TokenSetPriceForDirectPurchase {
+        /// The token id
+        token_id: Identifier,
+        /// The price we are setting to
+        /// None means it's not currently for sale
+        price: Option<TokenPricingSchedule>,
     },
 }
 
@@ -288,6 +296,15 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                         transaction,
                         platform_version,
                     )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenSetPriceForDirectPurchase { token_id, price } => {
+                let batch_operations = drive.token_set_direct_purchase_price_operations(
+                    token_id.to_buffer(),
+                    price,
+                    estimated_costs_only_with_layer_info,
+                    platform_version,
+                )?;
                 Ok(batch_operations)
             }
         }

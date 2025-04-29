@@ -994,7 +994,7 @@ impl DocumentPropertyType {
         if value.is_null() {
             return Ok(vec![]);
         }
-        return match self {
+        match self {
             DocumentPropertyType::String(_) => {
                 let value_as_text = value
                     .as_text()
@@ -1137,7 +1137,7 @@ impl DocumentPropertyType {
                     "serialization of arrays not yet supported".to_string(),
                 ),
             )),
-        };
+        }
     }
 
     // Given a field type and a value this function chooses and executes the right encoding method
@@ -1242,7 +1242,7 @@ impl DocumentPropertyType {
         }
         match self {
             DocumentPropertyType::String(_) => {
-                if value == &vec![0] {
+                if value == [0] {
                     // we don't want to collide with the definition of an empty string
                     Ok(Value::Text("".to_string()))
                 } else {
@@ -1333,9 +1333,9 @@ impl DocumentPropertyType {
                 Ok(identifier.into())
             }
             DocumentPropertyType::Boolean => {
-                if value == &vec![0] {
+                if value == [0] {
                     Ok(Value::Bool(false))
-                } else if value == &vec![1] {
+                } else if value == [1] {
                     Ok(Value::Bool(true))
                 } else {
                     Err(ProtocolError::DecodingError(
@@ -2182,15 +2182,13 @@ fn find_unsigned_integer_type_for_max_value(max_value: i64) -> DocumentPropertyT
 fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPropertyType {
     if min >= 0 {
         find_unsigned_integer_type_for_max_value(max)
+    } else if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
+        DocumentPropertyType::I8
+    } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
+        DocumentPropertyType::I16
+    } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
+        DocumentPropertyType::I32
     } else {
-        if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
-            DocumentPropertyType::I8
-        } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
-            DocumentPropertyType::I16
-        } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
-            DocumentPropertyType::I32
-        } else {
-            DocumentPropertyType::I64
-        }
+        DocumentPropertyType::I64
     }
 }

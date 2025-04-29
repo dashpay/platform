@@ -46,7 +46,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
             |documents| {
                 documents.iter().for_each(|document| {
                     document
-                        .serialize(document_type, platform_version)
+                        .serialize(document_type, &contract, platform_version)
                         .expect("expected to serialize");
                 })
             },
@@ -78,7 +78,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
             |documents| {
                 documents.into_iter().for_each(|document| {
                     document
-                        .serialize_consume(document_type, platform_version)
+                        .serialize(document_type, &contract, platform_version)
                         .expect("expected to serialize");
                 })
             },
@@ -108,7 +108,8 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
             .iter()
             .map(|a| {
                 (
-                    a.serialize(document_type, platform_version).unwrap(),
+                    a.serialize(document_type, &contract, platform_version)
+                        .unwrap(),
                     a.to_cbor().expect("expected to encode to cbor"),
                 )
             })

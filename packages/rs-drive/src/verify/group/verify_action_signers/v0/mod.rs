@@ -62,8 +62,7 @@ impl Drive {
                     None => None,
                     _ => Some(Err(Error::Proof(ProofError::IncorrectProof(
                         "element should be a sum item representing member signed power".to_string(),
-                    ))
-                    .into())),
+                    )))),
                 }
             })
             .collect::<Result<T, Error>>()?;

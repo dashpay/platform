@@ -620,6 +620,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Converts a query Value to a `DriveQuery`.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_decomposed_values(
         where_clause: Value,
         order_by: Option<Value>,
@@ -1330,14 +1331,12 @@ impl<'a> DriveDocumentQuery<'a> {
             } else {
                 inner_query.insert_key(vec![]);
             }
+        } else if let Some(start_at_key) = start_at_key {
+            inner_query.insert_range_to(..start_at_key);
         } else {
-            if let Some(start_at_key) = start_at_key {
-                inner_query.insert_range_to(..start_at_key);
-            } else {
-                //todo: really not sure if this is correct
-                // Should investigate more
-                inner_query.insert_key(vec![]);
-            }
+            //todo: really not sure if this is correct
+            // Should investigate more
+            inner_query.insert_key(vec![]);
         }
 
         inner_query
@@ -1682,6 +1681,7 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
+    #[allow(clippy::too_many_arguments)]
     fn recursive_conditional_insert_on_query(
         query: &mut Query,
         conditional_value: Option<Vec<u8>>,

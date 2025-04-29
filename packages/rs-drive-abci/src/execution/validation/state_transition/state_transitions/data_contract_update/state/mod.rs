@@ -40,7 +40,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
                 }
                 self.validate_state_v0(
                     platform,
-                    &block_info,
+                    block_info,
                     validation_mode,
                     execution_context,
                     tx,

@@ -10,7 +10,7 @@ use crate::util::type_constants::{
     U64_SIZE_U8,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -68,7 +68,7 @@ pub trait DocumentInfoV0Methods {
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
 }
 
-impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
+impl DocumentInfoV0Methods for DocumentInfo<'_> {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool {
         matches!(self, DocumentInfo::DocumentRefAndSerialization(..))

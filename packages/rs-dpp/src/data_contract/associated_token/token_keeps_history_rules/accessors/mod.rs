@@ -30,6 +30,18 @@ impl TokenKeepsHistoryRulesV0Getters for TokenKeepsHistoryRules {
             TokenKeepsHistoryRules::V0(v0) => v0.keeps_burning_history,
         }
     }
+
+    fn keeps_direct_pricing_history(&self) -> bool {
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_direct_pricing_history,
+        }
+    }
+
+    fn keeps_direct_purchase_history(&self) -> bool {
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_direct_purchase_history,
+        }
+    }
 }
 
 /// Implementing `TokenKeepsHistoryRulesV0Setters` for `TokenKeepsHistoryRules`
@@ -55,6 +67,31 @@ impl TokenKeepsHistoryRulesV0Setters for TokenKeepsHistoryRules {
     fn set_keeps_burning_history(&mut self, value: bool) {
         match self {
             TokenKeepsHistoryRules::V0(v0) => v0.keeps_burning_history = value,
+        }
+    }
+
+    fn set_keeps_direct_pricing_history(&mut self, value: bool) {
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_direct_pricing_history = value,
+        }
+    }
+
+    fn set_keeps_direct_purchase_history(&mut self, value: bool) {
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_direct_purchase_history = value,
+        }
+    }
+
+    fn set_all_keeps_history(&mut self, value: bool) {
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => {
+                v0.keeps_transfer_history = value;
+                v0.keeps_freezing_history = value;
+                v0.keeps_minting_history = value;
+                v0.keeps_burning_history = value;
+                v0.keeps_direct_pricing_history = value;
+                v0.keeps_direct_purchase_history = value;
+            }
         }
     }
 }

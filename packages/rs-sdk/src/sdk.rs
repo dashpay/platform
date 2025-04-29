@@ -47,6 +47,8 @@ use zeroize::Zeroizing;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
+/// How many token configs fit in the cache.
+pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
@@ -740,6 +742,10 @@ pub struct SdkBuilder {
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
 
+    /// Cache size for token configs. Used by mock [GrpcContextProvider].
+    #[cfg(feature = "mocks")]
+    token_config_cache_size: NonZeroUsize,
+
     /// Cache size for quorum public keys. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     quorum_public_keys_cache_size: NonZeroUsize,
@@ -788,7 +794,12 @@ impl Default for SdkBuilder {
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
-                .expect("data conttact cache size must be positive"),
+                .expect("data contract cache size must be positive"),
+
+            #[cfg(feature = "mocks")]
+            token_config_cache_size: NonZeroUsize::new(DEFAULT_TOKEN_CONFIG_CACHE_SIZE)
+                .expect("token config cache size must be positive"),
+
             #[cfg(feature = "mocks")]
             quorum_public_keys_cache_size: NonZeroUsize::new(DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE)
                 .expect("quorum public keys cache size must be positive"),
@@ -1061,7 +1072,7 @@ impl SdkBuilder {
                             "ContextProvider not set, falling back to a mock one; use SdkBuilder::with_context_provider() to set it up");
                         let mut context_provider = GrpcContextProvider::new(None,
                             &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                            self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+                            self.data_contract_cache_size, self.token_config_cache_size, self.quorum_public_keys_cache_size)?;
                         #[cfg(feature = "mocks")]
                         if sdk.dump_dir.is_some() {
                             context_provider.set_dump_dir(sdk.dump_dir.clone());

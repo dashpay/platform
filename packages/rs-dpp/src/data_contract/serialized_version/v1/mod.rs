@@ -60,6 +60,14 @@ pub struct DataContractInSerializationFormatV1 {
     /// The tokens on the contract.
     #[serde(default, deserialize_with = "deserialize_u16_token_configuration_map")]
     pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,
+
+    /// The contract's keywords for searching
+    #[serde(default)]
+    pub keywords: Vec<String>,
+
+    /// The contract's description
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 fn deserialize_u16_group_map<'de, D>(
@@ -125,6 +133,8 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     updated_at_epoch: None,
                     groups: Default::default(),
                     tokens: Default::default(),
+                    keywords: Default::default(),
+                    description: None,
                 }
             }
             DataContract::V1(v1) => {
@@ -143,6 +153,8 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     updated_at_epoch,
                     groups,
                     tokens,
+                    keywords,
+                    description,
                 } = v1;
 
                 DataContractInSerializationFormatV1 {
@@ -163,6 +175,8 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     updated_at_epoch,
                     groups,
                     tokens,
+                    keywords,
+                    description,
                 }
             }
         }

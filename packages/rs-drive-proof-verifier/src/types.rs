@@ -5,10 +5,15 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
+/// Evonode status
 pub mod evonode_status;
+/// Groups
 pub mod groups;
+/// Identity token balance
 pub mod identity_token_balance;
+/// Token info
 pub mod token_info;
+/// Token status
 pub mod token_status;
 
 use dpp::balances::credits::Credits;
@@ -16,6 +21,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::data_contract::{document_type::DocumentType, DataContract};
 use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -624,3 +630,6 @@ pub struct ProposerBlockCountByRange(pub u64);
 #[derive(Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposerBlockCountById(pub u64);
+
+/// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
+pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;

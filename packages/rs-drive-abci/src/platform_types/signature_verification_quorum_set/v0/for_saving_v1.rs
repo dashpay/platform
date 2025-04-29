@@ -28,6 +28,7 @@ impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQu
 
 impl From<SignatureVerificationQuorumSetV0> for SignatureVerificationQuorumSetForSavingV1 {
     fn from(value: SignatureVerificationQuorumSetV0) -> Self {
+        #[allow(unused_variables)]
         let SignatureVerificationQuorumSetV0 {
             config,
             current_quorums,

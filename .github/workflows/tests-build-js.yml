@@ -50,7 +50,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.99
+        run: cargo binstall wasm-bindgen-cli@0.2.100
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install Binaryen

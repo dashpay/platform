@@ -19,9 +19,11 @@ pub mod token_burn_transition;
 pub mod token_claim_transition;
 pub mod token_config_update_transition;
 pub mod token_destroy_frozen_funds_transition;
+pub mod token_direct_purchase_transition;
 pub mod token_emergency_action_transition;
 pub mod token_freeze_transition;
 pub mod token_mint_transition;
+pub mod token_set_price_for_direct_purchase_transition;
 pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;
@@ -74,7 +76,7 @@ pub enum BatchedTransitionMutRef<'a> {
     Token(&'a mut TokenTransition),
 }
 
-impl<'a> BatchedTransitionRef<'a> {
+impl BatchedTransitionRef<'_> {
     pub fn to_owned_transition(&self) -> BatchedTransition {
         match self {
             BatchedTransitionRef::Document(doc_ref) => {

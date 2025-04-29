@@ -32,6 +32,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+#[allow(clippy::too_many_arguments)]
     fn validate_group_action_v0(
         &self,
         rules: &ChangeControlRules,
@@ -110,7 +111,7 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                                 self.token_id(),
                                 owner_id,
                                 action_type_string,
-                                rules.authorized_to_make_change_action_takers().clone(),
+                                *rules.authorized_to_make_change_action_takers(),
                             ),
                         )),
                     ))
@@ -129,7 +130,7 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                                             self.token_id(),
                                             owner_id,
                                             action_type_string,
-                                            rules.authorized_to_make_change_action_takers().clone(),
+                                            *rules.authorized_to_make_change_action_takers(),
                                         ),
                                     ),
                                 ),
@@ -145,32 +146,30 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                                     self.token_id(),
                                     owner_id,
                                     action_type_string,
-                                    rules.authorized_to_make_change_action_takers().clone(),
+                                    *rules.authorized_to_make_change_action_takers(),
                                 ),
                             )),
                         ));
                     }
                 }
             }
-        } else {
-            if !rules.can_make_change(
-                &contract_owner_id,
-                main_control_group,
-                groups,
-                &ActionTaker::SingleIdentity(owner_id),
-                ActionGoal::ActionCompletion,
-            ) {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
-                        UnauthorizedTokenActionError::new(
-                            self.token_id(),
-                            owner_id,
-                            action_type_string,
-                            rules.authorized_to_make_change_action_takers().clone(),
-                        ),
-                    )),
-                ));
-            }
+        } else if !rules.can_make_change(
+            &contract_owner_id,
+            main_control_group,
+            groups,
+            &ActionTaker::SingleIdentity(owner_id),
+            ActionGoal::ActionCompletion,
+        ) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
+                    UnauthorizedTokenActionError::new(
+                        self.token_id(),
+                        owner_id,
+                        action_type_string,
+                        *rules.authorized_to_make_change_action_takers(),
+                    ),
+                )),
+            ));
         }
 
         Ok(SimpleConsensusValidationResult::new())

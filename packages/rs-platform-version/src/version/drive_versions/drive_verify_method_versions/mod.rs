@@ -35,13 +35,15 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_full_identity_by_public_key_hash: FeatureVersion,
     pub verify_identity_balance_for_identity_id: FeatureVersion,
     pub verify_identity_balances_for_identity_ids: FeatureVersion,
-    pub verify_identity_id_by_public_key_hash: FeatureVersion,
-    pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
+    pub verify_identity_id_by_unique_public_key_hash: FeatureVersion,
+    pub verify_identity_ids_by_unique_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,
     pub verify_identity_nonce: FeatureVersion,
     pub verify_identity_contract_nonce: FeatureVersion,
     pub verify_identities_contract_keys: FeatureVersion,
     pub verify_identity_revision_for_identity_id: FeatureVersion,
+    pub verify_full_identity_by_non_unique_public_key_hash: FeatureVersion,
+    pub verify_identity_id_by_non_unique_public_key_hash: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -64,12 +66,14 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_info_for_identity_id: FeatureVersion,
     pub verify_token_status: FeatureVersion,
     pub verify_token_pre_programmed_distributions: FeatureVersion,
+    pub verify_token_direct_selling_price: FeatureVersion,
+    pub verify_token_direct_selling_prices: FeatureVersion,
+    pub verify_token_perpetual_distribution_last_paid_time: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyVoteMethodVersions {
     pub verify_masternode_vote: FeatureVersion,
-    pub verify_start_at_contender_in_proof: FeatureVersion,
     pub verify_vote_poll_votes_proof: FeatureVersion,
     pub verify_identity_votes_given_proof: FeatureVersion,
     pub verify_vote_poll_vote_state_proof: FeatureVersion,

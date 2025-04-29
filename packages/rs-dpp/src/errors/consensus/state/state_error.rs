@@ -43,7 +43,7 @@ use crate::errors::consensus::state::identity::no_transfer_key_for_core_withdraw
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use crate::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError,
-    TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant
+    TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale
 };
 use crate::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
@@ -69,9 +69,6 @@ pub enum StateError {
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 
-    // TODO: Not sure we can do it.
-    //   The order of variants must be always the same otherwise serialization won't work
-    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     DataTriggerError(DataTriggerError),
 
@@ -280,6 +277,32 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenNotPausedError(TokenNotPausedError),
+
+    #[error(transparent)]
+    TokenTransferRecipientIdentityNotExistError(TokenTransferRecipientIdentityNotExistError),
+
+    #[error(transparent)]
+    PreProgrammedDistributionTimestampInPastError(PreProgrammedDistributionTimestampInPastError),
+
+    #[error(transparent)]
+    IdentityHasNotAgreedToPayRequiredTokenAmountError(
+        IdentityHasNotAgreedToPayRequiredTokenAmountError,
+    ),
+
+    #[error(transparent)]
+    RequiredTokenPaymentInfoNotSetError(RequiredTokenPaymentInfoNotSetError),
+
+    #[error(transparent)]
+    IdentityTryingToPayWithWrongTokenError(IdentityTryingToPayWithWrongTokenError),
+
+    #[error(transparent)]
+    TokenDirectPurchaseUserPriceTooLow(TokenDirectPurchaseUserPriceTooLow),
+
+    #[error(transparent)]
+    TokenAmountUnderMinimumSaleAmount(TokenAmountUnderMinimumSaleAmount),
+
+    #[error(transparent)]
+    TokenNotForDirectSale(TokenNotForDirectSale),
 }
 
 impl From<StateError> for ConsensusError {

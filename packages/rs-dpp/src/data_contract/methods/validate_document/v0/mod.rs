@@ -46,10 +46,7 @@ impl DataContract {
             ));
         };
 
-        let validator = StatelessJsonSchemaLazyValidator::new();
-        // let validator = match document_type {
-        //     DocumentTypeRef::V0(v0) => v0.json_schema_validator.deref(),
-        // };
+        let validator = document_type.json_schema_validator_ref().deref();
 
         if let Some((key, size)) =
             value.has_data_larger_than(platform_version.system_limits.max_field_value_size)

@@ -2,6 +2,7 @@ use derive_more::From;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
+use std::ops::RangeInclusive;
 
 pub use abstract_state_transition::state_transition_helpers;
 
@@ -17,7 +18,7 @@ use dashcore::signer;
 #[cfg(feature = "state-transition-validation")]
 use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_version::version::PlatformVersion;
+use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 mod abstract_state_transition;
 use crate::errors::ProtocolError;
@@ -55,6 +56,7 @@ pub use traits::*;
 
 use crate::balances::credits::Credits;
 use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -70,10 +72,13 @@ use crate::identity::state_transition::OptionallyAssetLockProved;
     feature = "state-transition-validation"
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
-use crate::prelude::UserFeeIncrease;
-use crate::serialization::Signable;
+use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
+use crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 #[cfg(feature = "state-transition-validation")]
@@ -106,11 +111,10 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 use crate::state_transition::state_transitions::identity::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
-use crate::state_transition::state_transitions::identity::masternode_vote_transition::{
-    MasternodeVoteTransition, MasternodeVoteTransitionSignable,
-};
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransitionSignable;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
-
+use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
@@ -280,6 +284,62 @@ impl OptionallyAssetLockProved for StateTransition {
 }
 
 impl StateTransition {
+    pub fn deserialize_from_bytes_in_version(
+        bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let state_transition = StateTransition::deserialize_from_bytes(bytes)?;
+        #[cfg(all(feature = "state-transitions", feature = "validation"))]
+        {
+            let active_version_range = state_transition.active_version_range();
+
+            // Tests are done with very high protocol ranges, while we could put this behind a feature,
+            // that would probably be overkill.
+            if active_version_range.contains(&platform_version.protocol_version)
+                || platform_version.protocol_version > 268435456
+            {
+                Ok(state_transition)
+            } else {
+                Err(ProtocolError::StateTransitionError(
+                    StateTransitionIsNotActiveError {
+                        state_transition_type: state_transition.name(),
+                        active_version_range,
+                        current_protocol_version: platform_version.protocol_version,
+                    },
+                ))
+            }
+        }
+        #[cfg(not(all(feature = "state-transitions", feature = "validation")))]
+        Ok(state_transition)
+    }
+
+    pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
+        match self {
+            StateTransition::DataContractCreate(data_contract_create_transition) => {
+                match data_contract_create_transition.data_contract() {
+                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                }
+            }
+            StateTransition::DataContractUpdate(data_contract_update_transition) => {
+                match data_contract_update_transition.data_contract() {
+                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                }
+            }
+            StateTransition::Batch(batch_transition) => match batch_transition {
+                BatchTransition::V0(_) => ALL_VERSIONS,
+                BatchTransition::V1(_) => 9..=LATEST_VERSION,
+            },
+            StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
+        }
+    }
+
     pub fn is_identity_signed(&self) -> bool {
         !matches!(
             self,
@@ -364,6 +424,12 @@ impl StateTransition {
                             "TokenConfigUpdate"
                         }
                         BatchedTransitionRef::Token(TokenTransition::Claim(_)) => "TokenClaim",
+                        BatchedTransitionRef::Token(TokenTransition::DirectPurchase(_)) => {
+                            "TokenDirectPurchase"
+                        }
+                        BatchedTransitionRef::Token(
+                            TokenTransition::SetPriceForDirectPurchase(_),
+                        ) => "SetPriceForDirectPurchase",
                     };
                     document_transition_types.push(document_transition_name);
                 }

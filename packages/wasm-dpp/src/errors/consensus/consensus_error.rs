@@ -61,7 +61,7 @@ use dpp::errors::consensus::state::data_trigger::DataTriggerError::{
   DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::errors::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractTokenConfigurationUpdateError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupTotalPowerLessThanRequiredError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::errors::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractTokenConfigurationUpdateError, DuplicateKeywordsError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupTotalPowerLessThanRequiredError, InvalidDescriptionLengthError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError, TooManyKeywordsError, UnknownDocumentActionTokenEffectError, UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
 use dpp::errors::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::errors::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
@@ -84,7 +84,7 @@ use dpp::errors::consensus::state::identity::no_transfer_key_for_core_withdrawal
 use dpp::errors::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use dpp::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant};
+use dpp::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale};
 use dpp::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::errors::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -383,6 +383,30 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InvalidTokenClaimWrongClaimant(e) => {
             generic_consensus_error!(InvalidTokenClaimWrongClaimant, e).into()
+        }
+        StateError::TokenTransferRecipientIdentityNotExistError(e) => {
+            generic_consensus_error!(TokenTransferRecipientIdentityNotExistError, e).into()
+        }
+        StateError::PreProgrammedDistributionTimestampInPastError(e) => {
+            generic_consensus_error!(PreProgrammedDistributionTimestampInPastError, e).into()
+        }
+        StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(e) => {
+            generic_consensus_error!(IdentityHasNotAgreedToPayRequiredTokenAmountError, e).into()
+        }
+        StateError::RequiredTokenPaymentInfoNotSetError(e) => {
+            generic_consensus_error!(RequiredTokenPaymentInfoNotSetError, e).into()
+        }
+        StateError::IdentityTryingToPayWithWrongTokenError(e) => {
+            generic_consensus_error!(IdentityTryingToPayWithWrongTokenError, e).into()
+        }
+        StateError::TokenDirectPurchaseUserPriceTooLow(e) => {
+            generic_consensus_error!(TokenDirectPurchaseUserPriceTooLow, e).into()
+        }
+        StateError::TokenAmountUnderMinimumSaleAmount(e) => {
+            generic_consensus_error!(TokenAmountUnderMinimumSaleAmount, e).into()
+        }
+        StateError::TokenNotForDirectSale(e) => {
+            generic_consensus_error!(TokenNotForDirectSale, e).into()
         }
     }
 }
@@ -736,6 +760,27 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::MissingDefaultLocalizationError(e) => {
             generic_consensus_error!(MissingDefaultLocalizationError, e).into()
+        }
+        BasicError::UnknownGasFeesPaidByError(e) => {
+            generic_consensus_error!(UnknownGasFeesPaidByError, e).into()
+        }
+        BasicError::UnknownDocumentActionTokenEffectError(e) => {
+            generic_consensus_error!(UnknownDocumentActionTokenEffectError, e).into()
+        }
+        BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(e) => {
+            generic_consensus_error!(TokenPaymentByBurningOnlyAllowedOnInternalTokenError, e).into()
+        }
+        BasicError::TooManyKeywordsError(e) => {
+            generic_consensus_error!(TooManyKeywordsError, e).into()
+        }
+        BasicError::DuplicateKeywordsError(e) => {
+            generic_consensus_error!(DuplicateKeywordsError, e).into()
+        }
+        BasicError::InvalidKeywordLengthError(e) => {
+            generic_consensus_error!(InvalidKeywordLengthError, e).into()
+        }
+        BasicError::InvalidDescriptionLengthError(e) => {
+            generic_consensus_error!(InvalidDescriptionLengthError, e).into()
         }
     }
 }

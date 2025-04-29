@@ -1,4 +1,4 @@
-use crate::drive::tokens::paths::{token_perpetual_distributions_identity_last_claimed_by_identity_path_vec, token_perpetual_distributions_identity_last_claimed_time_path_vec, TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY};
+use crate::drive::tokens::paths::token_perpetual_distributions_identity_last_claimed_time_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

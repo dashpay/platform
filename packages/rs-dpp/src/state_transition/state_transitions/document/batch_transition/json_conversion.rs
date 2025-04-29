@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use serde_json::Number;
 use serde_json::Value as JsonValue;
 
-impl<'a> StateTransitionJsonConvert<'a> for BatchTransition {
+impl StateTransitionJsonConvert<'_> for BatchTransition {
     fn to_json(
         &self,
         options: JsonStateTransitionSerializationOptions,
