@@ -1,5 +1,6 @@
 use crate::document::document_methods::DocumentGetRawForDocumentTypeV0;
 use crate::document::DocumentV0Getters;
+use platform_value::btreemap_extensions::EqualUnderlyingData;
 use platform_value::Value;
 use std::collections::BTreeMap;
 
@@ -30,9 +31,9 @@ pub trait DocumentIsEqualIgnoringTimestampsV0:
 
         let properties_equal = if let Some(fields) = &also_ignore_fields {
             filtered_properties(self.properties(), fields)
-                == filtered_properties(rhs.properties(), fields)
+                .equal_underlying_data(&filtered_properties(rhs.properties(), fields))
         } else {
-            self.properties() == rhs.properties()
+            self.properties().equal_underlying_data(rhs.properties())
         };
 
         self.id() == rhs.id()
