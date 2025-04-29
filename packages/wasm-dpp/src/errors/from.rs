@@ -8,7 +8,7 @@ use crate::document::errors::from_document_to_js_error;
 // use crate::document::errors::from_document_to_js_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
 
-use super::data_contract_not_present_error::DataContractNotPresentNotConsensusErrorWasm;
+use crate::errors::data_contract_not_present_error::DataContractNotPresentNotConsensusErrorWasm;
 use crate::errors::consensus::consensus_error::from_consensus_error;
 
 pub fn from_dpp_err(pe: ProtocolError) -> JsValue {

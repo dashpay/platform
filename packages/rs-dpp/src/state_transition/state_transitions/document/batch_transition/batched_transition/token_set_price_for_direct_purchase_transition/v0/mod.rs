@@ -15,6 +15,7 @@ use std::fmt;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenSetPriceForDirectPurchaseTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]

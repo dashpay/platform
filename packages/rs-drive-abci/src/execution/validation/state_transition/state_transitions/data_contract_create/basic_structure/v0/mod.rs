@@ -1,18 +1,18 @@
 use crate::error::Error;
-use dpp::consensus::basic::data_contract::{
+use dpp::errors::consensus::basic::data_contract::{
     DuplicateKeywordsError, InvalidDataContractVersionError, InvalidDescriptionLengthError,
     InvalidKeywordLengthError, InvalidTokenBaseSupplyError,
     NonContiguousContractTokenPositionsError, TooManyKeywordsError,
 };
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
-use dpp::prelude::DataContract;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::data_contract::DataContract;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use std::collections::HashSet;

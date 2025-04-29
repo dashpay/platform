@@ -17,6 +17,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenDirectPurchaseTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]

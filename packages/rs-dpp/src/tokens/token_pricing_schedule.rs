@@ -1,6 +1,5 @@
-use crate::balances::credits::TokenAmount;
+use crate::balances::credits::{Credits, TokenAmount};
 use crate::errors::ProtocolError;
-use crate::fee::Credits;
 use bincode_derive::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
@@ -28,6 +27,7 @@ use std::fmt::{self, Display, Formatter};
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenPricingSchedule {
     /// A single flat price in credits for all token amounts.
     ///

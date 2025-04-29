@@ -76,7 +76,7 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::consensus::ConsensusError;
 
-use super::data_contract::{
+use crate::errors::consensus::basic::data_contract::{
     DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
     TooManyKeywordsError,
 };

@@ -26,6 +26,7 @@ pub use v0::TokenSetPriceForDirectPurchaseTransitionV0;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenSetPriceForDirectPurchaseTransition {
     /// Version 0 of the token set price for direct purchase transition.
     ///
