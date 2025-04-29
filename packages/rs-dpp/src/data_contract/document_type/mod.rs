@@ -16,7 +16,7 @@ pub mod random_document;
 pub mod restricted_creation;
 pub mod schema;
 
-mod token_costs;
+pub mod token_costs;
 pub mod v0;
 pub mod v1;
 #[cfg(feature = "validation")]
