@@ -4,7 +4,7 @@ use crate::data_contract::associated_token::token_distribution_rules::TokenDistr
 use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
-use crate::data_contract::{GroupContractPosition, TokenConfiguration};
+use crate::data_contract::GroupContractPosition;
 use std::collections::BTreeSet;
 
 /// Accessor trait for getters of `TokenConfigurationV0`
