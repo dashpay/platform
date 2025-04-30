@@ -14,7 +14,7 @@ use crate::data_contract::DataContract;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 #[cfg(any(
     feature = "state-transition-value-conversion",
     feature = "state-transition-json-conversion"

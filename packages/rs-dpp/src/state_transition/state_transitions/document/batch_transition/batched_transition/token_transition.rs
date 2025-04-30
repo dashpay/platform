@@ -24,7 +24,7 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
 use crate::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;

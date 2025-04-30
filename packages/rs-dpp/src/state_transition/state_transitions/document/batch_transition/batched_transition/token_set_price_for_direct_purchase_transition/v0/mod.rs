@@ -2,7 +2,7 @@ pub mod v0_methods;
 
 /// The Identifier fields in [`TokenSetPriceForDirectPurchaseTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use bincode::{Decode, Encode};
 #[cfg(feature = "state-transition-serde-conversion")]

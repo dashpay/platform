@@ -42,9 +42,32 @@ use crate::errors::consensus::state::identity::missing_transfer_key_error::Missi
 use crate::errors::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError,
-    TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale
-};
+use crate::errors::consensus::state::token::identity_does_not_have_enough_token_balance_error::IdentityDoesNotHaveEnoughTokenBalanceError;
+use crate::errors::consensus::state::token::identity_has_not_agreed_to_pay_required_token_amount_error::IdentityHasNotAgreedToPayRequiredTokenAmountError;
+use crate::errors::consensus::state::token::identity_token_account_already_frozen_error::IdentityTokenAccountAlreadyFrozenError;
+use crate::errors::consensus::state::token::identity_token_account_frozen_error::IdentityTokenAccountFrozenError;
+use crate::errors::consensus::state::token::identity_token_account_not_frozen_error::IdentityTokenAccountNotFrozenError;
+use crate::errors::consensus::state::token::identity_trying_to_pay_with_wrong_token_error::IdentityTryingToPayWithWrongTokenError;
+use crate::errors::consensus::state::token::invalid_group_position_error::InvalidGroupPositionError;
+use crate::errors::consensus::state::token::invalid_token_claim_no_current_rewards::InvalidTokenClaimNoCurrentRewards;
+use crate::errors::consensus::state::token::invalid_token_claim_property_mismatch::InvalidTokenClaimPropertyMismatch;
+use crate::errors::consensus::state::token::invalid_token_claim_wrong_claimant::InvalidTokenClaimWrongClaimant;
+use crate::errors::consensus::state::token::new_authorized_action_taker_group_does_not_exist_error::NewAuthorizedActionTakerGroupDoesNotExistError;
+use crate::errors::consensus::state::token::new_authorized_action_taker_identity_does_not_exist_error::NewAuthorizedActionTakerIdentityDoesNotExistError;
+use crate::errors::consensus::state::token::new_authorized_action_taker_main_group_not_set_error::NewAuthorizedActionTakerMainGroupNotSetError;
+use crate::errors::consensus::state::token::new_tokens_destination_identity_does_not_exist_error::NewTokensDestinationIdentityDoesNotExistError;
+use crate::errors::consensus::state::token::pre_programmed_distribution_timestamp_in_past_error::PreProgrammedDistributionTimestampInPastError;
+use crate::errors::consensus::state::token::required_token_payment_info_not_set_error::RequiredTokenPaymentInfoNotSetError;
+use crate::errors::consensus::state::token::token_already_paused_error::TokenAlreadyPausedError;
+use crate::errors::consensus::state::token::token_amount_under_minimum_sale_amount::TokenAmountUnderMinimumSaleAmount;
+use crate::errors::consensus::state::token::token_direct_purchase_user_price_too_low::TokenDirectPurchaseUserPriceTooLow;
+use crate::errors::consensus::state::token::token_is_paused_error::TokenIsPausedError;
+use crate::errors::consensus::state::token::token_mint_past_max_supply_error::TokenMintPastMaxSupplyError;
+use crate::errors::consensus::state::token::token_not_for_direct_sale::TokenNotForDirectSale;
+use crate::errors::consensus::state::token::token_not_paused_error::TokenNotPausedError;
+use crate::errors::consensus::state::token::token_setting_max_supply_to_less_than_current_supply_error::TokenSettingMaxSupplyToLessThanCurrentSupplyError;
+use crate::errors::consensus::state::token::token_transfer_recipient_identity_not_exist_error::TokenTransferRecipientIdentityNotExistError;
+use crate::errors::consensus::state::token::unauthorized_token_action_error::UnauthorizedTokenActionError;
 use crate::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::errors::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
