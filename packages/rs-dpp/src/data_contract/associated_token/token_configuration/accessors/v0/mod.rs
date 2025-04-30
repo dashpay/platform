@@ -89,6 +89,9 @@ pub trait TokenConfigurationV0Setters {
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: TokenAmount);
 
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool);
+
     /// Sets the maximum supply.
     fn set_max_supply(&mut self, max_supply: Option<TokenAmount>);
 
