@@ -2,6 +2,7 @@ use platform_value::Identifier;
 use crate::consensus::basic::BasicError;
 use crate::consensus::basic::token::{InvalidTokenAmountError, InvalidTokenNoteTooBigError, TokenTransferToOurselfError};
 use crate::consensus::ConsensusError;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use crate::ProtocolError;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
@@ -21,10 +22,10 @@ impl TokenTransferTransitionActionStructureValidationV0 for TokenTransferTransit
         &self,
         owner_id: Identifier,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if self.amount() > i64::MAX as u64 {
+        if self.amount() > MAX_DISTRIBUTION_PARAM || self.amount() == 0 {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
-                    InvalidTokenAmountError::new(i64::MAX as u64, self.amount()),
+                    InvalidTokenAmountError::new(MAX_DISTRIBUTION_PARAM, self.amount()),
                 )),
             ));
         }
