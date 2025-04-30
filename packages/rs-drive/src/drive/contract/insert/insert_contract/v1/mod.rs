@@ -232,19 +232,21 @@ impl Drive {
                 )?;
             }
 
-            let starting_status =
-                TokenStatus::new(token_config.start_as_paused(), platform_version)?;
-            let token_status_bytes = starting_status.serialize_consume_to_bytes()?;
+            if token_config.start_as_paused() {
+                // no status also means active.
+                let starting_status = TokenStatus::new(true, platform_version)?;
+                let token_status_bytes = starting_status.serialize_consume_to_bytes()?;
 
-            self.batch_insert(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
-                    token_statuses_root_path(),
-                    token_id.as_slice(),
-                    Element::Item(token_status_bytes, None),
-                )),
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
+                self.batch_insert(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
+                        token_statuses_root_path(),
+                        token_id.as_slice(),
+                        Element::Item(token_status_bytes, None),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
 
             if let Some(pre_programmed_distribution) = token_config
                 .distribution_rules()
