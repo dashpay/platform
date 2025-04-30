@@ -1,11 +1,11 @@
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::{
+use crate::errors::consensus::basic::data_contract::{
     DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
 #[cfg(feature = "validation")]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
@@ -23,17 +23,17 @@ use std::convert::TryInto;
 
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
+use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
+use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
-use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+use crate::errors::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
+use crate::errors::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+use crate::errors::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
