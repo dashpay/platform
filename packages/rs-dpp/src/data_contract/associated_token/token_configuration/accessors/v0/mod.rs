@@ -4,7 +4,7 @@ use crate::data_contract::associated_token::token_distribution_rules::TokenDistr
 use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
-use crate::data_contract::GroupContractPosition;
+use crate::data_contract::{GroupContractPosition, TokenConfiguration};
 use std::collections::BTreeSet;
 
 /// Accessor trait for getters of `TokenConfigurationV0`
@@ -88,6 +88,9 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: TokenAmount);
+
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool);
 
     /// Sets the maximum supply.
     fn set_max_supply(&mut self, max_supply: Option<TokenAmount>);
