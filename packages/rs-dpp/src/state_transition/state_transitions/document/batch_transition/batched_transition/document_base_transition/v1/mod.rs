@@ -9,7 +9,7 @@ use derive_more::Display;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::identifier::Identifier;
+use platform_value::Identifier;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::property_names;
@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
     "document_type_name",
     "data_contract_id"
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentBaseTransitionV1 {
     /// The document ID
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
