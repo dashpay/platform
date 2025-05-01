@@ -39,7 +39,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
         match &key_request.request_type {
-            AllKeys | LatestAuthenticationMasterKey => {
+            AllKeys => {
                 let path_query = key_request.into_path_query();
 
                 let (result, _) = self.grove_get_raw_path_query(
@@ -81,7 +81,8 @@ impl Drive {
             }
             ContractBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
             | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest)
-            | RecentWithdrawalKeys => {
+            | RecentWithdrawalKeys
+            | LatestAuthenticationMasterKey => {
                 let path_query = key_request.into_path_query();
 
                 let (result, _) = self.grove_get_path_query(

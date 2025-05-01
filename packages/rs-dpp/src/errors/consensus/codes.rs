@@ -236,7 +236,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractUpdatePermissionError(_) => 40003,
             Self::DataContractUpdateActionNotAllowedError(_) => 40004,
             Self::PreProgrammedDistributionTimestampInPastError(_) => 40005,
-            Self::IdentityForChangeControlRuleNotFoundError(_) => 40006,
+            Self::IdentityInTokenConfigurationNotFoundError(_) => 40006,
 
             // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,

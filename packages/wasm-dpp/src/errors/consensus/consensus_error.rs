@@ -77,7 +77,7 @@ use dpp::consensus::state::document::document_contest_not_paid_for_error::Docume
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
-use dpp::consensus::state::identity::identity_for_change_control_rule_not_found::IdentityForChangeControlRuleNotFoundError;
+use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -409,8 +409,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::TokenNotForDirectSale(e) => {
             generic_consensus_error!(TokenNotForDirectSale, e).into()
         }
-        StateError::IdentityForChangeControlRuleNotFoundError(e) => {
-            generic_consensus_error!(IdentityForChangeControlRuleNotFoundError, e).into()
+        StateError::IdentityInTokenConfigurationNotFoundError(e) => {
+            generic_consensus_error!(IdentityInTokenConfigurationNotFoundError, e).into()
         }
     }
 }
