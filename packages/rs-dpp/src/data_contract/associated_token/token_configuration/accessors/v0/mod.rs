@@ -71,6 +71,9 @@ pub trait TokenConfigurationV0Getters {
     /// Returns all group positions used in the token configuration
     fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition>;
 
+    /// Returns all the change contract rules, including those from the distribution rules
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)>;
+
     /// Returns the token description.
     fn description(&self) -> &Option<String>;
 }

@@ -755,7 +755,7 @@ mod random {
 
     #[test]
     #[ignore]
-    fn test_block_based_perpetual_random_0_MAX_distribution_param() {
+    fn test_block_based_perpetual_random_0_max_distribution_param() {
         check_heights(
             DistributionFunction::Random {
                 min: 0,

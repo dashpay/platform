@@ -235,6 +235,8 @@ impl ErrorWithCode for StateError {
             Self::DataContractConfigUpdateError { .. } => 40002,
             Self::DataContractUpdatePermissionError(_) => 40003,
             Self::DataContractUpdateActionNotAllowedError(_) => 40004,
+            Self::PreProgrammedDistributionTimestampInPastError(_) => 40005,
+            Self::IdentityInTokenConfigurationNotFoundError(_) => 40006,
 
             // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,
@@ -310,10 +312,9 @@ impl ErrorWithCode for StateError {
             Self::InvalidTokenClaimNoCurrentRewards(_) => 40716,
             Self::InvalidTokenClaimWrongClaimant(_) => 40717,
             Self::TokenTransferRecipientIdentityNotExistError(_) => 40718,
-            Self::PreProgrammedDistributionTimestampInPastError(_) => 40719,
-            Self::TokenDirectPurchaseUserPriceTooLow(_) => 40720,
-            Self::TokenAmountUnderMinimumSaleAmount(_) => 40721,
-            Self::TokenNotForDirectSale(_) => 40722,
+            Self::TokenDirectPurchaseUserPriceTooLow(_) => 40719,
+            Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
+            Self::TokenNotForDirectSale(_) => 40721,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,
