@@ -4,7 +4,8 @@ use {
     crate::{
         drive::identity::{
             identity_contract_info_group_path_key_purpose_vec, identity_key_tree_path_vec,
-            identity_query_keys_tree_path_vec,
+            identity_query_keys_security_level_tree_path_vec, identity_query_keys_tree_path_vec,
+            identity_transfer_keys_path_vec,
             key::fetch::KeyKindRequestType::{AllKeysOfKindRequest, CurrentKeyOfKindRequest},
             key::fetch::KeyRequestType::{
                 AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys,
@@ -21,10 +22,6 @@ use {
     std::{collections::BTreeMap, ops::RangeFull},
 };
 
-// Conditional imports for the feature "server"
-use crate::drive::identity::{
-    identity_query_keys_security_level_tree_path_vec, identity_transfer_keys_path_vec,
-};
 #[cfg(feature = "server")]
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},

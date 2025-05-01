@@ -228,43 +228,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     if let TokenDistributionRecipient::Identity(identifier) =
                         distribution.distribution_recipient()
                     {
-                        let maybe_balance = platform.drive.fetch_identity_balance(
-                            identifier.to_buffer(),
-                            tx,
-                            platform_version,
-                        )?;
-
-                        execution_context
-                            .add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
-
-                        if maybe_balance.is_none() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                                    self,
-                                ),
-                            );
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                vec![StateError::IdentityInTokenConfigurationNotFoundError(
-                                    IdentityInTokenConfigurationNotFoundError::new(
-                                        old_data_contract.id(),
-                                        *token_contract_position,
-                                        TokenConfigurationIdentityContext::PerpetualDistributionRecipient,
-                                        identifier,
-                                    ),
-                                )
-                                    .into()],
-                            ));
-                        }
-                    }
-                }
-
-                if let Some(distributions) = token_configuration
-                    .distribution_rules()
-                    .pre_programmed_distribution()
-                {
-                    for distribution in distributions.distributions().values() {
-                        for identifier in distribution.keys() {
+                        if !validated_identities.contains(&identifier) {
                             let maybe_balance = platform.drive.fetch_identity_balance(
                                 identifier.to_buffer(),
                                 tx,
@@ -286,12 +250,57 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                                         IdentityInTokenConfigurationNotFoundError::new(
                                             old_data_contract.id(),
                                             *token_contract_position,
-                                            TokenConfigurationIdentityContext::PreProgrammedDistributionRecipient,
-                                            *identifier,
+                                            TokenConfigurationIdentityContext::PerpetualDistributionRecipient,
+                                            identifier,
                                         ),
                                     )
                                         .into()],
                                 ));
+                            } else {
+                                validated_identities.insert(identifier);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(distributions) = token_configuration
+                    .distribution_rules()
+                    .pre_programmed_distribution()
+                {
+                    for distribution in distributions.distributions().values() {
+                        for identifier in distribution.keys() {
+                            if !validated_identities.contains(&identifier) {
+                                let maybe_balance = platform.drive.fetch_identity_balance(
+                                    identifier.to_buffer(),
+                                    tx,
+                                    platform_version,
+                                )?;
+
+                                execution_context.add_operation(
+                                    ValidationOperation::RetrieveIdentityTokenBalance,
+                                );
+
+                                if maybe_balance.is_none() {
+                                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                            self,
+                                        ),
+                                    );
+                                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                        bump_action,
+                                        vec![StateError::IdentityInTokenConfigurationNotFoundError(
+                                            IdentityInTokenConfigurationNotFoundError::new(
+                                                old_data_contract.id(),
+                                                *token_contract_position,
+                                                TokenConfigurationIdentityContext::PreProgrammedDistributionRecipient,
+                                                *identifier,
+                                            ),
+                                        )
+                                            .into()],
+                                    ));
+                                } else {
+                                    validated_identities.insert(*identifier);
+                                }
                             }
                         }
                     }
@@ -304,34 +313,38 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     .distribution_rules()
                     .new_tokens_destination_identity()
                 {
-                    let maybe_balance = platform.drive.fetch_identity_balance(
-                        minting_recipient.to_buffer(),
-                        tx,
-                        platform_version,
-                    )?;
+                    if !validated_identities.contains(minting_recipient) {
+                        let maybe_balance = platform.drive.fetch_identity_balance(
+                            minting_recipient.to_buffer(),
+                            tx,
+                            platform_version,
+                        )?;
 
-                    execution_context
-                        .add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
+                        execution_context
+                            .add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
 
-                    if maybe_balance.is_none() {
-                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                            BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                                self,
-                            ),
-                        );
-
-                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                            bump_action,
-                            vec![StateError::IdentityInTokenConfigurationNotFoundError(
-                                IdentityInTokenConfigurationNotFoundError::new(
-                                    old_data_contract.id(),
-                                    *token_contract_position,
-                                    TokenConfigurationIdentityContext::DefaultMintingRecipient,
-                                    *minting_recipient,
+                        if maybe_balance.is_none() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                    self,
                                 ),
-                            )
-                            .into()],
-                        ));
+                            );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                vec![StateError::IdentityInTokenConfigurationNotFoundError(
+                                    IdentityInTokenConfigurationNotFoundError::new(
+                                        old_data_contract.id(),
+                                        *token_contract_position,
+                                        TokenConfigurationIdentityContext::DefaultMintingRecipient,
+                                        *minting_recipient,
+                                    ),
+                                )
+                                .into()],
+                            ));
+                        } else {
+                            validated_identities.insert(*minting_recipient);
+                        }
                     }
                 }
             }
