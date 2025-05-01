@@ -5,7 +5,7 @@ use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeep
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Accessor trait for getters of `TokenConfigurationV0`
 pub trait TokenConfigurationV0Getters {
@@ -70,6 +70,9 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns all group positions used in the token configuration
     fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition>;
+
+    /// Returns all the change contract rules, including those from the distribution rules
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)>;
 
     /// Returns the token description.
     fn description(&self) -> &Option<String>;

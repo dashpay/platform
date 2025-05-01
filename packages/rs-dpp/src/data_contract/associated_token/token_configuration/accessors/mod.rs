@@ -156,6 +156,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
+    /// Returns all the change contract rules, including those from the distribution rules
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.all_change_control_rules(),
+        }
+    }
+
     /// Returns the token description.
     fn description(&self) -> &Option<String> {
         match self {

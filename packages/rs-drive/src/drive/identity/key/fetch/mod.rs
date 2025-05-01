@@ -22,7 +22,9 @@ use {
 };
 
 // Conditional imports for the feature "server"
-use crate::drive::identity::identity_transfer_keys_path_vec;
+use crate::drive::identity::{
+    identity_query_keys_security_level_tree_path_vec, identity_transfer_keys_path_vec,
+};
 #[cfg(feature = "server")]
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
@@ -81,6 +83,8 @@ pub enum KeyRequestType {
     ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Search for contract bound keys
     ContractDocumentTypeBoundKey([u8; 32], String, Purpose, KeyKindRequestType),
+    /// Get Current Authentication Master Key
+    LatestAuthenticationMasterKey,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -273,7 +277,7 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         let mut keys = value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -327,7 +331,7 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         let mut keys = value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -377,7 +381,7 @@ impl IdentityPublicKeyResult for KeyIDHashSet {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -403,7 +407,7 @@ impl IdentityPublicKeyResult for KeyIDVec {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -429,7 +433,7 @@ impl IdentityPublicKeyResult for KeyVec {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -455,7 +459,7 @@ impl IdentityPublicKeyResult for SerializedKeyVec {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -481,7 +485,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -559,7 +563,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
         value: Vec<PathKeyOptionalElementTrio>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        // We do not care about non existence
+        // We do not care about non-existence
         value
             .into_iter()
             .filter_map(|(_, _, maybe_element)| maybe_element)
@@ -680,6 +684,10 @@ impl IdentityKeysRequest {
                     .fee_version
                     .processing
                     .fetch_single_identity_key_processing_cost),
+            KeyRequestType::LatestAuthenticationMasterKey => Ok(platform_version
+                .fee_version
+                .processing
+                .fetch_single_identity_key_processing_cost),
         }
     }
 
@@ -721,7 +729,7 @@ impl IdentityKeysRequest {
     }
 
     #[cfg(feature = "server")]
-    /// Make a request for an decryption key for a specific contract
+    /// Make a request for a decryption key for a specific contract
     pub fn new_contract_decryption_keys_query(
         identity_id: [u8; 32],
         contract_id: [u8; 32],
@@ -865,7 +873,7 @@ impl IdentityKeysRequest {
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Self::specific_keys_query(key_ids),
+                        query: Self::specific_keys_query(key_ids.as_slice()),
                         limit,
                         offset: None,
                     },
@@ -876,7 +884,7 @@ impl IdentityKeysRequest {
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Self::construct_search_query(map),
+                        query: Self::construct_search_query(&map),
                         limit,
                         offset,
                     },
@@ -950,6 +958,22 @@ impl IdentityKeysRequest {
                     },
                 }
             }
+            KeyRequestType::LatestAuthenticationMasterKey => {
+                let query_keys_path = identity_query_keys_security_level_tree_path_vec(
+                    &identity_id,
+                    SecurityLevel::MASTER,
+                );
+                let mut query = Query::new_with_direction(false);
+                query.insert_all();
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query,
+                        limit: Some(1),
+                        offset,
+                    },
+                }
+            }
         }
     }
 
@@ -963,7 +987,7 @@ impl IdentityKeysRequest {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Fetch a specific key knowing the id
-    fn specific_keys_query(key_ids: Vec<KeyID>) -> Query {
+    fn specific_keys_query(key_ids: &[KeyID]) -> Query {
         let mut query = Query::new();
         for key_id in key_ids {
             query.insert_key(key_id.encode_var_vec());
@@ -974,15 +998,15 @@ impl IdentityKeysRequest {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Construct the query for the request
     fn construct_search_query(
-        key_requests: BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,
+        key_requests: &BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,
     ) -> Query {
         fn construct_security_level_query(
-            key_requests: BTreeMap<SecurityLevelU8, KeyKindRequestType>,
+            key_requests: &BTreeMap<SecurityLevelU8, KeyKindRequestType>,
         ) -> Query {
             let mut query = Query::new();
 
             for (security_level, key_request_type) in key_requests {
-                let key = vec![security_level];
+                let key = vec![*security_level];
                 let subquery = match key_request_type {
                     CurrentKeyOfKindRequest => {
                         let mut subquery = Query::new();
@@ -1002,7 +1026,7 @@ impl IdentityKeysRequest {
         let mut query = Query::new();
 
         for (purpose, leftover_query) in key_requests {
-            let key = vec![purpose];
+            let key = vec![*purpose];
             if !leftover_query.is_empty() {
                 query.add_conditional_subquery(
                     QueryItem::Key(key),

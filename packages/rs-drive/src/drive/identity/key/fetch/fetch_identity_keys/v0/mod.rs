@@ -1,6 +1,6 @@
 use crate::drive::identity::key::fetch::KeyRequestType::{
-    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, RecentWithdrawalKeys, SearchKey,
-    SpecificKeys,
+    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, LatestAuthenticationMasterKey,
+    RecentWithdrawalKeys, SearchKey, SpecificKeys,
 };
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, IdentityPublicKeyResult, KeyKindRequestType,
@@ -39,7 +39,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
         match &key_request.request_type {
-            AllKeys => {
+            AllKeys | LatestAuthenticationMasterKey => {
                 let path_query = key_request.into_path_query();
 
                 let (result, _) = self.grove_get_raw_path_query(

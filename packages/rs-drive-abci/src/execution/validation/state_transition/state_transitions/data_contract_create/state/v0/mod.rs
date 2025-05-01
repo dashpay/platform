@@ -2,13 +2,16 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use std::collections::BTreeSet;
 
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use dpp::consensus::state::identity::identity_for_change_control_rule_not_found::IdentityForChangeControlRuleNotFoundError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
+use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -21,6 +24,10 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::ValidationMode;
 use dpp::version::PlatformVersion;
+use drive::drive::identity::key::fetch::KeyRequestType::LatestAuthenticationMasterKey;
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
+};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
@@ -67,8 +74,50 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             return Ok(action);
         }
 
+        let mut validated_identities = BTreeSet::new();
+
         // Validate token distribution rules
         for (position, config) in self.data_contract().tokens() {
+            for (name, change_control_rules) in config.all_change_control_rules() {
+                if let AuthorizedActionTakers::Identity(identity_id) =
+                    change_control_rules.authorized_to_make_change_action_takers()
+                {
+                    // we need to make sure this identity exists
+                    if !validated_identities.contains(identity_id) {
+                        let maybe_key = platform
+                            .drive
+                            .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
+                                IdentityKeysRequest {
+                                    identity_id: identity_id.to_buffer(),
+                                    request_type: LatestAuthenticationMasterKey,
+                                    limit: Some(1),
+                                    offset: None,
+                                },
+                                tx,
+                                platform_version,
+                            )?;
+
+                        if maybe_key.is_none() {
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                StateTransitionAction::BumpIdentityNonceAction(
+                                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                ),
+                                vec![StateError::IdentityForChangeControlRuleNotFoundError(
+                                    IdentityForChangeControlRuleNotFoundError::new(
+                                        self.data_contract().id(),
+                                        *position,
+                                        name.to_string(),
+                                        *identity_id,
+                                    ),
+                                )
+                                    .into()],
+                            ));
+                        } else {
+                            validated_identities.insert(*identity_id);
+                        }
+                    }
+                }
+            }
             if let Some(distribution) = config.distribution_rules().pre_programmed_distribution() {
                 if let Some((timestamp, _)) = distribution.distributions().iter().next() {
                     if timestamp < &block_info.time_ms {

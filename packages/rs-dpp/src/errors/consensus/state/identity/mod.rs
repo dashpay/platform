@@ -17,5 +17,7 @@ pub mod missing_identity_public_key_ids_error;
 pub mod missing_transfer_key_error;
 pub mod no_transfer_key_for_core_withdrawal_available_error;
 
+pub mod identity_for_change_control_rule_not_found;
 mod recipient_identity_does_not_exist_error;
+
 pub use recipient_identity_does_not_exist_error::*;
