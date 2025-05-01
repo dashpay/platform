@@ -223,6 +223,11 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
         self.base_supply = base_supply;
     }
 
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool) {
+        self.start_as_paused = start_as_paused;
+    }
+
     /// Sets the maximum supply.
     fn set_max_supply(&mut self, max_supply: Option<TokenAmount>) {
         self.max_supply = max_supply;

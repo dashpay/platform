@@ -12,7 +12,7 @@ pub(super) trait TokenDirectPurchaseTransitionActionStructureValidationV0 {
 }
 impl TokenDirectPurchaseTransitionActionStructureValidationV0 for TokenDirectPurchaseTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if self.token_count() > MAX_DISTRIBUTION_PARAM {
+        if self.token_count() > MAX_DISTRIBUTION_PARAM || self.token_count() == 0 {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
                     InvalidTokenAmountError::new(MAX_DISTRIBUTION_PARAM, self.token_count()),
