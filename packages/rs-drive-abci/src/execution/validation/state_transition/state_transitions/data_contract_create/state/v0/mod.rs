@@ -222,7 +222,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                 }
                 for distribution in distribution.distributions().values() {
                     for identifier in distribution.keys() {
-                        if !validated_identities.contains(&identifier) {
+                        if !validated_identities.contains(identifier) {
                             let maybe_balance = platform.drive.fetch_identity_balance(
                                 identifier.to_buffer(),
                                 tx,
