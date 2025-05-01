@@ -14,7 +14,7 @@ use {
     },
     dpp::{
         identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        identity::{KeyID, Purpose},
+        identity::{KeyID, Purpose, SecurityLevel},
     },
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
@@ -29,9 +29,7 @@ use crate::drive::identity::{
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
-        fee::Credits,
-        identity::{IdentityPublicKey, SecurityLevel},
-        serialization::PlatformDeserializable,
+        fee::Credits, identity::IdentityPublicKey, serialization::PlatformDeserializable,
         version::PlatformVersion,
     },
     grovedb::{
