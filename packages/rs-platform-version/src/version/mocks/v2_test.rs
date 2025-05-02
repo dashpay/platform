@@ -74,6 +74,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             prove: DriveProveMethodVersions {
                 prove_elements: 0,
                 prove_multiple_state_transition_results: 0,
+                prove_state_transition: 0,
             },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,
@@ -249,6 +250,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 token_pre_programmed_distributions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_perpetual_distribution_last_claim: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

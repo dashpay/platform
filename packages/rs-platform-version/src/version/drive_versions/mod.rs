@@ -82,6 +82,7 @@ pub struct DriveFetchMethodVersions {
 pub struct DriveProveMethodVersions {
     pub prove_elements: FeatureVersion,
     pub prove_multiple_state_transition_results: FeatureVersion,
+    pub prove_state_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

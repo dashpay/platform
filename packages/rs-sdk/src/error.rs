@@ -1,6 +1,7 @@
 //! Definitions of errors
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
@@ -21,6 +22,9 @@ pub enum Error {
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
+    /// Drive error
+    #[error("Drive error with associated proof: {0}")]
+    DriveProofError(drive::error::proof::ProofError, Vec<u8>, BlockInfo),
     /// DPP error
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),

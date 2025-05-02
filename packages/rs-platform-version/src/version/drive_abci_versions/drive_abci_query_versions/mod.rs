@@ -33,6 +33,7 @@ pub struct DriveAbciQueryTokenVersions {
     pub token_total_supply: FeatureVersionBounds,
     pub token_direct_purchase_prices: FeatureVersionBounds,
     pub token_pre_programmed_distributions: FeatureVersionBounds,
+    pub token_perpetual_distribution_last_claim: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

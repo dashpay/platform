@@ -111,7 +111,7 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                                 self.token_id(),
                                 owner_id,
                                 action_type_string,
-                                rules.authorized_to_make_change_action_takers().clone(),
+                                *rules.authorized_to_make_change_action_takers(),
                             ),
                         )),
                     ))
@@ -130,7 +130,7 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                                             self.token_id(),
                                             owner_id,
                                             action_type_string,
-                                            rules.authorized_to_make_change_action_takers().clone(),
+                                            *rules.authorized_to_make_change_action_takers(),
                                         ),
                                     ),
                                 ),
@@ -146,7 +146,7 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                                     self.token_id(),
                                     owner_id,
                                     action_type_string,
-                                    rules.authorized_to_make_change_action_takers().clone(),
+                                    *rules.authorized_to_make_change_action_takers(),
                                 ),
                             )),
                         ));
@@ -166,7 +166,7 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
                         self.token_id(),
                         owner_id,
                         action_type_string,
-                        rules.authorized_to_make_change_action_takers().clone(),
+                        *rules.authorized_to_make_change_action_takers(),
                     ),
                 )),
             ));

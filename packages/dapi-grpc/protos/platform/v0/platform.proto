@@ -89,6 +89,9 @@ service Platform {
   rpc getTokenPreProgrammedDistributions(
       GetTokenPreProgrammedDistributionsRequest)
       returns (GetTokenPreProgrammedDistributionsResponse);
+  rpc getTokenPerpetualDistributionLastClaim(
+      GetTokenPerpetualDistributionLastClaimRequest)
+      returns (GetTokenPerpetualDistributionLastClaimResponse);
   rpc getTokenTotalSupply(GetTokenTotalSupplyRequest)
       returns (GetTokenTotalSupplyResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
@@ -1476,12 +1479,63 @@ message GetTokenPreProgrammedDistributionsResponse {
   oneof version { GetTokenPreProgrammedDistributionsResponseV0 v0 = 1; }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+//  Get the last‑claim information for a token’s perpetual distribution
+// ──────────────────────────────────────────────────────────────────────────────
+
+message GetTokenPerpetualDistributionLastClaimRequest {
+
+  message ContractTokenInfo {
+    bytes contract_id = 1;
+    // the token contract position
+    uint32 token_contract_position = 2;
+  }
+
+  message GetTokenPerpetualDistributionLastClaimRequestV0 {
+    // 32‑byte token identifier
+    bytes token_id   = 1;
+
+    // This should be set if you wish to get back the last claim info as a specific type
+    optional ContractTokenInfo contract_info = 2;
+
+    // Identity whose last‑claim timestamp is requested
+    bytes identity_id = 4;
+    // Return GroveDB / signature proof instead of raw value
+    bool  prove       = 5;
+  }
+
+  oneof version { GetTokenPerpetualDistributionLastClaimRequestV0 v0 = 1; }
+}
+
+message GetTokenPerpetualDistributionLastClaimResponse {
+  message GetTokenPerpetualDistributionLastClaimResponseV0 {
+    message LastClaimInfo {
+
+      oneof paid_at {
+        uint64 timestamp_ms = 1 [ jstype = JS_STRING ]; // Unix epoch, ms
+        uint64 block_height = 2 [ jstype = JS_STRING ]; // Core‑block height
+        uint32 epoch        = 3;                       // Epoch index
+        bytes  raw_bytes    = 4;                       // Arbitrary encoding
+      }
+    }
+
+    oneof result {
+      LastClaimInfo last_claim = 1; // Direct answer
+      Proof         proof      = 2; // GroveDB / quorum proof
+    }
+
+    ResponseMetadata metadata = 3;  // Chain context
+  }
+
+  oneof version { GetTokenPerpetualDistributionLastClaimResponseV0 v0 = 1; }
+}
+
 message GetTokenTotalSupplyRequest {
   message GetTokenTotalSupplyRequestV0 {
     bytes token_id = 1;
     bool prove = 2;
   }
-  oneof version { GetTokenTotalSupplyRequestV0 v0 = 1; }
+  oneof version {GetTokenTotalSupplyRequestV0 v0 = 1;}
 }
 
 message GetTokenTotalSupplyResponse {

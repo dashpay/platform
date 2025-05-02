@@ -1,6 +1,7 @@
 use crate::block::epoch::EpochIndex;
 use crate::prelude::{BlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Div};
@@ -8,7 +9,21 @@ use crate::block::block_info::BlockInfo;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Serialize,
+    Deserialize,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Decode,
+    Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+)]
+#[platform_serialize(unversioned)]
 pub enum RewardDistributionMoment {
     /// The reward was distributed at a block height
     BlockBasedMoment(BlockHeight),

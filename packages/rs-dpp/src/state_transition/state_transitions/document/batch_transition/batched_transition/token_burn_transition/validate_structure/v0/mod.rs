@@ -1,6 +1,7 @@
 use crate::consensus::basic::token::{InvalidTokenAmountError, InvalidTokenNoteTooBigError};
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use crate::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use crate::state_transition::batch_transition::TokenBurnTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
@@ -12,10 +13,10 @@ pub(super) trait TokenBurnTransitionActionStructureValidationV0 {
 }
 impl TokenBurnTransitionActionStructureValidationV0 for TokenBurnTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if self.burn_amount() > i64::MAX as u64 {
+        if self.burn_amount() > MAX_DISTRIBUTION_PARAM || self.burn_amount() == 0 {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
-                    InvalidTokenAmountError::new(i64::MAX as u64, self.burn_amount()),
+                    InvalidTokenAmountError::new(MAX_DISTRIBUTION_PARAM, self.burn_amount()),
                 )),
             ));
         }

@@ -597,3 +597,12 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_token_direct_purchase_prices
 );
+
+// rpc getTokenPerpetualDistributionLastClaimRequest(GetTokenPerpetualDistributionLastClaimRequest) returns (GetTokenPerpetualDistributionLastClaimResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenPerpetualDistributionLastClaimRequest,
+    platform_proto::GetTokenPerpetualDistributionLastClaimResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_perpetual_distribution_last_claim
+);

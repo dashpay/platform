@@ -23,6 +23,8 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the KeepsHistory rules.
     fn keeps_history(&self) -> &TokenKeepsHistoryRules;
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules;
 
     /// Returns if we start as paused.
     fn start_as_paused(&self) -> bool;
@@ -69,6 +71,9 @@ pub trait TokenConfigurationV0Getters {
     /// Returns all group positions used in the token configuration
     fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition>;
 
+    /// Returns all the change contract rules, including those from the distribution rules
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)>;
+
     /// Returns the token description.
     fn description(&self) -> &Option<String>;
 }
@@ -86,6 +91,9 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: TokenAmount);
+
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool);
 
     /// Sets the maximum supply.
     fn set_max_supply(&mut self, max_supply: Option<TokenAmount>);

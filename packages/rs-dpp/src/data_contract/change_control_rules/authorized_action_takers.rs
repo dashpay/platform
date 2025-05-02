@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, Default,
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
 )]
 pub enum AuthorizedActionTakers {
     #[default]

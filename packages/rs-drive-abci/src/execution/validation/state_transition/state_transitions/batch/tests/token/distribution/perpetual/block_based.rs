@@ -755,7 +755,7 @@ mod random {
 
     #[test]
     #[ignore]
-    fn test_block_based_perpetual_random_0_MAX_distribution_param() {
+    fn test_block_based_perpetual_random_0_max_distribution_param() {
         check_heights(
             DistributionFunction::Random {
                 min: 0,
@@ -2465,33 +2465,20 @@ mod test_suite {
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
     use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
     use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
     use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::prelude::{DataContract, IdentityPublicKey, TimestampMillis};
+    use drive::drive::Drive;
     use simple_signer::signer::SimpleSigner;
-
-    const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(60);
-    /// Run provided closure with timeout.
-    /// TODO: Check if it works with sync code
-    fn with_timeout(
-        duration: tokio::time::Duration,
-        f: impl FnOnce() -> Result<(), String> + Send + 'static,
-    ) -> Result<(), String> {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .unwrap();
-        // thread executing our code
-        let worker = rt.spawn_blocking(f);
-
-        rt.block_on(async move { tokio::time::timeout(duration, worker).await })
-            .map_err(|_| format!("test timed out after {:?}", TIMEOUT))?
-            .map_err(|e| format!("join error: {:?}", e))?
-    }
+    use std::sync::Arc;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+    use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
+    use dpp::state_transition::StateTransition;
 
     /// Check that claim results at provided heights are as expected, and that balances match expectations.
     ///
@@ -2523,6 +2510,9 @@ mod test_suite {
             TokenDistributionType::Perpetual,
             Some(move |token_configuration: &mut TokenConfiguration| {
                 token_configuration
+                    .keeps_history_mut()
+                    .set_all_keeps_history(true);
+                token_configuration
                     .distribution_rules_mut()
                     .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                         TokenPerpetualDistributionV0 {
@@ -2546,7 +2536,7 @@ mod test_suite {
             .map(|item| item.clone().into())
             .collect::<Vec<TestStep>>();
 
-        with_timeout(TIMEOUT, move || suite.execute(&steps))
+        suite.execute(&steps)
     }
 
     pub(super) type TokenConfigFn = dyn FnOnce(&mut TokenConfiguration) + Send + Sync;
@@ -2559,6 +2549,7 @@ mod test_suite {
         identity_public_key: IdentityPublicKey,
         token_id: Option<Identifier>,
         contract: Option<DataContract>,
+        token_configuration: Option<TokenConfiguration>,
         start_time: Option<TimestampMillis>,
         token_distribution_type: TokenDistributionType,
         token_configuration_modification: Option<Box<TokenConfigFn>>,
@@ -2602,8 +2593,9 @@ mod test_suite {
                 identity,
                 signer,
                 identity_public_key,
-                token_id: None,   // lazy initialization in get_contract/get_token_id
-                contract: None,   // lazy initialization in get_contract/get_token_id
+                token_id: None, // lazy initialization in get_contract/get_token_id
+                contract: None, // lazy initialization in get_contract/get_token_id
+                token_configuration: None, // lazy initialization in get_token_config/get_token_id
                 start_time: None, // optional, configured using with_contract_start_time
                 token_distribution_type,
                 epoch_index: 1,
@@ -2666,10 +2658,34 @@ mod test_suite {
                 .ok();
         }
 
+        /// Lazily initialize and return the token configuration.
+        ///
+        /// If the token configuration was already created, returns it.
+        /// Otherwise, it will initialize the token contract first (if necessary)
+        /// and extract the configuration from it.
+        fn get_token_config(&mut self) -> Result<TokenConfiguration, String> {
+            if let Some(ref token_config) = self.token_configuration {
+                return Ok(token_config.clone());
+            }
+
+            // If contract is not yet initialized, initialize it
+            let contract = self.get_contract()?;
+
+            // Now extract TokenConfiguration from contract
+            let token_config = contract
+                .expected_token_configuration(0)
+                .expect("expected to get token configuration")
+                .clone();
+
+            self.token_configuration = Some(token_config.clone());
+
+            Ok(token_config)
+        }
+
         /// Lazily initialize and return token contract. Also sets token id.
-        fn get_contract(&mut self) -> DataContract {
+        fn get_contract(&mut self) -> Result<DataContract, String> {
             if let Some(ref contract) = self.contract {
-                return contract.clone();
+                return Ok(contract.clone());
             }
             // we `take()` to avoid moving from reference; this means subsequent calls will fail, but we will already have
             // the contract and token id initialized so it should never happen
@@ -2677,16 +2693,6 @@ mod test_suite {
                 let closure = |token_configuration: &mut TokenConfiguration| {
                     // call previous token configuration modification
                     tc(token_configuration);
-
-                    // execute distribution function validation
-                    if let Err(e) = validate_distribution_function(
-                        token_configuration,
-                        self.start_time.unwrap_or(0),
-                    ) {
-                        panic!("{}", e);
-                    };
-
-                    tracing::trace!("token configuration validated");
                 };
                 Some(closure)
             } else {
@@ -2702,16 +2708,28 @@ mod test_suite {
                 self.platform_version,
             );
 
+            // Now extract TokenConfiguration from contract
+            let token_config = contract
+                .expected_token_configuration(0)
+                .expect("expected to get token configuration")
+                .clone();
+
+            self.token_configuration = Some(token_config.clone());
+
             self.token_id = Some(token_id);
             self.contract = Some(contract.clone());
 
-            contract
+            // execute distribution function validation
+            validate_distribution_function(&token_config, self.start_time.unwrap_or(0))
+                .map_err(|e| e.to_string())?;
+
+            Ok(contract)
         }
 
         /// Get token ID or create if needed.
         fn get_token_id(&mut self) -> Identifier {
             if self.token_id.is_none() {
-                self.get_contract(); // lazy initialization of token id and contract
+                self.get_contract().ok(); // lazy initialization of token id and contract
             }
 
             self.token_id
@@ -2737,10 +2755,12 @@ mod test_suite {
                 ..committed_block_info
             };
 
+            let contract = self.get_contract()?;
+
             let claim_transition = BatchTransition::new_token_claim_transition(
                 self.get_token_id(),
                 self.identity.id(),
-                self.get_contract().id(),
+                contract.id(),
                 0,
                 self.token_distribution_type,
                 None,
@@ -2788,6 +2808,93 @@ mod test_suite {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+
+            if processing_result.valid_count() == 1 {
+                let proof_result = self
+                    .platform
+                    .drive
+                    .prove_state_transition(&claim_transition, None, self.platform_version)
+                    .map_err(|e| e.to_string())?;
+
+                if let Some(proof_error) = proof_result.first_error() {
+                    return Err(format!(
+                        "proof_result is not valid with error {}",
+                        proof_error
+                    ));
+                }
+
+                let proof_data = proof_result.into_data().map_err(|e| e.to_string())?;
+
+                let contract = Arc::from(self.get_contract()?);
+
+                let (_, verification_result) =
+                    Drive::verify_state_transition_was_executed_with_proof(
+                        &claim_transition,
+                        &BlockInfo::default(),
+                        &proof_data,
+                        &|id: &Identifier| {
+                            if *id == contract.id() {
+                                Ok(Some(contract.clone()))
+                            } else {
+                                Ok(None)
+                            }
+                        },
+                        self.platform_version,
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                let StateTransitionProofResult::VerifiedTokenActionWithDocument(document) =
+                    verification_result
+                else {
+                    return Err(format!(
+                        "verification_result expected claim document, but got: {:?}",
+                        verification_result
+                    ));
+                };
+
+                // --- Extract TokenTransition from claim_transition ---
+                let StateTransition::Batch(BatchTransition::V1(batch_v1)) = claim_transition else {
+                    return Err("expected BatchTransition::V1".to_string());
+                };
+
+                // Assume only one transition was in the batch
+                let [batched_transition] = batch_v1.transitions.as_slice() else {
+                    return Err(format!(
+                        "expected exactly one batched transition, got {}",
+                        batch_v1.transitions.len()
+                    ));
+                };
+
+                let BatchedTransition::Token(token_transition) = batched_transition else {
+                    return Err("expected BatchedTransition::Token".to_string());
+                };
+
+                // --- Now build expected document ---
+                let expected_document = token_transition
+                    .build_historical_document(
+                        self.get_token_id(),
+                        self.identity.id(),
+                        nonce,
+                        &BlockInfo::default(),
+                        &self.get_token_config()?,
+                        self.platform_version,
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                if !document
+                    .is_equal_ignoring_time_based_fields(
+                        &expected_document,
+                        Some(vec!["amount"]),
+                        self.platform_version,
+                    )
+                    .map_err(|e| e.to_string())?
+                {
+                    return Err(
+                        "Expected historical document for claim does not match proof document"
+                            .to_string(),
+                    );
+                }
+            }
 
             Ok(())
         }
@@ -2951,7 +3058,7 @@ mod test_suite {
 
     /// dyn FnOnce(&mut TokenConfiguration) + Send + Sync;
     fn validate_distribution_function(
-        token_configuration: &mut TokenConfiguration,
+        token_configuration: &TokenConfiguration,
         contract_start_time: u64,
     ) -> Result<(), String> {
         let TokenConfiguration::V0(token_config) = token_configuration;

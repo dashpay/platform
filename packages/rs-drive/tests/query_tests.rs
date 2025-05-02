@@ -495,6 +495,7 @@ fn test_serialization_and_deserialization() {
         let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
             &document,
             document_type,
+            &contract,
             platform_version,
         )
         .expect("should serialize");
@@ -544,6 +545,7 @@ fn test_serialization_and_deserialization_with_null_values_should_fail_if_requir
     <Document as DocumentPlatformConversionMethodsV0>::serialize(
         &document,
         document_type,
+        &contract,
         platform_version,
     )
     .expect_err("expected to not be able to serialize domain document");
@@ -591,9 +593,13 @@ fn test_serialization_and_deserialization_with_null_values() {
     let mut document =
         Document::from_platform_value(value, platform_version).expect("expected value");
     document.set_revision(Some(1));
-    let serialized =
-        DocumentPlatformConversionMethodsV0::serialize(&document, document_type, platform_version)
-            .expect("expected to be able to serialize domain document");
+    let serialized = DocumentPlatformConversionMethodsV0::serialize(
+        &document,
+        document_type,
+        &contract,
+        platform_version,
+    )
+    .expect("expected to be able to serialize domain document");
 
     Document::from_bytes(&serialized, document_type, platform_version)
         .expect("expected to deserialize domain document");

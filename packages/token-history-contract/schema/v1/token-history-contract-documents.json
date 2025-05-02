@@ -540,9 +540,6 @@
             "tokenId": "asc"
           },
           {
-            "recipientType": "asc"
-          },
-          {
             "recipientId": "asc"
           },
           {
@@ -551,16 +548,13 @@
         ]
       },
       {
-        "name": "byDistributionType",
+        "name": "byAmount",
         "properties": [
           {
             "tokenId": "asc"
           },
           {
-            "distributionType": "asc"
-          },
-          {
-            "$createdAt": "asc"
+            "amount": "asc"
           }
         ]
       }
@@ -587,7 +581,7 @@
         "byteArray": true,
         "minItems": 32,
         "maxItems": 32,
-        "description": "An optional identity ID for direct recipient distributions",
+        "description": "An identity ID for direct recipient distributions",
         "contentMediaType": "application/x.dash.dpp.identifier",
         "position": 2
       },
@@ -616,6 +610,7 @@
     "required": [
       "tokenId",
       "recipientType",
+      "recipientId",
       "distributionType",
       "amount",
       "$createdAt",

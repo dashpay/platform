@@ -110,7 +110,7 @@ impl<'de> Deserialize<'de> for Bytes20 {
                 {
                     let bytes = BASE64_STANDARD
                         .decode(v)
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                        .map_err(|e| E::custom(format!("expected base64 for bytes20: {}", e)))?;
                     if bytes.len() != 20 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }

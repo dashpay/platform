@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 {
                     let bytes = bs58::decode(v)
                         .into_vec()
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                        .map_err(|e| E::custom(format!("expected base 58: {}", e)))?;
                     if bytes.len() != 32 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }
