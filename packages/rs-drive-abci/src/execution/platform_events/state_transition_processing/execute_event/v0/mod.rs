@@ -25,6 +25,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    #[allow(clippy::too_many_arguments)]
     fn paid_function(
         &self,
         mut fee_validation_result: ConsensusValidationResult<FeeResult>,
@@ -118,7 +119,7 @@ where
     pub(super) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
-        mut consensus_errors: Vec<ConsensusError>,
+        consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
