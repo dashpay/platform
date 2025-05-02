@@ -610,7 +610,7 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
@@ -714,7 +714,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -837,7 +837,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -966,7 +966,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1080,7 +1080,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 928, dash_to_credits!(0.1));
 
@@ -1234,7 +1234,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1336,7 +1336,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
             let (identity2, _signer2, _key2) =
                 setup_identity(&mut platform, 93, dash_to_credits!(0.2));
 
@@ -1436,7 +1436,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
             let platform_state = platform.state.load();
             let platform_version = PlatformVersion::latest();
 
@@ -1542,7 +1542,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1647,7 +1647,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1734,7 +1734,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -2108,7 +2108,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
             let (identity, signer, key) =
-                setup_identity(&mut platform, 1234, dash_to_credits!(0.1));
+                setup_identity(&mut platform, 1234, dash_to_credits!(1.0));
             let platform_state = platform.state.load();
             let platform_version = PlatformVersion::latest();
 
@@ -2452,7 +2452,7 @@ mod tests {
                         .set_genesis_state();
 
                     let (identity, signer, key) =
-                        setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                        setup_identity(&mut platform, 958, dash_to_credits!(10.0));
 
                     // create initial contract with one keyword so update is allowed
                     let (cid, _) = create_contract_with_keywords(
@@ -2529,7 +2529,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // initial contract with two keywords
             let (cid, _) = create_contract_with_keywords(
@@ -2832,7 +2832,7 @@ mod tests {
                         .set_genesis_state();
 
                     let (identity, signer, key) =
-                        setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                        setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                     // create initial contract with description so update is allowed
                     let (cid, _) = create_contract_with_description(
@@ -2894,7 +2894,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // initial contract with description
             let (cid, _) = create_contract_with_description(

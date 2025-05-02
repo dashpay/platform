@@ -1,5 +1,7 @@
 use crate::error::PlatformVersionError;
-use crate::version::fee::data_contract::FeeDataContractValidationVersion;
+use crate::version::fee::data_contract_registration::v1::FEE_DATA_CONTRACT_REGISTRATION_VERSION1;
+use crate::version::fee::data_contract_registration::FeeDataContractRegistrationVersion;
+use crate::version::fee::data_contract_validation::FeeDataContractValidationVersion;
 use crate::version::fee::hashing::FeeHashingVersion;
 use crate::version::fee::processing::{
     FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
@@ -11,13 +13,15 @@ use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
 use bincode::{Decode, Encode};
 
-mod data_contract;
+pub mod data_contract_registration;
+mod data_contract_validation;
 mod hashing;
 mod processing;
 pub mod signature;
 pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
+pub mod v2;
 pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
@@ -33,7 +37,8 @@ pub struct FeeVersion {
     pub signature: FeeSignatureVersion,
     pub hashing: FeeHashingVersion,
     pub processing: FeeProcessingVersion,
-    pub data_contract: FeeDataContractValidationVersion,
+    pub data_contract_validation: FeeDataContractValidationVersion,
+    pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
 }
@@ -99,7 +104,8 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             signature: value.signature,
             hashing: value.hashing,
             processing: FeeProcessingVersion::from(value.processing),
-            data_contract: value.data_contract,
+            data_contract_validation: value.data_contract,
+            data_contract_registration: FEE_DATA_CONTRACT_REGISTRATION_VERSION1,
             state_transition_min_fees: value.state_transition_min_fees,
             vote_resolution_fund_fees: value.vote_resolution_fund_fees,
         }

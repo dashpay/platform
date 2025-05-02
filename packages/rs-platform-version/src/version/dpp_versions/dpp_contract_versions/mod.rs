@@ -25,6 +25,7 @@ pub struct DataContractMethodVersions {
     pub schema: FeatureVersion,
     pub validate_groups: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
+    pub registration_cost: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
