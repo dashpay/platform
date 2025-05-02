@@ -50,7 +50,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(400000);
+      identity = await client.platform.identities.register(140000000); // 1.4 Dash
 
       expect(identity).to.exist();
     });
