@@ -4474,7 +4474,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.1-179273a650-5063fed6bb.zip/node_modules/@types/bs58/",\
         "packageDependencies": [\
           ["@types/bs58", "npm:4.0.1"],\
-          ["base-x", "npm:3.0.9"]\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -6517,10 +6517,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["base-x", [\
-      ["npm:3.0.9", {\
-        "packageLocation": "./.yarn/cache/base-x-npm-3.0.9-7b2588e106-957101d6fd.zip/node_modules/base-x/",\
+      ["npm:3.0.11", {\
+        "packageLocation": "./.yarn/cache/base-x-npm-3.0.11-3798da0834-c2e3c443fd.zip/node_modules/base-x/",\
         "packageDependencies": [\
-          ["base-x", "npm:3.0.9"],\
+          ["base-x", "npm:3.0.11"],\
           ["safe-buffer", "npm:5.2.1"]\
         ],\
         "linkType": "HARD"\
@@ -6877,7 +6877,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/bs58-npm-4.0.1-8d2a7822b1-b3c5365bb9.zip/node_modules/bs58/",\
         "packageDependencies": [\
           ["bs58", "npm:4.0.1"],\
-          ["base-x", "npm:3.0.9"]\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\
