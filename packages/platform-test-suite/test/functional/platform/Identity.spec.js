@@ -38,7 +38,7 @@ describe('Platform', () => {
     let walletAccount;
 
     before(async () => {
-      client = await createClientWithFundedWallet(20000000);
+      client = await createClientWithFundedWallet(2000000000); // 20 Dash
 
       walletAccount = await client.getWalletAccount();
     });
