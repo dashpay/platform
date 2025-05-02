@@ -104,7 +104,7 @@ describe('e2e', () => {
     describe('Bob', () => {
       it('should create user wallet and identity', async () => {
         // Create Bob wallet
-        bobClient = await createClientWithFundedWallet(500000);
+        bobClient = await createClientWithFundedWallet(100000000); // 1 Dash
 
         bobIdentity = await bobClient.platform.identities.register(400000);
 
