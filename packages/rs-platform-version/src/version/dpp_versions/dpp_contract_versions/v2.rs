@@ -21,6 +21,7 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
         schema: 0,
         validate_groups: 0,
         equal_ignoring_time_fields: 0,
+        registration_cost: 1, //changed to version 1
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {

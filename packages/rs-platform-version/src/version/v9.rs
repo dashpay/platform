@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRI
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
-use crate::version::fee::v1::FEE_VERSION1;
+use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
 use crate::version::system_limits::v1::SYSTEM_LIMITS_V1;
@@ -58,7 +58,7 @@ pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
-    fee_version: FEE_VERSION1,
+    fee_version: FEE_VERSION2, //changed to have data contract pay registration fees
     system_limits: SYSTEM_LIMITS_V1,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

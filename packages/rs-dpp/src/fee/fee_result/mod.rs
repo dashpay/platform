@@ -210,7 +210,7 @@ impl FeeResult {
 
     /// Convenience method to get total fee
     pub fn total_base_fee(&self) -> Credits {
-        self.storage_fee + self.processing_fee
+        self.storage_fee.saturating_add(self.processing_fee)
     }
 
     /// Convenience method to get required removed balance
