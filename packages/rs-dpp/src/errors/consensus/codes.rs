@@ -110,6 +110,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateKeywordsError(_) => 10263,
             Self::InvalidKeywordLengthError(_) => 10264,
             Self::InvalidDescriptionLengthError(_) => 10265,
+            Self::NewTokensDestinationIdentityOptionRequiredError(_) => 10266,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

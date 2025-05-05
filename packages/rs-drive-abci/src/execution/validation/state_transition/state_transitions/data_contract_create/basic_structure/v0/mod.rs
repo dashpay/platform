@@ -2,7 +2,8 @@ use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
     DuplicateKeywordsError, InvalidDataContractVersionError, InvalidDescriptionLengthError,
     InvalidKeywordLengthError, InvalidTokenBaseSupplyError,
-    NonContiguousContractTokenPositionsError, TooManyKeywordsError,
+    NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractTokenPositionsError,
+    TooManyKeywordsError,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -96,6 +97,23 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 if !validation_result.is_valid() {
                     return Ok(validation_result);
                 }
+            }
+
+            if token_configuration
+                .distribution_rules()
+                .new_tokens_destination_identity()
+                .is_none()
+                && !token_configuration
+                    .distribution_rules()
+                    .minting_allow_choosing_destination()
+            {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    NewTokensDestinationIdentityOptionRequiredError::new(
+                        self.data_contract().id(),
+                        *token_contract_position,
+                    )
+                    .into(),
+                ));
             }
         }
 

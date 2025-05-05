@@ -20,11 +20,12 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionIncoherenceError,
     InvalidTokenDistributionFunctionInvalidParameterError,
     InvalidTokenDistributionFunctionInvalidParameterTupleError,
-    NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
+    NonContiguousContractTokenPositionsError, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -531,6 +532,11 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDescriptionLengthError(InvalidDescriptionLengthError),
+
+    #[error(transparent)]
+    NewTokensDestinationIdentityOptionRequiredError(
+        NewTokensDestinationIdentityOptionRequiredError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {
