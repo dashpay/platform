@@ -5,6 +5,7 @@ use dpp::block::block_info::BlockInfo;
 use std::collections::BTreeSet;
 
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use dpp::consensus::state::group::IdentityMemberOfGroupNotFoundError;
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::{
     IdentityInTokenConfigurationNotFoundError, TokenConfigurationIdentityContext,
 };
@@ -16,6 +17,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -79,6 +81,47 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         }
 
         let mut validated_identities = BTreeSet::new();
+
+        for (position, group) in self.data_contract().groups() {
+            for member_identity_id in group.members().keys() {
+                if !validated_identities.contains(member_identity_id) {
+                    let maybe_key = platform
+                        .drive
+                        .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
+                            IdentityKeysRequest {
+                                identity_id: member_identity_id.to_buffer(),
+                                request_type: LatestAuthenticationMasterKey,
+                                limit: Some(1),
+                                offset: None,
+                            },
+                            tx,
+                            platform_version,
+                        )?;
+
+                    execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                        RetrieveIdentityInfo::one_key(),
+                    ));
+
+                    if maybe_key.is_none() {
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            StateTransitionAction::BumpIdentityNonceAction(
+                                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                            ),
+                            vec![StateError::IdentityMemberOfGroupNotFoundError(
+                                IdentityMemberOfGroupNotFoundError::new(
+                                    self.data_contract().id(),
+                                    *position,
+                                    *member_identity_id,
+                                ),
+                            )
+                                .into()],
+                        ));
+                    } else {
+                        validated_identities.insert(*member_identity_id);
+                    }
+                }
+            }
+        }
 
         // Validate token distribution rules
         for (position, config) in self.data_contract().tokens() {

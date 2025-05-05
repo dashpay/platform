@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::group::IdentityMemberOfGroupNotFoundError;
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::{
     IdentityInTokenConfigurationNotFoundError, TokenConfigurationIdentityContext,
 };
@@ -18,11 +19,13 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::validation::state_transition::ValidationMode;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -34,7 +37,7 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -168,6 +171,50 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let mut validated_identities = BTreeSet::new();
 
+        for (position, group) in self.data_contract().groups() {
+            for member_identity_id in group.members().keys() {
+                if !validated_identities.contains(member_identity_id) {
+                    let maybe_key = platform
+                        .drive
+                        .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
+                            IdentityKeysRequest {
+                                identity_id: member_identity_id.to_buffer(),
+                                request_type: LatestAuthenticationMasterKey,
+                                limit: Some(1),
+                                offset: None,
+                            },
+                            tx,
+                            platform_version,
+                        )?;
+
+                    execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                        RetrieveIdentityInfo::one_key(),
+                    ));
+
+                    if maybe_key.is_none() {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                self,
+                            ),
+                        );
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            vec![StateError::IdentityMemberOfGroupNotFoundError(
+                                IdentityMemberOfGroupNotFoundError::new(
+                                    self.data_contract().id(),
+                                    *position,
+                                    *member_identity_id,
+                                ),
+                            )
+                            .into()],
+                        ));
+                    } else {
+                        validated_identities.insert(*member_identity_id);
+                    }
+                }
+            }
+        }
+
         // Validate any newly added tokens
         for (token_contract_position, token_configuration) in new_data_contract.tokens() {
             if !old_data_contract
@@ -192,6 +239,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                                     tx,
                                     platform_version,
                                 )?;
+
+                            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                                RetrieveIdentityInfo::one_key(),
+                            ));
 
                             if maybe_key.is_none() {
                                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
