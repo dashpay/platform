@@ -103,10 +103,9 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 .distribution_rules()
                 .new_tokens_destination_identity()
                 .is_none()
-                && token_configuration
+                && !token_configuration
                     .distribution_rules()
                     .minting_allow_choosing_destination()
-                    == false
             {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     NewTokensDestinationIdentityOptionRequiredError::new(
