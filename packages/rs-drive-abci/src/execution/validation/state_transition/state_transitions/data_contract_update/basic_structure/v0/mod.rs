@@ -1,6 +1,7 @@
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
-    InvalidTokenBaseSupplyError, NonContiguousContractTokenPositionsError,
+    InvalidTokenBaseSupplyError, NewTokensDestinationIdentityOptionRequiredError,
+    NonContiguousContractTokenPositionsError,
 };
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
@@ -81,6 +82,24 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 if !validation_result.is_valid() {
                     return Ok(validation_result);
                 }
+            }
+
+            if token_configuration
+                .distribution_rules()
+                .new_tokens_destination_identity()
+                .is_none()
+                && token_configuration
+                    .distribution_rules()
+                    .minting_allow_choosing_destination()
+                    == false
+            {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    NewTokensDestinationIdentityOptionRequiredError::new(
+                        self.data_contract().id(),
+                        *token_contract_position,
+                    )
+                    .into(),
+                ));
             }
         }
 
