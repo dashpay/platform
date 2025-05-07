@@ -126,6 +126,94 @@ mod token_tests {
             }
 
             #[test]
+            fn test_token_mint_with_public_note() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut rng = StdRng::seed_from_u64(49853);
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                let (contract, token_id) = create_token_contract_with_owner_identity(
+                    &mut platform,
+                    identity.id(),
+                    None::<fn(&mut TokenConfiguration)>,
+                    None,
+                    None,
+                    platform_version,
+                );
+
+                let documents_batch_create_transition = BatchTransition::new_token_mint_transition(
+                    token_id,
+                    identity.id(),
+                    contract.id(),
+                    0,
+                    1337,
+                    Some(identity.id()),
+                    Some("this is a public note".to_string()),
+                    None,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+                let documents_batch_create_serialized_transition =
+                    documents_batch_create_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![documents_batch_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id.to_buffer(),
+                        identity.id().to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, Some(101337));
+            }
+
+            #[test]
             fn test_token_mint_by_owner_can_not_mint_past_max_supply() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -3161,7 +3249,6 @@ mod token_tests {
         use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
         use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
         use dpp::tokens::emergency_action::TokenEmergencyAction;
-        use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
         use dpp::tokens::status::TokenStatus;
         use dpp::tokens::status::v0::TokenStatusV0;
         use super::*;
@@ -5126,6 +5213,9 @@ mod token_tests {
         use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 
         mod non_group {
+            use dpp::state_transition::proof_result::StateTransitionProofResult;
+            use drive::drive::Drive;
+
             use super::*;
             #[test]
             fn test_token_config_update_by_owner_changing_total_max_supply() {
@@ -5210,6 +5300,155 @@ mod token_tests {
                     .commit_transaction(transaction)
                     .unwrap()
                     .expect("expected to commit transaction");
+
+                let contract = platform
+                    .drive
+                    .fetch_contract(
+                        contract.id().to_buffer(),
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .unwrap()
+                    .expect("expected to fetch token balance")
+                    .expect("expected contract");
+                let updated_token_config = contract
+                    .contract
+                    .expected_token_configuration(0)
+                    .expect("expected token configuration");
+                assert_eq!(updated_token_config.max_supply(), Some(1000000));
+            }
+
+            /// Added this test to verify that adding "note" property to token history contract document types
+            /// Makes the proof verification work
+            #[test]
+            fn test_token_config_update_by_owner_changing_total_max_supply_with_public_note() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut rng = StdRng::seed_from_u64(49853);
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                let (contract, token_id) = create_token_contract_with_owner_identity(
+                    &mut platform,
+                    identity.id(),
+                    Some(|token_configuration: &mut TokenConfiguration| {
+                        token_configuration.set_max_supply_change_rules(ChangeControlRules::V0(
+                            ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            },
+                        ));
+                    }),
+                    None,
+                    None,
+                    platform_version,
+                );
+
+                let config_update_transition = BatchTransition::new_token_config_update_transition(
+                    token_id,
+                    identity.id(),
+                    contract.id(),
+                    0,
+                    TokenConfigurationChangeItem::MaxSupply(Some(1000000)),
+                    Some("this is a public note".to_string()),
+                    None,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+                let config_update_transition_serialized_transition = config_update_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![config_update_transition_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                if processing_result.valid_count() == 1 {
+                    let proof_result = platform
+                        .platform
+                        .drive
+                        .prove_state_transition(&config_update_transition, None, platform_version)
+                        .map_err(|e| e.to_string())
+                        .expect("expected to create proof");
+
+                    if let Some(proof_error) = proof_result.first_error() {
+                        panic!("proof_result is not valid with error {}", proof_error);
+                    }
+
+                    let proof_data = proof_result
+                        .into_data()
+                        .map_err(|e| e.to_string())
+                        .expect("expected to get proof data");
+
+                    let (_, verification_result) =
+                        Drive::verify_state_transition_was_executed_with_proof(
+                            &config_update_transition,
+                            &BlockInfo::default(),
+                            &proof_data,
+                            &|id: &Identifier| {
+                                if *id == contract.id() {
+                                    Ok(Some(contract.clone().into()))
+                                } else {
+                                    Ok(None)
+                                }
+                            },
+                            platform_version,
+                        )
+                        .map_err(|e| e.to_string())
+                        .expect("expected to verify state transition");
+
+                    let StateTransitionProofResult::VerifiedTokenActionWithDocument(_document) =
+                        verification_result
+                    else {
+                        panic!(
+                            "verification_result expected config update document, but got: {:?}",
+                            verification_result
+                        );
+                    };
+                }
 
                 let contract = platform
                     .drive
