@@ -114,8 +114,9 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
     }
 
     /// Returns all group positions used in the token configuration
-    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+    fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
         let mut group_positions = BTreeSet::new();
+        let mut uses_main_group = false;
 
         // Add the main control group if it exists
         if let Some(main_group_position) = self.main_control_group {
@@ -126,6 +127,8 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         let mut add_from_authorized_action_takers = |authorized_takers: &AuthorizedActionTakers| {
             if let AuthorizedActionTakers::Group(group_position) = authorized_takers {
                 group_positions.insert(*group_position);
+            } else if let AuthorizedActionTakers::MainGroup = authorized_takers {
+                uses_main_group = true;
             }
         };
 
@@ -157,7 +160,7 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         // Add positions from the `main_control_group_can_be_modified` field
         add_from_authorized_action_takers(&self.main_control_group_can_be_modified);
 
-        group_positions
+        (group_positions, uses_main_group)
     }
 
     fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {

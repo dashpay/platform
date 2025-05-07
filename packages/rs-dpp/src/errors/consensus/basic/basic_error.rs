@@ -21,7 +21,7 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionIncoherenceError,
     InvalidTokenDistributionFunctionInvalidParameterError,
     InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
-    InvalidTokenNameCharacterError, InvalidTokenNameLengthError,
+    InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
@@ -554,6 +554,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidTokenLanguageCodeError(InvalidTokenLanguageCodeError),
+
+    #[error(transparent)]
+    MainGroupIsNotDefinedError(MainGroupIsNotDefinedError),
 }
 
 impl From<BasicError> for ConsensusError {

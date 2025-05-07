@@ -150,7 +150,7 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns all group positions used in the token configuration
-    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+    fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
         match self {
             TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
         }
