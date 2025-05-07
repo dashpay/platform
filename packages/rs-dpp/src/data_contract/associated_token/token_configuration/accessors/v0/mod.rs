@@ -69,7 +69,7 @@ pub trait TokenConfigurationV0Getters {
     fn main_control_group_can_be_modified(&self) -> &AuthorizedActionTakers;
 
     /// Returns all group positions used in the token configuration
-    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition>;
+    fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool);
 
     /// Returns all the change contract rules, including those from the distribution rules
     fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)>;
