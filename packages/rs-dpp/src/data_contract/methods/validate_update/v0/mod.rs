@@ -313,7 +313,7 @@ impl DataContract {
             // Validate the description is between 3 and 100 characters
             if let Some(description) = new_data_contract.description() {
                 let char_count = description.chars().count();
-                if !(char_count >= 3 && char_count <= 100) {
+                if !(3..=100).contains(&char_count) {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidDescriptionLengthError::new(self.id(), description.to_string())
                             .into(),
