@@ -3346,7 +3346,7 @@ mod tests {
         };
 
         #[test]
-        fn test_data_contract_creation_fails_with_more_than_twenty_keywords() {
+        fn test_data_contract_creation_fails_with_more_than_fifty_keywords() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -3374,7 +3374,7 @@ mod tests {
 
             // Insert 21 keywords to exceed the max limit
             let mut excessive_keywords: Vec<Value> = vec![];
-            for i in 0..21 {
+            for i in 0..51 {
                 excessive_keywords.push(Value::Text(format!("keyword{}", i)));
             }
             contract_value["keywords"] = Value::Array(excessive_keywords);

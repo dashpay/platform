@@ -14,7 +14,7 @@ pub trait TokenConfigurationConventionV0Getters {
     fn localizations_mut(&mut self) -> &mut BTreeMap<String, TokenConfigurationLocalization>;
 
     /// Returns the decimals value.
-    fn decimals(&self) -> u16;
+    fn decimals(&self) -> u8;
 }
 
 /// Accessor trait for setters of `TokenConfigurationConventionV0`
@@ -26,5 +26,5 @@ pub trait TokenConfigurationConventionV0Setters {
     );
 
     /// Sets the decimals value.
-    fn set_decimals(&mut self, decimals: u16);
+    fn set_decimals(&mut self, decimals: u8);
 }

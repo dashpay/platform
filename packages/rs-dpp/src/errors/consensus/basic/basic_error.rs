@@ -8,18 +8,20 @@ use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
-    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError,
+    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupPositionDoesNotExistError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
-    InvalidTokenDistributionFunctionDivideByZeroError,
+    InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
+    InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
     InvalidTokenDistributionFunctionIncoherenceError,
     InvalidTokenDistributionFunctionInvalidParameterError,
-    InvalidTokenDistributionFunctionInvalidParameterTupleError,
+    InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
+    InvalidTokenNameCharacterError, InvalidTokenNameLengthError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
@@ -537,6 +539,21 @@ pub enum BasicError {
     NewTokensDestinationIdentityOptionRequiredError(
         NewTokensDestinationIdentityOptionRequiredError,
     ),
+
+    #[error(transparent)]
+    InvalidKeywordCharacterError(InvalidKeywordCharacterError),
+
+    #[error(transparent)]
+    InvalidTokenNameCharacterError(InvalidTokenNameCharacterError),
+
+    #[error(transparent)]
+    DecimalsOverLimitError(DecimalsOverLimitError),
+
+    #[error(transparent)]
+    InvalidTokenNameLengthError(InvalidTokenNameLengthError),
+
+    #[error(transparent)]
+    InvalidTokenLanguageCodeError(InvalidTokenLanguageCodeError),
 }
 
 impl From<BasicError> for ConsensusError {
