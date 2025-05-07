@@ -175,6 +175,16 @@ impl Drive {
                 platform_version,
             )?;
 
+        if !contract.tokens().is_empty() {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Drive::add_estimation_costs_for_token_status_infos(
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+        }
+
         for (token_pos, token_config) in contract.tokens() {
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
