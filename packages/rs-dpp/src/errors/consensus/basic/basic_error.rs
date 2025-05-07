@@ -11,10 +11,10 @@ use crate::consensus::basic::data_contract::{
     DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
     DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError,
     GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
-    GroupPositionDoesNotExistError, GroupTotalPowerLessThanRequiredError,
-    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -557,6 +557,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MainGroupIsNotDefinedError(MainGroupIsNotDefinedError),
+
+    #[error(transparent)]
+    GroupRequiredPowerIsInvalidError(GroupRequiredPowerIsInvalidError),
 }
 
 impl From<BasicError> for ConsensusError {
