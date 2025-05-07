@@ -116,7 +116,6 @@ impl ErrorWithCode for BasicError {
             Self::InvalidKeywordCharacterError(_) => 10269,
             Self::InvalidKeywordLengthError(_) => 10270,
             Self::DecimalsOverLimitError(_) => 10271,
-            Self::MainGroupIsNotDefinedError(_) => 10272,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -126,6 +125,8 @@ impl ErrorWithCode for BasicError {
             Self::GroupExceedsMaxMembersError(_) => 10354,
             Self::GroupMemberHasPowerOfZeroError(_) => 10355,
             Self::GroupMemberHasPowerOverLimitError(_) => 10356,
+            Self::MainGroupIsNotDefinedError(_) => 10357,
+            Self::GroupRequiredPowerIsInvalidError(_) => 10358,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
