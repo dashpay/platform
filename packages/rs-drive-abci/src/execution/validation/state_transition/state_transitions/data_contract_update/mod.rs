@@ -2496,6 +2496,9 @@ mod tests {
             [
                 "kw0", "kw1", "kw2", "kw3", "kw4", "kw5", "kw6", "kw7", "kw8", "kw9", "kw10",
                 "kw11", "kw12", "kw13", "kw14", "kw15", "kw16", "kw17", "kw18", "kw19", "kw20",
+                "kw21", "kw22", "kw23", "kw24", "kw25", "kw26", "kw27", "kw28", "kw29", "kw30",
+                "kw31", "kw32", "kw33", "kw34", "kw35", "kw36", "kw37", "kw38", "kw39", "kw40",
+                "kw41", "kw42", "kw43", "kw44", "kw45", "kw46", "kw47", "kw48", "kw49", "kw50",
             ],
             BasicError::TooManyKeywordsError(_)
         );
@@ -2566,7 +2569,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 *fetched.contract.keywords(),
-                ["newA", "newB", "newC"]
+                ["newa", "newb", "newc"]
                     .iter()
                     .map(|&s| s.to_string())
                     .collect::<Vec<String>>()
@@ -2575,9 +2578,9 @@ mod tests {
             // search‑contract docs updated?
             let docs_after = keyword_docs_for_contract(&platform, cid, platform_version);
             assert_eq!(docs_after.len(), 3);
-            assert!(docs_after.contains(&"newA".to_string()));
-            assert!(docs_after.contains(&"newB".to_string()));
-            assert!(docs_after.contains(&"newC".to_string()));
+            assert!(docs_after.contains(&"newa".to_string()));
+            assert!(docs_after.contains(&"newb".to_string()));
+            assert!(docs_after.contains(&"newc".to_string()));
             // old docs gone
             assert!(!docs_after.contains(&"old1".to_string()));
             assert!(!docs_after.contains(&"old2".to_string()));

@@ -271,7 +271,8 @@ impl DataContract {
             // Validate there are no more than 50 keywords
             if new_data_contract.keywords().len() > 50 {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
-                    TooManyKeywordsError::new(self.id(), self.keywords().len() as u8).into(),
+                    TooManyKeywordsError::new(self.id(), new_data_contract.keywords().len() as u8)
+                        .into(),
                 ));
             }
 

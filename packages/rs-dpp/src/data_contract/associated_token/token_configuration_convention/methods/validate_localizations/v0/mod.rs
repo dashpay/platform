@@ -96,8 +96,7 @@ impl TokenConfigurationConvention {
 
             if language.len() < 2 || language.len() > 12 {
                 return SimpleConsensusValidationResult::new_with_error(
-                    InvalidTokenNameLengthError::new(plural_form.len(), 2, 12, "language code")
-                        .into(),
+                    InvalidTokenNameLengthError::new(language.len(), 2, 12, "language code").into(),
                 );
             }
 
