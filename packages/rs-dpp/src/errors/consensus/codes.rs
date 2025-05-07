@@ -108,9 +108,14 @@ impl ErrorWithCode for BasicError {
             Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
             Self::TooManyKeywordsError(_) => 10262,
             Self::DuplicateKeywordsError(_) => 10263,
-            Self::InvalidKeywordLengthError(_) => 10264,
-            Self::InvalidDescriptionLengthError(_) => 10265,
-            Self::NewTokensDestinationIdentityOptionRequiredError(_) => 10266,
+            Self::InvalidDescriptionLengthError(_) => 10264,
+            Self::NewTokensDestinationIdentityOptionRequiredError(_) => 10265,
+            Self::InvalidTokenNameCharacterError(_) => 10266,
+            Self::InvalidTokenNameLengthError(_) => 10267,
+            Self::InvalidTokenLanguageCodeError(_) => 10268,
+            Self::InvalidKeywordCharacterError(_) => 10269,
+            Self::InvalidKeywordLengthError(_) => 10270,
+            Self::DecimalsOverLimitError(_) => 10271,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
