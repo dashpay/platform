@@ -12,9 +12,15 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct MainGroupIsNotDefinedError;
 
+impl Default for MainGroupIsNotDefinedError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MainGroupIsNotDefinedError {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
