@@ -568,8 +568,8 @@ impl StateTransition {
                             ),
                         ));
                     }
-                    st.verify_public_key_is_enabled(identity_public_key)?;
                 }
+                st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
