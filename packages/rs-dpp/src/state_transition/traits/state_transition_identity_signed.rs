@@ -16,7 +16,12 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
     feature = "state-transition-validation"
 ))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::state_transition::{StateTransitionLike, StateTransitionSigningOptions};
+use crate::state_transition::StateTransitionLike;
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::StateTransitionSigningOptions;
 
 #[cfg(any(
     feature = "state-transition-signing",

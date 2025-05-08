@@ -3,8 +3,6 @@ use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::SecurityLevel;
-#[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityPublicKey;
@@ -69,6 +67,7 @@ use crate::state_transition::batch_transition::token_set_price_for_direct_purcha
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
+use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
@@ -140,14 +139,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
 
@@ -218,14 +217,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
 
@@ -281,14 +280,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
 
@@ -359,14 +358,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -436,14 +435,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -515,14 +514,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -592,14 +591,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -669,14 +668,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -722,14 +721,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -804,14 +803,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)
@@ -858,14 +857,14 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             state_transition.sign_external_with_options(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
                 options.signing_options,
             )?;
         } else {
             state_transition.sign_external(
                 identity_public_key,
                 signer,
-                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                None::<GetDataContractSecurityLevelRequirementFn>,
             )?;
         }
         Ok(state_transition)

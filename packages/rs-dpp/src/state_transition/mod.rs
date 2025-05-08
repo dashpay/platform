@@ -557,12 +557,6 @@ impl StateTransition {
                     ));
                 }
                 if !options.allow_signing_with_any_security_level {
-                    let get_data_contract_security_level_requirement =
-                        get_data_contract_security_level_requirement
-                            .ok_or(ProtocolError::CorruptedCodeExecution(
-                                "must supply get_data_contract when signing a documents batch transition"
-                                    .to_string(),
-                            ))?;
                     let security_level_requirement = st.combined_security_level_requirement(
                         get_data_contract_security_level_requirement,
                     )?;

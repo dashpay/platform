@@ -118,11 +118,9 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     fn combined_security_level_requirement(
         &self,
-        get_data_contract_security_level_requirement: impl Fn(
-            Identifier,
-            String,
-        )
-            -> Result<SecurityLevel, ProtocolError>,
+        get_data_contract_security_level_requirement: Option<
+            impl Fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
+        >,
     ) -> Result<Vec<SecurityLevel>, ProtocolError> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
@@ -131,9 +129,26 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         // requirement is the highest level across all documents affected by the ST./
         let mut highest_security_level = SecurityLevel::lowest_level();
 
-        for transition in self.transitions_iter() {
-            match transition {
-                BatchedTransitionRef::Document(document_transition) => {
+        if self
+            .transitions_iter()
+            .any(|transition| matches!(transition, BatchedTransitionRef::Token(_)))
+        {
+            // If we ever have a token transition it will be security level critical and so will the whole state transition
+            highest_security_level = SecurityLevel::CRITICAL;
+        } else if self
+            .transitions_iter()
+            .any(|transition| matches!(transition, BatchedTransitionRef::Document(_)))
+        {
+            // We know we don't have token transitions at this point
+            let get_data_contract_security_level_requirement =
+                get_data_contract_security_level_requirement.ok_or(
+                    ProtocolError::CorruptedCodeExecution(
+                        "must supply get_data_contract when signing a documents batch transition"
+                            .to_string(),
+                    ),
+                )?;
+            for transition in self.transitions_iter() {
+                if let BatchedTransitionRef::Document(document_transition) = transition {
                     let document_type_name = document_transition.base().document_type_name();
                     let data_contract_id = document_transition.base().data_contract_id();
                     let document_security_level = get_data_contract_security_level_requirement(
@@ -143,17 +158,12 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
                     // lower enum representation means higher in security
                     if document_security_level < highest_security_level {
-                        highest_security_level = document_security_level
-                    }
-                }
-                BatchedTransitionRef::Token(_) => {
-                    if highest_security_level != SecurityLevel::MASTER {
-                        // All token transitions require a critical key
-                        highest_security_level = SecurityLevel::CRITICAL;
+                        highest_security_level = document_security_level;
                     }
                 }
             }
-        }
+        };
+
         Ok(if highest_security_level == SecurityLevel::MASTER {
             vec![SecurityLevel::MASTER]
         } else {

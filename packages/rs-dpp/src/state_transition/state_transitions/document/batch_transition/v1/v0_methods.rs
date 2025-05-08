@@ -5,8 +5,6 @@ use crate::document::{Document, DocumentV0Getters};
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::SecurityLevel;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityPublicKey;
@@ -39,6 +37,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -119,10 +118,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
         state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
             resolved_options.signing_options,
         )?;
         Ok(state_transition)
@@ -160,10 +160,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
         state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
             resolved_options.signing_options,
         )?;
         Ok(state_transition)
@@ -201,10 +202,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
         state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
             resolved_options.signing_options,
         )?;
         Ok(state_transition)
@@ -244,10 +246,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
         state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
             resolved_options.signing_options,
         )?;
         Ok(state_transition)
@@ -287,10 +290,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
         state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
             resolved_options.signing_options,
         )?;
         Ok(state_transition)
@@ -330,10 +334,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
+        let required_security_level = document_type.security_level_requirement();
         state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
             resolved_options.signing_options,
         )?;
         Ok(state_transition)
