@@ -6,9 +6,10 @@ use itertools::Itertools;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {}", allowed_key_purposes.iter().map(|s| s.to_string()).join(" | "))]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct WrongPublicKeyPurposeError {
-    public_key_purpose: Purpose,
-    allowed_key_purposes: Vec<Purpose>,
+    pub public_key_purpose: Purpose,
+    pub allowed_key_purposes: Vec<Purpose>,
 }
 
 impl WrongPublicKeyPurposeError {
