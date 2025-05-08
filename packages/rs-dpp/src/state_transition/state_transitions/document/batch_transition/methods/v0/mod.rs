@@ -143,17 +143,25 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions_iter() {
-            if let BatchedTransitionRef::Document(document_transition) = transition {
-                let document_type_name = document_transition.base().document_type_name();
-                let data_contract_id = document_transition.base().data_contract_id();
-                let document_security_level = get_data_contract_security_level_requirement(
-                    data_contract_id,
-                    document_type_name.to_owned(),
-                )?;
+            match transition {
+                BatchedTransitionRef::Document(document_transition) => {
+                    let document_type_name = document_transition.base().document_type_name();
+                    let data_contract_id = document_transition.base().data_contract_id();
+                    let document_security_level = get_data_contract_security_level_requirement(
+                        data_contract_id,
+                        document_type_name.to_owned(),
+                    )?;
 
-                // lower enum representation means higher in security
-                if document_security_level < highest_security_level {
-                    highest_security_level = document_security_level
+                    // lower enum representation means higher in security
+                    if document_security_level < highest_security_level {
+                        highest_security_level = document_security_level
+                    }
+                }
+                BatchedTransitionRef::Token(_) => {
+                    if highest_security_level != SecurityLevel::MASTER {
+                        // All token transitions require a critical key
+                        highest_security_level = SecurityLevel::CRITICAL;
+                    }
                 }
             }
         }
