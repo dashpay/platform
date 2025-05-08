@@ -26,7 +26,7 @@ use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
@@ -37,6 +37,7 @@ use crate::data_contract::associated_token::token_distribution_key::TokenDistrib
 use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
+use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -91,9 +92,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut mint_transition = TokenMintTransition::V0(TokenMintTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -137,11 +136,21 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
+
         Ok(state_transition)
     }
 
@@ -159,9 +168,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut burn_transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -207,11 +214,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
 
         // Create the state transition
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
 
         Ok(state_transition)
     }
@@ -231,9 +247,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         // Create the transfer transition for batch version 1
         let transfer_transition = TokenTransferTransition::V0(TokenTransferTransitionV0 {
@@ -263,11 +277,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
 
         // Create the state transition
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
 
         Ok(state_transition)
     }
@@ -286,9 +309,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut freeze_transition = TokenFreezeTransition::V0(TokenFreezeTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -332,12 +353,22 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
+
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -355,9 +386,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut unfreeze_transition = TokenUnfreezeTransition::V0(TokenUnfreezeTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -401,12 +430,22 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature: Default::default(),
         }
         .into();
+
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -424,9 +463,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut destroy_frozen_funds_transition =
             TokenDestroyFrozenFundsTransition::V0(TokenDestroyFrozenFundsTransitionV0 {
@@ -474,11 +511,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -496,9 +542,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _delete_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut emergency_action_transition =
             TokenEmergencyActionTransition::V0(TokenEmergencyActionTransitionV0 {
@@ -544,11 +588,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -566,9 +619,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _config_update_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut config_update_transition =
             TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
@@ -614,11 +665,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::CRITICAL)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -635,9 +695,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _config_update_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let claim_transition = TokenClaimTransition::V0(TokenClaimTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -660,11 +718,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::CRITICAL)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -682,9 +749,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _config_update_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut change_direct_purchase_price_transition =
             TokenSetPriceForDirectPurchaseTransition::V0(
@@ -735,11 +800,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 
@@ -756,9 +830,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        _config_update_feature_version: Option<FeatureVersion>,
-        _base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let direct_purchase_transition =
             TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
@@ -782,11 +854,20 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         }
         .into();
         let mut state_transition: StateTransition = batch_transition.into();
-        state_transition.sign_external(
-            identity_public_key,
-            signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
-        )?;
+        if let Some(options) = options {
+            state_transition.sign_external_with_options(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+                options.signing_options,
+            )?;
+        } else {
+            state_transition.sign_external(
+                identity_public_key,
+                signer,
+                Some(|_, _| Ok(SecurityLevel::HIGH)),
+            )?;
+        }
         Ok(state_transition)
     }
 }

@@ -283,21 +283,12 @@ impl OptionallyAssetLockProved for StateTransition {
 }
 
 /// The state transition signing options
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct StateTransitionSigningOptions {
     /// This will allow signing with any security level for debugging purposes
     pub allow_signing_with_any_security_level: bool,
     /// This will allow signing with any purpose for debugging purposes
     pub allow_signing_with_any_purpose: bool,
-}
-
-impl Default for StateTransitionSigningOptions {
-    fn default() -> Self {
-        StateTransitionSigningOptions {
-            allow_signing_with_any_security_level: false,
-            allow_signing_with_any_purpose: false,
-        }
-    }
 }
 
 impl StateTransition {

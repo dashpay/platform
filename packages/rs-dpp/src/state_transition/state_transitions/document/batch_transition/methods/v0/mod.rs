@@ -18,9 +18,10 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
 use std::convert::TryFrom;
 use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
+use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_payment_info::TokenPaymentInfo;
@@ -38,9 +39,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        create_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
@@ -54,9 +53,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        replace_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
@@ -70,9 +67,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
@@ -87,9 +82,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        transfer_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
@@ -104,9 +97,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        update_price_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
@@ -122,9 +113,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        purchase_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     fn combined_security_level_requirement(

@@ -218,8 +218,6 @@ mod dpns_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -239,8 +237,6 @@ mod dpns_tests {
                 None,
                 &signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -262,8 +258,6 @@ mod dpns_tests {
                 &signer_3,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -284,8 +278,6 @@ mod dpns_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -305,8 +297,6 @@ mod dpns_tests {
                 &signer_2,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -325,8 +315,6 @@ mod dpns_tests {
                 None,
                 &signer_3,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -679,8 +667,6 @@ mod dpns_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -700,8 +686,6 @@ mod dpns_tests {
                 None,
                 &signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -723,8 +707,6 @@ mod dpns_tests {
                 &signer_3,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -745,8 +727,6 @@ mod dpns_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -766,8 +746,6 @@ mod dpns_tests {
                 &signer_2,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -786,8 +764,6 @@ mod dpns_tests {
                 None,
                 &signer_3,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");

@@ -82,9 +82,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             token_payment_info,
             signer,
             sdk.version(),
-            None,
-            None,
-            None,
+            settings.state_transition_creation_options,
         )?;
 
         transition.broadcast(sdk, Some(settings)).await?;

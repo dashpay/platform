@@ -65,8 +65,6 @@ mod pre_programmed_distribution {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -131,8 +129,6 @@ mod pre_programmed_distribution {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -235,8 +231,6 @@ mod pre_programmed_distribution {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -301,8 +295,6 @@ mod pre_programmed_distribution {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -407,8 +399,6 @@ mod pre_programmed_distribution {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -518,8 +508,6 @@ mod pre_programmed_distribution {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -584,8 +572,6 @@ mod pre_programmed_distribution {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -690,8 +676,6 @@ mod pre_programmed_distribution {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -811,8 +795,6 @@ mod pre_programmed_distribution {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");

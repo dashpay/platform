@@ -74,8 +74,6 @@ mod perpetual_distribution_block {
             &signer,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -141,8 +139,6 @@ mod perpetual_distribution_block {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -211,8 +207,6 @@ mod perpetual_distribution_block {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -322,8 +316,6 @@ mod perpetual_distribution_block {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -444,8 +436,6 @@ mod perpetual_distribution_block {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -2769,8 +2759,6 @@ mod test_suite {
                 0,
                 &self.signer,
                 self.platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
