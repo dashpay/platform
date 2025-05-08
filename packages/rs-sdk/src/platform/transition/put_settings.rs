@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dpp::state_transition::state_transitions::document::batch_transition::methods::StateTransitionCreationOptions;
 use rs_dapi_client::RequestSettings;
 
 /// The options when putting something to platform

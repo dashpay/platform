@@ -6,7 +6,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::Index;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 

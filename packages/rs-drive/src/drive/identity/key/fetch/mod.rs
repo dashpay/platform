@@ -1,6 +1,4 @@
 // Conditional imports for the features "server" or "verify"
-#[cfg(feature = "server")]
-use crate::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
     crate::{

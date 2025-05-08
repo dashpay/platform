@@ -16,7 +16,7 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use crate::state_transition::state_transitions::document::batch_transition::methods::StateTransitionCreationOptions;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
@@ -31,8 +31,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "state-transition-signing")]
-use versioned_feature_core::FeatureVersion;
 
 /// A trait defining methods to create various token-related state transitions as part of a document batch.
 ///
