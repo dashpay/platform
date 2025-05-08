@@ -68,7 +68,7 @@
     "packages/wasm-dpp",
     "packages/withdrawals-contract",
     "packages/token-history-contract",
-    "packages/search-contract"
+    "packages/token-search-contract"
   ],
   "resolutions": {
     "elliptic": "6.6.1",
