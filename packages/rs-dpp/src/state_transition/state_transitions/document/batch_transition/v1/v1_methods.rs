@@ -35,6 +35,7 @@ use crate::data_contract::associated_token::token_distribution_key::TokenDistrib
 use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 #[cfg(feature = "state-transition-signing")]
@@ -67,6 +68,7 @@ use crate::state_transition::batch_transition::token_set_price_for_direct_purcha
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;

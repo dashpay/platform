@@ -21,6 +21,7 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::convert::TryFrom;
 use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 #[cfg(feature = "state-transition-signing")]
