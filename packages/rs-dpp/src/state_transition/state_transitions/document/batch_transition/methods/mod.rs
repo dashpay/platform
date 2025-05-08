@@ -40,8 +40,9 @@ use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
+use platform_version::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
 
 pub mod v0;
 pub mod v1;
@@ -54,6 +55,7 @@ pub struct StateTransitionCreationOptions {
     pub method_feature_version: Option<FeatureVersion>,
     pub base_feature_version: Option<FeatureVersion>,
 }
+
 impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     fn all_document_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
         match self {
