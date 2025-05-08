@@ -7,6 +7,7 @@ pub mod v2;
 /// Re-Validation will happen on data contract update which is why we don't bundle them
 /// together.
 #[derive(Clone, Debug, Default, Encode, Decode, PartialEq, Eq)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct FeeDataContractRegistrationVersion {
     pub base_contract_registration_fee: u64,
     pub document_type_registration_fee: u64,
