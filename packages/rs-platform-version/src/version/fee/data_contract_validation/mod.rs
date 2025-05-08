@@ -3,6 +3,7 @@ use bincode::{Decode, Encode};
 pub mod v1;
 
 #[derive(Clone, Debug, Default, Encode, Decode, PartialEq, Eq)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct FeeDataContractValidationVersion {
     pub document_type_base_fee: u64,
     pub document_type_schema_size_fee: u64,
