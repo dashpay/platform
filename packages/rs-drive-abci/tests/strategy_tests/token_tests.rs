@@ -44,12 +44,12 @@ mod tests {
 
         let (mut identity1, keys1) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
-        >(2, &mut rng, platform_version)
+        >(3, &mut rng, platform_version)
         .unwrap();
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
-        >(2, &mut rng, platform_version)
+        >(3, &mut rng, platform_version)
         .unwrap();
 
         simple_signer.add_keys(keys1);
@@ -194,12 +194,12 @@ mod tests {
 
         let (mut identity1, keys1) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
-        >(2, &mut rng, platform_version)
+        >(3, &mut rng, platform_version)
         .unwrap();
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
-        >(2, &mut rng, platform_version)
+        >(3, &mut rng, platform_version)
         .unwrap();
 
         simple_signer.add_keys(keys1);

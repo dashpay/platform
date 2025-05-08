@@ -76,8 +76,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -163,8 +161,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -253,8 +249,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -348,8 +342,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -437,8 +429,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -531,8 +521,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -620,8 +608,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -720,8 +706,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -818,8 +802,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -910,8 +892,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1013,8 +993,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1113,8 +1091,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1222,8 +1198,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1335,8 +1309,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1451,8 +1423,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1562,8 +1532,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1638,8 +1606,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1760,8 +1726,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1837,8 +1801,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1972,8 +1934,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2048,8 +2008,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2130,8 +2088,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2266,8 +2222,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2342,8 +2296,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2424,8 +2376,6 @@ mod token_tests {
                     0,
                     &signer3,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2552,8 +2502,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2668,8 +2616,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2744,8 +2690,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2884,8 +2828,6 @@ mod token_tests {
                     &signer2,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2989,8 +2931,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3075,8 +3015,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3170,8 +3108,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3241,10 +3177,9 @@ mod token_tests {
         use dpp::state_transition::batch_transition::TokenMintTransition;
         use dpp::data_contract::group::v0::GroupV0;
         use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
-        use dpp::identity::SecurityLevel;
         use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
         use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
-        use dpp::state_transition::StateTransition;
+        use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
         use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
         use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
         use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
@@ -3294,8 +3229,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3409,8 +3342,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3495,8 +3426,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3557,8 +3486,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3670,8 +3597,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3730,8 +3655,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3808,8 +3731,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3870,8 +3791,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3972,8 +3891,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4063,8 +3980,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4191,8 +4106,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4250,8 +4163,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4274,7 +4185,11 @@ mod token_tests {
             }
 
             token_transfer_transition
-                .sign_external(&key, &signer, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .sign_external(
+                    &key,
+                    &signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
                 .expect("expected to resign transaction");
 
             let token_transfer_serialized_transition = token_transfer_transition
@@ -4391,8 +4306,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4500,8 +4413,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4561,8 +4472,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4671,8 +4580,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4734,8 +4641,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4812,8 +4717,6 @@ mod token_tests {
                 0,
                 &signer2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4892,8 +4795,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4955,8 +4856,6 @@ mod token_tests {
                 0,
                 &signer2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -5078,8 +4977,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -5141,8 +5038,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -5265,8 +5160,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5369,8 +5262,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5518,8 +5409,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5631,8 +5520,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5680,8 +5567,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5788,8 +5673,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5880,8 +5763,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5971,8 +5852,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6079,8 +5958,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6205,8 +6082,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6280,8 +6155,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6431,8 +6304,6 @@ mod token_tests {
                     &signer_3,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6513,8 +6384,6 @@ mod token_tests {
                     0,
                     &signer_4,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6599,8 +6468,6 @@ mod token_tests {
                     &signer_5,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6655,8 +6522,6 @@ mod token_tests {
                     0,
                     &signer_5,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6724,8 +6589,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6783,8 +6646,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6872,8 +6733,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6931,8 +6790,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -7022,8 +6879,6 @@ mod token_tests {
                     &signer_3,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -7090,8 +6945,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");

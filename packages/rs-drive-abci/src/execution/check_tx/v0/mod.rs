@@ -2372,8 +2372,6 @@ mod tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2391,8 +2389,6 @@ mod tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");

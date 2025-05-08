@@ -83,8 +83,6 @@ mod refund_tests {
                 signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -191,8 +189,6 @@ mod refund_tests {
                 None,
                 signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -320,8 +316,6 @@ mod refund_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -426,8 +420,6 @@ mod refund_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -537,8 +529,6 @@ mod refund_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -642,8 +632,6 @@ mod refund_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -749,8 +737,6 @@ mod refund_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -855,8 +841,6 @@ mod refund_tests {
                 None,
                 &signer,
                 &platform_version_with_higher_fees,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
