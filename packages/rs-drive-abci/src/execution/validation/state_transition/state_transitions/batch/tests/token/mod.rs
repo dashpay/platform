@@ -4185,7 +4185,11 @@ mod token_tests {
             }
 
             token_transfer_transition
-                .sign_external(&key, &signer, None::<GetDataContractSecurityLevelRequirementFn>)
+                .sign_external(
+                    &key,
+                    &signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
                 .expect("expected to resign transaction");
 
             let token_transfer_serialized_transition = token_transfer_transition
