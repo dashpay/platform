@@ -210,32 +210,32 @@ macro_rules! call_method_identity_signed {
 
 #[cfg(feature = "state-transition-signing")]
 macro_rules! call_errorable_method_identity_signed {
-    ($state_transition:expr, $method:ident, $args:tt ) => {
+    ($state_transition:expr, $method:ident, $( $arg:expr ),* ) => {
         match $state_transition {
-            StateTransition::DataContractCreate(st) => st.$method($args),
-            StateTransition::DataContractUpdate(st) => st.$method($args),
-            StateTransition::Batch(st) => st.$method($args),
-            StateTransition::IdentityCreate(_st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::DataContractCreate(st) => st.$method($( $arg ),*),
+            StateTransition::DataContractUpdate(st) => st.$method($( $arg ),*),
+            StateTransition::Batch(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityCreate(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
             )),
-            StateTransition::IdentityTopUp(_st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::IdentityTopUp(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up can not be called for identity signing".to_string(),
             )),
-            StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
-            StateTransition::IdentityUpdate(st) => st.$method($args),
-            StateTransition::IdentityCreditTransfer(st) => st.$method($args),
-            StateTransition::MasternodeVote(st) => st.$method($args),
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityUpdate(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityCreditTransfer(st) => st.$method($( $arg ),*),
+            StateTransition::MasternodeVote(st) => st.$method($( $arg ),*),
         }
     };
-    ($state_transition:expr, $method:ident ) => {
+    ($state_transition:expr, $method:ident) => {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
-            StateTransition::IdentityCreate(st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::IdentityCreate(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
             )),
-            StateTransition::IdentityTopUp(st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::IdentityTopUp(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up can not be called for identity signing".to_string(),
             )),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
@@ -279,6 +279,24 @@ pub enum StateTransition {
 impl OptionallyAssetLockProved for StateTransition {
     fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
         call_method!(self, optional_asset_lock_proof)
+    }
+}
+
+/// The state transition signing options
+#[derive(Debug, Clone, Copy)]
+pub struct StateTransitionSigningOptions {
+    /// This will allow signing with any security level for debugging purposes
+    pub allow_signing_with_any_security_level: bool,
+    /// This will allow signing with any purpose for debugging purposes
+    pub allow_signing_with_any_purpose: bool,
+}
+
+impl Default for StateTransitionSigningOptions {
+    fn default() -> Self {
+        StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: false,
+            allow_signing_with_any_purpose: false,
+        }
     }
 }
 
@@ -509,17 +527,37 @@ impl StateTransition {
             impl Fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
         >,
     ) -> Result<(), ProtocolError> {
+        self.sign_external_with_options(
+            identity_public_key,
+            signer,
+            get_data_contract_security_level_requirement,
+            StateTransitionSigningOptions::default(),
+        )
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    pub fn sign_external_with_options<S: Signer>(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+        get_data_contract_security_level_requirement: Option<
+            impl Fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
+        >,
+        options: StateTransitionSigningOptions,
+    ) -> Result<(), ProtocolError> {
         match self {
             StateTransition::DataContractCreate(st) => {
-                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::DataContractUpdate(st) => {
-                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::Batch(st) => {
-                if identity_public_key.purpose() != Purpose::AUTHENTICATION {
+                if !options.allow_signing_with_any_purpose
+                    && identity_public_key.purpose() != Purpose::AUTHENTICATION
+                {
                     return Err(ProtocolError::WrongPublicKeyPurposeError(
                         WrongPublicKeyPurposeError::new(
                             identity_public_key.purpose(),
@@ -527,35 +565,37 @@ impl StateTransition {
                         ),
                     ));
                 }
-                let get_data_contract_security_level_requirement =
-                    get_data_contract_security_level_requirement
-                        .ok_or(ProtocolError::CorruptedCodeExecution(
-                        "must supply get_data_contract when signing a documents batch transition"
-                            .to_string(),
-                    ))?;
-                let security_level_requirement = st.contract_based_security_level_requirement(
-                    get_data_contract_security_level_requirement,
-                )?;
-                if !security_level_requirement.contains(&identity_public_key.security_level()) {
-                    return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
-                        InvalidSignaturePublicKeySecurityLevelError::new(
-                            identity_public_key.security_level(),
-                            security_level_requirement,
-                        ),
-                    ));
+                if !options.allow_signing_with_any_security_level {
+                    let get_data_contract_security_level_requirement =
+                        get_data_contract_security_level_requirement
+                            .ok_or(ProtocolError::CorruptedCodeExecution(
+                                "must supply get_data_contract when signing a documents batch transition"
+                                    .to_string(),
+                            ))?;
+                    let security_level_requirement = st.combined_security_level_requirement(
+                        get_data_contract_security_level_requirement,
+                    )?;
+                    if !security_level_requirement.contains(&identity_public_key.security_level()) {
+                        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                            InvalidSignaturePublicKeySecurityLevelError::new(
+                                identity_public_key.security_level(),
+                                security_level_requirement,
+                            ),
+                        ));
+                    }
+                    st.verify_public_key_is_enabled(identity_public_key)?;
                 }
-                st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityUpdate(st) => {
-                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreditTransfer(st) => {
-                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreate(_) => {
@@ -569,7 +609,7 @@ impl StateTransition {
                 ))
             }
             StateTransition::MasternodeVote(st) => {
-                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
         }
@@ -586,10 +626,27 @@ impl StateTransition {
         private_key: &[u8],
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
+        self.sign_with_options(
+            identity_public_key,
+            private_key,
+            bls,
+            StateTransitionSigningOptions::default(),
+        )
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    pub fn sign_with_options(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        private_key: &[u8],
+        bls: &impl BlsModule,
+        options: StateTransitionSigningOptions,
+    ) -> Result<(), ProtocolError> {
         call_errorable_method_identity_signed!(
             self,
             verify_public_key_level_and_purpose,
-            identity_public_key
+            identity_public_key,
+            options
         )?;
         call_errorable_method_identity_signed!(
             self,
