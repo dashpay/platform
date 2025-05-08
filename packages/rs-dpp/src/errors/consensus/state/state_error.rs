@@ -36,6 +36,8 @@ use crate::errors::consensus::state::document::document_contest_not_paid_for_err
 use crate::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::errors::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::errors::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
+use crate::errors::consensus::state::identity::identity_for_group_not_found_error::IdentityMemberOfGroupNotFoundError;
+use crate::errors::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use crate::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::errors::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::errors::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -326,6 +328,12 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenNotForDirectSale(TokenNotForDirectSale),
+
+    #[error(transparent)]
+    IdentityInTokenConfigurationNotFoundError(IdentityInTokenConfigurationNotFoundError),
+
+    #[error(transparent)]
+    IdentityMemberOfGroupNotFoundError(IdentityMemberOfGroupNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {

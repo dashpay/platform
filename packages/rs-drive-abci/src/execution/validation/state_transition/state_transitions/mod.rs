@@ -1110,8 +1110,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1131,8 +1129,6 @@ pub(in crate::execution) mod tests {
                 None,
                 signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1154,8 +1150,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1174,8 +1168,6 @@ pub(in crate::execution) mod tests {
                 None,
                 signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1428,8 +1420,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1449,8 +1439,6 @@ pub(in crate::execution) mod tests {
                 None,
                 signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1472,8 +1460,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1492,8 +1478,6 @@ pub(in crate::execution) mod tests {
                 None,
                 signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1654,8 +1638,6 @@ pub(in crate::execution) mod tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1675,8 +1657,6 @@ pub(in crate::execution) mod tests {
                 None,
                 &signer_1,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -2595,8 +2575,6 @@ pub(in crate::execution) mod tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("batch transition");
 
@@ -2660,8 +2638,6 @@ pub(in crate::execution) mod tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("batch transition");
 
@@ -2724,8 +2700,6 @@ pub(in crate::execution) mod tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("batch transition");
@@ -2872,8 +2846,6 @@ pub(in crate::execution) mod tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("replace");
 
@@ -2939,8 +2911,6 @@ pub(in crate::execution) mod tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("delete");

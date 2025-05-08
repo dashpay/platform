@@ -75,8 +75,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -121,8 +119,6 @@ mod transfer_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for transfer");
@@ -231,8 +227,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -324,8 +318,6 @@ mod transfer_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for transfer");
@@ -457,8 +449,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -550,8 +540,6 @@ mod transfer_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for transfer");
@@ -703,8 +691,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for transfer");
 
@@ -809,8 +795,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -903,8 +887,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for transfer");
 
@@ -971,8 +953,6 @@ mod transfer_tests {
                 None,
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1110,8 +1090,6 @@ mod transfer_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1209,8 +1187,6 @@ mod transfer_tests {
                 })),
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for transfer");

@@ -89,7 +89,7 @@ pub struct Drive {
 //                                 /                                                                                                       \
 //                       Identities 32                                                                                                 Balances 96
 //             /                            \                                                                        /                                                       \
-//   Token_Balances 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+//       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
 

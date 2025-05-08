@@ -78,9 +78,7 @@ impl<S: Signer> TransferDocument<S> for Document {
             token_payment_info,
             signer,
             sdk.version(),
-            None,
-            None,
-            None,
+            settings.state_transition_creation_options,
         )?;
 
         let request = transition.broadcast_request_for_state_transition()?;

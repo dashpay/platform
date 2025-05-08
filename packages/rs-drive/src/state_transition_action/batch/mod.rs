@@ -123,9 +123,7 @@ impl BatchTransitionAction {
     /// let required_levels = batch_transition_action.contract_based_security_level_requirement()?;
     /// ```
     ///
-    pub fn contract_based_security_level_requirement(
-        &self,
-    ) -> Result<Vec<SecurityLevel>, ProtocolError> {
+    pub fn combined_security_level_requirement(&self) -> Result<Vec<SecurityLevel>, ProtocolError> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
         // If schema has security level, use that, if not, use the default security level
@@ -134,20 +132,29 @@ impl BatchTransitionAction {
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions().iter() {
-            if let BatchedTransitionAction::DocumentAction(document_transition) = transition {
-                let document_type_name = document_transition.base().document_type_name();
-                let data_contract_info = document_transition.base().data_contract_fetch_info();
+            match transition {
+                BatchedTransitionAction::DocumentAction(document_transition) => {
+                    let document_type_name = document_transition.base().document_type_name();
+                    let data_contract_info = document_transition.base().data_contract_fetch_info();
 
-                let document_type = data_contract_info
-                    .contract
-                    .document_type_for_name(document_type_name)?;
+                    let document_type = data_contract_info
+                        .contract
+                        .document_type_for_name(document_type_name)?;
 
-                let document_security_level = document_type.security_level_requirement();
+                    let document_security_level = document_type.security_level_requirement();
 
-                // lower enum enum representation means higher in security
-                if document_security_level < highest_security_level {
-                    highest_security_level = document_security_level
+                    // lower enum representation means higher in security
+                    if document_security_level < highest_security_level {
+                        highest_security_level = document_security_level
+                    }
                 }
+                BatchedTransitionAction::TokenAction(_) => {
+                    // lower enum representation means higher in security
+                    if highest_security_level != SecurityLevel::MASTER {
+                        highest_security_level = SecurityLevel::CRITICAL
+                    }
+                }
+                BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {}
             }
         }
         Ok(if highest_security_level == SecurityLevel::MASTER {

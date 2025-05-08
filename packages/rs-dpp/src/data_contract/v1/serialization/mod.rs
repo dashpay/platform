@@ -173,7 +173,10 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
-            keywords,
+            keywords: keywords
+                .into_iter()
+                .map(|keyword| keyword.to_lowercase())
+                .collect(),
             description,
         };
 

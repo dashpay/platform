@@ -9,16 +9,18 @@ use crate::drive::RootTree;
 use crate::util::object_size_info::DriveKeyInfo;
 use std::fmt;
 
+#[cfg(feature = "server")]
+use dpp::identity::identity_public_key::KeyID;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::identity_public_key::Purpose;
-#[cfg(feature = "server")]
-use dpp::identity::{identity_public_key::SecurityLevel, KeyID};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::identity::identity_public_key::SecurityLevel;
 
 #[cfg(feature = "server")]
 /// Everything related to withdrawals
 pub mod withdrawals;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::identity_public_key::Purpose::AUTHENTICATION;
 #[cfg(feature = "server")]
 use integer_encoding::VarInt;
@@ -262,7 +264,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec(
 }
 
 /// identity query keys security level tree path vec
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     identity_id: &[u8],
     security_level: SecurityLevel,

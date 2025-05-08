@@ -9,7 +9,7 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Invalid token amount {}, exceeds maximum allowed {}",
+    "Invalid token amount {}, should be between 1 and maximum allowed {}",
     token_amount,
     max_token_amount
 )]

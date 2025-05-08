@@ -77,6 +77,7 @@ use dpp::errors::consensus::state::document::document_contest_not_paid_for_error
 use dpp::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::errors::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::errors::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
+use dpp::errors::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::errors::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -407,6 +408,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::TokenNotForDirectSale(e) => {
             generic_consensus_error!(TokenNotForDirectSale, e).into()
+        }
+        StateError::IdentityInTokenConfigurationNotFoundError(e) => {
+            generic_consensus_error!(IdentityInTokenConfigurationNotFoundError, e).into()
+        }
+        StateError::IdentityMemberOfGroupNotFoundError(e) => {
+            generic_consensus_error!(IdentityMemberOfGroupNotFoundError, e).into()
         }
     }
 }
@@ -781,6 +788,30 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidDescriptionLengthError(e) => {
             generic_consensus_error!(InvalidDescriptionLengthError, e).into()
+        }
+        BasicError::NewTokensDestinationIdentityOptionRequiredError(e) => {
+            generic_consensus_error!(NewTokensDestinationIdentityOptionRequiredError, e).into()
+        }
+        BasicError::InvalidKeywordCharacterError(e) => {
+            generic_consensus_error!(InvalidKeywordCharacterError, e).into()
+        }
+        BasicError::InvalidTokenNameCharacterError(e) => {
+            generic_consensus_error!(InvalidTokenNameCharacterError, e).into()
+        }
+        BasicError::DecimalsOverLimitError(e) => {
+            generic_consensus_error!(DecimalsOverLimitError, e).into()
+        }
+        BasicError::InvalidTokenNameLengthError(e) => {
+            generic_consensus_error!(InvalidTokenNameLengthError, e).into()
+        }
+        BasicError::InvalidTokenLanguageCodeError(e) => {
+            generic_consensus_error!(InvalidTokenLanguageCodeError, e).into()
+        }
+        BasicError::MainGroupIsNotDefinedError(e) => {
+            generic_consensus_error!(MainGroupIsNotDefinedError, e).into()
+        }
+        BasicError::GroupRequiredPowerIsInvalidError(e) => {
+            generic_consensus_error!(GroupRequiredPowerIsInvalidError, e).into()
         }
     }
 }

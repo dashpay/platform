@@ -1,4 +1,6 @@
-use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::{
+    TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
+};
 use crate::data_contract::associated_token::token_configuration_localization::accessors::v0::TokenConfigurationLocalizationV0Getters;
 use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use bincode::Encode;
@@ -35,11 +37,11 @@ pub struct TokenConfigurationConventionV0 {
     ///
     /// This value is used by clients to determine formatting and user interface display.
     #[serde(default = "default_decimals")]
-    pub decimals: u16,
+    pub decimals: u8,
 }
 
 // Default function for `decimals`
-fn default_decimals() -> u16 {
+fn default_decimals() -> u8 {
     8 // Default value for decimals
 }
 
@@ -83,7 +85,20 @@ impl TokenConfigurationConventionV0Getters for TokenConfigurationConventionV0 {
         &mut self.localizations
     }
 
-    fn decimals(&self) -> u16 {
+    fn decimals(&self) -> u8 {
         self.decimals
+    }
+}
+
+impl TokenConfigurationConventionV0Setters for TokenConfigurationConventionV0 {
+    fn set_localizations(
+        &mut self,
+        localizations: BTreeMap<String, TokenConfigurationLocalization>,
+    ) {
+        self.localizations = localizations;
+    }
+
+    fn set_decimals(&mut self, decimals: u8) {
+        self.decimals = decimals;
     }
 }

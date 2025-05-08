@@ -58,6 +58,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/js-grpc-common"\
     },\
     {\
+      "name": "@dashevo/keyword-search-contract",\
+      "reference": "workspace:packages/keyword-search-contract"\
+    },\
+    {\
       "name": "@dashevo/masternode-reward-shares-contract",\
       "reference": "workspace:packages/masternode-reward-shares-contract"\
     },\
@@ -98,6 +102,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],\
     ["@dashevo/feature-flags-contract", ["workspace:packages/feature-flags-contract"]],\
     ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],\
+    ["@dashevo/keyword-search-contract", ["workspace:packages/keyword-search-contract"]],\
     ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],\
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
@@ -2749,6 +2754,24 @@ const RAW_RUNTIME_STATE =
         "linkType": "SOFT"\
       }]\
     ]],\
+    ["@dashevo/keyword-search-contract", [\
+      ["workspace:packages/keyword-search-contract", {\
+        "packageLocation": "./packages/keyword-search-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/keyword-search-contract", "workspace:packages/keyword-search-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["eslint", "npm:8.53.0"],\
+          ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
+          ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
+          ["mocha", "npm:11.1.0"],\
+          ["sinon", "npm:17.0.1"],\
+          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
     ["@dashevo/masternode-reward-shares-contract", [\
       ["workspace:packages/masternode-reward-shares-contract", {\
         "packageLocation": "./packages/masternode-reward-shares-contract/",\
@@ -4474,7 +4497,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.1-179273a650-5063fed6bb.zip/node_modules/@types/bs58/",\
         "packageDependencies": [\
           ["@types/bs58", "npm:4.0.1"],\
-          ["base-x", "npm:3.0.9"]\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -6517,10 +6540,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["base-x", [\
-      ["npm:3.0.9", {\
-        "packageLocation": "./.yarn/cache/base-x-npm-3.0.9-7b2588e106-957101d6fd.zip/node_modules/base-x/",\
+      ["npm:3.0.11", {\
+        "packageLocation": "./.yarn/cache/base-x-npm-3.0.11-3798da0834-c2e3c443fd.zip/node_modules/base-x/",\
         "packageDependencies": [\
-          ["base-x", "npm:3.0.9"],\
+          ["base-x", "npm:3.0.11"],\
           ["safe-buffer", "npm:5.2.1"]\
         ],\
         "linkType": "HARD"\
@@ -6877,7 +6900,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/bs58-npm-4.0.1-8d2a7822b1-b3c5365bb9.zip/node_modules/bs58/",\
         "packageDependencies": [\
           ["bs58", "npm:4.0.1"],\
-          ["base-x", "npm:3.0.9"]\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\

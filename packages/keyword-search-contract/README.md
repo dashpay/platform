@@ -14,7 +14,7 @@ JSON Contracts for Searching Data Contracts
 ## Install
 
 ```sh
-npm install @dashevo/search-contract
+npm install @dashevo/keyword-search-contract
 ```
 
 ## Contributing

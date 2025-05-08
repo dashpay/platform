@@ -10,7 +10,7 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Data contract {data_contract_id} has too many keywords: '{keywords_len}'. The maximum is 20."
+    "Data contract {data_contract_id} has too many keywords: '{keywords_len}'. The maximum is 50."
 )]
 #[platform_serialize(unversioned)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]

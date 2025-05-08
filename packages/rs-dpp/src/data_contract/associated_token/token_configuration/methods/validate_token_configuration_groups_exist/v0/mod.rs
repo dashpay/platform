@@ -1,8 +1,10 @@
+use crate::errors::consensus::basic::data_contract::{
+    GroupPositionDoesNotExistError, MainGroupIsNotDefinedError,
+};
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
-use crate::errors::consensus::basic::data_contract::GroupPositionDoesNotExistError;
 use crate::validation::SimpleConsensusValidationResult;
 use std::collections::BTreeMap;
 
@@ -16,7 +18,7 @@ impl TokenConfiguration {
         let validation_result = SimpleConsensusValidationResult::new();
 
         // Collect all group positions used in the token configuration
-        let group_positions = self.all_used_group_positions();
+        let (group_positions, uses_main_group) = self.all_used_group_positions();
 
         // Check that all referenced group positions exist in the provided groups map
         for group_position in group_positions {
@@ -25,6 +27,12 @@ impl TokenConfiguration {
                     GroupPositionDoesNotExistError::new(group_position).into(),
                 );
             }
+        }
+
+        if uses_main_group && self.main_control_group().is_none() {
+            return SimpleConsensusValidationResult::new_with_error(
+                MainGroupIsNotDefinedError::new().into(),
+            );
         }
 
         // If a main group is defined in the token configuration, verify its existence

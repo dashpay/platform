@@ -57,8 +57,6 @@ mod token_selling_tests {
                 &seller_signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .unwrap();
 
@@ -122,8 +120,6 @@ mod token_selling_tests {
             0,
             &buyer_signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .unwrap();
@@ -211,8 +207,6 @@ mod token_selling_tests {
                 &seller_signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .unwrap();
 
@@ -241,8 +235,6 @@ mod token_selling_tests {
             0,
             &buyer_signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .unwrap();
@@ -333,8 +325,6 @@ mod token_selling_tests {
                 &seller_signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .unwrap();
 
@@ -362,8 +352,6 @@ mod token_selling_tests {
             0,
             &buyer_signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .unwrap();
@@ -569,8 +557,6 @@ mod token_selling_tests {
                 0,
                 seller_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .unwrap();
