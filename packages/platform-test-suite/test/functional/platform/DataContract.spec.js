@@ -25,11 +25,11 @@ describe('Platform', () => {
     let identity;
 
     before(async () => {
-      client = await createClientWithFundedWallet(35000000);
+      client = await createClientWithFundedWallet(350000000); // 3.5 Dash
 
       // Looks like updating the contact and keeping history requires about
       // 7 million credits in fees. Investigate this further.
-      identity = await client.platform.identities.register(30000000);
+      identity = await client.platform.identities.register(300000000); // 3 Dash
       const nextNonce = await client.platform
         .nonceManager.bumpIdentityNonce(identity.getId());
       dataContractFixture = await getDataContractFixture(nextNonce);

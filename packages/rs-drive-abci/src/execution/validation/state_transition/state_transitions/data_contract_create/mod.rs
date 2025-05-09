@@ -223,6 +223,70 @@ mod tests {
 
         let platform_state = platform.state.load();
 
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            None,
+            None,
+            false, //no need to validate the data contracts in tests for drive
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
+            data_contract,
+            1,
+            &identity.into_partial_identity_info(),
+            key.id(),
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create documents batch transition");
+
+        let data_contract_create_serialized_transition = data_contract_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[data_contract_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+    }
+
+    #[test]
+    fn test_data_contract_creation_with_contested_unique_index_old_version_has_low_fees() {
+        let platform_version = PlatformVersion::get(8).unwrap();
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(8)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
         let data_contract = json_document_to_contract_with_ids(
@@ -254,7 +318,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![data_contract_create_serialized_transition.clone()],
+                &[data_contract_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -286,7 +350,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
 
         let data_contract = json_document_to_contract_with_ids(
             "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id.json",
@@ -317,7 +381,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![data_contract_create_serialized_transition.clone()],
+                &[data_contract_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -349,7 +413,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
 
         let data_contract = json_document_to_contract_with_ids(
             "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-and-other-unique-index.json",
@@ -380,7 +444,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![data_contract_create_serialized_transition.clone()],
+                &[data_contract_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -428,7 +492,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -477,7 +541,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -521,7 +585,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -605,7 +669,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -649,7 +713,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -698,7 +762,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -743,7 +807,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, contract_signer, contract_key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency.json",
@@ -814,7 +878,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -838,7 +902,7 @@ mod tests {
             }
 
             #[test]
-            fn test_data_contract_creation_with_single_tokensetting_transfer_on_nft_purchase_with_internal_token_should_be_allowed(
+            fn test_data_contract_creation_with_single_token_setting_transfer_on_nft_purchase_with_internal_token_should_be_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -848,7 +912,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, contract_signer, contract_key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency.json",
@@ -921,7 +985,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -945,6 +1009,111 @@ mod tests {
             }
 
             #[test]
+            fn test_data_contract_creation_with_single_token_setting_identifier_that_does_exist() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let (identity_2, _signer_2, _key_2) =
+                    setup_identity(&mut platform, 93, dash_to_credits!(0.5));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let identity_id = identity.id();
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config.set_manual_minting_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Identity(
+                                identity_2.id(),
+                            ),
+                            // We have no group at position 1, we should get an error
+                            admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, Some(100_000));
+            }
+
+            #[test]
             fn test_data_contract_creation_with_single_token_setting_transfer_on_nft_purchase_with_external_token_should_be_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
@@ -955,7 +1124,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, contract_signer, contract_key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let (token_contract_owner_id, _, _) =
                     setup_identity(&mut platform, 11, dash_to_credits!(0.1));
@@ -1045,7 +1214,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -1078,7 +1247,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -1198,7 +1367,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let (identity_2, _, _) = setup_identity(&mut platform, 5456, dash_to_credits!(0.1));
 
@@ -1285,7 +1454,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -1367,6 +1536,10 @@ mod tests {
             use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
             use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
             use super::*;
+            use dpp::consensus::state::state_error::StateError;
+            use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+            use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+
             #[test]
             fn test_data_contract_creation_with_single_token_with_starting_balance_over_limit_should_cause_error(
             ) {
@@ -1378,7 +1551,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -1427,7 +1600,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -1472,7 +1645,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let (identity_2, _, _) = setup_identity(&mut platform, 564, dash_to_credits!(0.1));
 
@@ -1538,7 +1711,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -1585,7 +1758,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let (identity_2, _, _) = setup_identity(&mut platform, 564, dash_to_credits!(0.1));
 
@@ -1652,7 +1825,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -1689,6 +1862,461 @@ mod tests {
             }
 
             #[test]
+            fn test_data_contract_creation_with_single_token_setting_authorization_to_non_defined_main_group(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let (identity_2, _, _) = setup_identity(&mut platform, 564, dash_to_credits!(0.1));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let identity_id = identity.id();
+
+                {
+                    let groups = data_contract.groups_mut().expect("expected tokens");
+                    groups.insert(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    );
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config.set_manual_minting_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::MainGroup,
+                            // We have no group at position 1, we should get an error
+                            admin_action_takers: AuthorizedActionTakers::MainGroup,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::MainGroupIsNotDefinedError(_)),
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, None);
+            }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_setting_identifier_that_does_not_exist(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let identity_id = identity.id();
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config.set_manual_minting_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Identity(
+                                Identifier::from([4; 32]),
+                            ),
+                            // We have no group at position 1, we should get an error
+                            admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError(
+                        ConsensusError::StateError(
+                            StateError::IdentityInTokenConfigurationNotFoundError(_)
+                        ),
+                        _
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, None);
+            }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_setting_minting_recipient_to_identity_that_does_not_exist(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let identity_id = identity.id();
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config
+                        .distribution_rules_mut()
+                        .set_new_tokens_destination_identity(Some(Identifier::from([4; 32])));
+                }
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError(
+                        ConsensusError::StateError(
+                            StateError::IdentityInTokenConfigurationNotFoundError(_)
+                        ),
+                        _
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, None);
+            }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_setting_pre_programmed_distribution_to_identity_that_does_not_exist(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let (identity_2, _, _) = setup_identity(&mut platform, 5456, dash_to_credits!(0.1));
+
+                let (identity_3, _, _) = setup_identity(&mut platform, 123, dash_to_credits!(0.1));
+
+                let (identity_4, _, _) = setup_identity(&mut platform, 548, dash_to_credits!(0.1));
+
+                let identity_id = identity.id();
+
+                let base_supply_start_amount = 0;
+
+                let token_config = data_contract
+                    .tokens_mut()
+                    .expect("expected tokens")
+                    .get_mut(&0)
+                    .expect("expected first token");
+                token_config.set_base_supply(base_supply_start_amount);
+
+                // Create a new BTreeMap to store distributions
+                let mut distributions: BTreeMap<
+                    TimestampMillis,
+                    BTreeMap<Identifier, TokenAmount>,
+                > = BTreeMap::new();
+
+                // Create distributions for different timestamps
+                distributions.insert(
+                    1700000000000, // Example timestamp (milliseconds)
+                    BTreeMap::from([
+                        (identity.id(), 10),  // Identity 1 gets 10 tokens
+                        (identity_2.id(), 5), // Identity 2 gets 5 tokens
+                    ]),
+                );
+
+                distributions.insert(
+                    1700005000000, // Another timestamp
+                    BTreeMap::from([
+                        (identity_3.id(), 15),          // Identity 3 gets 15 tokens
+                        (identity_4.id(), 20),          // Identity 4 gets 20 tokens
+                        (Identifier::new([6; 32]), 25), // Identifier does not exist
+                    ]),
+                );
+
+                token_config
+                    .distribution_rules_mut()
+                    .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                        TokenPreProgrammedDistributionV0 {
+                            distributions: distributions.clone(),
+                        },
+                    )));
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError(
+                        ConsensusError::StateError(
+                            StateError::IdentityInTokenConfigurationNotFoundError(_)
+                        ),
+                        _
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id,
+                        identity_id.to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, None);
+            }
+
+            #[test]
             fn test_data_contract_creation_with_single_token_setting_burn_of_external_token_not_allowed(
             ) {
                 let platform_version = PlatformVersion::latest();
@@ -1699,7 +2327,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, contract_signer, contract_key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let (token_contract_owner_id, _, _) =
                     setup_identity(&mut platform, 11, dash_to_credits!(0.1));
@@ -1787,7 +2415,7 @@ mod tests {
                 let processing_result = platform
                     .platform
                     .process_raw_state_transitions(
-                        &vec![data_contract_create_serialized_transition.clone()],
+                        &[data_contract_create_serialized_transition.clone()],
                         &platform_state,
                         &BlockInfo::default(),
                         &transaction,
@@ -1826,7 +2454,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -1944,7 +2572,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let (identity, signer, key) =
-                    setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                 let mut data_contract = json_document_to_contract_with_ids(
                     "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -2052,7 +2680,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -2136,7 +2764,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_create_serialized_transition.clone()],
+                    &[data_contract_create_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2183,7 +2811,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -2266,7 +2894,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_create_serialized_transition.clone()],
+                    &[data_contract_create_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2311,7 +2939,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -2394,7 +3022,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_create_serialized_transition.clone()],
+                    &[data_contract_create_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2440,7 +3068,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -2523,7 +3151,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_create_serialized_transition.clone()],
+                    &[data_contract_create_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2568,7 +3196,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -2651,7 +3279,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_create_serialized_transition.clone()],
+                    &[data_contract_create_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2696,7 +3324,7 @@ mod tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
@@ -2779,7 +3407,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_create_serialized_transition.clone()],
+                    &[data_contract_create_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2831,7 +3459,7 @@ mod tests {
         };
 
         #[test]
-        fn test_data_contract_creation_fails_with_more_than_twenty_keywords() {
+        fn test_data_contract_creation_fails_with_more_than_fifty_keywords() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -2840,7 +3468,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             // Create a test identity and keys
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // Load the base contract JSON and convert it to `DataContract`
             let data_contract = json_document_to_contract_with_ids(
@@ -2859,7 +3487,7 @@ mod tests {
 
             // Insert 21 keywords to exceed the max limit
             let mut excessive_keywords: Vec<Value> = vec![];
-            for i in 0..21 {
+            for i in 0..51 {
                 excessive_keywords.push(Value::Text(format!("keyword{}", i)));
             }
             contract_value["keywords"] = Value::Array(excessive_keywords);
@@ -2922,7 +3550,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             // Create a test identity and keys
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // Load the base contract JSON and convert it to `DataContract`
             let data_contract = json_document_to_contract_with_ids(
@@ -3006,7 +3634,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             // Create identity
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // Load the base contract JSON and convert it to `DataContract`
             let data_contract = json_document_to_contract_with_ids(
@@ -3080,7 +3708,7 @@ mod tests {
                 .set_genesis_state();
 
             let platform_state = platform.state.load();
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let data_contract = json_document_to_contract_with_ids(
                 "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
@@ -3151,7 +3779,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             // Create a test identity and keys
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // Load the base contract JSON and convert to `DataContract`
             let data_contract = json_document_to_contract_with_ids(
@@ -3350,7 +3978,7 @@ mod tests {
                 .set_genesis_state();
 
             let platform_state = platform.state.load();
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // --- mutate the contract ---
             let mut contract_value = base_contract_value_with_keyword(platform_version);
@@ -3405,7 +4033,7 @@ mod tests {
                 .set_genesis_state();
 
             let platform_state = platform.state.load();
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let mut contract_value = base_contract_value_with_keyword(platform_version);
             // 101 chars – valid for the contract (max 10 000) but exceeds the
@@ -3462,7 +4090,7 @@ mod tests {
                 .set_genesis_state();
 
             let platform_state = platform.state.load();
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let mut contract_value = base_contract_value_with_keyword(platform_version);
             contract_value["description"] =
@@ -3506,7 +4134,7 @@ mod tests {
                 [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
             );
 
-            // Commit so we can query the state afterwards
+            // Commit so we can query the state afterward
             platform
                 .drive
                 .grove

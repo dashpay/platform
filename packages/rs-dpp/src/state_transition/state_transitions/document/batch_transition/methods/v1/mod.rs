@@ -16,6 +16,8 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
@@ -23,8 +25,6 @@ use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
-#[cfg(feature = "state-transition-signing")]
-use crate::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
@@ -75,9 +75,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to burn tokens, permanently removing them from circulation.
@@ -109,9 +107,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to transfer tokens from one identity to another.
@@ -147,9 +143,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to freeze tokens belonging to a specific identity.
@@ -183,9 +177,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to unfreeze tokens previously frozen for a specific identity.
@@ -217,9 +209,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to destroy previously frozen tokens, removing them permanently from supply.
@@ -251,9 +241,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to execute an emergency action for a token.
@@ -288,9 +276,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to update the configuration of a token.
@@ -325,9 +311,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        config_update_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to claim tokens from a distribution source.
@@ -360,9 +344,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        config_update_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to set or update the price of a token for direct purchase.
@@ -397,9 +379,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        config_update_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Creates a `StateTransition` to perform a direct purchase of tokens by a user.
@@ -433,8 +413,6 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        config_update_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 }

@@ -10,6 +10,7 @@ use crate::error::contract::DataContractError;
 use crate::error::Error;
 #[cfg(feature = "verify")]
 use crate::query::ContractLookupFn;
+#[cfg(feature = "server")]
 use crate::util::object_size_info::DataContractOwnedResolvedInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::object_size_info::DataContractResolvedInfo;

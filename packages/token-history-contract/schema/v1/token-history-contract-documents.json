@@ -362,6 +362,12 @@
         "description": "The identity Id of the frozen token account",
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this identity freeze",
+        "position": 2
       }
     },
     "required": [
@@ -425,6 +431,12 @@
         "description": "The identity Id of the frozen token account",
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this identity unfreeze",
+        "position": 2
       }
     },
     "required": [
@@ -505,6 +517,12 @@
         "minimum": 0,
         "description": "The amount that was frost burned",
         "position": 2
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for destroying these frozen funds",
+        "position": 3
       }
     },
     "required": [
@@ -581,7 +599,7 @@
         "byteArray": true,
         "minItems": 32,
         "maxItems": 32,
-        "description": "An optional identity ID for direct recipient distributions",
+        "description": "An identity ID for direct recipient distributions",
         "contentMediaType": "application/x.dash.dpp.identifier",
         "position": 2
       },
@@ -610,6 +628,7 @@
     "required": [
       "tokenId",
       "recipientType",
+      "recipientId",
       "distributionType",
       "amount",
       "$createdAt",
@@ -673,6 +692,12 @@
         ],
         "description": "The action we are performing (0: Pause, 1: Resume)",
         "position": 1
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this emergency action",
+        "position": 2
       }
     },
     "required": [
@@ -743,6 +768,12 @@
         "minItems": 1,
         "description": "The change item in serialized form",
         "position": 2
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this config update",
+        "position": 3
       }
     },
     "required": [
@@ -793,7 +824,7 @@
       "note": {
         "type": "string",
         "maxLength": 2048,
-        "description": "An optional note explaining the pricing change",
+        "description": "An optional explanation for the pricing change",
         "position": 2
       }
     },

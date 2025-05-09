@@ -610,7 +610,7 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
@@ -669,7 +669,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![data_contract_update_serialized_transition.clone()],
+                &[data_contract_update_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -714,7 +714,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -791,7 +791,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
+                    &[data_contract_update_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -837,7 +837,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -920,7 +920,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
+                    &[data_contract_update_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -966,7 +966,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1049,7 +1049,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
+                    &[data_contract_update_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1080,7 +1080,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let (identity_2, _, _) = setup_identity(&mut platform, 928, dash_to_credits!(0.1));
 
@@ -1182,7 +1182,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
+                    &[data_contract_update_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1218,6 +1218,15 @@ mod tests {
         use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
         use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
         use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+        use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+        use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+        use dpp::data_contract::change_control_rules::ChangeControlRules;
+        use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 
         #[test]
         fn test_data_contract_update_can_add_new_token() {
@@ -1225,7 +1234,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1322,12 +1331,218 @@ mod tests {
         }
 
         #[test]
+        fn test_data_contract_update_with_token_setting_identifier_that_does_exist() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+            let (identity2, _signer2, _key2) =
+                setup_identity(&mut platform, 93, dash_to_credits!(0.2));
+
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut original_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            original_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &original_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract");
+
+            let mut updated_contract = original_contract.clone();
+            updated_contract.set_version(2);
+
+            let mut token_config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_config.set_base_supply(100_000);
+            token_config.set_manual_minting_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::Identity(identity2.id()),
+                admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }));
+
+            token_config.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            updated_contract.add_token(0, token_config);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expected update transition");
+
+            let serialized = transition.serialize_to_bytes().expect("serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected processing");
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("commit");
+        }
+        #[test]
+        fn test_data_contract_update_with_token_setting_identifier_that_does_not_exist() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut original_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            original_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &original_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract");
+
+            let mut updated_contract = original_contract.clone();
+            updated_contract.set_version(2);
+
+            let mut token_config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_config.set_base_supply(1_000_000);
+
+            token_config.set_manual_minting_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::Identity(Identifier::from(
+                    [4; 32],
+                )), // doesn't exist
+                admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }));
+
+            token_config.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            updated_contract.add_token(0, token_config);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expected update transition");
+
+            let serialized = transition.serialize_to_bytes().expect("serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected processing");
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::StateError(
+                        StateError::IdentityInTokenConfigurationNotFoundError(_)
+                    ),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("commit");
+        }
+
+        #[test]
         fn test_data_contract_update_can_not_add_new_token_with_gap() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1401,7 +1616,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![tx_bytes],
+                    &[tx_bytes],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1432,7 +1647,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1519,7 +1734,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             let platform_state = platform.state.load();
             let platform_version = platform_state
@@ -1583,7 +1798,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![tx_bytes],
+                    &[tx_bytes],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1606,6 +1821,384 @@ mod tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn update_token_with_missing_main_group_should_fail() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, 1234, dash_to_credits!(0.1));
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            contract.set_owner_id(identity.id());
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let mut updated_contract = contract.clone();
+            updated_contract.set_version(2);
+
+            let mut config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            config.set_main_control_group(Some(1)); // Missing group
+            config.set_manual_minting_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::MainGroup,
+                admin_action_takers: AuthorizedActionTakers::MainGroup,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }));
+            config.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            updated_contract.add_token(0, config);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+            let tx = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition.serialize_to_bytes().unwrap()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .unwrap();
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::GroupPositionDoesNotExistError(_))
+                )]
+            );
+        }
+
+        #[test]
+        fn update_token_with_invalid_distribution_function_should_fail() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, 1234, dash_to_credits!(0.1));
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            contract.set_owner_id(identity.id());
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let mut updated_contract = contract.clone();
+            updated_contract.set_version(2);
+
+            let mut config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            config
+                .distribution_rules_mut()
+                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10,
+                            function: DistributionFunction::Exponential {
+                                a: 0,
+                                d: 0,
+                                m: 0,
+                                n: 0,
+                                o: 0,
+                                start_moment: None,
+                                b: 0,
+                                min_value: None,
+                                max_value: None,
+                            },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::Identity(identity.id()),
+                    },
+                )));
+            config.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            updated_contract.add_token(0, config);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+            let tx = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition.serialize_to_bytes().unwrap()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .unwrap();
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::InvalidTokenDistributionFunctionDivideByZeroError(_)
+                    )
+                )]
+            );
+        }
+
+        #[test]
+        fn update_token_with_random_distribution_should_fail() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, 1234, dash_to_credits!(0.1));
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            contract.set_owner_id(identity.id());
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let mut updated_contract = contract.clone();
+            updated_contract.set_version(2);
+
+            let mut config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            config
+                .distribution_rules_mut()
+                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10,
+                            function: DistributionFunction::Random { min: 0, max: 10 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::Identity(identity.id()),
+                    },
+                )));
+            config.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            updated_contract.add_token(0, config);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+            let tx = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition.serialize_to_bytes().unwrap()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .unwrap();
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
+                )]
+            );
+        }
+
+        #[test]
+        fn update_token_overwriting_existing_position_should_fail() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, 1234, dash_to_credits!(1.0));
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            contract.set_owner_id(identity.id());
+            let mut config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            config.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            let mut config_2 =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            config_2.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "test_1".to_string(),
+                            plural_form: "tests_2".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            contract.add_token(0, config);
+
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let mut updated_contract = contract.clone();
+            updated_contract.set_version(2);
+            updated_contract.add_token(0, config_2);
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+            let tx = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition.serialize_to_bytes().unwrap()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .unwrap();
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::StateError(
+                        StateError::DataContractUpdateActionNotAllowedError(_)
+                    ),
+                    _
+                )]
+            );
         }
     }
 
@@ -1859,7 +2452,7 @@ mod tests {
                         .set_genesis_state();
 
                     let (identity, signer, key) =
-                        setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                        setup_identity(&mut platform, 958, dash_to_credits!(10.0));
 
                     // create initial contract with one keyword so update is allowed
                     let (cid, _) = create_contract_with_keywords(
@@ -1903,6 +2496,9 @@ mod tests {
             [
                 "kw0", "kw1", "kw2", "kw3", "kw4", "kw5", "kw6", "kw7", "kw8", "kw9", "kw10",
                 "kw11", "kw12", "kw13", "kw14", "kw15", "kw16", "kw17", "kw18", "kw19", "kw20",
+                "kw21", "kw22", "kw23", "kw24", "kw25", "kw26", "kw27", "kw28", "kw29", "kw30",
+                "kw31", "kw32", "kw33", "kw34", "kw35", "kw36", "kw37", "kw38", "kw39", "kw40",
+                "kw41", "kw42", "kw43", "kw44", "kw45", "kw46", "kw47", "kw48", "kw49", "kw50",
             ],
             BasicError::TooManyKeywordsError(_)
         );
@@ -1936,7 +2532,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // initial contract with two keywords
             let (cid, _) = create_contract_with_keywords(
@@ -1945,7 +2541,7 @@ mod tests {
                 &signer,
                 &key,
                 &["old1", "old2"],
-                &platform_version,
+                platform_version,
             );
 
             // verify initial docs
@@ -1960,31 +2556,31 @@ mod tests {
                 &signer,
                 &key,
                 &["newA", "newB", "newC"],
-                &platform_version,
+                platform_version,
             )
             .expect("update should succeed");
 
             // fetch contract – keywords updated?
             let fetched = platform
                 .drive
-                .fetch_contract(cid.into(), None, None, None, &platform_version)
+                .fetch_contract(cid.into(), None, None, None, platform_version)
                 .value
                 .unwrap()
                 .unwrap();
             assert_eq!(
                 *fetched.contract.keywords(),
-                ["newA", "newB", "newC"]
+                ["newa", "newb", "newc"]
                     .iter()
                     .map(|&s| s.to_string())
                     .collect::<Vec<String>>()
             );
 
             // search‑contract docs updated?
-            let docs_after = keyword_docs_for_contract(&platform, cid, &platform_version);
+            let docs_after = keyword_docs_for_contract(&platform, cid, platform_version);
             assert_eq!(docs_after.len(), 3);
-            assert!(docs_after.contains(&"newA".to_string()));
-            assert!(docs_after.contains(&"newB".to_string()));
-            assert!(docs_after.contains(&"newC".to_string()));
+            assert!(docs_after.contains(&"newa".to_string()));
+            assert!(docs_after.contains(&"newb".to_string()));
+            assert!(docs_after.contains(&"newc".to_string()));
             // old docs gone
             assert!(!docs_after.contains(&"old1".to_string()));
             assert!(!docs_after.contains(&"old2".to_string()));
@@ -2239,7 +2835,7 @@ mod tests {
                         .set_genesis_state();
 
                     let (identity, signer, key) =
-                        setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+                        setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
                     // create initial contract with description so update is allowed
                     let (cid, _) = create_contract_with_description(
@@ -2301,7 +2897,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
             // initial contract with description
             let (cid, _) = create_contract_with_description(
@@ -2314,7 +2910,7 @@ mod tests {
             );
 
             // verify initial docs
-            let initial_docs = description_docs_for_contract(&platform, cid, &platform_version);
+            let initial_docs = description_docs_for_contract(&platform, cid, platform_version);
             assert_eq!(initial_docs, "old1".to_string());
 
             // apply update to "newA"

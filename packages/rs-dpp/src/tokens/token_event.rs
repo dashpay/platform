@@ -299,29 +299,26 @@ impl TokenEvent {
             TokenEvent::Claim(recipient, amount, public_note) => {
                 let (recipient_type, recipient_id, distribution_type) = match recipient {
                     TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identifier) => {
-                        (1u8, Some(identifier.into()), 0u8)
+                        (1u8, identifier, 0u8)
                     }
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier),
-                    ) => (0, Some(identifier.into()), 1),
+                    ) => (0, identifier, 1),
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::Identity(identifier),
-                    ) => (1, Some(identifier.into()), 1),
+                    ) => (1, identifier, 1),
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::Evonode(identifier),
-                    ) => (2, Some(identifier.into()), 1),
+                    ) => (2, identifier, 1),
                 };
 
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
                     ("recipientType".to_string(), recipient_type.into()),
+                    ("recipientId".to_string(), recipient_id.into()),
                     ("distributionType".to_string(), distribution_type.into()),
                     ("amount".to_string(), amount.into()),
                 ]);
-
-                if let Some(id) = recipient_id {
-                    properties.insert("recipientId".to_string(), id);
-                }
 
                 if let Some(note) = public_note {
                     properties.insert("note".to_string(), note.into());

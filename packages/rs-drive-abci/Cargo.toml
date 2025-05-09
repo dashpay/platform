@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.8"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -109,7 +109,7 @@ rocksdb = { version = "0.23.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-default = []
+default = ["bls-signatures"]
 mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []

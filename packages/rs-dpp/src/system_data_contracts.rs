@@ -63,3 +63,22 @@ pub fn load_system_data_contracts(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_load_system_data_contract_v8_vs_v9() {
+        let contract_1 = load_system_data_contract(
+            SystemDataContract::TokenHistory,
+            PlatformVersion::get(8).unwrap(),
+        )
+        .expect("data_contract");
+        let contract_2 = load_system_data_contract(
+            SystemDataContract::TokenHistory,
+            PlatformVersion::get(9).unwrap(),
+        )
+        .expect("data_contract");
+        assert_ne!(contract_1, contract_2);
+    }
+}

@@ -74,6 +74,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             prove: DriveProveMethodVersions {
                 prove_elements: 0,
                 prove_multiple_state_transition_results: 0,
+                prove_state_transition: 0,
             },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,

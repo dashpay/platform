@@ -1734,6 +1734,22 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/keyword-search-contract@workspace:packages/keyword-search-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/keyword-search-contract@workspace:packages/keyword-search-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^8.53.0"
+    eslint-config-airbnb-base: "npm:^15.0.0"
+    eslint-plugin-import: "npm:^2.29.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^17.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/masternode-reward-shares-contract@workspace:*, @dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
@@ -4730,12 +4746,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"base-x@npm:^3.0.2, base-x@npm:^3.0.6":
-  version: 3.0.9
-  resolution: "base-x@npm:3.0.9"
+"base-x@npm:^3.0.11":
+  version: 3.0.11
+  resolution: "base-x@npm:3.0.11"
   dependencies:
     safe-buffer: "npm:^5.0.1"
-  checksum: 957101d6fd09e1903e846fd8f69fd7e5e3e50254383e61ab667c725866bec54e5ece5ba49ce385128ae48f9ec93a26567d1d5ebb91f4d56ef4a9cc0d5a5481e8
+  checksum: c2e3c443fd07cb9b9d3e179a9e9c581daa31881005841fe8d6a834e534505890fedf03465ccf14512da60e3f7be00fe66167806b159ba076d2c03952ae7460c4
   languageName: node
   linkType: hard
 
@@ -7076,9 +7092,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"elliptic@npm:6.5.7":
-  version: 6.5.7
-  resolution: "elliptic@npm:6.5.7"
+"elliptic@npm:6.6.1":
+  version: 6.6.1
+  resolution: "elliptic@npm:6.6.1"
   dependencies:
     bn.js: "npm:^4.11.9"
     brorand: "npm:^1.1.0"
@@ -7087,7 +7103,7 @@ __metadata:
     inherits: "npm:^2.0.4"
     minimalistic-assert: "npm:^1.0.1"
     minimalistic-crypto-utils: "npm:^1.0.1"
-  checksum: fbad1fad0a5cc07df83f80cc1f7a784247ef59075194d3e340eaeb2f4dd594825ee24c7e9b0cf279c9f1982efe610503bb3139737926428c4821d4fca1bcf348
+  checksum: dc678c9febd89a219c4008ba3a9abb82237be853d9fd171cd602c8fb5ec39927e65c6b5e7a1b2a4ea82ee8e0ded72275e7932bb2da04a5790c2638b818e4e1c5
   languageName: node
   linkType: hard
 

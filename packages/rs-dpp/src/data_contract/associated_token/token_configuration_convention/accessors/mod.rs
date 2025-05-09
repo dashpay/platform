@@ -1,6 +1,8 @@
 pub mod v0;
 
-use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::{
+    TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
+};
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use std::collections::BTreeMap;
@@ -34,9 +36,26 @@ impl TokenConfigurationConventionV0Getters for TokenConfigurationConvention {
         }
     }
 
-    fn decimals(&self) -> u16 {
+    fn decimals(&self) -> u8 {
         match self {
             TokenConfigurationConvention::V0(v0) => v0.decimals(),
+        }
+    }
+}
+
+impl TokenConfigurationConventionV0Setters for TokenConfigurationConvention {
+    fn set_localizations(
+        &mut self,
+        localizations: BTreeMap<String, TokenConfigurationLocalization>,
+    ) {
+        match self {
+            TokenConfigurationConvention::V0(v0) => v0.set_localizations(localizations),
+        }
+    }
+
+    fn set_decimals(&mut self, decimals: u8) {
+        match self {
+            TokenConfigurationConvention::V0(v0) => v0.set_decimals(decimals),
         }
     }
 }

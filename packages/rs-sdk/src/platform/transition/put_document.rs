@@ -70,9 +70,7 @@ impl<S: Signer> PutDocument<S> for Document {
             None,
             signer,
             sdk.version(),
-            None,
-            None,
-            None,
+            settings.state_transition_creation_options,
         )?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result

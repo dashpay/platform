@@ -22,6 +22,38 @@ pub struct SystemDataContracts {
 }
 
 impl SystemDataContracts {
+    /// Reload **all** core-protocol system contracts for the supplied platform version,
+    /// atomically replacing the cached copies held in each `ArcSwap`.
+    ///
+    /// Call this after you upgrade `PlatformVersion` (e.g. when a protocol bump
+    /// introduces new schemas for DPNS, Token History, etc.).
+    ///
+    /// # Errors
+    /// Propagates any `Error` returned by `load_system_data_contract`.
+    pub fn reload_system_contracts(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+        use SystemDataContract::*;
+
+        // 1. Load every contract fresh (fail fast on error).
+        let withdrawals = load_system_data_contract(Withdrawals, platform_version)?;
+        let dpns = load_system_data_contract(DPNS, platform_version)?;
+        let dashpay = load_system_data_contract(Dashpay, platform_version)?;
+        let masternode_reward_shares =
+            load_system_data_contract(MasternodeRewards, platform_version)?;
+        let token_history = load_system_data_contract(TokenHistory, platform_version)?;
+        let keyword_search = load_system_data_contract(KeywordSearch, platform_version)?;
+
+        // 2. Swap the cached Arcs — each swap is lock-free & O(1).
+        self.withdrawals.store(Arc::new(withdrawals));
+        self.dpns.store(Arc::new(dpns));
+        self.dashpay.store(Arc::new(dashpay));
+        self.masternode_reward_shares
+            .store(Arc::new(masternode_reward_shares));
+        self.token_history.store(Arc::new(token_history));
+        self.keyword_search.store(Arc::new(keyword_search));
+
+        Ok(())
+    }
+
     /// load genesis system contracts
     pub fn load_genesis_system_contracts(
         platform_version: &PlatformVersion,

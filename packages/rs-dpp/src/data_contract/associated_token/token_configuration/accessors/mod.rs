@@ -49,6 +49,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules {
+        match self {
+            TokenConfiguration::V0(v0) => v0.keeps_history_mut(),
+        }
+    }
+
     /// Returns if we start as paused.
     fn start_as_paused(&self) -> bool {
         match self {
@@ -143,9 +150,16 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns all group positions used in the token configuration
-    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+    fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
         match self {
             TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
+        }
+    }
+
+    /// Returns all the change contract rules, including those from the distribution rules
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.all_change_control_rules(),
         }
     }
 
@@ -184,6 +198,13 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     fn set_base_supply(&mut self, base_supply: u64) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_base_supply(base_supply),
+        }
+    }
+
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.set_start_as_paused(start_as_paused),
         }
     }
 

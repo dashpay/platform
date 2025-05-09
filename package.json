@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "2.0.0-rc.2",
+  "version": "2.0.0-rc.8",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -68,10 +68,10 @@
     "packages/wasm-dpp",
     "packages/withdrawals-contract",
     "packages/token-history-contract",
-    "packages/search-contract"
+    "packages/keyword-search-contract"
   ],
   "resolutions": {
-    "elliptic": "6.5.7",
+    "elliptic": "6.6.1",
     "bn.js": "4.12.0",
     "fast-json-patch": "^3.1.1",
     "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
@@ -98,7 +98,8 @@
     "path-to-regexp": "^1.9.0",
     "cookie": "^0.7.0",
     "cross-spawn": "^7.0.5",
-    "nanoid": "^3.3.8"
+    "nanoid": "^3.3.8",
+    "base-x": "^3.0.11"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"

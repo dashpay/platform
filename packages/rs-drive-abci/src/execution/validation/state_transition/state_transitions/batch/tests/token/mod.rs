@@ -76,7 +76,91 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
+                )
+                .expect("expect to create documents batch transition");
+
+                let documents_batch_create_serialized_transition =
+                    documents_batch_create_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![documents_batch_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let token_balance = platform
+                    .drive
+                    .fetch_identity_token_balance(
+                        token_id.to_buffer(),
+                        identity.id().to_buffer(),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch token balance");
+                assert_eq!(token_balance, Some(101337));
+            }
+
+            #[test]
+            fn test_token_mint_with_public_note() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut rng = StdRng::seed_from_u64(49853);
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                let (contract, token_id) = create_token_contract_with_owner_identity(
+                    &mut platform,
+                    identity.id(),
+                    None::<fn(&mut TokenConfiguration)>,
                     None,
+                    None,
+                    platform_version,
+                );
+
+                let documents_batch_create_transition = BatchTransition::new_token_mint_transition(
+                    token_id,
+                    identity.id(),
+                    contract.id(),
+                    0,
+                    1337,
+                    Some(identity.id()),
+                    Some("this is a public note".to_string()),
+                    None,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -165,8 +249,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -260,8 +342,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -349,8 +429,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -443,8 +521,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -532,8 +608,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -632,8 +706,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -730,8 +802,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -822,8 +892,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -925,8 +993,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1025,8 +1091,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1134,8 +1198,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1247,8 +1309,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1363,8 +1423,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1474,8 +1532,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1550,8 +1606,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1672,8 +1726,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1749,8 +1801,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -1884,8 +1934,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -1960,8 +2008,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2042,8 +2088,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2178,8 +2222,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2254,8 +2296,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2336,8 +2376,6 @@ mod token_tests {
                     0,
                     &signer3,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2464,8 +2502,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2580,8 +2616,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2656,8 +2690,6 @@ mod token_tests {
                     0,
                     &signer2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -2796,8 +2828,6 @@ mod token_tests {
                     &signer2,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -2901,8 +2931,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2987,8 +3015,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3082,8 +3108,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3153,13 +3177,15 @@ mod token_tests {
         use dpp::state_transition::batch_transition::TokenMintTransition;
         use dpp::data_contract::group::v0::GroupV0;
         use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
-        use dpp::identity::SecurityLevel;
         use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
         use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
-        use dpp::state_transition::StateTransition;
+        use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
         use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
         use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
         use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+        use dpp::tokens::emergency_action::TokenEmergencyAction;
+        use dpp::tokens::status::TokenStatus;
+        use dpp::tokens::status::v0::TokenStatusV0;
         use super::*;
 
         #[test]
@@ -3204,7 +3230,567 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_transfer_serialized_transition = token_transfer_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![token_transfer_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            let expected_amount = 100000 - 1337;
+            assert_eq!(token_balance, Some(expected_amount));
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    recipient.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            let expected_amount = 1337;
+            assert_eq!(token_balance, Some(expected_amount));
+        }
+
+        #[test]
+        fn test_token_transfer_should_fail_if_token_started_paused() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (recipient, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_start_as_paused(true);
+                    token_configuration.set_emergency_action_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
                 None,
+                None,
+                platform_version,
+            );
+
+            let token_transfer_transition = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                recipient.id(),
+                None,
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_transfer_serialized_transition = token_transfer_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![token_transfer_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, Some(100000));
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    recipient.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, None);
+
+            let token_status = platform
+                .drive
+                .fetch_token_status(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch token status");
+            assert_eq!(
+                token_status,
+                Some(TokenStatus::V0(TokenStatusV0 { paused: true }))
+            );
+
+            // now let's let the token be transferable with an emergency action
+
+            let resume_transition = BatchTransition::new_token_emergency_action_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenEmergencyAction::Resume,
+                None,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let resume_transition_transition = resume_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[resume_transition_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_status = platform
+                .drive
+                .fetch_token_status(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch token status");
+            assert_eq!(
+                token_status,
+                Some(TokenStatus::V0(TokenStatusV0 { paused: false }))
+            );
+
+            // the transfer should now work
+
+            let token_transfer_transition = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                recipient.id(),
+                None,
+                None,
+                None,
+                &key,
+                4,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_transfer_serialized_transition = token_transfer_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![token_transfer_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            let expected_amount = 100000 - 1337;
+            assert_eq!(token_balance, Some(expected_amount));
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    recipient.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            let expected_amount = 1337;
+            assert_eq!(token_balance, Some(expected_amount));
+        }
+
+        #[test]
+        fn test_token_transfer_should_fail_if_token_becomes_paused() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (recipient, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_start_as_paused(false);
+                    token_configuration.set_emergency_action_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                platform_version,
+            );
+
+            let resume_transition = BatchTransition::new_token_emergency_action_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenEmergencyAction::Pause,
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let resume_transition_transition = resume_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[resume_transition_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_status = platform
+                .drive
+                .fetch_token_status(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch token status");
+            assert_eq!(
+                token_status,
+                Some(TokenStatus::V0(TokenStatusV0 { paused: true }))
+            );
+
+            let token_transfer_transition = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                recipient.id(),
+                None,
+                None,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_transfer_serialized_transition = token_transfer_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_transfer_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, Some(100000));
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    recipient.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, None);
+
+            // now let's make the token be transferable again
+
+            let resume_transition = BatchTransition::new_token_emergency_action_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenEmergencyAction::Resume,
+                None,
+                None,
+                &key,
+                4,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let resume_transition_transition = resume_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[resume_transition_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_status = platform
+                .drive
+                .fetch_token_status(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch token status");
+            assert_eq!(
+                token_status,
+                Some(TokenStatus::V0(TokenStatusV0 { paused: false }))
+            );
+
+            // the transfer should now work
+
+            let token_transfer_transition = BatchTransition::new_token_transfer_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                recipient.id(),
+                None,
+                None,
+                None,
+                &key,
+                5,
+                0,
+                &signer,
+                platform_version,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3305,8 +3891,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3396,8 +3980,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3524,8 +4106,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3583,8 +4163,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3607,7 +4185,11 @@ mod token_tests {
             }
 
             token_transfer_transition
-                .sign_external(&key, &signer, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .sign_external(
+                    &key,
+                    &signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
                 .expect("expected to resign transaction");
 
             let token_transfer_serialized_transition = token_transfer_transition
@@ -3724,8 +4306,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3833,8 +4413,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3894,8 +4472,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4004,8 +4580,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4067,8 +4641,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4145,8 +4717,6 @@ mod token_tests {
                 0,
                 &signer2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4225,8 +4795,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4288,8 +4856,6 @@ mod token_tests {
                 0,
                 &signer2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4411,8 +4977,6 @@ mod token_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -4474,8 +5038,6 @@ mod token_tests {
                 0,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -4546,6 +5108,9 @@ mod token_tests {
         use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 
         mod non_group {
+            use dpp::state_transition::proof_result::StateTransitionProofResult;
+            use drive::drive::Drive;
+
             use super::*;
             #[test]
             fn test_token_config_update_by_owner_changing_total_max_supply() {
@@ -4595,7 +5160,108 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
+                )
+                .expect("expect to create documents batch transition");
+
+                let config_update_transition_serialized_transition = config_update_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![config_update_transition_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let contract = platform
+                    .drive
+                    .fetch_contract(
+                        contract.id().to_buffer(),
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .unwrap()
+                    .expect("expected to fetch token balance")
+                    .expect("expected contract");
+                let updated_token_config = contract
+                    .contract
+                    .expected_token_configuration(0)
+                    .expect("expected token configuration");
+                assert_eq!(updated_token_config.max_supply(), Some(1000000));
+            }
+
+            /// Added this test to verify that adding "note" property to token history contract document types
+            /// Makes the proof verification work
+            #[test]
+            fn test_token_config_update_by_owner_changing_total_max_supply_with_public_note() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut rng = StdRng::seed_from_u64(49853);
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                let (contract, token_id) = create_token_contract_with_owner_identity(
+                    &mut platform,
+                    identity.id(),
+                    Some(|token_configuration: &mut TokenConfiguration| {
+                        token_configuration.set_max_supply_change_rules(ChangeControlRules::V0(
+                            ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            },
+                        ));
+                    }),
                     None,
+                    None,
+                    platform_version,
+                );
+
+                let config_update_transition = BatchTransition::new_token_config_update_transition(
+                    token_id,
+                    identity.id(),
+                    contract.id(),
+                    0,
+                    TokenConfigurationChangeItem::MaxSupply(Some(1000000)),
+                    Some("this is a public note".to_string()),
+                    None,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -4630,6 +5296,50 @@ mod token_tests {
                     .commit_transaction(transaction)
                     .unwrap()
                     .expect("expected to commit transaction");
+
+                if processing_result.valid_count() == 1 {
+                    let proof_result = platform
+                        .platform
+                        .drive
+                        .prove_state_transition(&config_update_transition, None, platform_version)
+                        .map_err(|e| e.to_string())
+                        .expect("expected to create proof");
+
+                    if let Some(proof_error) = proof_result.first_error() {
+                        panic!("proof_result is not valid with error {}", proof_error);
+                    }
+
+                    let proof_data = proof_result
+                        .into_data()
+                        .map_err(|e| e.to_string())
+                        .expect("expected to get proof data");
+
+                    let (_, verification_result) =
+                        Drive::verify_state_transition_was_executed_with_proof(
+                            &config_update_transition,
+                            &BlockInfo::default(),
+                            &proof_data,
+                            &|id: &Identifier| {
+                                if *id == contract.id() {
+                                    Ok(Some(contract.clone().into()))
+                                } else {
+                                    Ok(None)
+                                }
+                            },
+                            platform_version,
+                        )
+                        .map_err(|e| e.to_string())
+                        .expect("expected to verify state transition");
+
+                    let StateTransitionProofResult::VerifiedTokenActionWithDocument(_document) =
+                        verification_result
+                    else {
+                        panic!(
+                            "verification_result expected config update document, but got: {:?}",
+                            verification_result
+                        );
+                    };
+                }
 
                 let contract = platform
                     .drive
@@ -4698,8 +5408,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -4812,8 +5520,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -4861,8 +5567,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -4969,8 +5673,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5061,8 +5763,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5152,8 +5852,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5260,8 +5958,6 @@ mod token_tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5386,8 +6082,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5461,8 +6155,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5612,8 +6304,6 @@ mod token_tests {
                     &signer_3,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5694,8 +6384,6 @@ mod token_tests {
                     0,
                     &signer_4,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5780,8 +6468,6 @@ mod token_tests {
                     &signer_5,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5836,8 +6522,6 @@ mod token_tests {
                     0,
                     &signer_5,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -5905,8 +6589,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -5964,8 +6646,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6053,8 +6733,6 @@ mod token_tests {
                     &signer,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6112,8 +6790,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");
@@ -6203,8 +6879,6 @@ mod token_tests {
                     &signer_3,
                     platform_version,
                     None,
-                    None,
-                    None,
                 )
                 .expect("expect to create documents batch transition");
 
@@ -6271,8 +6945,6 @@ mod token_tests {
                     0,
                     &signer_2,
                     platform_version,
-                    None,
-                    None,
                     None,
                 )
                 .expect("expect to create documents batch transition");

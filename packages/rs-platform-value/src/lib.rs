@@ -1265,6 +1265,28 @@ impl Value {
         }
     }
 
+    /// Returns the numeric value as `i128` if this is any signed /
+    /// unsigned integer variant **and** the conversion is loss-less.
+    #[inline]
+    fn as_i128_unified(&self) -> Option<i128> {
+        use Value::*;
+        match self {
+            I128(v) => Some(*v),
+            I64(v) => Some(*v as i128),
+            I32(v) => Some(*v as i128),
+            I16(v) => Some(*v as i128),
+            I8(v) => Some(*v as i128),
+
+            U128(v) if *v <= i128::MAX as u128 => Some(*v as i128),
+            U64(v) => Some(*v as i128),
+            U32(v) => Some(*v as i128),
+            U16(v) => Some(*v as i128),
+            U8(v) => Some(*v as i128),
+
+            _ => None,
+        }
+    }
+
     /// can determine if there is any very big data in a value
     pub fn has_data_larger_than(&self, size: u32) -> Option<(Option<Value>, u32)> {
         match self {

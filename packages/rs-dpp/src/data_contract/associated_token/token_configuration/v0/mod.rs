@@ -17,51 +17,92 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Defines the complete configuration for a version 0 token contract.
+///
+/// `TokenConfigurationV0` encapsulates all metadata, control rules, supply settings,
+/// and governance constraints used to initialize and manage a token instance on Platform.
+/// This structure serves as the core representation of a token's logic, permissions,
+/// and capabilities.
+///
+/// This configuration is designed to be deterministic and versioned for compatibility
+/// across protocol upgrades and validation environments.
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationV0 {
+    /// Metadata conventions, including decimals and localizations.
     pub conventions: TokenConfigurationConvention,
-    /// Who can change the conventions
+
+    /// Change control rules governing who can modify the conventions field.
     #[serde(default = "default_change_control_rules")]
     pub conventions_change_rules: ChangeControlRules,
-    /// The supply at the creation of the token
+
+    /// The initial token supply minted at creation.
     #[serde(default)]
     pub base_supply: TokenAmount,
-    /// The maximum supply the token can ever have
+
+    /// The maximum allowable supply of the token.
+    ///
+    /// If `None`, the supply is unbounded unless otherwise constrained by minting logic.
     #[serde(default)]
     pub max_supply: Option<TokenAmount>,
-    /// The rules for keeping history.
+
+    /// Configuration governing which historical actions are recorded for this token.
     #[serde(default = "default_token_keeps_history_rules")]
     pub keeps_history: TokenKeepsHistoryRules,
-    /// True if we start off as paused, meaning that we can not transfer till we unpause.
+
+    /// Indicates whether the token should start in a paused state.
+    ///
+    /// When `true`, transfers are disallowed until explicitly unpaused via an emergency action.
     #[serde(default = "default_starts_as_paused")]
     pub start_as_paused: bool,
-    /// Allow to transfer and mint tokens to frozen identity token balances
+
+    /// Allows minting and transferring to frozen token balances if enabled.
     #[serde(default = "default_allow_transfer_to_frozen_balance")]
     pub allow_transfer_to_frozen_balance: bool,
-    /// Who can change the max supply
-    /// Even if set no one can ever change this under the base supply
+
+    /// Change control rules for updating the `max_supply`.
+    ///
+    /// Note: The `max_supply` can never be reduced below the `base_supply`.
     #[serde(default = "default_change_control_rules")]
     pub max_supply_change_rules: ChangeControlRules,
-    /// The distribution rules for the token
+
+    /// Defines the token's distribution logic, including perpetual and pre-programmed distributions.
     #[serde(default = "default_token_distribution_rules")]
     pub distribution_rules: TokenDistributionRules,
+
+    /// Rules controlling who is authorized to perform manual minting of tokens.
     #[serde(default = "default_contract_owner_change_control_rules")]
     pub manual_minting_rules: ChangeControlRules,
+
+    /// Rules controlling who is authorized to perform manual burning of tokens.
     #[serde(default = "default_contract_owner_change_control_rules")]
     pub manual_burning_rules: ChangeControlRules,
+
+    /// Rules governing who may freeze token balances.
     #[serde(default = "default_change_control_rules")]
     pub freeze_rules: ChangeControlRules,
+
+    /// Rules governing who may unfreeze token balances.
     #[serde(default = "default_change_control_rules")]
     pub unfreeze_rules: ChangeControlRules,
+
+    /// Rules governing who may destroy frozen funds.
     #[serde(default = "default_change_control_rules")]
     pub destroy_frozen_funds_rules: ChangeControlRules,
+
+    /// Rules governing who may invoke emergency actions, such as pausing transfers.
     #[serde(default = "default_change_control_rules")]
     pub emergency_action_rules: ChangeControlRules,
+
+    /// Optional reference to the group assigned as the token's main control group.
     #[serde(default)]
     pub main_control_group: Option<GroupContractPosition>,
+
+    /// Defines whether and how the main control group assignment may be modified.
     #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
+
+    /// Optional textual description of the token's purpose, behavior, or metadata.
     #[serde(default)]
     pub description: Option<String>,
 }
@@ -175,26 +216,73 @@ impl fmt::Display for TokenConfigurationV0 {
     }
 }
 
+/// Represents predefined capability levels for token control presets.
+///
+/// `TokenConfigurationPresetFeatures` defines a hierarchy of governance capabilities
+/// that can be used to initialize rule sets for a token. Each variant enables a specific
+/// scope of permitted actions, allowing for simple selection of common governance models.
+///
+/// These presets are intended to be used in conjunction with `TokenConfigurationPreset`
+/// to simplify token setup and enforce governance constraints consistently.
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum TokenConfigurationPresetFeatures {
-    /// Nothing can be changed once it is set
+    /// No actions are permitted after initialization. All governance and control
+    /// settings are immutable.
+    ///
+    /// Suitable for tokens that should remain fixed and tamper-proof.
     MostRestrictive,
-    /// The action taker can not mint or burn tokens, or any advanced action.
-    /// They can pause the token if needed.
+
+    /// Only emergency actions (e.g., pausing the token) are permitted.
+    ///
+    /// Minting, burning, and advanced operations (such as freezing) are disallowed.
+    /// This preset allows minimal control for critical situations without risking
+    /// token supply or ownership manipulation.
     WithOnlyEmergencyAction,
+
+    /// Allows minting and burning operations, but not advanced features such as freezing.
+    ///
+    /// Enables supply management without enabling full administrative capabilities.
     WithMintingAndBurningActions,
-    /// The action taker can do advanced actions like freezing
+
+    /// Grants the ability to perform advanced actions, including freezing and unfreezing balances.
+    ///
+    /// Minting and burning are also permitted. Suitable for tokens that require
+    /// moderate administrative control without total override capabilities.
     WithAllAdvancedActions,
+
     /// The action taker is a god, he can do everything, even taking away his own power.
+    /// This grants unrestricted control to the action taker, including the ability to revoke
+    /// their own permissions or transfer all governance.
+    ///
+    /// This includes minting, burning, freezing, emergency actions, and full rule modification.
+    /// Should only be used with trusted or self-destructible authorities.
     WithExtremeActions,
 }
 
+/// A high-level preset representing common configurations for token governance and control.
+///
+/// `TokenConfigurationPreset` provides a simplified way to initialize a set of
+/// predefined token rules (e.g., minting, burning, freezing, emergency actions)
+/// by selecting a feature set (`features`) and defining the authorized actor (`action_taker`)
+/// responsible for performing allowed actions.
+///
+/// This abstraction allows users to choose between common control configurations
+/// ranging from immutable tokens to fully administrator-controlled assets.
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub struct TokenConfigurationPreset {
-    features: TokenConfigurationPresetFeatures,
-    action_taker: AuthorizedActionTakers,
-}
+    /// Defines the set of capabilities enabled in this preset (e.g., whether minting,
+    /// burning, freezing, or emergency actions are permitted).
+    ///
+    /// The selected feature set determines the default rule behavior for all change control
+    /// and governance actions within the token configuration.
+    pub features: TokenConfigurationPresetFeatures,
 
+    /// The identity or group authorized to perform actions defined by the preset.
+    ///
+    /// This includes acting as the admin for various rule changes, executing allowed token
+    /// operations, or performing emergency control (depending on the selected feature set).
+    pub action_taker: AuthorizedActionTakers,
+}
 impl TokenConfigurationPreset {
     pub fn default_main_control_group_can_be_modified(&self) -> AuthorizedActionTakers {
         match self.features {

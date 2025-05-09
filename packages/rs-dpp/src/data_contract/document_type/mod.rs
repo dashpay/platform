@@ -38,7 +38,7 @@ pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
-mod property_names {
+pub(crate) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 

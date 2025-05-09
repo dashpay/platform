@@ -111,6 +111,6 @@ impl Drive {
     ) -> PathQuery {
         let path = token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
         let query = Query::new_single_key(identity_id.to_vec());
-        PathQuery::new(path, SizedQuery::new(query, None, None))
+        PathQuery::new(path, SizedQuery::new(query, Some(1), None))
     }
 }

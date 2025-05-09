@@ -7,7 +7,8 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
     DuplicateKeywordsError, IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
-    InvalidDescriptionLengthError, InvalidKeywordLengthError, TooManyKeywordsError,
+    InvalidDescriptionLengthError, InvalidKeywordCharacterError, InvalidKeywordLengthError,
+    TooManyKeywordsError,
 };
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
@@ -267,10 +268,11 @@ impl DataContract {
         }
 
         if self.keywords() != new_data_contract.keywords() {
-            // Validate there are no more than 20 keywords
-            if new_data_contract.keywords().len() > 20 {
+            // Validate there are no more than 50 keywords
+            if new_data_contract.keywords().len() > 50 {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
-                    TooManyKeywordsError::new(self.id(), self.keywords().len() as u8).into(),
+                    TooManyKeywordsError::new(self.id(), new_data_contract.keywords().len() as u8)
+                        .into(),
                 ));
             }
 
@@ -281,6 +283,20 @@ impl DataContract {
                 if keyword.len() < 3 || keyword.len() > 50 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidKeywordLengthError::new(self.id(), keyword.to_string()).into(),
+                    ));
+                }
+
+                if !keyword
+                    .chars()
+                    .all(|c| !c.is_control() && !c.is_whitespace())
+                {
+                    // This would mean we have an invalid character
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidKeywordCharacterError::new(
+                            new_data_contract.id(),
+                            keyword.to_string(),
+                        )
+                        .into(),
                     ));
                 }
 
@@ -296,7 +312,8 @@ impl DataContract {
         if self.description() != new_data_contract.description() {
             // Validate the description is between 3 and 100 characters
             if let Some(description) = new_data_contract.description() {
-                if !(description.len() >= 3 && description.len() <= 100) {
+                let char_count = description.chars().count();
+                if !(3..=100).contains(&char_count) {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidDescriptionLengthError::new(self.id(), description.to_string())
                             .into(),

@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::prelude::DataContract;
 #[cfg(feature = "validation")]
 use crate::validation::ConsensusValidationResult;
 use crate::version::PlatformVersion;
@@ -13,6 +14,7 @@ pub trait DocumentPlatformConversionMethodsV0: Clone {
     fn serialize(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
@@ -23,17 +25,8 @@ pub trait DocumentPlatformConversionMethodsV0: Clone {
     fn serialize_specific_version(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         feature_version: FeatureVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
-
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume(
-        self,
-        document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
     /// Reads a serialized document and creates a Document from it.
@@ -75,15 +68,6 @@ pub trait ExtendedDocumentPlatformConversionMethodsV0 {
     fn serialize_specific_version_to_bytes(
         &self,
         feature_version: FeatureVersion,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
-
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume_to_bytes(
-        self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
