@@ -9,6 +9,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
@@ -127,6 +128,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -155,9 +157,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            None,
-            None,
-            None,
+            options,
         )?;
 
         Ok(state_transition)

@@ -19,7 +19,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const { EventEmitter } = require('events');
 
@@ -42,6 +41,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let tenderDashWsClientMock;
   let blockchainListener;
   let hash;
+  let stateTransitionBytes;
   let proofFixture;
   let wsMessagesFixture;
   let stateTransitionFixture;
@@ -52,10 +52,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let transactionNotFoundError;
   let createGrpcErrorFromDriveResponseMock;
   let errorInfo;
-
-  before(async () => {
-    await loadWasmDpp();
-  });
 
   beforeEach(async function beforeEach() {
     const hashString = '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E';
@@ -69,7 +65,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     };
 
     stateTransitionFixture = await getIdentityCreateTransitionFixture();
-    const stateTransitionBase64 = stateTransitionFixture.toBuffer().toString('base64');
+    stateTransitionBytes = stateTransitionFixture.toBuffer();
+    const stateTransitionBase64 = stateTransitionBytes.toString('base64');
 
     wsMessagesFixture = {
       success: {
@@ -176,8 +173,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     tenderDashWsClientMock.subscribe = this.sinon.stub();
     tenderDashWsClientMock.isConnected = true;
 
-    const dpp = new DashPlatformProtocol(null, 1);
-
     proofFixture = new Proof();
     proofFixture.setGrovedbProof(Buffer.alloc(1, 1));
     proofFixture.setRound(42);
@@ -189,11 +184,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     metadataFixture.setProtocolVersion(1);
 
     const response = new GetProofsResponse();
-    response.setV0(
-      new GetProofsResponse.GetProofsResponseV0()
-        .setProof(proofFixture)
-        .setMetadata(metadataFixture),
-    );
+    response.setProof(proofFixture)
+      .setMetadata(metadataFixture);
 
     driveClientMock = {
       getProofs: this.sinon.stub().resolves(response),
@@ -224,7 +216,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       fetchProofForStateTransition,
       waitForTransactionToBeProvable,
       blockchainListener,
-      dpp,
       createGrpcErrorFromDriveResponseMock,
       1000,
     );
@@ -284,21 +275,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.getGrovedbProof());
 
-    const { GetProofsRequestV0 } = GetProofsRequest;
     const getProofsRequest = new GetProofsRequest();
-    const { IdentityRequest } = GetProofsRequestV0;
-
-    const identitiesList = stateTransitionFixture.getModifiedDataIds().map((id) => {
-      const identityRequest = new IdentityRequest();
-      identityRequest.setIdentityId(id.toBuffer());
-      identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
-      return identityRequest;
-    });
-
-    getProofsRequest.setV0(
-      new GetProofsRequestV0()
-        .setIdentitiesList(identitiesList),
-    );
+    getProofsRequest.setStateTransition(stateTransitionBytes);
 
     expect(driveClientMock.getProofs).to.be.calledOnceWithExactly(getProofsRequest);
   });

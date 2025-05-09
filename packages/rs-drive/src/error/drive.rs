@@ -127,7 +127,7 @@ pub enum DriveError {
 
     /// Error
     #[error("corrupted query returned non item error: {0}")]
-    CorruptedQueryReturnedNonItem(&'static str),
+    CorruptedQueryReturnedNonItem(String),
     /// Error
     #[error("corrupted withdrawal not an item error: {0}")]
     CorruptedWithdrawalNotItem(&'static str),

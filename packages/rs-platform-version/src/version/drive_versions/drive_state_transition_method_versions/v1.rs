@@ -41,5 +41,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 token_destroy_frozen_funds_transition: 0,
                 token_config_update_transition: 0,
                 token_claim_transition: 0,
+                token_direct_purchase_transition: 0,
+                token_set_price_for_direct_purchase_transition: 0,
             },
     };

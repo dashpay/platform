@@ -53,8 +53,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -123,8 +121,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -213,8 +209,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -307,8 +301,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -436,8 +428,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -556,8 +546,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for the update price");
 
@@ -672,8 +660,6 @@ mod nft_tests {
                 None,
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");
@@ -834,8 +820,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -958,8 +942,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1053,8 +1035,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -1182,8 +1162,6 @@ mod nft_tests {
                 None,
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");
@@ -1343,8 +1321,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1467,8 +1443,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for the update price");
 
@@ -1585,8 +1559,6 @@ mod nft_tests {
                 None,
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");
@@ -1731,8 +1703,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1777,8 +1747,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -1828,8 +1796,6 @@ mod nft_tests {
                 None,
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");
@@ -1926,8 +1892,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1972,8 +1936,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -2023,8 +1985,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");
@@ -2126,8 +2086,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2172,8 +2130,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -2223,8 +2179,6 @@ mod nft_tests {
                 None,
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");
@@ -2336,8 +2290,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for the purchase");
 
@@ -2432,8 +2384,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2525,8 +2475,6 @@ mod nft_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -2621,8 +2569,6 @@ mod nft_tests {
                 &recipient_signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for the purchase");
 
@@ -2714,8 +2660,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2762,8 +2706,6 @@ mod nft_tests {
                 None,
                 &other_identity_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the update price");
@@ -2915,8 +2857,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3018,8 +2958,6 @@ mod nft_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition for the update price");
 
@@ -3115,8 +3053,6 @@ mod nft_tests {
                 })),
                 &recipient_signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition for the purchase");

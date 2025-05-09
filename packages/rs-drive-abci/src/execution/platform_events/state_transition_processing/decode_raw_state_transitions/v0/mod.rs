@@ -8,7 +8,6 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -73,7 +72,10 @@ where
                 } else {
                     let start_time = Instant::now();
 
-                    match StateTransition::deserialize_from_bytes(raw_state_transition.as_ref()) {
+                    match StateTransition::deserialize_from_bytes_in_version(
+                        raw_state_transition.as_ref(),
+                        platform_version,
+                    ) {
                         Ok(state_transition) => DecodedStateTransition::SuccessfullyDecoded(
                             SuccessfullyDecodedStateTransition {
                                 decoded: state_transition,

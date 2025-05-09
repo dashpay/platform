@@ -103,15 +103,6 @@ type PlatformgetEvonodesProposedEpochBlocksByRange = {
   readonly responseType: typeof platform_pb.GetEvonodesProposedEpochBlocksResponse;
 };
 
-type PlatformgetProofs = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetProofsRequest;
-  readonly responseType: typeof platform_pb.GetProofsResponse;
-};
-
 type PlatformgetDataContract = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -337,6 +328,15 @@ type PlatformgetTokenStatuses = {
   readonly responseType: typeof platform_pb.GetTokenStatusesResponse;
 };
 
+type PlatformgetTokenDirectPurchasePrices = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetTokenDirectPurchasePricesRequest;
+  readonly responseType: typeof platform_pb.GetTokenDirectPurchasePricesResponse;
+};
+
 type PlatformgetTokenPreProgrammedDistributions = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -404,7 +404,6 @@ export class Platform {
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
   static readonly getEvonodesProposedEpochBlocksByIds: PlatformgetEvonodesProposedEpochBlocksByIds;
   static readonly getEvonodesProposedEpochBlocksByRange: PlatformgetEvonodesProposedEpochBlocksByRange;
-  static readonly getProofs: PlatformgetProofs;
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContracts: PlatformgetDataContracts;
@@ -430,6 +429,7 @@ export class Platform {
   static readonly getIdentityTokenInfos: PlatformgetIdentityTokenInfos;
   static readonly getIdentitiesTokenInfos: PlatformgetIdentitiesTokenInfos;
   static readonly getTokenStatuses: PlatformgetTokenStatuses;
+  static readonly getTokenDirectPurchasePrices: PlatformgetTokenDirectPurchasePrices;
   static readonly getTokenPreProgrammedDistributions: PlatformgetTokenPreProgrammedDistributions;
   static readonly getTokenTotalSupply: PlatformgetTokenTotalSupply;
   static readonly getGroupInfo: PlatformgetGroupInfo;
@@ -569,15 +569,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
   ): UnaryResponse;
-  getProofs(
-    requestMessage: platform_pb.GetProofsRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProofsResponse|null) => void
-  ): UnaryResponse;
-  getProofs(
-    requestMessage: platform_pb.GetProofsRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProofsResponse|null) => void
-  ): UnaryResponse;
   getDataContract(
     requestMessage: platform_pb.GetDataContractRequest,
     metadata: grpc.Metadata,
@@ -802,6 +793,15 @@ export class PlatformClient {
   getTokenStatuses(
     requestMessage: platform_pb.GetTokenStatusesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenStatusesResponse|null) => void
+  ): UnaryResponse;
+  getTokenDirectPurchasePrices(
+    requestMessage: platform_pb.GetTokenDirectPurchasePricesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenDirectPurchasePricesResponse|null) => void
+  ): UnaryResponse;
+  getTokenDirectPurchasePrices(
+    requestMessage: platform_pb.GetTokenDirectPurchasePricesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenDirectPurchasePricesResponse|null) => void
   ): UnaryResponse;
   getTokenPreProgrammedDistributions(
     requestMessage: platform_pb.GetTokenPreProgrammedDistributionsRequest,

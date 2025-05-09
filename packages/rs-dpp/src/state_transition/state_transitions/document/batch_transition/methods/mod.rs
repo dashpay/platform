@@ -28,20 +28,33 @@ use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransitionV1};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+use crate::state_transition::StateTransitionSigningOptions;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 #[cfg(feature = "state-transition-signing")]
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
+use platform_version::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
 
 pub mod v0;
 pub mod v1;
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub struct StateTransitionCreationOptions {
+    /// The signing options
+    pub signing_options: StateTransitionSigningOptions,
+    pub batch_feature_version: Option<FeatureVersion>,
+    pub method_feature_version: Option<FeatureVersion>,
+    pub base_feature_version: Option<FeatureVersion>,
+}
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     fn all_document_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
@@ -85,11 +98,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        create_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -107,9 +119,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    create_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             1 => Ok(
@@ -123,9 +133,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    create_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -146,11 +154,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        replace_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -167,9 +174,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    replace_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             1 => Ok(
@@ -182,9 +187,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    replace_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -208,11 +211,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        transfer_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -230,9 +232,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    transfer_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             1 => Ok(
@@ -246,9 +246,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    transfer_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -271,11 +269,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -292,9 +289,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             1 => Ok(
@@ -307,9 +302,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -332,11 +325,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        update_price_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -354,9 +346,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    update_price_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             1 => Ok(
@@ -370,9 +360,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    update_price_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -397,11 +385,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        purchase_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -420,9 +407,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    purchase_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             1 => Ok(
@@ -437,9 +422,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     token_payment_info,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    purchase_feature_version,
-                    base_feature_version,
+                    options,
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -468,11 +451,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -501,9 +483,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -528,11 +508,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -560,9 +539,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -589,11 +566,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -624,9 +600,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -651,11 +625,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -684,9 +657,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -711,11 +682,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -744,9 +714,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -771,11 +739,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -804,9 +771,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -832,11 +797,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -865,9 +829,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    delete_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -893,11 +855,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        config_update_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -926,9 +887,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    config_update_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -952,11 +911,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        config_update_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        match batch_feature_version.unwrap_or(
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
             platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -984,13 +942,127 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     user_fee_increase,
                     signer,
                     platform_version,
-                    batch_feature_version,
-                    config_update_feature_version,
-                    base_feature_version,
+                    options,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_claim_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    fn new_token_change_direct_purchase_price_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        token_pricing_schedule: Option<TokenPricingSchedule>,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV1::new_token_change_direct_purchase_price_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    token_pricing_schedule,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method:
+                    "DocumentsBatchTransition::new_token_change_direct_purchase_price_transition"
+                        .to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_direct_purchase_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        total_agreed_price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV1::new_token_direct_purchase_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    total_agreed_price,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_direct_purchase_transition"
+                    .to_string(),
                 known_versions: vec![1],
                 received: version,
             }),

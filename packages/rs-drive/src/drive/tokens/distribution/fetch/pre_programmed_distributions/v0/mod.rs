@@ -1,6 +1,4 @@
-use crate::drive::tokens::distribution::queries::{
-    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
-};
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -44,7 +42,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error> {
-        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
+        let path_query = Drive::pre_programmed_distributions_query(token_id, start_at, limit);
 
         let results = self
             .grove_get_raw_path_query(

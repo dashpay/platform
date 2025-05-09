@@ -47,6 +47,16 @@ fn generate_code(typ: ImplType) {
         .generate()
         .expect("generate platform proto");
 
+    let drive = MappingConfig::new(
+        PathBuf::from("protos/drive/v0/drive.proto"),
+        PathBuf::from("src/drive"),
+        &typ,
+    );
+
+    configure_drive(drive)
+        .generate()
+        .expect("generate platform proto");
+
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
@@ -63,7 +73,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 40] = [
+    const VERSIONED_REQUESTS: [&str; 42] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -75,10 +85,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityContractNonceRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
+        "GetIdentityByNonUniquePublicKeyHashRequest",
         "GetIdentityByPublicKeyHashRequest",
         "GetIdentityKeysRequest",
         "GetIdentityRequest",
-        "GetProofsRequest",
         "WaitForStateTransitionResultRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
@@ -96,8 +106,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetStatusRequest",
         "GetIdentityTokenBalancesRequest",
         "GetIdentitiesTokenBalancesRequest",
+        "GetTokenPerpetualDistributionLastClaimRequest",
         "GetIdentityTokenInfosRequest",
         "GetIdentitiesTokenInfosRequest",
+        "GetTokenDirectPurchasePricesRequest",
         "GetTokenStatusesRequest",
         "GetTokenTotalSupplyRequest",
         "GetGroupInfoRequest",
@@ -110,8 +122,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
     //
+    // The following responses are excluded as they need custom proof handling:
+    // - "GetIdentityByNonUniquePublicKeyHashResponse"
+    //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 39] = [
+    const VERSIONED_RESPONSES: [&str; 40] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -126,7 +141,6 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
-        "GetProofsResponse",
         "WaitForStateTransitionResultResponse",
         "GetEpochsInfoResponse",
         "GetProtocolVersionUpgradeStateResponse",
@@ -143,8 +157,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetEvonodesProposedEpochBlocksResponse",
         "GetIdentityTokenBalancesResponse",
         "GetIdentitiesTokenBalancesResponse",
+        "GetTokenPerpetualDistributionLastClaimResponse",
         "GetIdentityTokenInfosResponse",
         "GetIdentitiesTokenInfosResponse",
+        "GetTokenDirectPurchasePricesResponse",
         "GetTokenStatusesResponse",
         "GetTokenTotalSupplyResponse",
         "GetGroupInfoResponse",
@@ -208,6 +224,19 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
     #[allow(clippy::let_and_return)]
     platform
+}
+
+fn configure_drive(drive: MappingConfig) -> MappingConfig {
+    drive
+        .message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#)
+        .type_attribute(
+            ".",
+            r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
+        )
+        .type_attribute(
+            ".",
+            r#"#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]"#,
+        )
 }
 
 /// Check for duplicate messages in the list.
@@ -319,6 +348,14 @@ impl MappingConfig {
     #[allow(unused)]
     fn type_attribute(mut self, path: &str, attribute: &str) -> Self {
         self.builder = self.builder.type_attribute(path, attribute);
+        self
+    }
+
+    #[allow(unused)]
+    fn includes(mut self, includes: &[PathBuf]) -> Self {
+        for include in includes {
+            self.proto_includes.push(abs_path(include));
+        }
         self
     }
 

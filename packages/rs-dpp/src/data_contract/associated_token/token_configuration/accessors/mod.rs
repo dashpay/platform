@@ -49,10 +49,23 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules {
+        match self {
+            TokenConfiguration::V0(v0) => v0.keeps_history_mut(),
+        }
+    }
+
     /// Returns if we start as paused.
     fn start_as_paused(&self) -> bool {
         match self {
             TokenConfiguration::V0(v0) => v0.start_as_paused(),
+        }
+    }
+
+    fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
+        match self {
+            TokenConfiguration::V0(v0) => v0.is_allowed_transfer_to_frozen_balance(),
         }
     }
 
@@ -137,9 +150,23 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns all group positions used in the token configuration
-    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+    fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
         match self {
             TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
+        }
+    }
+
+    /// Returns all the change contract rules, including those from the distribution rules
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.all_change_control_rules(),
+        }
+    }
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.description(),
         }
     }
 }
@@ -160,10 +187,24 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
         }
     }
 
+    /// Allow or not a transfer and mint tokens to frozen identity token balances
+    fn allow_transfer_to_frozen_balance(&mut self, allow: bool) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.allow_transfer_to_frozen_balance(allow),
+        }
+    }
+
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: u64) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_base_supply(base_supply),
+        }
+    }
+
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.set_start_as_paused(start_as_paused),
         }
     }
 
@@ -238,6 +279,13 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_main_control_group_can_be_modified(action_takers),
+        }
+    }
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.set_description(description),
         }
     }
 }

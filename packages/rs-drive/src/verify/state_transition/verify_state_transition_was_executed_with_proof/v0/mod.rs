@@ -40,7 +40,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -187,7 +187,7 @@ impl Drive {
                                     Some(transient_fields),
                                     platform_version,
                                 )? {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create, got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, create_transition))));
                                 }
                                 Ok((
                                     root_hash,
@@ -224,7 +224,7 @@ impl Drive {
                                     Some(transient_fields),
                                     platform_version,
                                 )? {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace, got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, replace_transition))));
                                 }
 
                                 Ok((
@@ -338,6 +338,10 @@ impl Drive {
                                     SingleDocumentDriveQueryContestedStatus::NotContested,
                             };
 
+                            // println!("query used to verify {:?}", query);
+                            //
+                            // println!("proof bytes are {}", hex::encode(proof));
+
                             let (root_hash, document) = query.verify_proof(
                                 false,
                                 proof,
@@ -345,7 +349,7 @@ impl Drive {
                                 platform_version,
                             )?;
 
-                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document of type `{}` expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
 
                             let expected_document = token_transition.build_historical_document(
                                 token_id,
@@ -356,12 +360,22 @@ impl Drive {
                                 platform_version,
                             )?;
 
+                            // Some fields are populated by the drive,
+                            // so we need to ignore them
+                            let ignore_fields = match token_transition {
+                                TokenTransition::DestroyFrozenFunds(_) => {
+                                    Some(vec!["destroyedAmount"])
+                                }
+                                TokenTransition::Claim(_) => Some(vec!["amount"]),
+                                _ => None,
+                            };
+
                             if !document.is_equal_ignoring_time_based_fields(
                                 &expected_document,
-                                Some(vec!["destroyedAmount"]),
+                                ignore_fields,
                                 platform_version,
                             )? {
-                                return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
+                                return Err(Error::Proof(ProofError::UnexpectedResultProof(format!("proof of state transition execution did not show the correct historical document got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, token_transition))));
                             }
                             Ok((root_hash, VerifiedTokenActionWithDocument(document)))
                         };
@@ -486,6 +500,45 @@ impl Drive {
                                     Ok((
                                         root_hash,
                                         VerifiedTokenIdentityInfo(owner_id, identity_token_info),
+                                    ))
+                                }
+                            }
+                            TokenTransition::DirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_purchase_history() {
+                                    historical_query()
+                                } else {
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_balance_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            owner_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token direct purchase)", owner_id))));
+                                    };
+                                    Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                                }
+                            }
+                            TokenTransition::SetPriceForDirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_pricing_history() {
+                                    historical_query()
+                                } else {
+                                    let (root_hash, token_pricing_schedule) =
+                                        Drive::verify_token_direct_selling_price(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?;
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenPricingSchedule(
+                                            owner_id,
+                                            token_pricing_schedule,
+                                        ),
                                     ))
                                 }
                             }

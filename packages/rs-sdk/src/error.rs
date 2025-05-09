@@ -1,6 +1,7 @@
 //! Definitions of errors
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
@@ -21,6 +22,9 @@ pub enum Error {
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
+    /// Drive error
+    #[error("Drive error with associated proof: {0}")]
+    DriveProofError(drive::error::proof::ProofError, Vec<u8>, BlockInfo),
     /// DPP error
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),
@@ -56,7 +60,7 @@ pub enum Error {
     #[error("No epoch found on Platform; it should never happen")]
     EpochNotFound,
     /// SDK operation timeout reached error
-    #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
+    #[error("SDK operation timeout {} secs reached: {}", .0.as_secs(), .1)]
     TimeoutReached(Duration, String),
 
     /// Returned when an attempt is made to create an object that already exists in the system

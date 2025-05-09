@@ -8,23 +8,26 @@ use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError,
+    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
     GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
     IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
-    InvalidTokenDistributionFunctionDivideByZeroError,
+    InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
+    InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
     InvalidTokenDistributionFunctionIncoherenceError,
     InvalidTokenDistributionFunctionInvalidParameterError,
-    InvalidTokenDistributionFunctionInvalidParameterTupleError,
-    NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
+    InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
+    NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
+    NonContiguousContractTokenPositionsError, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -75,6 +78,10 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
+use super::data_contract::{
+    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
+    TooManyKeywordsError,
+};
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
@@ -515,6 +522,44 @@ pub enum BasicError {
     TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
         TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
     ),
+
+    #[error(transparent)]
+    TooManyKeywordsError(TooManyKeywordsError),
+
+    #[error(transparent)]
+    DuplicateKeywordsError(DuplicateKeywordsError),
+
+    #[error(transparent)]
+    InvalidKeywordLengthError(InvalidKeywordLengthError),
+
+    #[error(transparent)]
+    InvalidDescriptionLengthError(InvalidDescriptionLengthError),
+
+    #[error(transparent)]
+    NewTokensDestinationIdentityOptionRequiredError(
+        NewTokensDestinationIdentityOptionRequiredError,
+    ),
+
+    #[error(transparent)]
+    InvalidKeywordCharacterError(InvalidKeywordCharacterError),
+
+    #[error(transparent)]
+    InvalidTokenNameCharacterError(InvalidTokenNameCharacterError),
+
+    #[error(transparent)]
+    DecimalsOverLimitError(DecimalsOverLimitError),
+
+    #[error(transparent)]
+    InvalidTokenNameLengthError(InvalidTokenNameLengthError),
+
+    #[error(transparent)]
+    InvalidTokenLanguageCodeError(InvalidTokenLanguageCodeError),
+
+    #[error(transparent)]
+    MainGroupIsNotDefinedError(MainGroupIsNotDefinedError),
+
+    #[error(transparent)]
+    GroupRequiredPowerIsInvalidError(GroupRequiredPowerIsInvalidError),
 }
 
 impl From<BasicError> for ConsensusError {

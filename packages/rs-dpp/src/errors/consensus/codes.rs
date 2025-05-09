@@ -106,6 +106,16 @@ impl ErrorWithCode for BasicError {
             Self::UnknownGasFeesPaidByError(_) => 10259,
             Self::UnknownDocumentActionTokenEffectError(_) => 10260,
             Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
+            Self::TooManyKeywordsError(_) => 10262,
+            Self::DuplicateKeywordsError(_) => 10263,
+            Self::InvalidDescriptionLengthError(_) => 10264,
+            Self::NewTokensDestinationIdentityOptionRequiredError(_) => 10265,
+            Self::InvalidTokenNameCharacterError(_) => 10266,
+            Self::InvalidTokenNameLengthError(_) => 10267,
+            Self::InvalidTokenLanguageCodeError(_) => 10268,
+            Self::InvalidKeywordCharacterError(_) => 10269,
+            Self::InvalidKeywordLengthError(_) => 10270,
+            Self::DecimalsOverLimitError(_) => 10271,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -115,6 +125,8 @@ impl ErrorWithCode for BasicError {
             Self::GroupExceedsMaxMembersError(_) => 10354,
             Self::GroupMemberHasPowerOfZeroError(_) => 10355,
             Self::GroupMemberHasPowerOverLimitError(_) => 10356,
+            Self::MainGroupIsNotDefinedError(_) => 10357,
+            Self::GroupRequiredPowerIsInvalidError(_) => 10358,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
@@ -231,6 +243,9 @@ impl ErrorWithCode for StateError {
             Self::DataContractConfigUpdateError { .. } => 40002,
             Self::DataContractUpdatePermissionError(_) => 40003,
             Self::DataContractUpdateActionNotAllowedError(_) => 40004,
+            Self::PreProgrammedDistributionTimestampInPastError(_) => 40005,
+            Self::IdentityInTokenConfigurationNotFoundError(_) => 40006,
+            Self::IdentityMemberOfGroupNotFoundError(_) => 40007,
 
             // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,
@@ -306,7 +321,9 @@ impl ErrorWithCode for StateError {
             Self::InvalidTokenClaimNoCurrentRewards(_) => 40716,
             Self::InvalidTokenClaimWrongClaimant(_) => 40717,
             Self::TokenTransferRecipientIdentityNotExistError(_) => 40718,
-            Self::PreProgrammedDistributionTimestampInPastError(_) => 40719,
+            Self::TokenDirectPurchaseUserPriceTooLow(_) => 40719,
+            Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
+            Self::TokenNotForDirectSale(_) => 40721,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

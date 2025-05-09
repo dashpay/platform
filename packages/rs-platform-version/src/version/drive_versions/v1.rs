@@ -38,6 +38,7 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
         prove: DriveProveMethodVersions {
             prove_elements: 0,
             prove_multiple_state_transition_results: 0,
+            prove_state_transition: 0,
         },
         balances: DriveBalancesMethodVersions {
             add_to_system_credits: 0,

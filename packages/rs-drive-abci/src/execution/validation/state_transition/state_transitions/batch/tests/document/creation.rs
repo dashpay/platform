@@ -7,6 +7,8 @@ mod creation_tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use assert_matches::assert_matches;
+    use dpp::platform_value::string_encoding::Encoding;
+    use dpp::prelude::Identifier;
     use rand::distributions::Standard;
     use dpp::consensus::basic::document::DocumentFieldMaxSizeExceededError;
     use dpp::consensus::ConsensusError;
@@ -97,8 +99,6 @@ mod creation_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -184,8 +184,6 @@ mod creation_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -246,8 +244,6 @@ mod creation_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -355,8 +351,6 @@ mod creation_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -537,8 +531,6 @@ mod creation_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -558,8 +550,6 @@ mod creation_tests {
                 None,
                 &signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -581,8 +571,6 @@ mod creation_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -601,8 +589,6 @@ mod creation_tests {
                 None,
                 &signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -961,8 +947,6 @@ mod creation_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1234,8 +1218,6 @@ mod creation_tests {
                 None,
                 &signer_1,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1583,8 +1565,6 @@ mod creation_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1604,8 +1584,6 @@ mod creation_tests {
                 None,
                 &signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1627,8 +1605,6 @@ mod creation_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1649,8 +1625,6 @@ mod creation_tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1670,8 +1644,6 @@ mod creation_tests {
                 &signer_2,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1690,8 +1662,6 @@ mod creation_tests {
                 None,
                 &signer_1,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -2130,8 +2100,6 @@ mod creation_tests {
                 &contender_1_signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2362,8 +2330,6 @@ mod creation_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2425,8 +2391,6 @@ mod creation_tests {
                 &another_identity_signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2466,6 +2430,143 @@ mod creation_tests {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document Creation on 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e:card is not allowed because of the document type's creation restriction mode Owner Only");
+    }
+
+    #[test]
+    fn test_document_creation_on_search_system_contract_fails_due_to_restriction() {
+        // Build test platform
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // Create an identity that will attempt to create the document
+        let (identity, signer, key) = setup_identity(&mut platform, 999, dash_to_credits!(0.1));
+
+        // Obtain the current platform state and version
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        // Load the system Search contract
+        let search_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_keyword_search();
+
+        platform
+            .drive
+            .apply_contract(
+                &search_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Get the document type from the search contract.
+        let doc_type = search_contract
+            .document_type_for_name("contractKeywords")
+            .expect("expected to find 'contractKeywords' in Search contract");
+
+        // Verify that the document type has the restrictive creation mode
+        assert_eq!(
+            doc_type.creation_restriction_mode(),
+            CreationRestrictionMode::NoCreationAllowed,
+            "Expected creation restriction mode to be NoCreationAllowed (2)."
+        );
+
+        // Create a random document
+        let mut rng = StdRng::seed_from_u64(123456);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = doc_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected to create a random document");
+
+        // Set fields in the document
+        document.set("keyword", "meme".into());
+        document.set("contractId", Identifier::random().into());
+
+        // Create the transition
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                doc_type,
+                entropy.0,
+                &key,
+                1,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        // Start transaction and submit the transition
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        println!("Processing result: {:?}", processing_result);
+
+        // Since the creationRestrictionMode is 2 (NoCreationAllowed), this should fail
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "Expected exactly 1 invalid paid transition"
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Check the returned consensus error
+        let result = processing_result.into_execution_results().remove(0);
+        let PaidConsensusError(consensus_error, _) = result else {
+            panic!("expected a paid consensus error");
+        };
+
+        // Compare message to whatever your code sets for this error
+        assert_eq!(
+            consensus_error.to_string(),
+            format!(
+                "Document Creation on {}:{} is not allowed because of the document type's creation restriction mode No Creation Allowed",
+                search_contract.id().to_string(Encoding::Base58),
+                "contractKeywords"
+            ),
+            "Mismatch in error message"
+        );
     }
 
     #[test]
@@ -2546,8 +2647,6 @@ mod creation_tests {
                 })),
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -2690,8 +2789,6 @@ mod creation_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2832,8 +2929,6 @@ mod creation_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2965,8 +3060,6 @@ mod creation_tests {
                 })),
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3100,8 +3193,6 @@ mod creation_tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -3222,8 +3313,6 @@ mod creation_tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3355,8 +3444,6 @@ mod creation_tests {
                 })),
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -3516,8 +3603,6 @@ mod creation_tests {
                 })),
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");

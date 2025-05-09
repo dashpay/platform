@@ -1,5 +1,6 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
+use crate::drive::non_unique_key_hashes_tree_path_vec;
 use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
 use std::ops::RangeFull;
 
@@ -88,6 +89,25 @@ impl Drive {
     pub fn identity_id_by_unique_public_key_hash_query(public_key_hash: [u8; 20]) -> PathQuery {
         let unique_key_hashes = unique_key_hashes_tree_path_vec();
         PathQuery::new_single_key(unique_key_hashes, public_key_hash.to_vec())
+    }
+
+    /// The query for proving an identity id from a non-unique public key hash.
+    /// This should be used for absence proofs
+    pub fn identity_id_by_non_unique_public_key_hash_query(
+        public_key_hash: [u8; 20],
+        after: Option<[u8; 32]>,
+    ) -> PathQuery {
+        let non_unique_key_hashes = non_unique_key_hashes_tree_path_vec();
+        let mut query = Query::new_single_key(public_key_hash.to_vec());
+        let sub_query = if let Some(after) = after {
+            Query::new_single_query_item(QueryItem::RangeAfter(after.to_vec()..))
+        } else {
+            // We do range full because this sub query can get multiple identities
+            // as they are non unique.
+            Query::new_range_full()
+        };
+        query.set_subquery(sub_query);
+        PathQuery::new(non_unique_key_hashes, SizedQuery::new(query, None, None))
     }
 
     /// The query for proving identity ids from a vector of public key hashes.
@@ -206,6 +226,23 @@ impl Drive {
         let full_identity_query = Self::full_identity_query(&identity_id, grove_version)?;
         let identity_id_by_public_key_hash_query =
             Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
+        PathQuery::merge(
+            vec![&full_identity_query, &identity_id_by_public_key_hash_query],
+            grove_version,
+        )
+        .map_err(Error::GroveDB)
+    }
+
+    /// This query gets the full identity and the public key hash
+    pub fn full_identity_with_non_unique_public_key_hash_query(
+        public_key_hash: [u8; 20],
+        identity_id: [u8; 32],
+        after: Option<[u8; 32]>,
+        grove_version: &GroveVersion,
+    ) -> Result<PathQuery, Error> {
+        let full_identity_query = Self::full_identity_query(&identity_id, grove_version)?;
+        let identity_id_by_public_key_hash_query =
+            Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
         PathQuery::merge(
             vec![&full_identity_query, &identity_id_by_public_key_hash_query],
             grove_version,

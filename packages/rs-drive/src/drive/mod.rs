@@ -89,7 +89,7 @@ pub struct Drive {
 //                                 /                                                                                                       \
 //                       Identities 32                                                                                                 Balances 96
 //             /                            \                                                                        /                                                       \
-//   Token_Balances 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+//       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
 
@@ -261,7 +261,7 @@ pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
 }
 
 /// Returns the path to the masternode key hashes.
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
     vec![vec![
         RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8,
@@ -278,7 +278,7 @@ pub(crate) fn non_unique_key_hashes_sub_tree_path(public_key_hash: &[u8]) -> [&[
 }
 
 /// Returns the path to the masternode key hashes sub tree.
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],

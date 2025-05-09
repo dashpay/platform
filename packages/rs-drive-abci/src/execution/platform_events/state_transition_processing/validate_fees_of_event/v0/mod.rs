@@ -101,6 +101,7 @@ where
                 removed_balance,
                 operations,
                 execution_operations,
+                additional_fixed_fee_cost: additional_fee_cost,
                 user_fee_increase,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
@@ -131,7 +132,12 @@ where
                 estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
                 // TODO: Should take into account refunds as well
-                let required_balance = estimated_fee_result.total_base_fee();
+                let mut required_balance = estimated_fee_result.total_base_fee();
+
+                if let Some(additional_fee_cost) = additional_fee_cost {
+                    required_balance += *additional_fee_cost;
+                }
+
                 if balance_after_principal_operation >= required_balance {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,

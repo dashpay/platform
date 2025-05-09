@@ -11,6 +11,12 @@ pub trait TokenKeepsHistoryRulesV0Getters {
 
     /// Returns whether burning history is kept.
     fn keeps_burning_history(&self) -> bool;
+
+    /// Returns whether direct pricing history is kept.
+    fn keeps_direct_pricing_history(&self) -> bool;
+
+    /// Returns whether direct purchase history is kept.
+    fn keeps_direct_purchase_history(&self) -> bool;
 }
 
 /// Accessor trait for setters of `TokenKeepsHistoryRulesV0`
@@ -26,4 +32,9 @@ pub trait TokenKeepsHistoryRulesV0Setters {
 
     /// Sets whether burning history is kept.
     fn set_keeps_burning_history(&mut self, value: bool);
+
+    /// Sets whether direct pricing history is kept.
+    fn set_keeps_direct_pricing_history(&mut self, value: bool);
+    fn set_keeps_direct_purchase_history(&mut self, value: bool);
+    fn set_all_keeps_history(&mut self, value: bool);
 }

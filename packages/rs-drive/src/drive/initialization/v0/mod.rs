@@ -186,7 +186,7 @@ impl Drive {
         batch.add_insert(
             misc_path_vec(),
             TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
-            Element::Item(0.encode_var_vec(), None),
+            Element::Item(0u64.encode_var_vec(), None),
         );
 
         // In Pools: initialize the pools with epochs

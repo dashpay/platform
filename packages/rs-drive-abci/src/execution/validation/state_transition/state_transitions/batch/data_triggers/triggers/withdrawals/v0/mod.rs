@@ -76,6 +76,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
         block_time_ms: None,
     };
 
+    // todo: deal with cost of this operation
     let withdrawals = context
         .platform
         .drive
@@ -232,7 +233,7 @@ mod tests {
         .expect("expected withdrawal document");
 
         let serialized = document
-            .serialize(document_type, platform_version)
+            .serialize(document_type, &data_contract, platform_version)
             .expect("expected to serialize document");
         Document::from_bytes(&serialized, document_type, platform_version)
             .expect("expected to deserialize document");

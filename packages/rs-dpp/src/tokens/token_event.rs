@@ -6,6 +6,7 @@ use crate::data_contract::associated_token::token_distribution_key::TokenDistrib
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
@@ -24,22 +25,74 @@ pub type TokenEventPersonalEncryptedNote = Option<(
 )>;
 use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::tokens::emergency_action::TokenEmergencyAction;
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::tokens::SharedEncryptedNote;
 use crate::ProtocolError;
 
+/// Alias representing the identity that will receive tokens or other effects from a token operation.
 pub type RecipientIdentifier = Identifier;
+
+/// Alias representing the identity performing a token purchase.
+pub type PurchaserIdentifier = Identifier;
+
+/// Alias representing the identity whose tokens are subject to freezing or unfreezing.
 pub type FrozenIdentifier = Identifier;
 
+/// Represents a recorded token-related operation for use in historical documents and group actions.
+///
+/// `TokenEvent` is designed to encapsulate a single logical token operation,
+/// such as minting, burning, transferring, or freezing tokens. These events are typically:
+///
+/// - **Persisted as historical records** of state transitions, enabling auditability and tracking.
+/// - **Used in group (multisig) actions**, where multiple identities collaborate to authorize complex transitions.
+///
+/// This enum includes rich metadata for each type of operation, such as optional notes (plaintext or encrypted),
+/// involved identities, and amounts. It is **externally versioned** and marked as `unversioned` in platform serialization,
+/// meaning each variant is self-contained without requiring version dispatching logic.
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
-#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
+#[platform_serialize(unversioned)]
 pub enum TokenEvent {
+    /// Event representing the minting of tokens to a recipient.
+    ///
+    /// - `TokenAmount`: The amount of tokens minted.
+    /// - `RecipientIdentifier`: The identity receiving the minted tokens.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     Mint(TokenAmount, RecipientIdentifier, TokenEventPublicNote),
+
+    /// Event representing the burning of tokens, removing them from circulation.
+    ///
+    /// - `TokenAmount`: The amount of tokens burned.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     Burn(TokenAmount, TokenEventPublicNote),
+
+    /// Event representing freezing of tokens for a specific identity.
+    ///
+    /// - `FrozenIdentifier`: The identity whose tokens are frozen.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     Freeze(FrozenIdentifier, TokenEventPublicNote),
+
+    /// Event representing unfreezing of tokens for a specific identity.
+    ///
+    /// - `FrozenIdentifier`: The identity whose tokens are unfrozen.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     Unfreeze(FrozenIdentifier, TokenEventPublicNote),
+
+    /// Event representing destruction of tokens that were previously frozen.
+    ///
+    /// - `FrozenIdentifier`: The identity whose frozen tokens are destroyed.
+    /// - `TokenAmount`: The amount of frozen tokens destroyed.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     DestroyFrozenFunds(FrozenIdentifier, TokenAmount, TokenEventPublicNote),
+
+    /// Event representing a transfer of tokens from one identity to another.
+    ///
+    /// - `RecipientIdentifier`: The recipient of the tokens.
+    /// - `TokenEventPublicNote`: Optional plaintext note.
+    /// - `TokenEventSharedEncryptedNote`: Optional shared encrypted metadata (multi-party).
+    /// - `TokenEventPersonalEncryptedNote`: Optional private encrypted metadata (recipient-only).
+    /// - `TokenAmount`: The amount of tokens transferred.
     Transfer(
         RecipientIdentifier,
         TokenEventPublicNote,
@@ -47,13 +100,41 @@ pub enum TokenEvent {
         TokenEventPersonalEncryptedNote,
         TokenAmount,
     ),
+
+    /// Event representing a claim of tokens from a distribution pool or source.
+    ///
+    /// - `TokenDistributionTypeWithResolvedRecipient`: Type and resolved recipient of the claim.
+    /// - `TokenAmount`: The amount of tokens claimed.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     Claim(
         TokenDistributionTypeWithResolvedRecipient,
         TokenAmount,
         TokenEventPublicNote,
     ),
+
+    /// Event representing an emergency action taken on a token or identity.
+    ///
+    /// - `TokenEmergencyAction`: The type of emergency action performed.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
+
+    /// Event representing an update to the configuration of a token.
+    ///
+    /// - `TokenConfigurationChangeItem`: The configuration change that was applied.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
+
+    /// Event representing a change in the direct purchase price of a token.
+    ///
+    /// - `Option<TokenPricingSchedule>`: The new pricing schedule. `None` disables direct purchase.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
+    ChangePriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote),
+
+    /// Event representing the direct purchase of tokens by a user.
+    ///
+    /// - `TokenAmount`: The amount of tokens purchased.
+    /// - `Credits`: The number of credits paid.
+    DirectPurchase(TokenAmount, Credits),
 }
 
 impl TokenEvent {
@@ -68,6 +149,8 @@ impl TokenEvent {
             TokenEvent::Claim(..) => "claim",
             TokenEvent::EmergencyAction(..) => "emergencyAction",
             TokenEvent::ConfigUpdate(..) => "configUpdate",
+            TokenEvent::DirectPurchase(..) => "directPurchase",
+            TokenEvent::ChangePriceForDirectPurchase(..) => "directPricing",
         }
     }
 
@@ -216,35 +299,55 @@ impl TokenEvent {
             TokenEvent::Claim(recipient, amount, public_note) => {
                 let (recipient_type, recipient_id, distribution_type) = match recipient {
                     TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identifier) => {
-                        (1u8, Some(identifier.into()), 0u8)
+                        (1u8, identifier, 0u8)
                     }
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier),
-                    ) => (0, Some(identifier.into()), 1),
+                    ) => (0, identifier, 1),
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::Identity(identifier),
-                    ) => (1, Some(identifier.into()), 1),
+                    ) => (1, identifier, 1),
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
                         TokenDistributionResolvedRecipient::Evonode(identifier),
-                    ) => (2, Some(identifier.into()), 1),
+                    ) => (2, identifier, 1),
                 };
 
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
                     ("recipientType".to_string(), recipient_type.into()),
+                    ("recipientId".to_string(), recipient_id.into()),
                     ("distributionType".to_string(), distribution_type.into()),
                     ("amount".to_string(), amount.into()),
                 ]);
-
-                if let Some(id) = recipient_id {
-                    properties.insert("recipientId".to_string(), id);
-                }
 
                 if let Some(note) = public_note {
                     properties.insert("note".to_string(), note.into());
                 }
                 properties
             }
+            TokenEvent::ChangePriceForDirectPurchase(price, note) => {
+                let mut properties = BTreeMap::from([("tokenId".to_string(), token_id.into())]);
+
+                if let Some(price_schedule) = price {
+                    properties.insert(
+                        "priceSchedule".to_string(),
+                        price_schedule
+                            .serialize_consume_to_bytes_with_platform_version(platform_version)?
+                            .into(),
+                    );
+                }
+
+                if let Some(note) = note {
+                    properties.insert("note".to_string(), note.into());
+                }
+
+                properties
+            }
+            TokenEvent::DirectPurchase(amount, total_cost) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("tokenAmount".to_string(), amount.into()),
+                ("purchaseCost".to_string(), total_cost.into()),
+            ]),
         };
 
         let document: Document = DocumentV0 {

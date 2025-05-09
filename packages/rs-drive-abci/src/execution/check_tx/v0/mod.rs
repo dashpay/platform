@@ -459,7 +459,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -559,7 +559,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 1000000000,
+            balance: 25_000_000_000, // 0.25 Dash
             revision: 0,
         }
         .into();
@@ -602,7 +602,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -630,7 +630,10 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488410);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            24002489210
+        );
 
         let check_result = platform
             .check_tx(
@@ -709,7 +712,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 1000000000,
+            balance: 27_000_000_000,
             revision: 0,
         }
         .into();
@@ -803,7 +806,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -953,7 +956,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         assert_eq!(validation_result.data.unwrap().priority, 10000);
 
@@ -1068,7 +1071,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 1000000000,
+            balance: 25_000_000_000, // 0.25 Dash
             revision: 0,
         }
         .into();
@@ -1107,7 +1110,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         assert_eq!(validation_result.data.unwrap().priority, 10000);
 
@@ -1141,7 +1144,11 @@ mod tests {
 
         // The processing fees should be twice as much as a fee multiplier of 0,
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4976820);
+        // Plus we have 24_000_000_000 in base costs
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            24004978420
+        );
 
         let check_result = platform
             .check_tx(
@@ -1222,7 +1229,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 200000000, // we have enough balance only for 1 insertion (this is where this test is different)
+            balance: 24_200_000_000, // we have enough balance only for 1 insertion (this is where this test is different)
             revision: 0,
         }
         .into();
@@ -1258,7 +1265,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -1456,7 +1463,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -1569,7 +1576,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 1000000000,
+            balance: 100_000_000_000, // 1.0 Dash
             revision: 0,
         }
         .into();
@@ -1613,7 +1620,10 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488410);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            24002489210
+        );
 
         platform
             .drive
@@ -1666,7 +1676,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -1699,7 +1709,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            2503110
+            27002504030
         );
 
         let check_result = platform
@@ -1915,7 +1925,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -2025,7 +2035,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 1000000000,
+            balance: 100_000_000_000, // 1 Dash
             revision: 0,
         }
         .into();
@@ -2069,7 +2079,10 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488410);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            24002489210
+        );
 
         platform
             .drive
@@ -2160,7 +2173,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let check_result = platform
             .check_tx(
@@ -2359,8 +2372,6 @@ mod tests {
                 &signer,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -2378,8 +2389,6 @@ mod tests {
                 None,
                 &signer,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -2425,7 +2434,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
     }
 
     #[test]
@@ -2560,7 +2569,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2709,7 +2718,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2994,7 +3003,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -3296,7 +3305,7 @@ mod tests {
             )
             .expect("expected to check tx");
 
-        assert!(validation_result.errors.is_empty());
+        assert_eq!(validation_result.errors.as_slice(), &[]);
 
         let transaction = platform.drive.grove.start_transaction();
 

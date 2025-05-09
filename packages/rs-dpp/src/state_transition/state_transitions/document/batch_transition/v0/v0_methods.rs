@@ -6,8 +6,6 @@ use crate::document::{Document, DocumentV0Getters};
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::SecurityLevel;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityPublicKey;
@@ -33,10 +31,14 @@ use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 #[cfg(feature = "state-transition-signing")]
@@ -90,10 +92,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        create_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
         let owner_id = document.owner_id();
         let create_transition = DocumentCreateTransition::from_document(
             document,
@@ -102,8 +103,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             token_payment_info,
             identity_contract_nonce,
             platform_version,
-            create_feature_version,
-            base_feature_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
         )?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
@@ -114,10 +115,12 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
+        let required_security_level = document_type.security_level_requirement();
+        state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
+            resolved_options.signing_options,
         )?;
         Ok(state_transition)
     }
@@ -132,19 +135,18 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        replace_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let owner_id = document.owner_id();
+        let resolved_options = options.unwrap_or_default();
         let replace_transition = DocumentReplaceTransition::from_document(
             document,
             document_type,
             token_payment_info,
             identity_contract_nonce,
             platform_version,
-            replace_feature_version,
-            base_feature_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
         )?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
@@ -155,10 +157,12 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
+        let required_security_level = document_type.security_level_requirement();
+        state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
+            resolved_options.signing_options,
         )?;
         Ok(state_transition)
     }
@@ -174,11 +178,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        transfer_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let owner_id = document.owner_id();
+        let resolved_options = options.unwrap_or_default();
         let transfer_transition = DocumentTransferTransition::from_document(
             document,
             document_type,
@@ -186,8 +189,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             identity_contract_nonce,
             recipient_owner_id,
             platform_version,
-            transfer_feature_version,
-            base_feature_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
         )?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
@@ -198,10 +201,12 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
+        let required_security_level = document_type.security_level_requirement();
+        state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
+            resolved_options.signing_options,
         )?;
         Ok(state_transition)
     }
@@ -216,19 +221,18 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let owner_id = document.owner_id();
+        let resolved_options = options.unwrap_or_default();
         let delete_transition = DocumentDeleteTransition::from_document(
             document,
             document_type,
             token_payment_info,
             identity_contract_nonce,
             platform_version,
-            delete_feature_version,
-            base_feature_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
         )?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
@@ -239,10 +243,12 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
+        let required_security_level = document_type.security_level_requirement();
+        state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
+            resolved_options.signing_options,
         )?;
         Ok(state_transition)
     }
@@ -258,11 +264,10 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        update_price_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let owner_id = document.owner_id();
+        let resolved_options = options.unwrap_or_default();
         let transfer_transition = DocumentUpdatePriceTransition::from_document(
             document,
             document_type,
@@ -270,8 +275,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             token_payment_info,
             identity_contract_nonce,
             platform_version,
-            update_price_feature_version,
-            base_feature_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
         )?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id,
@@ -282,10 +287,12 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
+        let required_security_level = document_type.security_level_requirement();
+        state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
+            resolved_options.signing_options,
         )?;
         Ok(state_transition)
     }
@@ -302,10 +309,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         platform_version: &PlatformVersion,
-        _batch_feature_version: Option<FeatureVersion>,
-        purchase_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
         let purchase_transition = DocumentPurchaseTransition::from_document(
             document,
             document_type,
@@ -313,8 +319,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
             token_payment_info,
             identity_contract_nonce,
             platform_version,
-            purchase_feature_version,
-            base_feature_version,
+            resolved_options.method_feature_version,
+            resolved_options.base_feature_version,
         )?;
         let documents_batch_transition: BatchTransition = BatchTransitionV0 {
             owner_id: new_owner_id,
@@ -325,10 +331,12 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {
         }
         .into();
         let mut state_transition: StateTransition = documents_batch_transition.into();
-        state_transition.sign_external(
+        let required_security_level = document_type.security_level_requirement();
+        state_transition.sign_external_with_options(
             identity_public_key,
             signer,
-            Some(|_, _| Ok(SecurityLevel::HIGH)),
+            Some(|_, _| Ok(required_security_level)),
+            resolved_options.signing_options,
         )?;
         Ok(state_transition)
     }

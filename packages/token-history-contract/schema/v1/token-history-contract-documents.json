@@ -362,6 +362,12 @@
         "description": "The identity Id of the frozen token account",
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this identity freeze",
+        "position": 2
       }
     },
     "required": [
@@ -425,6 +431,12 @@
         "description": "The identity Id of the frozen token account",
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this identity unfreeze",
+        "position": 2
       }
     },
     "required": [
@@ -505,6 +517,12 @@
         "minimum": 0,
         "description": "The amount that was frost burned",
         "position": 2
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for destroying these frozen funds",
+        "position": 3
       }
     },
     "required": [
@@ -540,9 +558,6 @@
             "tokenId": "asc"
           },
           {
-            "recipientType": "asc"
-          },
-          {
             "recipientId": "asc"
           },
           {
@@ -551,16 +566,13 @@
         ]
       },
       {
-        "name": "byDistributionType",
+        "name": "byAmount",
         "properties": [
           {
             "tokenId": "asc"
           },
           {
-            "distributionType": "asc"
-          },
-          {
-            "$createdAt": "asc"
+            "amount": "asc"
           }
         ]
       }
@@ -587,13 +599,16 @@
         "byteArray": true,
         "minItems": 32,
         "maxItems": 32,
-        "description": "An optional identity ID for direct recipient distributions",
+        "description": "An identity ID for direct recipient distributions",
         "contentMediaType": "application/x.dash.dpp.identifier",
         "position": 2
       },
       "distributionType": {
         "type": "integer",
-        "minimum": 0,
+        "enum": [
+          0,
+          1
+        ],
         "description": "The type of distribution (0: PreProgrammed, 1: Perpetual)",
         "position": 3
       },
@@ -613,6 +628,7 @@
     "required": [
       "tokenId",
       "recipientType",
+      "recipientId",
       "distributionType",
       "amount",
       "$createdAt",
@@ -674,8 +690,14 @@
           0,
           1
         ],
-        "description": "The action we are performing. 0 - Pause, 1 - Resume",
+        "description": "The action we are performing (0: Pause, 1: Resume)",
         "position": 1
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this emergency action",
+        "position": 2
       }
     },
     "required": [
@@ -746,12 +768,165 @@
         "minItems": 1,
         "description": "The change item in serialized form",
         "position": 2
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this config update",
+        "position": 3
       }
     },
     "required": [
       "tokenId",
       "changeItemType",
       "changeItem",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "directPricing": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "priceSchedule": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 1,
+        "maxItems": 2048,
+        "description": "The serialized price schedule for direct token purchases",
+        "position": 1
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for the pricing change",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "directPurchase": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerIdForToken",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byPurchaseCost",
+        "properties": [
+          {
+            "purchaseCost": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byTokenAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "tokenAmount": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "tokenAmount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The number of tokens purchased",
+        "position": 1
+      },
+      "purchaseCost": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The cost paid for the tokens in credits",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "tokenAmount",
+      "purchaseCost",
       "$createdAt",
       "$createdAtBlockHeight"
     ],

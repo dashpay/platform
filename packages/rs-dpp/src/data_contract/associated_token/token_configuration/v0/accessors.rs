@@ -40,9 +40,19 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         &self.keeps_history
     }
 
+    /// Returns if we keep history.
+    fn keeps_history_mut(&mut self) -> &mut TokenKeepsHistoryRules {
+        &mut self.keeps_history
+    }
+
     /// Returns if we start off as paused
     fn start_as_paused(&self) -> bool {
         self.start_as_paused
+    }
+
+    /// Allow to transfer and mint tokens to frozen identity token balances
+    fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
+        self.allow_transfer_to_frozen_balance
     }
 
     /// Returns the maximum supply.
@@ -104,8 +114,9 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
     }
 
     /// Returns all group positions used in the token configuration
-    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+    fn all_used_group_positions(&self) -> (BTreeSet<GroupContractPosition>, bool) {
         let mut group_positions = BTreeSet::new();
+        let mut uses_main_group = false;
 
         // Add the main control group if it exists
         if let Some(main_group_position) = self.main_control_group {
@@ -116,6 +127,8 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         let mut add_from_authorized_action_takers = |authorized_takers: &AuthorizedActionTakers| {
             if let AuthorizedActionTakers::Group(group_position) = authorized_takers {
                 group_positions.insert(*group_position);
+            } else if let AuthorizedActionTakers::MainGroup = authorized_takers {
+                uses_main_group = true;
             }
         };
 
@@ -147,7 +160,47 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         // Add positions from the `main_control_group_can_be_modified` field
         add_from_authorized_action_takers(&self.main_control_group_can_be_modified);
 
-        group_positions
+        (group_positions, uses_main_group)
+    }
+
+    fn all_change_control_rules(&self) -> Vec<(&str, &ChangeControlRules)> {
+        vec![
+            ("max_supply_change_rules", &self.max_supply_change_rules),
+            ("conventions_change_rules", &self.conventions_change_rules),
+            (
+                "distribution_rules.new_tokens_destination_identity_rules",
+                self.distribution_rules
+                    .new_tokens_destination_identity_rules(),
+            ),
+            (
+                "distribution_rules.minting_allow_choosing_destination_rules",
+                self.distribution_rules
+                    .minting_allow_choosing_destination_rules(),
+            ),
+            (
+                "distribution_rules.perpetual_distribution_rules",
+                self.distribution_rules.perpetual_distribution_rules(),
+            ),
+            (
+                "distribution_rules.change_direct_purchase_pricing_rules",
+                self.distribution_rules
+                    .change_direct_purchase_pricing_rules(),
+            ),
+            ("manual_minting_rules", &self.manual_minting_rules),
+            ("manual_burning_rules", &self.manual_burning_rules),
+            ("freeze_rules", &self.freeze_rules),
+            ("unfreeze_rules", &self.unfreeze_rules),
+            (
+                "destroy_frozen_funds_rules",
+                &self.destroy_frozen_funds_rules,
+            ),
+            ("emergency_action_rules", &self.emergency_action_rules),
+        ]
+    }
+
+    /// Returns the token description.
+    fn description(&self) -> &Option<String> {
+        &self.description
     }
 }
 
@@ -163,9 +216,19 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
         self.conventions_change_rules = rules;
     }
 
+    /// Allow or not a transfer and mint tokens to frozen identity token balances
+    fn allow_transfer_to_frozen_balance(&mut self, allow: bool) {
+        self.allow_transfer_to_frozen_balance = allow;
+    }
+
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: TokenAmount) {
         self.base_supply = base_supply;
+    }
+
+    /// Sets if we should start as paused. Meaning transfers will not work till unpaused
+    fn set_start_as_paused(&mut self, start_as_paused: bool) {
+        self.start_as_paused = start_as_paused;
     }
 
     /// Sets the maximum supply.
@@ -219,5 +282,10 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         self.main_control_group_can_be_modified = action_takers;
+    }
+
+    /// Sets the token description.
+    fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
     }
 }

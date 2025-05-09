@@ -12,14 +12,16 @@ use dpp::fee::fee_result::FeeResult;
 use crate::drive::balances::total_tokens_root_supply_path_vec;
 use crate::drive::tokens::paths::{
     token_balances_path_vec, token_balances_root_path, token_identity_infos_root_path,
+    token_statuses_root_path,
 };
 use crate::error::contract::DataContractError;
-use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
+use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
@@ -173,6 +175,16 @@ impl Drive {
                 platform_version,
             )?;
 
+        if !contract.tokens().is_empty() {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Drive::add_estimation_costs_for_token_status_infos(
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+        }
+
         for (token_pos, token_config) in contract.tokens() {
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
@@ -227,6 +239,22 @@ impl Drive {
                     &mut batch_operations,
                     transaction,
                     platform_version,
+                )?;
+            }
+
+            if token_config.start_as_paused() {
+                // no status also means active.
+                let starting_status = TokenStatus::new(true, platform_version)?;
+                let token_status_bytes = starting_status.serialize_consume_to_bytes()?;
+
+                self.batch_insert(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
+                        token_statuses_root_path(),
+                        token_id.as_slice(),
+                        Element::Item(token_status_bytes, None),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
                 )?;
             }
 
@@ -301,6 +329,31 @@ impl Drive {
             batch_operations.extend(self.add_new_groups_operations(
                 contract.id(),
                 contract.groups(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if !contract.keywords().is_empty() {
+            batch_operations.extend(self.add_new_contract_keywords_operations(
+                contract.id(),
+                contract.owner_id(),
+                contract.keywords(),
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if let Some(description) = contract.description() {
+            batch_operations.extend(self.add_new_contract_description_operations(
+                contract.id(),
+                contract.owner_id(),
+                description,
+                false,
+                block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

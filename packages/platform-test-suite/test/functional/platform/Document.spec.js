@@ -38,9 +38,9 @@ describe('Platform', () => {
     let document;
 
     before(async () => {
-      client = await createClientWithFundedWallet(1010000);
+      client = await createClientWithFundedWallet(101000000); // 1 Dash
 
-      identity = await client.platform.identities.register(1000000);
+      identity = await client.platform.identities.register(100000000);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();

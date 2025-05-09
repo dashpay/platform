@@ -58,6 +58,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/js-grpc-common"\
     },\
     {\
+      "name": "@dashevo/keyword-search-contract",\
+      "reference": "workspace:packages/keyword-search-contract"\
+    },\
+    {\
       "name": "@dashevo/masternode-reward-shares-contract",\
       "reference": "workspace:packages/masternode-reward-shares-contract"\
     },\
@@ -98,6 +102,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],\
     ["@dashevo/feature-flags-contract", ["workspace:packages/feature-flags-contract"]],\
     ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],\
+    ["@dashevo/keyword-search-contract", ["workspace:packages/keyword-search-contract"]],\
     ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],\
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
@@ -2444,7 +2449,6 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
-          ["@dashevo/token-history-contract", "workspace:packages/token-history-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@grpc/grpc-js", "npm:1.4.4"],\
           ["@pshenmic/zeromq", "npm:6.0.0-beta.22"],\
@@ -2615,7 +2619,7 @@ const RAW_RUNTIME_STATE =
           ["bloom-filter", "npm:0.2.0"],\
           ["bn.js", "npm:4.12.0"],\
           ["bs58", "npm:4.0.1"],\
-          ["elliptic", "npm:6.5.7"],\
+          ["elliptic", "npm:6.6.1"],\
           ["inherits", "npm:2.0.1"],\
           ["lodash", "npm:4.17.21"],\
           ["ripemd160", "npm:2.0.2"],\
@@ -2744,6 +2748,24 @@ const RAW_RUNTIME_STATE =
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["nyc", "npm:15.1.0"],\
           ["semver", "npm:7.5.3"],\
+          ["sinon", "npm:17.0.1"],\
+          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["@dashevo/keyword-search-contract", [\
+      ["workspace:packages/keyword-search-contract", {\
+        "packageLocation": "./packages/keyword-search-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/keyword-search-contract", "workspace:packages/keyword-search-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["eslint", "npm:8.53.0"],\
+          ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
+          ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -3157,6 +3179,15 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@grpc/grpc-js", [\
+      ["npm:1.13.2", {\
+        "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.13.2-2010829daa-80b7bebc1d.zip/node_modules/@grpc/grpc-js/",\
+        "packageDependencies": [\
+          ["@grpc/grpc-js", "npm:1.13.2"],\
+          ["@grpc/proto-loader", "npm:0.7.13"],\
+          ["@js-sdsl/ordered-map", "npm:4.4.2"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:1.4.4", {\
         "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.4.4-f333f82239-9d9c1aad22.zip/node_modules/@grpc/grpc-js/",\
         "packageDependencies": [\
@@ -3186,6 +3217,17 @@ const RAW_RUNTIME_STATE =
           ["long", "npm:4.0.0"],\
           ["protobufjs", "npm:6.11.4"],\
           ["yargs", "npm:16.2.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:0.7.13", {\
+        "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.7.13-be5b6af1c1-7e2d842c20.zip/node_modules/@grpc/proto-loader/",\
+        "packageDependencies": [\
+          ["@grpc/proto-loader", "npm:0.7.13"],\
+          ["lodash.camelcase", "npm:4.3.0"],\
+          ["long", "npm:5.3.1"],\
+          ["protobufjs", "npm:6.11.4"],\
+          ["yargs", "npm:17.7.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3443,6 +3485,15 @@ const RAW_RUNTIME_STATE =
           ["@jridgewell/trace-mapping", "npm:0.3.9"],\
           ["@jridgewell/resolve-uri", "npm:3.1.0"],\
           ["@jridgewell/sourcemap-codec", "npm:1.4.14"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@js-sdsl/ordered-map", [\
+      ["npm:4.4.2", {\
+        "packageLocation": "./.yarn/cache/@js-sdsl-ordered-map-npm-4.4.2-158f6c6b74-ac64e3f061.zip/node_modules/@js-sdsl/ordered-map/",\
+        "packageDependencies": [\
+          ["@js-sdsl/ordered-map", "npm:4.4.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -4446,7 +4497,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.1-179273a650-5063fed6bb.zip/node_modules/@types/bs58/",\
         "packageDependencies": [\
           ["@types/bs58", "npm:4.0.1"],\
-          ["base-x", "npm:3.0.9"]\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -6489,10 +6540,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["base-x", [\
-      ["npm:3.0.9", {\
-        "packageLocation": "./.yarn/cache/base-x-npm-3.0.9-7b2588e106-957101d6fd.zip/node_modules/base-x/",\
+      ["npm:3.0.11", {\
+        "packageLocation": "./.yarn/cache/base-x-npm-3.0.11-3798da0834-c2e3c443fd.zip/node_modules/base-x/",\
         "packageDependencies": [\
-          ["base-x", "npm:3.0.9"],\
+          ["base-x", "npm:3.0.11"],\
           ["safe-buffer", "npm:5.2.1"]\
         ],\
         "linkType": "HARD"\
@@ -6790,7 +6841,7 @@ const RAW_RUNTIME_STATE =
           ["browserify-rsa", "npm:4.1.0"],\
           ["create-hash", "npm:1.2.0"],\
           ["create-hmac", "npm:1.1.7"],\
-          ["elliptic", "npm:6.5.7"],\
+          ["elliptic", "npm:6.6.1"],\
           ["inherits", "npm:2.0.4"],\
           ["parse-asn1", "npm:5.1.6"],\
           ["readable-stream", "npm:3.6.2"],\
@@ -6849,7 +6900,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/bs58-npm-4.0.1-8d2a7822b1-b3c5365bb9.zip/node_modules/bs58/",\
         "packageDependencies": [\
           ["bs58", "npm:4.0.1"],\
-          ["base-x", "npm:3.0.9"]\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -8251,7 +8302,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["create-ecdh", "npm:4.0.4"],\
           ["bn.js", "npm:4.12.0"],\
-          ["elliptic", "npm:6.5.7"]\
+          ["elliptic", "npm:6.6.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -8477,7 +8528,7 @@ const RAW_RUNTIME_STATE =
           ["cron", "npm:2.1.0"],\
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["diskusage", "npm:1.2.0"],\
-          ["dockerode", "npm:3.3.5"],\
+          ["dockerode", "npm:4.0.5"],\
           ["dot", "npm:1.1.3"],\
           ["dotenv", "npm:8.6.0"],\
           ["enquirer", "https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5"],\
@@ -9038,6 +9089,17 @@ const RAW_RUNTIME_STATE =
           ["ssh2", "npm:1.11.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:5.0.6", {\
+        "packageLocation": "./.yarn/cache/docker-modem-npm-5.0.6-ba160bac18-4977797814.zip/node_modules/docker-modem/",\
+        "packageDependencies": [\
+          ["docker-modem", "npm:5.0.6"],\
+          ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
+          ["readable-stream", "npm:3.6.2"],\
+          ["split-ca", "npm:1.0.1"],\
+          ["ssh2", "npm:1.16.0"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["dockerode", [\
@@ -9048,6 +9110,20 @@ const RAW_RUNTIME_STATE =
           ["@balena/dockerignore", "npm:1.0.2"],\
           ["docker-modem", "npm:3.0.8"],\
           ["tar-fs", "npm:2.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:4.0.5", {\
+        "packageLocation": "./.yarn/cache/dockerode-npm-4.0.5-291e46ef8d-a300e5fdcf.zip/node_modules/dockerode/",\
+        "packageDependencies": [\
+          ["dockerode", "npm:4.0.5"],\
+          ["@balena/dockerignore", "npm:1.0.2"],\
+          ["@grpc/grpc-js", "npm:1.13.2"],\
+          ["@grpc/proto-loader", "npm:0.7.13"],\
+          ["docker-modem", "npm:5.0.6"],\
+          ["protobufjs", "npm:6.11.4"],\
+          ["tar-fs", "npm:2.1.2"],\
+          ["uuid", "npm:10.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -9193,10 +9269,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["elliptic", [\
-      ["npm:6.5.7", {\
-        "packageLocation": "./.yarn/cache/elliptic-npm-6.5.7-df8e79dc1f-fbad1fad0a.zip/node_modules/elliptic/",\
+      ["npm:6.6.1", {\
+        "packageLocation": "./.yarn/cache/elliptic-npm-6.6.1-87bb857cbc-dc678c9feb.zip/node_modules/elliptic/",\
         "packageDependencies": [\
-          ["elliptic", "npm:6.5.7"],\
+          ["elliptic", "npm:6.6.1"],\
           ["bn.js", "npm:4.12.0"],\
           ["brorand", "npm:1.1.0"],\
           ["hash.js", "npm:1.1.7"],\
@@ -13399,6 +13475,13 @@ const RAW_RUNTIME_STATE =
           ["long", "npm:5.2.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:5.3.1", {\
+        "packageLocation": "./.yarn/cache/long-npm-5.3.1-c44e0933f0-7713e10b4f.zip/node_modules/long/",\
+        "packageDependencies": [\
+          ["long", "npm:5.3.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["loupe", [\
@@ -14325,6 +14408,14 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/unplugged/nan-npm-2.20.0-5b5be83e88/node_modules/nan/",\
         "packageDependencies": [\
           ["nan", "npm:2.20.0"],\
+          ["node-gyp", "npm:10.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:2.22.2", {\
+        "packageLocation": "./.yarn/unplugged/nan-npm-2.22.2-bb092bb459/node_modules/nan/",\
+        "packageDependencies": [\
+          ["nan", "npm:2.22.2"],\
           ["node-gyp", "npm:10.0.1"]\
         ],\
         "linkType": "HARD"\
@@ -17655,6 +17746,17 @@ const RAW_RUNTIME_STATE =
           ["nan", "npm:2.17.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:1.16.0", {\
+        "packageLocation": "./.yarn/unplugged/ssh2-npm-1.16.0-bee6b5f04c/node_modules/ssh2/",\
+        "packageDependencies": [\
+          ["ssh2", "npm:1.16.0"],\
+          ["asn1", "npm:0.2.6"],\
+          ["bcrypt-pbkdf", "npm:1.0.2"],\
+          ["cpu-features", "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"],\
+          ["nan", "npm:2.22.2"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["ssri", [\
@@ -18079,6 +18181,17 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/tar-fs-npm-2.0.1-0734c93785-85ceac6fce.zip/node_modules/tar-fs/",\
         "packageDependencies": [\
           ["tar-fs", "npm:2.0.1"],\
+          ["chownr", "npm:1.1.4"],\
+          ["mkdirp-classic", "npm:0.5.3"],\
+          ["pump", "npm:3.0.0"],\
+          ["tar-stream", "npm:2.2.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:2.1.2", {\
+        "packageLocation": "./.yarn/cache/tar-fs-npm-2.1.2-4231292dd1-623f7e8e58.zip/node_modules/tar-fs/",\
+        "packageDependencies": [\
+          ["tar-fs", "npm:2.1.2"],\
           ["chownr", "npm:1.1.4"],\
           ["mkdirp-classic", "npm:0.5.3"],\
           ["pump", "npm:3.0.0"],\
@@ -19389,6 +19502,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["uuid", [\
+      ["npm:10.0.0", {\
+        "packageLocation": "./.yarn/cache/uuid-npm-10.0.0-4872b46ff8-35aa606148.zip/node_modules/uuid/",\
+        "packageDependencies": [\
+          ["uuid", "npm:10.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:3.4.0", {\
         "packageLocation": "./.yarn/cache/uuid-npm-3.4.0-4fd8ef88ad-4f2b86432b.zip/node_modules/uuid/",\
         "packageDependencies": [\

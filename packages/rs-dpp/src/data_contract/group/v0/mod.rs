@@ -1,6 +1,6 @@
 use crate::consensus::basic::data_contract::{
     GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupRequiredPowerIsInvalidError,
     GroupTotalPowerLessThanRequiredError,
 };
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
@@ -151,7 +151,42 @@ impl GroupMethodsV0 for GroupV0 {
             ));
         }
 
+        if self.required_power == 0 || self.required_power() > GROUP_POWER_LIMIT {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                GroupRequiredPowerIsInvalidError::new(self.required_power, GROUP_POWER_LIMIT)
+                    .into(),
+            ));
+        }
+
         // If all validations pass, return an empty validation result
         Ok(SimpleConsensusValidationResult::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod validate {
+        use super::*;
+
+        #[test]
+        fn test_group_with_all_unilateral_members() {
+            let member1 = Identifier::random();
+            let member2 = Identifier::random();
+
+            let group = GroupV0 {
+                members: [(member1, 1), (member2, 1)].into(),
+                required_power: 1,
+            };
+
+            let platform_version = PlatformVersion::latest();
+
+            let result = group
+                .validate(platform_version)
+                .expect("group should be valid");
+
+            assert!(result.is_valid());
+        }
     }
 }

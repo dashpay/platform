@@ -53,11 +53,19 @@ impl ValidationMode {
 #[cfg(test)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::setup::TempPlatform;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::fee::Credits;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
     use dpp::prelude::{Identifier, IdentityNonce};
+    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::tests::json_document::json_document_to_contract_with_ids;
+    use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::query::DriveDocumentQuery;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -118,7 +126,7 @@ pub(in crate::execution) mod tests {
     use crate::expect_match;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{SuccessfulExecution, UnpaidConsensusError};
     use crate::execution::types::block_state_info::BlockStateInfo;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
@@ -305,6 +313,7 @@ pub(in crate::execution) mod tests {
         (identity, signer, master_key)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn setup_add_key_to_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity: &mut Identity,
@@ -963,6 +972,7 @@ pub(in crate::execution) mod tests {
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_dpns_name_contest_on_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -1101,8 +1111,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1122,8 +1130,6 @@ pub(in crate::execution) mod tests {
                 None,
                 signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1145,8 +1151,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1166,8 +1170,6 @@ pub(in crate::execution) mod tests {
                 signer_2,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1181,7 +1183,7 @@ pub(in crate::execution) mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![
+                    &[
                         documents_batch_create_serialized_preorder_transition_1.clone(),
                         documents_batch_create_serialized_preorder_transition_2.clone(),
                     ],
@@ -1226,7 +1228,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_transition_1.clone(),
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
@@ -1271,6 +1273,7 @@ pub(in crate::execution) mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_dpns_name_contest_on_identities_for_contract_records(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -1418,8 +1421,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1439,8 +1440,6 @@ pub(in crate::execution) mod tests {
                 None,
                 signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");
@@ -1462,8 +1461,6 @@ pub(in crate::execution) mod tests {
                 signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1483,8 +1480,6 @@ pub(in crate::execution) mod tests {
                 signer_2,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1497,7 +1492,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_preorder_transition_1.clone(),
                     documents_batch_create_serialized_preorder_transition_2.clone(),
                 ],
@@ -1529,7 +1524,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_transition_1.clone(),
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
@@ -1644,8 +1639,6 @@ pub(in crate::execution) mod tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1666,8 +1659,6 @@ pub(in crate::execution) mod tests {
                 &signer_1,
                 platform_version,
                 None,
-                None,
-                None,
             )
             .expect("expect to create documents batch transition");
 
@@ -1680,7 +1671,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                &[documents_batch_create_serialized_preorder_transition_1.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1709,7 +1700,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition_1.clone()],
+                &[documents_batch_create_serialized_transition_1.clone()],
                 platform_state,
                 &BlockInfo::default_with_time(
                     platform_state
@@ -1953,6 +1944,7 @@ pub(in crate::execution) mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
@@ -2003,7 +1995,7 @@ pub(in crate::execution) mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![masternode_vote_serialized_transition.clone()],
+                &[masternode_vote_serialized_transition.clone()],
                 platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2032,6 +2024,7 @@ pub(in crate::execution) mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn perform_votes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
@@ -2097,6 +2090,7 @@ pub(in crate::execution) mod tests {
         masternodes_by_vote_choice
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn get_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
@@ -2203,6 +2197,7 @@ pub(in crate::execution) mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn get_proved_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
@@ -2468,5 +2463,483 @@ pub(in crate::execution) mod tests {
         );
 
         basic_token_contract
+    }
+
+    pub(in crate::execution) fn process_test_state_transition<S: PlatformSerializable>(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        state_transition: S,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionsProcessingResult {
+        let Ok(serialized_state_transition) = state_transition.serialize_to_bytes() else {
+            panic!("expected documents batch serialized state transition")
+        };
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized_state_transition],
+                platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+    }
+
+    mod keyword_search_contract {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
+        use super::*;
+        //
+        // ──────────────────────────────────────────────────────────────────────────
+        //  Keyword‑Search contract – creation is forbidden
+        // ──────────────────────────────────────────────────────────────────────────
+        //
+
+        /// Return `(document, entropy)` so we can reuse the exact entropy when
+        /// we build the transition.  **No rng.clone()** (that caused the ID mismatch).
+        fn build_random_doc_of_type(
+            rng: &mut StdRng,
+            doc_type_name: &str,
+            identity_id: Identifier,
+            contract: &DataContract,
+            platform_version: &PlatformVersion,
+        ) -> (Document, Bytes32) {
+            let doc_type = contract
+                .document_type_for_name(doc_type_name)
+                .expect("doc type exists");
+
+            let entropy = Bytes32::random_with_rng(rng);
+
+            let doc = doc_type
+                .random_document_with_identifier_and_entropy(
+                    rng,
+                    identity_id,
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("random doc");
+
+            (doc, entropy)
+        }
+
+        #[test]
+        fn should_err_when_creating_contract_keywords_document() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 42, dash_to_credits!(1.0));
+
+            let contract = load_system_data_contract(
+                SystemDataContract::KeywordSearch,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load search contract");
+
+            let mut rng = StdRng::seed_from_u64(1);
+            let (doc, entropy) = build_random_doc_of_type(
+                &mut rng,
+                "contractKeywords",
+                identity.id(),
+                &contract,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_document_creation_transition_from_document(
+                doc,
+                contract.document_type_for_name("contractKeywords").unwrap(),
+                entropy.0, // same entropy → no ID mismatch
+                &key,
+                1,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("batch transition");
+
+            let serialized = transition.serialize_to_bytes().unwrap();
+
+            let platform_state = platform.state.load();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &platform.drive.grove.start_transaction(),
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("processing failed");
+
+            let execution_result = processing_result.into_execution_results().remove(0);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::PaidConsensusError(err, _)
+                    if err.to_string().contains("not allowed because of the document type's creation restriction mode")
+            );
+        }
+
+        #[test]
+        fn should_err_when_creating_short_description_document() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 43, dash_to_credits!(1.0));
+
+            let contract = load_system_data_contract(
+                SystemDataContract::KeywordSearch,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load search contract");
+
+            let mut rng = StdRng::seed_from_u64(2);
+            let (doc, entropy) = build_random_doc_of_type(
+                &mut rng,
+                "shortDescription",
+                identity.id(),
+                &contract,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_document_creation_transition_from_document(
+                doc,
+                contract.document_type_for_name("shortDescription").unwrap(),
+                entropy.0,
+                &key,
+                1,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("batch transition");
+
+            let serialized = transition.serialize_to_bytes().unwrap();
+
+            let platform_state = platform.state.load();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &platform.drive.grove.start_transaction(),
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("processing failed");
+
+            let execution_result = processing_result.into_execution_results().remove(0);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::PaidConsensusError(err, _)
+                    if err.to_string().contains("not allowed because of the document type's creation restriction mode")
+            );
+        }
+
+        #[test]
+        fn should_err_when_creating_full_description_document() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 44, dash_to_credits!(1.0));
+
+            let contract = load_system_data_contract(
+                SystemDataContract::KeywordSearch,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load search contract");
+
+            let mut rng = StdRng::seed_from_u64(3);
+            let (doc, entropy) = build_random_doc_of_type(
+                &mut rng,
+                "fullDescription",
+                identity.id(),
+                &contract,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_document_creation_transition_from_document(
+                doc,
+                contract.document_type_for_name("fullDescription").unwrap(),
+                entropy.0,
+                &key,
+                1,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("batch transition");
+
+            let serialized = transition.serialize_to_bytes().unwrap();
+
+            let platform_state = platform.state.load();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &platform.drive.grove.start_transaction(),
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("processing failed");
+
+            let execution_result = processing_result.into_execution_results().remove(0);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::PaidConsensusError(err, _)
+                    if err.to_string().contains("not allowed because of the document type's creation restriction mode")
+            );
+        }
+
+        //
+        // ──────────────────────────────────────────────────────────────────────────
+        //  Keyword‑Search contract – owner can update / delete
+        // ──────────────────────────────────────────────────────────────────────────
+        //
+
+        fn create_contract_with_keywords_and_description(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+        ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+            let platform_version = PlatformVersion::latest();
+
+            // Owner identity
+            let (owner_identity, signer, key) =
+                setup_identity(platform, 777, dash_to_credits!(1.0));
+
+            // Load the keyword‑test fixture
+            let mut contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                Some(owner_identity.id()),
+                None,
+                false,
+                platform_version,
+            )
+            .expect("load contract");
+
+            // Inject description + keywords
+            contract.set_description(Some("A short description".to_string()));
+            contract.set_keywords(vec!["graph".into(), "indexing".into()]);
+
+            // Create transition inside GroveDB tx
+            let create_transition = DataContractCreateTransition::new_from_data_contract(
+                contract,
+                1,
+                &owner_identity.clone().into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("build transition");
+
+            let serialized = create_transition.serialize_to_bytes().unwrap();
+            let platform_state = platform.state.load();
+            let tx = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("commit");
+
+            (owner_identity, signer, key)
+        }
+
+        #[test]
+        fn owner_can_update_short_description_document() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (_owner, signer, key) =
+                create_contract_with_keywords_and_description(&mut platform);
+
+            // 🔎 fetch shortDescription doc through query
+            let search_contract =
+                load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                    .expect("load search contract");
+
+            let doc_type = search_contract
+                .document_type_for_name("shortDescription")
+                .unwrap();
+
+            let query = DriveDocumentQuery::all_items_query(&search_contract, doc_type, None);
+            let existing_docs = platform
+                .drive
+                .query_documents(
+                    query,
+                    None,
+                    false,
+                    None,
+                    Some(platform_version.protocol_version),
+                )
+                .expect("query failed");
+
+            let mut doc = existing_docs.documents().first().expect("doc").clone();
+            doc.set_revision(Some(doc.revision().unwrap_or_default() + 1));
+            doc.set("description", "updated description".into());
+
+            let transition = BatchTransition::new_document_replacement_transition_from_document(
+                doc,
+                doc_type,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("replace");
+
+            let serialized = transition.serialize_to_bytes().unwrap();
+            let platform_state = platform.state.load();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &platform.drive.grove.start_transaction(),
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process");
+
+            assert_matches!(
+                processing_result.into_execution_results().remove(0),
+                SuccessfulExecution(..)
+            );
+        }
+
+        #[test]
+        fn owner_can_not_delete_keyword_document() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (_owner, signer, key) =
+                create_contract_with_keywords_and_description(&mut platform);
+
+            let search_contract =
+                load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                    .expect("load search contract");
+            let doc_type = search_contract
+                .document_type_for_name("contractKeywords")
+                .unwrap();
+
+            let query = DriveDocumentQuery::all_items_query(&search_contract, doc_type, None);
+            let existing_docs = platform
+                .drive
+                .query_documents(
+                    query,
+                    None,
+                    false,
+                    None,
+                    Some(platform_version.protocol_version),
+                )
+                .expect("query failed");
+
+            let doc = existing_docs.documents().first().unwrap().clone();
+
+            let transition = BatchTransition::new_document_deletion_transition_from_document(
+                doc,
+                doc_type,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("delete");
+
+            let serialized = transition.serialize_to_bytes().unwrap();
+            let platform_state = platform.state.load();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &platform.drive.grove.start_transaction(),
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process");
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::InvalidDocumentTransitionActionError { .. }
+                    ),
+                    _
+                )]
+            );
+        }
     }
 }

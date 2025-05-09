@@ -11,7 +11,7 @@ use rand::prelude::StdRng;
 mod perpetual_distribution_time {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_LINEAR_SLOPE_PARAM};
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_LINEAR_SLOPE_A_PARAM};
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
     use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
@@ -70,8 +70,6 @@ mod perpetual_distribution_time {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -138,8 +136,6 @@ mod perpetual_distribution_time {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -208,8 +204,6 @@ mod perpetual_distribution_time {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -320,8 +314,6 @@ mod perpetual_distribution_time {
             0,
             &signer,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -445,8 +437,6 @@ mod perpetual_distribution_time {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -564,8 +554,6 @@ mod perpetual_distribution_time {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -633,8 +621,6 @@ mod perpetual_distribution_time {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -754,8 +740,6 @@ mod perpetual_distribution_time {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -825,8 +809,6 @@ mod perpetual_distribution_time {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -947,8 +929,6 @@ mod perpetual_distribution_time {
             &signer_2,
             platform_version,
             None,
-            None,
-            None,
         )
         .expect("expect to create documents batch transition");
 
@@ -1016,8 +996,6 @@ mod perpetual_distribution_time {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -1102,8 +1080,8 @@ mod perpetual_distribution_time {
                                 // every 1 millisecond
                                 interval: 1,
                                 function: DistributionFunction::Linear {
-                                    a: MAX_LINEAR_SLOPE_PARAM as i64, // Strongest slope
-                                    d: 1,                             // No division
+                                    a: MAX_LINEAR_SLOPE_A_PARAM as i64, // Strongest slope
+                                    d: 1,                               // No division
                                     start_step: None,
                                     starting_amount: MAX_DISTRIBUTION_PARAM,
                                     min_value: None,
@@ -1137,8 +1115,6 @@ mod perpetual_distribution_time {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -1203,8 +1179,6 @@ mod perpetual_distribution_time {
             0,
             &signer_2,
             platform_version,
-            None,
-            None,
             None,
         )
         .expect("expect to create documents batch transition");
@@ -1287,8 +1261,8 @@ mod perpetual_distribution_time {
                                 // every 1 millisecond
                                 interval: 1,
                                 function: DistributionFunction::Linear {
-                                    a: MAX_LINEAR_SLOPE_PARAM as i64, // Strongest slope
-                                    d: 1,                             // No division
+                                    a: MAX_LINEAR_SLOPE_A_PARAM as i64, // Strongest slope
+                                    d: 1,                               // No division
                                     start_step: None,
                                     starting_amount: MAX_DISTRIBUTION_PARAM,
                                     min_value: None,
@@ -1323,8 +1297,6 @@ mod perpetual_distribution_time {
                 0,
                 &signer_2,
                 platform_version,
-                None,
-                None,
                 None,
             )
             .expect("expect to create documents batch transition");

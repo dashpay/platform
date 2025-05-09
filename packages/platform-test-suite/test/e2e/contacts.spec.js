@@ -104,9 +104,9 @@ describe('e2e', () => {
     describe('Bob', () => {
       it('should create user wallet and identity', async () => {
         // Create Bob wallet
-        bobClient = await createClientWithFundedWallet(500000);
+        bobClient = await createClientWithFundedWallet(150000000); // 1.5 Dash
 
-        bobIdentity = await bobClient.platform.identities.register(400000);
+        bobIdentity = await bobClient.platform.identities.register(140000000); // 1.4 Dash
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
