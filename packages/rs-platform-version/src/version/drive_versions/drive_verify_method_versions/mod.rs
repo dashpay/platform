@@ -52,6 +52,7 @@ pub struct DriveVerifyGroupMethodVersions {
     pub verify_group_infos_in_contract: FeatureVersion,
     pub verify_action_infos: FeatureVersion,
     pub verify_action_signers: FeatureVersion,
+    pub verify_action_signers_total_power: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

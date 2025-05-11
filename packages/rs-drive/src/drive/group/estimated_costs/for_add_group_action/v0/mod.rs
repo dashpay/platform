@@ -1,9 +1,6 @@
 use crate::drive::Drive;
 
-use crate::drive::group::paths::{
-    group_action_path, group_action_signers_path, group_active_action_root_path,
-    group_contract_path, group_path, group_root_path,
-};
+use crate::drive::group::paths::{group_action_path, group_action_signers_path, group_active_action_root_path, group_closed_action_path, group_closed_action_root_path, group_closed_action_signers_path, group_contract_path, group_path, group_root_path};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::GroupContractPosition;
 use grovedb::batch::KeyInfoPath;
@@ -57,6 +54,7 @@ impl Drive {
         contract_id: [u8; 32],
         group_contract_position: GroupContractPosition,
         action_id: Option<[u8; 32]>,
+        also_add_closed_tree: bool,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         //                                                                                DataContract_Documents 64
@@ -167,6 +165,52 @@ impl Drive {
                     estimated_layer_sizes: AllItems(8, 1, None),
                 },
             );
+        }
+        
+        if also_add_closed_tree {
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(group_closed_action_root_path(
+                    contract_id.as_slice(),
+                    &group_contract_position.to_be_bytes(),
+                )),
+                EstimatedLayerInformation {
+                    tree_type: TreeType::NormalTree,
+                    estimated_layer_count: EstimatedLevel(10, false),
+                    estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
+                },
+            );
+
+            if let Some(action_id) = action_id {
+                estimated_costs_only_with_layer_info.insert(
+                    KeyInfoPath::from_known_path(group_closed_action_path(
+                        contract_id.as_slice(),
+                        &group_contract_position.to_be_bytes(),
+                        action_id.as_slice(),
+                    )),
+                    EstimatedLayerInformation {
+                        tree_type: TreeType::NormalTree,
+                        estimated_layer_count: EstimatedLevel(1, false),
+                        estimated_layer_sizes: Mix {
+                            subtrees_size: Some((1, AllSumTrees, None, 1)),
+                            items_size: Some((1, 8, Some(36), 1)),
+                            references_size: None,
+                        },
+                    },
+                );
+
+                estimated_costs_only_with_layer_info.insert(
+                    KeyInfoPath::from_known_path(group_closed_action_signers_path(
+                        contract_id.as_slice(),
+                        &group_contract_position.to_be_bytes(),
+                        action_id.as_slice(),
+                    )),
+                    EstimatedLayerInformation {
+                        tree_type: TreeType::SumTree,
+                        estimated_layer_count: EstimatedLevel(1, false),
+                        estimated_layer_sizes: AllItems(8, 1, None),
+                    },
+                );
+            }
         }
     }
 }

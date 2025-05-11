@@ -95,6 +95,7 @@ impl<C> Platform<C> {
             DATA_CONTRACT_ID,
             2,
             Some(group_action),
+            false,
             action_id,
             IDENTITY_ID_1,
             1,

@@ -1,11 +1,8 @@
-use crate::drive::group::paths::{
-    group_action_path, group_action_signers_path_vec, group_active_action_root_path,
-    ACTION_INFO_KEY, ACTION_SIGNERS_KEY,
-};
+use crate::drive::group::paths::{group_action_path, group_action_signers_path_vec, group_active_action_root_path, group_closed_action_path, group_closed_action_root_path, group_closed_action_signers_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, QueryTarget};
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, BatchMoveApplyType, QueryTarget};
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use dpp::block::block_info::BlockInfo;
@@ -21,6 +18,8 @@ use grovedb::element::SumValue;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use grovedb_epoch_based_storage_flags::StorageFlags;
 use std::collections::HashMap;
+use grovedb::MaybeTree::NotTree;
+use dpp::group::group_action_status::GroupActionStatus;
 
 impl Drive {
     #[allow(clippy::too_many_arguments)]
@@ -29,6 +28,7 @@ impl Drive {
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         initialize_with_insert_action_info: Option<GroupAction>,
+        closes_group_action: bool,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -42,6 +42,7 @@ impl Drive {
             contract_id,
             group_contract_position,
             initialize_with_insert_action_info,
+            closes_group_action,
             action_id,
             signer_identity_id,
             signer_power,
@@ -69,6 +70,7 @@ impl Drive {
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         initialize_with_insert_action_info: Option<GroupAction>,
+        closes_group_action: bool,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -88,6 +90,7 @@ impl Drive {
             contract_id,
             group_contract_position,
             initialize_with_insert_action_info,
+            closes_group_action,
             action_id,
             signer_identity_id,
             signer_power,
@@ -113,6 +116,7 @@ impl Drive {
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         initialize_with_insert_action_info: Option<GroupAction>,
+        closes_group_action: bool,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -130,112 +134,252 @@ impl Drive {
                 contract_id.to_buffer(),
                 group_contract_position,
                 Some(action_id.to_buffer()),
+                closes_group_action,
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
         }
 
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
-        let group_action_root_path = group_active_action_root_path(
-            contract_id.as_slice(),
-            group_contract_position_bytes.as_slice(),
-        );
-        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsertTree
-        } else {
-            BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
-                tree_type: TreeType::NormalTree,
-                flags_len: 0,
-            }
-        };
+        
+        if !closes_group_action {
+            let group_action_root_path = group_active_action_root_path(
+                contract_id.as_slice(),
+                group_contract_position_bytes.as_slice(),
+            );
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: TreeType::NormalTree,
+                    tree_type: TreeType::NormalTree,
+                    flags_len: 0,
+                }
+            };
 
-        let storage_flags = Some(StorageFlags::new_single_epoch(
-            block_info.epoch.index,
-            Some(signer_identity_id.to_buffer()),
-        ));
+            let storage_flags = Some(StorageFlags::new_single_epoch(
+                block_info.epoch.index,
+                Some(signer_identity_id.to_buffer()),
+            ));
 
-        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags.as_ref());
+            let element_flags = StorageFlags::map_to_some_element_flags(storage_flags.as_ref());
 
-        let mut inserted_root_action = false;
+            let mut inserted_root_action = false;
 
-        if let Some(initialize_with_insert_action_info) = initialize_with_insert_action_info {
-            // We insert the contract root into the group tree
-            inserted_root_action = self.batch_insert_empty_tree_if_not_exists(
-                PathFixedSizeKeyRef((group_action_root_path, action_id.as_slice())),
-                TreeType::NormalTree,
-                None,
-                apply_type,
-                transaction,
-                &mut None,
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-
-            if inserted_root_action {
-                let group_action_path = group_action_path(
-                    contract_id.as_slice(),
-                    group_contract_position_bytes.as_slice(),
-                    action_id.as_slice(),
-                );
-
-                self.batch_insert_empty_sum_tree(
-                    group_action_path,
-                    DriveKeyInfo::KeyRef(ACTION_SIGNERS_KEY),
+            if let Some(initialize_with_insert_action_info) = initialize_with_insert_action_info {
+                // We insert the contract root into the group tree
+                inserted_root_action = self.batch_insert_empty_tree_if_not_exists(
+                    PathFixedSizeKeyRef((group_action_root_path, action_id.as_slice())),
+                    TreeType::NormalTree,
                     None,
+                    apply_type,
+                    transaction,
+                    &mut None,
                     &mut batch_operations,
                     &platform_version.drive,
                 )?;
 
-                let serialized = initialize_with_insert_action_info.serialize_consume_to_bytes()?;
+                if inserted_root_action {
+                    let group_action_path = group_action_path(
+                        contract_id.as_slice(),
+                        group_contract_position_bytes.as_slice(),
+                        action_id.as_slice(),
+                    );
 
-                self.batch_insert(
-                    PathKeyElementInfo::PathFixedSizeKeyRefElement::<5>((
+                    self.batch_insert_empty_sum_tree(
                         group_action_path,
-                        ACTION_INFO_KEY,
-                        Element::Item(serialized, element_flags.clone()),
+                        DriveKeyInfo::KeyRef(ACTION_SIGNERS_KEY),
+                        None,
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?;
+
+                    let serialized = initialize_with_insert_action_info.serialize_consume_to_bytes()?;
+
+                    self.batch_insert(
+                        PathKeyElementInfo::PathFixedSizeKeyRefElement::<5>((
+                            group_action_path,
+                            ACTION_INFO_KEY,
+                            Element::Item(serialized, element_flags.clone()),
+                        )),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?;
+                }
+            }
+
+            let signers_path = group_action_signers_path_vec(
+                contract_id.as_slice(),
+                group_contract_position,
+                action_id.as_slice(),
+            );
+
+            let signer_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertApplyType::StatefulBatchInsert
+            } else {
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_type: TreeType::SumTree,
+                    target: QueryTarget::QueryTargetValue(8),
+                }
+            };
+
+            if inserted_root_action {
+                self.batch_insert(
+                    PathKeyElementInfo::PathKeyElement::<0>((
+                        signers_path,
+                        signer_identity_id.to_vec(),
+                        Element::SumItem(signer_power as SumValue, element_flags),
                     )),
                     &mut batch_operations,
                     &platform_version.drive,
                 )?;
+            } else {
+                // we should verify it doesn't yet exist
+                self.batch_insert_sum_item_if_not_exists(
+                    PathKeyElementInfo::PathKeyElement::<0>((
+                        signers_path,
+                        signer_identity_id.to_vec(),
+                        Element::SumItem(signer_power as SumValue, element_flags),
+                    )),
+                    true,
+                    signer_apply_type,
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
             }
-        }
-
-        let signers_path = group_action_signers_path_vec(
-            contract_id.as_slice(),
-            group_contract_position,
-            action_id.as_slice(),
-        );
-
-        let signer_apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertApplyType::StatefulBatchInsert
         } else {
-            BatchInsertApplyType::StatelessBatchInsert {
-                in_tree_type: TreeType::SumTree,
-                target: QueryTarget::QueryTargetValue(8),
+            // We are closing the group action
+            let group_action_root_path = group_closed_action_root_path(
+                contract_id.as_slice(),
+                group_contract_position_bytes.as_slice(),
+            );
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: TreeType::NormalTree,
+                    tree_type: TreeType::NormalTree,
+                    flags_len: 0,
+                }
+            };
+
+            let mut inserted_root_action = false;
+
+            if let Some(initialize_with_insert_action_info) = initialize_with_insert_action_info {
+                // We insert the contract root into the group tree
+                inserted_root_action = self.batch_insert_empty_tree_if_not_exists(
+                    PathFixedSizeKeyRef((group_action_root_path, action_id.as_slice())),
+                    TreeType::NormalTree,
+                    None,
+                    apply_type,
+                    transaction,
+                    &mut None,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                if inserted_root_action {
+                    let group_action_path = group_closed_action_path(
+                        contract_id.as_slice(),
+                        group_contract_position_bytes.as_slice(),
+                        action_id.as_slice(),
+                    );
+
+                    self.batch_insert_empty_sum_tree(
+                        group_action_path,
+                        DriveKeyInfo::KeyRef(ACTION_SIGNERS_KEY),
+                        None,
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?;
+
+                    let serialized = initialize_with_insert_action_info.serialize_consume_to_bytes()?;
+
+                    self.batch_insert(
+                        PathKeyElementInfo::PathFixedSizeKeyRefElement::<5>((
+                            group_action_path,
+                            ACTION_INFO_KEY,
+                            Element::Item(serialized, None),
+                        )),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?;
+                }
             }
-        };
 
-        if inserted_root_action {
-            self.batch_insert(
-                PathKeyElementInfo::PathKeyElement::<0>((
-                    signers_path,
-                    signer_identity_id.to_vec(),
-                    Element::SumItem(signer_power as SumValue, element_flags),
-                )),
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-        } else {
-            // we should verify it doesn't yet exist
-            self.batch_insert_sum_item_if_not_exists(
-                PathKeyElementInfo::PathKeyElement::<0>((
-                    signers_path,
-                    signer_identity_id.to_vec(),
-                    Element::SumItem(signer_power as SumValue, element_flags),
-                )),
-                true,
+            let closed_signers_path = group_closed_action_signers_path_vec(
+                contract_id.as_slice(),
+                group_contract_position,
+                action_id.as_slice(),
+            );
+
+            let signer_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertApplyType::StatefulBatchInsert
+            } else {
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_type: TreeType::SumTree,
+                    target: QueryTarget::QueryTargetValue(8),
+                }
+            };
+
+            if inserted_root_action {
+                self.batch_insert(
+                    PathKeyElementInfo::PathKeyElement::<0>((
+                        closed_signers_path.clone(),
+                        signer_identity_id.to_vec(),
+                        Element::SumItem(signer_power as SumValue, None),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            } else {
+                // we should verify it doesn't yet exist
+                self.batch_insert_sum_item_if_not_exists(
+                    PathKeyElementInfo::PathKeyElement::<0>((
+                        closed_signers_path.clone(),
+                        signer_identity_id.to_vec(),
+                        Element::SumItem(signer_power as SumValue, None),
+                    )),
+                    true,
+                    signer_apply_type,
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
+            
+            // now we need to also move all signers from the active tree to the closed tree
+
+            let mut active_path_query = Drive::group_action_signers_query(
+                contract_id.to_buffer(),
+                group_contract_position,
+                GroupActionStatus::ActionActive,
+                action_id.to_buffer(),
+            );
+
+            active_path_query.query.limit = Some(platform_version.system_limits.max_contract_group_size);
+
+            let signer_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchMoveApplyType::StatefulBatchMove {
+                    is_known_to_be_subtree_with_sum: Some(NotTree),
+                }
+            } else {
+                BatchMoveApplyType::StatelessBatchMove {
+                    in_tree_type: TreeType::SumTree,
+                    tree_type: None,
+                    estimated_key_size: 32,
+                    estimated_value_size: 8,
+                    flags_len: 0,
+                }
+            };
+
+            self.batch_move_items_in_path_query(
+                &active_path_query,
+                closed_signers_path.clone(),
+                false, // maybe there were no active signers
                 signer_apply_type,
+                Some(None), // we should have no flags on the closed items
                 transaction,
                 &mut batch_operations,
                 &platform_version.drive,

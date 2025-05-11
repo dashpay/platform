@@ -68,6 +68,7 @@ impl DriveHighLevelBatchOperationConverter for TokenDestroyFrozenFundsTransition
                         action_id: *action_id,
                         signer_identity_id: owner_id,
                         signer_power: *signer_power,
+                        closes_group_action: self.base().perform_action(),
                     }));
                 }
 

@@ -212,10 +212,10 @@ pub enum BatchDeleteApplyType {
 pub enum BatchMoveApplyType {
     /// Stateless batch move
     StatelessBatchMove {
-        /// Are we moving from inside a sum tree
+        /// What type of tree are we in for the move
         in_tree_type: TreeType,
-        /// Are we moving a sum tree
-        tree_type: TreeType,
+        /// Are we moving a trees?
+        tree_type: Option<TreeType>,
         /// What is the estimated key size
         estimated_key_size: u32,
         /// What is the estimated value size

@@ -8,6 +8,7 @@ use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::voting::votes::Vote;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
+use crate::data_contract::group::GroupSumPower;
 
 #[derive(Debug, strum::Display, derive_more::TryInto)]
 pub enum StateTransitionProofResult {
@@ -23,6 +24,7 @@ pub enum StateTransitionProofResult {
     VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
     VerifiedDocuments(BTreeMap<Identifier, Option<Document>>),
     VerifiedTokenActionWithDocument(Document),
+    VerifiedTokenGroupActionWithDocument(GroupSumPower, Option<Document>),
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
 }
