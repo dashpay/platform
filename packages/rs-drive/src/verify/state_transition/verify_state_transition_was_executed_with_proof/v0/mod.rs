@@ -574,7 +574,7 @@ impl Drive {
                                             token_freeze_transition
                                                 .frozen_identity_id()
                                                 .into_buffer(),
-                                            false,
+                                            true,
                                             platform_version,
                                         )?;
                                     if status == GroupActionStatus::ActionClosed
@@ -642,7 +642,7 @@ impl Drive {
                                             token_unfreeze_transition
                                                 .frozen_identity_id()
                                                 .into_buffer(),
-                                            false,
+                                            true,
                                             platform_version,
                                         )?;
                                     if status == GroupActionStatus::ActionClosed
@@ -726,7 +726,7 @@ impl Drive {
                                         Drive::verify_token_direct_selling_price(
                                             proof,
                                             token_id.into_buffer(),
-                                            false,
+                                            true,
                                             platform_version,
                                         )?;
                                     if status == GroupActionStatus::ActionClosed

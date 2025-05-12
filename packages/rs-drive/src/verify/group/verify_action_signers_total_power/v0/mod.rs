@@ -62,11 +62,15 @@ impl Drive {
                         "group closed action should be returned".to_string(),
                     )));
                 };
-                if active_root.is_some() && closed_root.is_some()
-                    || active_root.is_none() && closed_root.is_none()
-                {
+                if active_root.is_some() && closed_root.is_some() {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "group action should be either active or closed".to_string(),
+                        "group action should be either active or closed, but was both".to_string(),
+                    )));
+                }
+                if active_root.is_none() && closed_root.is_none() {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "group action should be either active or closed, but was neither"
+                            .to_string(),
                     )));
                 }
                 if active_root.is_some() {

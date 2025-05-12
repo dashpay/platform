@@ -37,9 +37,7 @@ impl Drive {
                 drive_version,
             )?
             .ok_or_else(|| {
-                Error::Drive(DriveError::ElementNotFound(
-                    "element to move not found".into(),
-                ))
+                Error::Drive(DriveError::ElementNotFound("element to move not found"))
             })?;
 
         if element.is_any_tree() {
@@ -270,7 +268,7 @@ mod tests {
             &platform_version.drive,
         );
 
-        assert_matches!(res, Err(Error::Drive(DriveError::ElementNotFound(_))));
+        assert_matches!(res, Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))));
     }
 
     /// Moving a subtree (tree element) must fail with NotSupported.

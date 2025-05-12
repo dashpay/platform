@@ -1544,13 +1544,12 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "expect to verify state transition proof {}",
-                    hex::encode(&proof.data.expect("expected data"))
+                    hex::encode(proof.data.expect("expected data"))
                 )
-                .as_str(),
-            );
+            });
 
             if keeps_minting_history {
                 assert_matches!(
@@ -1660,13 +1659,12 @@ mod token_mint_tests {
                 &|_| Ok(Some(contract.clone().into())),
                 platform_version,
             )
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "expect to verify state transition proof {}",
-                    hex::encode(&proof.data.expect("expected data"))
+                    hex::encode(proof.data.expect("expected data"))
                 )
-                .as_str(),
-            );
+            });
 
             if keeps_minting_history {
                 assert_matches!(

@@ -14,8 +14,10 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::system_data_contracts::load_system_data_contract;
 use grovedb::PathQuery;
 use platform_version::version::PlatformVersion;
@@ -113,23 +115,23 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                     )
                 }
             }
-            TokenTransition::Freeze(_) => {
+            TokenTransition::Freeze(token_frozen_transition) => {
                 if keeps_historical_document.keeps_freezing_history() {
                     create_token_historical_document_query(self, owner_id, platform_version)?
                 } else {
                     Drive::token_info_for_identity_id_query(
                         token_id.to_buffer(),
-                        owner_id.to_buffer(),
+                        token_frozen_transition.frozen_identity_id().to_buffer(),
                     )
                 }
             }
-            TokenTransition::Unfreeze(_) => {
+            TokenTransition::Unfreeze(token_unfrozen_transition) => {
                 if keeps_historical_document.keeps_freezing_history() {
                     create_token_historical_document_query(self, owner_id, platform_version)?
                 } else {
                     Drive::token_info_for_identity_id_query(
                         token_id.to_buffer(),
-                        owner_id.to_buffer(),
+                        token_unfrozen_transition.frozen_identity_id().to_buffer(),
                     )
                 }
             }

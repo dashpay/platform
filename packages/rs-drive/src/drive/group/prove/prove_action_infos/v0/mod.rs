@@ -209,7 +209,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_2.clone()),
-                true,
+                false,
                 action_id_2,
                 identity_2_id,
                 1,
