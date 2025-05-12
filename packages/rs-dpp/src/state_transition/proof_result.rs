@@ -27,6 +27,16 @@ pub enum StateTransitionProofResult {
     VerifiedTokenActionWithDocument(Document),
     VerifiedTokenGroupActionWithDocument(GroupSumPower, Option<Document>),
     VerifiedTokenGroupActionWithTokenBalance(GroupSumPower, GroupActionStatus, Option<TokenAmount>),
+    VerifiedTokenGroupActionWithTokenIdentityInfo(
+        GroupSumPower,
+        GroupActionStatus,
+        Option<IdentityTokenInfo>,
+    ),
+    VerifiedTokenGroupActionWithTokenPricingSchedule(
+        GroupSumPower,
+        GroupActionStatus,
+        Option<TokenPricingSchedule>,
+    ),
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
 }

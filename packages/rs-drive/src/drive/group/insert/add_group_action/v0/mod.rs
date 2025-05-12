@@ -8,7 +8,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{
-    BatchInsertApplyType, BatchInsertTreeApplyType, BatchMoveApplyType, QueryTarget,
+    BatchDeleteApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, BatchMoveApplyType,
+    QueryTarget,
 };
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
@@ -24,7 +25,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::SumValue;
 use grovedb::MaybeTree::NotTree;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use grovedb_epoch_based_storage_flags::StorageFlags;
 use std::collections::HashMap;
 
@@ -385,6 +386,11 @@ impl Drive {
                     }
                 };
 
+                let group_active_action_root_path = group_active_action_root_path(
+                    contract_id.as_slice(),
+                    group_contract_position_bytes.as_slice(),
+                );
+
                 let group_active_action_path = group_active_action_path(
                     contract_id.as_slice(),
                     group_contract_position_bytes.as_slice(),
@@ -403,6 +409,38 @@ impl Drive {
                     group_closed_action_path_vec,               // to closed path
                     info_move_apply_type,
                     Some(None), // no flags on the closed item
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                // We then need to then do a delete operation of the action in the active part
+
+                let delete_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some(NotTree),
+                    }
+                } else {
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::Tree(
+                            TreeType::NormalTree,
+                        )),
+                    }
+                };
+
+                self.batch_delete(
+                    group_active_action_path.as_slice().into(),
+                    ACTION_SIGNERS_KEY,
+                    delete_apply_type,
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                self.batch_delete(
+                    group_active_action_root_path.as_slice().into(),
+                    action_id.as_slice(),
+                    delete_apply_type,
                     transaction,
                     &mut batch_operations,
                     &platform_version.drive,

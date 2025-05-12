@@ -1646,6 +1646,47 @@ mod token_mint_tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
+            // Let's verify the proof of the state transition
+
+            let proof = platform
+                .drive
+                .prove_state_transition(&confirm_token_mint_transition, None, platform_version)
+                .expect("expect to prove state transition");
+
+            let (_root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+                &confirm_token_mint_transition,
+                &BlockInfo::default(),
+                proof.data.as_ref().expect("expected data"),
+                &|_| Ok(Some(contract.clone().into())),
+                platform_version,
+            )
+            .expect(
+                format!(
+                    "expect to verify state transition proof {}",
+                    hex::encode(&proof.data.expect("expected data"))
+                )
+                .as_str(),
+            );
+
+            if keeps_minting_history {
+                assert_matches!(
+                    result,
+                    StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
+                        assert_eq!(power, 2);
+                        assert_eq!(doc.expect("expected to get doc").properties().get_u64("amount"), Ok(1337));
+                    }
+                );
+            } else {
+                assert_matches!(
+                    result,
+                    StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(power, status, balance) => {
+                        assert_eq!(power, 2);
+                        assert_eq!(status, GroupActionStatus::ActionClosed);
+                        assert_eq!(balance, Some(101337));
+                    }
+                );
+            }
+
             let token_balance = platform
                 .drive
                 .fetch_identity_token_balance(
