@@ -67,6 +67,28 @@ impl TokenBaseTransitionActionV0 {
                 let current_power = if action_is_proposer {
                     0
                 } else {
+                    let closed = drive.fetch_action_is_closed(
+                        data_contract_id,
+                        group_contract_position,
+                        action_id,
+                        transaction,
+                        drive_operations,
+                        platform_version,
+                    )?;
+
+                    if closed {
+                        return Ok(ConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(
+                                StateError::GroupActionAlreadyCompletedError(
+                                    GroupActionAlreadyCompletedError::new(
+                                        data_contract_id,
+                                        group_contract_position,
+                                        action_id,
+                                    ),
+                                ),
+                            ),
+                        ));
+                    }
                     match drive.fetch_action_id_signers_power_and_add_operations(
                         data_contract_id,
                         group_contract_position,
@@ -179,6 +201,28 @@ impl TokenBaseTransitionActionV0 {
                 let current_power = if *action_is_proposer {
                     0
                 } else {
+                    let closed = drive.fetch_action_is_closed(
+                        *data_contract_id,
+                        *group_contract_position,
+                        *action_id,
+                        transaction,
+                        drive_operations,
+                        platform_version,
+                    )?;
+
+                    if closed {
+                        return Ok(ConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(
+                                StateError::GroupActionAlreadyCompletedError(
+                                    GroupActionAlreadyCompletedError::new(
+                                        *data_contract_id,
+                                        *group_contract_position,
+                                        *action_id,
+                                    ),
+                                ),
+                            ),
+                        ));
+                    }
                     match drive.fetch_action_id_signers_power_and_add_operations(
                         *data_contract_id,
                         *group_contract_position,

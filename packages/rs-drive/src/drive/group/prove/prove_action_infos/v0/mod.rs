@@ -176,10 +176,14 @@ mod tests {
         let action_id_2 = Identifier::random();
 
         let action_1 = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_1_id, None)),
         });
 
         let action_2 = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, None)),
         });
 
@@ -189,6 +193,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_1.clone()),
+                false,
                 action_id_1,
                 identity_1_id,
                 1,
@@ -204,6 +209,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_2.clone()),
+                false,
                 action_id_2,
                 identity_2_id,
                 1,
@@ -407,14 +413,20 @@ mod tests {
         let action_id_4 = Identifier::new([4; 32]);
 
         let action_1 = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Mint(200, identity_1_id, None)),
         });
 
         let action_2 = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, None)),
         });
 
         let action_3 = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Transfer(
                 identity_2_id,
                 None,
@@ -425,6 +437,8 @@ mod tests {
         });
 
         let action_4 = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Transfer(
                 identity_3_id,
                 None,
@@ -440,6 +454,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_1.clone()),
+                false,
                 action_id_1,
                 identity_1_id,
                 1,
@@ -455,6 +470,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_2.clone()),
+                false,
                 action_id_2,
                 identity_1_id,
                 1,
@@ -470,6 +486,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_3.clone()),
+                false,
                 action_id_3,
                 identity_2_id,
                 1,
@@ -485,6 +502,7 @@ mod tests {
                 contract_id,
                 group_contract_position,
                 Some(action_4.clone()),
+                false,
                 action_id_4,
                 identity_3_id,
                 1,

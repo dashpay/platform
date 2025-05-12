@@ -13,7 +13,7 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes a "delete element" operation to `drive_operations`.
-    pub(crate) fn batch_delete_v0<B: AsRef<[u8]>>(
+    pub(super) fn batch_delete_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],
@@ -22,14 +22,37 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let current_batch_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
             validate_tree_at_path_exists: false, //todo: not sure about this one
         };
+        self.batch_delete_with_options_v0(
+            path,
+            key,
+            apply_type,
+            options,
+            transaction,
+            drive_operations,
+            drive_version,
+        )
+    }
+    /// Pushes a "delete element" operation to `drive_operations`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn batch_delete_with_options_v0<B: AsRef<[u8]>>(
+        &self,
+        path: SubtreePath<'_, B>,
+        key: &[u8],
+        apply_type: BatchDeleteApplyType,
+        options: DeleteOptions,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        let current_batch_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
+
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
                 in_tree_type: is_sum_tree,

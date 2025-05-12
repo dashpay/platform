@@ -166,6 +166,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                     BatchMoveApplyType::StatefulBatchMove {
                         is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
+                    None,
                     transaction,
                     &mut drive_operations,
                     &platform_version.drive,
@@ -207,6 +208,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                     BatchMoveApplyType::StatefulBatchMove {
                         is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
+                    None,
                     transaction,
                     &mut drive_operations,
                     &platform_version.drive,

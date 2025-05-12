@@ -5,26 +5,18 @@ use crate::prove::prove_state_transition::ProofCreationResult;
 use crate::query::{
     IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
+use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contracts::SystemDataContract;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{
-    TokenTransition, TokenTransitionV0Methods,
-};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
@@ -32,7 +24,6 @@ use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTr
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
-use dpp::system_data_contracts::load_system_data_contract;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
@@ -44,28 +35,6 @@ fn contract_ids_to_non_historical_path_query(contract_ids: &[Identifier]) -> Pat
     let mut path_query = Drive::fetch_non_historical_contracts_query(&contract_ids);
     path_query.query.limit = None;
     path_query
-}
-
-fn create_token_historical_document_query(
-    token_transition: &TokenTransition,
-    owner_id: Identifier,
-    platform_version: &PlatformVersion,
-) -> Result<PathQuery, Error> {
-    let token_history_contract =
-        load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
-
-    let query = SingleDocumentDriveQuery {
-        contract_id: token_history_contract.id().into_buffer(),
-        document_type_name: token_transition.historical_document_type_name().to_string(),
-        document_type_keeps_history: false,
-        document_id: token_transition
-            .historical_document_id(owner_id)
-            .to_buffer(),
-        block_time_ms: None, //None because we want latest
-        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
-    };
-
-    query.construct_path_query(platform_version)
 }
 
 impl Drive {
@@ -113,7 +82,7 @@ impl Drive {
                         )?
                         else {
                             return Err(Error::Proof(ProofError::UnknownContract(format!(
-                                "unknown contract with id {}",
+                                "unknown contract with id {} in document proving",
                                 data_contract_id
                             ))));
                         };
@@ -158,9 +127,7 @@ impl Drive {
                         path_query
                     }
                     BatchedTransitionRef::Token(token_transition) => {
-                        //todo group actions
                         let data_contract_id = token_transition.data_contract_id();
-                        let token_id = token_transition.token_id();
 
                         let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
                             data_contract_id.to_buffer(),
@@ -171,132 +138,18 @@ impl Drive {
                         else {
                             return Ok(ProofCreationResult::new_with_error(
                                 ProofError::UnknownContract(format!(
-                                    "unknown contract with id {}",
+                                    "unknown contract with id {} in token proving",
                                     data_contract_id
                                 )),
                             ));
                         };
 
                         let contract = &contract_fetch_info.contract;
-
-                        let token_config = contract.expected_token_configuration(
-                            token_transition.base().token_contract_position(),
-                        )?;
-
-                        let keeps_historical_document = token_config.keeps_history();
-
-                        match token_transition {
-                            TokenTransition::Burn(_) => {
-                                if keeps_historical_document.keeps_burning_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    Drive::token_balance_for_identity_id_query(
-                                        token_id.to_buffer(),
-                                        owner_id.to_buffer(),
-                                    )
-                                }
-                            }
-                            TokenTransition::Mint(token_mint_transition) => {
-                                if keeps_historical_document.keeps_minting_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    let recipient_id =
-                                        token_mint_transition.recipient_id(token_config)?;
-
-                                    Drive::token_balance_for_identity_id_query(
-                                        token_id.into_buffer(),
-                                        recipient_id.into_buffer(),
-                                    )
-                                }
-                            }
-                            TokenTransition::Transfer(token_transfer_transition) => {
-                                if keeps_historical_document.keeps_transfer_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    let recipient_id = token_transfer_transition.recipient_id();
-                                    let identity_ids =
-                                        [owner_id.to_buffer(), recipient_id.to_buffer()];
-
-                                    Drive::token_balances_for_identity_ids_query(
-                                        token_id.into_buffer(),
-                                        &identity_ids,
-                                    )
-                                }
-                            }
-                            TokenTransition::Freeze(_) => {
-                                if keeps_historical_document.keeps_freezing_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    Drive::token_info_for_identity_id_query(
-                                        token_id.to_buffer(),
-                                        owner_id.to_buffer(),
-                                    )
-                                }
-                            }
-                            TokenTransition::Unfreeze(_) => {
-                                if keeps_historical_document.keeps_freezing_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    Drive::token_info_for_identity_id_query(
-                                        token_id.to_buffer(),
-                                        owner_id.to_buffer(),
-                                    )
-                                }
-                            }
-                            TokenTransition::DirectPurchase(_) => {
-                                if keeps_historical_document.keeps_direct_purchase_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    Drive::token_balance_for_identity_id_query(
-                                        token_id.to_buffer(),
-                                        owner_id.to_buffer(),
-                                    )
-                                }
-                            }
-                            TokenTransition::SetPriceForDirectPurchase(_) => {
-                                if keeps_historical_document.keeps_direct_pricing_history() {
-                                    create_token_historical_document_query(
-                                        token_transition,
-                                        owner_id,
-                                        platform_version,
-                                    )?
-                                } else {
-                                    Drive::token_direct_purchase_price_query(token_id.to_buffer())
-                                }
-                            }
-                            TokenTransition::DestroyFrozenFunds(_)
-                            | TokenTransition::EmergencyAction(_)
-                            | TokenTransition::ConfigUpdate(_)
-                            | TokenTransition::Claim(_) => create_token_historical_document_query(
-                                token_transition,
-                                owner_id,
-                                platform_version,
-                            )?,
-                        }
+                        token_transition.try_transition_into_path_query_with_contract(
+                            contract,
+                            owner_id,
+                            platform_version,
+                        )?
                     }
                 }
             }

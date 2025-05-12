@@ -88,7 +88,7 @@ impl GroupMethodsV0 for GroupV0 {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let max_group_members = platform_version.system_limits.max_contract_group_size;
+        let max_group_members = platform_version.system_limits.max_contract_group_size as u32;
         const GROUP_POWER_LIMIT: GroupMemberPower = u16::MAX as GroupMemberPower;
 
         // Check the number of members does not exceed the maximum allowed

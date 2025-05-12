@@ -9,6 +9,7 @@ use crate::util::grove_operations::BatchMoveApplyType;
 use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::{PathQuery, TransactionArg};
+use grovedb_epoch_based_storage_flags::StorageFlags;
 
 impl Drive {
     /// Pushes multiple "delete element" and "insert element operations for items in a given path based on a `PathQuery` to `drive_operations`.
@@ -17,6 +18,7 @@ impl Drive {
     /// * `path_query`: The path query specifying the items to delete within the path.
     /// * `error_if_intermediate_path_tree_not_present`: Tells the function to either error or do nothing if an intermediate tree is not present.
     /// * `apply_type`: The apply type for the move operations.
+    /// * `alter_flags_to_new_flags`: Should we alter flags of items to new flags
     /// * `transaction`: The transaction argument.
     /// * `drive_operations`: The vector containing low-level drive operations.
     /// * `drive_version`: The drive version to select the correct function version to run.
@@ -31,6 +33,7 @@ impl Drive {
         new_path: Vec<Vec<u8>>,
         error_if_intermediate_path_tree_not_present: bool,
         apply_type: BatchMoveApplyType,
+        alter_flags_to_new_flags: Option<Option<StorageFlags>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
@@ -45,6 +48,7 @@ impl Drive {
                 new_path,
                 error_if_intermediate_path_tree_not_present,
                 apply_type,
+                alter_flags_to_new_flags,
                 transaction,
                 drive_operations,
                 drive_version,

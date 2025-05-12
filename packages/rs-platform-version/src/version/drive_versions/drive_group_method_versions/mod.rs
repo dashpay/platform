@@ -20,6 +20,7 @@ pub struct DriveGroupFetchMethodVersions {
     pub fetch_group_infos: FeatureVersion,
     pub fetch_action_infos: FeatureVersion,
     pub fetch_action_signers: FeatureVersion,
+    pub fetch_action_is_closed: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

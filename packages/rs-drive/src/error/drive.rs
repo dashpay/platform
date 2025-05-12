@@ -193,4 +193,12 @@ pub enum DriveError {
     /// Data Contract not found
     #[error("data contract does not have a start moment: {0}")]
     ContractDoesNotHaveAStartMoment(Identifier),
+
+    /// Invalid action
+    #[error("invalid action: {0}")]
+    InvalidAction(&'static str),
+
+    /// Element was not found
+    #[error("element not found: {0}")]
+    ElementNotFound(&'static str),
 }

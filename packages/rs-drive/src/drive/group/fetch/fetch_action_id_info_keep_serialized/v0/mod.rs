@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::drive::group::paths::{group_action_path, ACTION_INFO_KEY};
+use crate::drive::group::paths::{group_active_action_path, ACTION_INFO_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -46,7 +46,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
+        let path = group_active_action_path(
             contract_id.as_ref(),
             &group_contract_position_bytes,
             action_id.as_ref(),
@@ -105,7 +105,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
+        let path = group_active_action_path(
             contract_id.as_ref(),
             &group_contract_position_bytes,
             action_id.as_ref(),

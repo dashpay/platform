@@ -88,6 +88,8 @@ impl<C> Platform<C> {
         // Add burn token group action
         let action_id = Identifier::new([32; 32]);
         let group_action = GroupAction::V0(GroupActionV0 {
+            contract_id: DATA_CONTRACT_ID,
+            token_contract_position: 2,
             event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some("world on fire".into()))),
         });
 
@@ -95,6 +97,7 @@ impl<C> Platform<C> {
             DATA_CONTRACT_ID,
             2,
             Some(group_action),
+            false,
             action_id,
             IDENTITY_ID_1,
             1,
