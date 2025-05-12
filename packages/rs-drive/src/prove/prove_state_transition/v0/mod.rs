@@ -41,28 +41,6 @@ fn contract_ids_to_non_historical_path_query(contract_ids: &[Identifier]) -> Pat
     path_query
 }
 
-fn create_token_historical_document_query(
-    token_transition: &TokenTransition,
-    owner_id: Identifier,
-    platform_version: &PlatformVersion,
-) -> Result<PathQuery, Error> {
-    let token_history_contract =
-        load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
-
-    let query = SingleDocumentDriveQuery {
-        contract_id: token_history_contract.id().into_buffer(),
-        document_type_name: token_transition.historical_document_type_name().to_string(),
-        document_type_keeps_history: false,
-        document_id: token_transition
-            .historical_document_id(owner_id)
-            .to_buffer(),
-        block_time_ms: None, //None because we want latest
-        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
-    };
-
-    query.construct_path_query(platform_version)
-}
-
 impl Drive {
     pub(super) fn prove_state_transition_v0(
         &self,
