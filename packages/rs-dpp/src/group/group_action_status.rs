@@ -1,6 +1,6 @@
 use anyhow::bail;
 
-#[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Eq)]
 pub enum GroupActionStatus {
     ActionActive,
     ActionClosed,

@@ -45,16 +45,17 @@ impl Drive {
     /// # Versioning
     /// - Dispatches to `verify_action_signers_total_power_v0` when `platform_version.drive.methods.verify.group.verify_action_signers_total_power == 0`.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_action_signer_and_total_power(
         proof: &[u8],
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
-        action_status: GroupActionStatus,
+        action_status: Option<GroupActionStatus>,
         action_id: Identifier,
         action_signer_id: Identifier,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, GroupSumPower), Error> {
+    ) -> Result<(RootHash, GroupActionStatus, GroupSumPower), Error> {
         match platform_version
             .drive
             .methods

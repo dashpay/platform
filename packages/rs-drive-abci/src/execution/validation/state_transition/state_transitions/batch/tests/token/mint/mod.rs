@@ -1099,6 +1099,7 @@ mod token_mint_tests {
         use dpp::data_contract::change_control_rules::ChangeControlRules;
         use dpp::data_contract::group::v0::GroupV0;
         use dpp::data_contract::group::Group;
+        use dpp::group::group_action_status::GroupActionStatus;
         use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
         use dpp::state_transition::batch_transition::TokenMintTransition;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -1562,9 +1563,10 @@ mod token_mint_tests {
             } else {
                 assert_matches!(
                     result,
-                    StateTransitionProofResult::VerifiedTokenBalance(id, amount) => {
-                        assert_eq!(id, identity.id());
-                        assert_eq!(amount, 1337);
+                    StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(power, status, balance) => {
+                        assert_eq!(power, 1);
+                        assert_eq!(status, GroupActionStatus::ActionActive);
+                        assert_eq!(balance, Some(100000));
                     }
                 );
             }

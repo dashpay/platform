@@ -223,6 +223,28 @@ impl Drive {
         }
     }
 
+    /// Gets query to figure out if the proof is for active or closed
+    pub fn group_active_or_closed_action_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+    ) -> PathQuery {
+        let group_path = group_path_vec(&contract_id, group_contract_position);
+        let mut query = Query::new_with_direction(true);
+        query.insert_keys(vec![
+            GROUP_ACTIVE_ACTIONS_KEY.to_vec(),
+            GROUP_CLOSED_ACTIONS_KEY.to_vec(),
+        ]);
+
+        PathQuery {
+            path: group_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
     /// Gets the signer in both the active and closed action places
     pub fn group_active_and_closed_action_single_signer_query(
         contract_id: [u8; 32],
