@@ -55,7 +55,6 @@ use crate::verify::RootHash;
 use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 
 impl Drive {
     #[inline(always)]
@@ -339,7 +338,8 @@ impl Drive {
                                     SingleDocumentDriveQueryContestedStatus::NotContested,
                             };
 
-                            let is_group_action = token_transition.base().using_group_info().is_some();
+                            let is_group_action =
+                                token_transition.base().using_group_info().is_some();
 
                             let (root_hash, document) = query.verify_proof(
                                 is_group_action, // it will be a subset if it is a group action
@@ -347,16 +347,17 @@ impl Drive {
                                 token_history_document_type,
                                 platform_version,
                             )?;
-                            
+
                             if let Some(document) = &document {
-                                let expected_document = token_transition.build_historical_document(
-                                    token_id,
-                                    owner_id,
-                                    identity_contract_nonce,
-                                    &BlockInfo::default(),
-                                    token_config,
-                                    platform_version,
-                                )?;
+                                let expected_document = token_transition
+                                    .build_historical_document(
+                                        token_id,
+                                        owner_id,
+                                        identity_contract_nonce,
+                                        &BlockInfo::default(),
+                                        token_config,
+                                        platform_version,
+                                    )?;
 
                                 // Some fields are populated by the drive,
                                 // so we need to ignore them
@@ -376,15 +377,30 @@ impl Drive {
                                     return Err(Error::Proof(ProofError::UnexpectedResultProof(format!("proof of state transition execution did not show the correct historical document got: [{}] vs expected: [{}], state transition is [{}]", document, expected_document, token_transition))));
                                 }
                             }
-                            
-                            if let Some(group_state_transition_info) = token_transition.base().using_group_info() {
+
+                            if let Some(group_state_transition_info) =
+                                token_transition.base().using_group_info()
+                            {
                                 let action_status = if document.is_some() {
                                     GroupActionStatus::ActionClosed
                                 } else {
                                     GroupActionStatus::ActionActive
                                 };
-                                let sum_power = Drive::verify_action_signer_and_total_power(proof, data_contract_id, group_state_transition_info.group_contract_position, action_status, group_state_transition_info.action_id, owner_id, true, platform_version)?.1;
-                                Ok((root_hash, VerifiedTokenGroupActionWithDocument(sum_power, document)))
+                                let sum_power = Drive::verify_action_signer_and_total_power(
+                                    proof,
+                                    data_contract_id,
+                                    group_state_transition_info.group_contract_position,
+                                    action_status,
+                                    group_state_transition_info.action_id,
+                                    owner_id,
+                                    true,
+                                    platform_version,
+                                )?
+                                .1;
+                                Ok((
+                                    root_hash,
+                                    VerifiedTokenGroupActionWithDocument(sum_power, document),
+                                ))
                             } else {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document of type `{}` expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
                                 Ok((root_hash, VerifiedTokenActionWithDocument(document)))

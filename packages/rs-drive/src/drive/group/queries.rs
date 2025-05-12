@@ -1,4 +1,8 @@
-use crate::drive::group::paths::{group_action_signers_path_vec, group_closed_action_signers_path_vec, group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY, GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY};
+use crate::drive::group::paths::{
+    group_action_signers_path_vec, group_closed_action_signers_path_vec, group_contract_path_vec,
+    group_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY, GROUP_ACTIVE_ACTIONS_KEY,
+    GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
+};
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::GroupContractPosition;
@@ -153,7 +157,8 @@ impl Drive {
         action_id: [u8; 32],
         identity_id: [u8; 32],
     ) -> PathQuery {
-        let group_actions_path = group_action_signers_path_vec(&contract_id, group_contract_position, &action_id);
+        let group_actions_path =
+            group_action_signers_path_vec(&contract_id, group_contract_position, &action_id);
         let query = Query::new_single_key(identity_id.to_vec());
 
         PathQuery {
@@ -173,7 +178,8 @@ impl Drive {
         action_id: [u8; 32],
         identity_id: [u8; 32],
     ) -> PathQuery {
-        let group_actions_path = group_closed_action_signers_path_vec(&contract_id, group_contract_position, &action_id);
+        let group_actions_path =
+            group_closed_action_signers_path_vec(&contract_id, group_contract_position, &action_id);
         let query = Query::new_single_key(identity_id.to_vec());
 
         PathQuery {
@@ -226,8 +232,15 @@ impl Drive {
     ) -> PathQuery {
         let group_path = group_path_vec(&contract_id, group_contract_position);
         let mut query = Query::new_with_direction(true);
-        query.insert_keys(vec![GROUP_ACTIVE_ACTIONS_KEY.to_vec(), GROUP_CLOSED_ACTIONS_KEY.to_vec()]);
-        query.set_subquery_path(vec![action_id.to_vec(), ACTION_SIGNERS_KEY.to_vec(), identity_id.to_vec()]);
+        query.insert_keys(vec![
+            GROUP_ACTIVE_ACTIONS_KEY.to_vec(),
+            GROUP_CLOSED_ACTIONS_KEY.to_vec(),
+        ]);
+        query.set_subquery_path(vec![
+            action_id.to_vec(),
+            ACTION_SIGNERS_KEY.to_vec(),
+            identity_id.to_vec(),
+        ]);
 
         PathQuery {
             path: group_path,

@@ -137,6 +137,7 @@ pub mod batch_insert_sum_item_if_not_exists;
 /// Moved items that are found in a path query to a new path.
 pub mod batch_move_items_in_path_query;
 
+mod batch_move;
 /// Get the total value from a big sum tree
 pub mod grove_get_big_sum_tree_total_value;
 /// Get total value from sum tree in grove if it exists

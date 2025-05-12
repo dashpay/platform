@@ -1,4 +1,5 @@
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
 use crate::identity::{Identity, PartialIdentity};
@@ -8,7 +9,6 @@ use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::voting::votes::Vote;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use crate::data_contract::group::GroupSumPower;
 
 #[derive(Debug, strum::Display, derive_more::TryInto)]
 pub enum StateTransitionProofResult {

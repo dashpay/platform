@@ -30,7 +30,7 @@ pub enum GroupOperationType {
         /// The signer's power in the group
         signer_power: GroupMemberPower,
         /// Should we close the group action and mark it as complete?
-        closes_group_action: bool
+        closes_group_action: bool,
     },
 }
 

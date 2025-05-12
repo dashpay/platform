@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::drive::Drive;
-use dpp::data_contract::group::{GroupMemberPower, GroupSumPower};
+use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;

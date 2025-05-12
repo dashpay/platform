@@ -45,12 +45,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -68,9 +67,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -131,12 +130,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -154,9 +152,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -219,12 +217,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -242,12 +239,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -283,8 +280,7 @@ mod token_mint_tests {
             let (identity, signer, key) =
                 setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-            let (receiver, _, _) =
-                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (receiver, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
             let (contract, token_id) = create_token_contract_with_owner_identity(
                 &mut platform,
@@ -311,12 +307,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -334,9 +329,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -399,12 +394,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -422,14 +416,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::RecipientIdentityDoesNotExistError(
-                            _
-                        )),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::RecipientIdentityDoesNotExistError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -490,12 +482,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -513,14 +504,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::BasicError(
-                            BasicError::DestinationIdentityForTokenMintingNotSetError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::DestinationIdentityForTokenMintingNotSetError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -578,12 +569,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -601,14 +591,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::BasicError(
-                            BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -644,8 +634,7 @@ mod token_mint_tests {
             let (identity, signer, key) =
                 setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-            let (receiver, _, _) =
-                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (receiver, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
             let (contract, token_id) = create_token_contract_with_owner_identity(
                 &mut platform,
@@ -676,12 +665,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -699,14 +687,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::BasicError(
-                            BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -771,12 +759,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -794,14 +781,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::BasicError(
-                            BasicError::DestinationIdentityForTokenMintingNotSetError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::DestinationIdentityForTokenMintingNotSetError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -862,12 +849,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -885,14 +871,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::BasicError(
-                            BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -928,8 +914,7 @@ mod token_mint_tests {
             let (identity, signer, key) =
                 setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-            let (receiver, _, _) =
-                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (receiver, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
             let (contract, token_id) = create_token_contract_with_owner_identity(
                 &mut platform,
@@ -963,12 +948,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -986,14 +970,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::BasicError(
-                            BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -1061,12 +1045,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1084,9 +1067,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -1109,9 +1092,8 @@ mod token_mint_tests {
     }
 
     mod token_mint_tests_authorization_scenarios {
-        use std::collections::BTreeMap;
-        use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
         use super::*;
+        use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
         use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
         use dpp::data_contract::change_control_rules::ChangeControlRules;
@@ -1172,12 +1154,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1195,12 +1176,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -1262,7 +1243,7 @@ mod token_mint_tests {
                             required_power: 10,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -1283,12 +1264,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1306,12 +1286,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -1375,7 +1355,7 @@ mod token_mint_tests {
                             required_power: 5,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -1396,12 +1376,11 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
-            let documents_batch_create_serialized_transition =
-                documents_batch_create_transition
-                    .serialize_to_bytes()
-                    .expect("expected documents batch serialized state transition");
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1419,9 +1398,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -1451,7 +1430,7 @@ mod token_mint_tests {
         fn test_token_mint_by_owner_requires_group_other_member_no_history() {
             test_token_mint_by_owner_requires_group_other_member(false);
         }
-        
+
         fn test_token_mint_by_owner_requires_group_other_member(keeps_minting_history: bool) {
             // We are using a group, and two members need to sign for the event to happen
             let platform_version = PlatformVersion::latest();
@@ -1474,7 +1453,9 @@ mod token_mint_tests {
                 &mut platform,
                 identity.id(),
                 Some(|token_configuration: &mut TokenConfiguration| {
-                    token_configuration.keeps_history_mut().set_keeps_minting_history(keeps_minting_history);
+                    token_configuration
+                        .keeps_history_mut()
+                        .set_keeps_minting_history(keeps_minting_history);
                     token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                         ChangeControlRulesV0 {
                             authorized_to_make_change: AuthorizedActionTakers::Group(0),
@@ -1494,7 +1475,7 @@ mod token_mint_tests {
                             required_power: 2,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -1515,7 +1496,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
                 .serialize_to_bytes()
@@ -1537,9 +1518,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -1547,17 +1528,29 @@ mod token_mint_tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
-            
+
             // Let's verify the proof of the state transition
-            
-            let proof = platform.drive.prove_state_transition(&token_mint_transition, None, platform_version).expect("expect to prove state transition");
-            
-            let (_root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(&token_mint_transition, &BlockInfo::default(), proof.data.as_ref().expect("expected data"),                         &|_| {
-                Ok(Some(contract.clone().into()))
-            },
-                                                                   platform_version,
-            ).expect(format!("expect to verify state transition proof {}", hex::encode(&proof.data.expect("expected data"))).as_str());
-            
+
+            let proof = platform
+                .drive
+                .prove_state_transition(&token_mint_transition, None, platform_version)
+                .expect("expect to prove state transition");
+
+            let (_root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+                &token_mint_transition,
+                &BlockInfo::default(),
+                proof.data.as_ref().expect("expected data"),
+                &|_| Ok(Some(contract.clone().into())),
+                platform_version,
+            )
+            .expect(
+                format!(
+                    "expect to verify state transition proof {}",
+                    hex::encode(&proof.data.expect("expected data"))
+                )
+                .as_str(),
+            );
+
             if keeps_minting_history {
                 assert_matches!(
                     result,
@@ -1566,8 +1559,8 @@ mod token_mint_tests {
                         assert_eq!(doc, None);
                     }
                 );
-                        } else {
-                            assert_matches!(
+            } else {
+                assert_matches!(
                     result,
                     StateTransitionProofResult::VerifiedTokenBalance(id, amount) => {
                         assert_eq!(id, identity.id());
@@ -1618,7 +1611,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -1640,9 +1633,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -1716,7 +1709,7 @@ mod token_mint_tests {
                             required_power: 2,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -1737,7 +1730,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
                 .serialize_to_bytes()
@@ -1759,9 +1752,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -1813,7 +1806,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -1835,14 +1828,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(
-                            StateError::GroupActionAlreadySignedByIdentityError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(
+                        StateError::GroupActionAlreadySignedByIdentityError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -1920,11 +1913,11 @@ mod token_mint_tests {
                                 (identity_2.id(), 1),
                                 (identity_3.id(), 1),
                             ]
-                                .into(),
+                            .into(),
                             required_power: 3,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -1945,7 +1938,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
                 .serialize_to_bytes()
@@ -1967,9 +1960,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -2020,7 +2013,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -2042,9 +2035,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -2100,7 +2093,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -2122,14 +2115,14 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(
-                            StateError::GroupActionAlreadySignedByIdentityError(_)
-                        ),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(
+                        StateError::GroupActionAlreadySignedByIdentityError(_)
+                    ),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -2208,11 +2201,11 @@ mod token_mint_tests {
                                 (identity_2.id(), 1),
                                 (identity_3.id(), 1),
                             ]
-                                .into(),
+                            .into(),
                             required_power: 2,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -2233,7 +2226,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
                 .serialize_to_bytes()
@@ -2255,9 +2248,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -2308,7 +2301,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -2330,9 +2323,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -2388,7 +2381,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -2410,12 +2403,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::GroupActionAlreadyCompletedError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::GroupActionAlreadyCompletedError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -2492,7 +2485,7 @@ mod token_mint_tests {
                             required_power: 2,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -2513,7 +2506,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
                 .serialize_to_bytes()
@@ -2535,12 +2528,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -2606,7 +2599,7 @@ mod token_mint_tests {
                             required_power: 2,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -2627,7 +2620,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let token_mint_serialized_transition = token_mint_transition
                 .serialize_to_bytes()
@@ -2649,9 +2642,9 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-                );
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -2702,7 +2695,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -2724,12 +2717,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive
@@ -2774,8 +2767,7 @@ mod token_mint_tests {
 
             let platform_state = platform.state.load();
 
-            let (identity, _, _) =
-                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
             let (identity_2, signer2, key2) =
                 setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -2803,7 +2795,7 @@ mod token_mint_tests {
                             required_power: 2,
                         }),
                     )]
-                        .into(),
+                    .into(),
                 ),
                 platform_version,
             );
@@ -2839,7 +2831,7 @@ mod token_mint_tests {
                 platform_version,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
@@ -2861,12 +2853,12 @@ mod token_mint_tests {
                 .expect("expected to process state transition");
 
             assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [PaidConsensusError(
-                        ConsensusError::StateError(StateError::GroupActionDoesNotExistError(_)),
-                        _
-                    )]
-                );
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::GroupActionDoesNotExistError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive

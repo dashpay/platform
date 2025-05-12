@@ -1,4 +1,3 @@
-use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -6,6 +5,7 @@ use crate::prove::prove_state_transition::ProofCreationResult;
 use crate::query::{
     IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
+use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contracts::SystemDataContract;
@@ -171,7 +171,11 @@ impl Drive {
                         };
 
                         let contract = &contract_fetch_info.contract;
-                        token_transition.try_transition_into_path_query_with_contract(contract, owner_id, platform_version)?
+                        token_transition.try_transition_into_path_query_with_contract(
+                            contract,
+                            owner_id,
+                            platform_version,
+                        )?
                     }
                 }
             }

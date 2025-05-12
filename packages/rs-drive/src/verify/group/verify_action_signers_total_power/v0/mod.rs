@@ -1,12 +1,12 @@
 use crate::drive::Drive;
-use grovedb::Element::{SumItem, SumTree};
+use grovedb::Element::SumItem;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
 use crate::verify::RootHash;
 
-use dpp::data_contract::group::{GroupMemberPower, GroupSumPower};
+use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
@@ -14,6 +14,7 @@ use grovedb::{GroveDb, TreeFeatureType};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn verify_action_signers_total_power_v0(
         proof: &[u8],
         contract_id: Identifier,
@@ -29,13 +30,21 @@ impl Drive {
             group_contract_position,
             action_id.to_buffer(),
             action_status,
-            action_signer_id.to_buffer()
+            action_signer_id.to_buffer(),
         );
 
         let (root_hash, tree_feature, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_get_parent_tree_info(proof, &path_query, &platform_version.drive.grove_version)?
+            GroveDb::verify_subset_query_get_parent_tree_info(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_get_parent_tree_info(proof, &path_query, &platform_version.drive.grove_version)?
+            GroveDb::verify_query_get_parent_tree_info(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
 
         if proved_key_values.len() != 1 {

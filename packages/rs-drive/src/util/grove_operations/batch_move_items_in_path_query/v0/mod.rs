@@ -125,7 +125,9 @@ impl Drive {
                 push_drive_operation_result(delete_operation, drive_operations)?
             {
                 if let Some(altered_flags) = alter_flags_to_new_flags.as_ref() {
-                    element.set_flags(StorageFlags::map_to_some_element_flags(altered_flags.as_ref()))
+                    element.set_flags(StorageFlags::map_to_some_element_flags(
+                        altered_flags.as_ref(),
+                    ))
                 }
                 // Add the delete operation to the batch of drive operations
                 drive_operations.push(GroveOperation(delete_operation));

@@ -13,7 +13,7 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes a "delete element" operation to `drive_operations`.
-    pub(crate) fn batch_delete_v0<B: AsRef<[u8]>>(
+    pub(super) fn batch_delete_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],
