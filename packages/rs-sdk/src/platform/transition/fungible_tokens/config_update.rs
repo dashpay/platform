@@ -46,7 +46,6 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
         token_position: TokenContractPosition,
         owner_id: Identifier,
         update_token_configuration_item: TokenConfigurationChangeItem,
-        using_group_info: Option<GroupStateTransitionInfoStatus>,
     ) -> Self {
         // TODO: Validate token position
 
@@ -56,7 +55,7 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
             owner_id,
             update_token_configuration_item,
             public_note: None,
-            using_group_info,
+            using_group_info: None,
             settings: None,
             user_fee_increase: None,
         }
