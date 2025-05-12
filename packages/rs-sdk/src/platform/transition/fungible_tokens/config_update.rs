@@ -90,6 +90,23 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
         self
     }
 
+    /// Adds group information to the token config update transition
+    ///
+    /// # Arguments
+    ///
+    /// * `group_info` - The group information to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
+        self.using_group_info = Some(group_info);
+
+        // TODO: Simplify group actions automatically find position if group action is required
+
+        self
+    }
+
     /// Adds settings to the token config_update transition
     ///
     /// # Arguments
