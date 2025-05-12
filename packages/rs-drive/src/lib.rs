@@ -55,5 +55,5 @@ pub mod state_transition_action;
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod util;
 /// Contains a set of useful grovedb proof verification functions
-#[cfg(feature = "verify")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod verify;
