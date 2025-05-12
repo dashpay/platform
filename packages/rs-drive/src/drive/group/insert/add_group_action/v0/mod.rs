@@ -380,8 +380,8 @@ impl Drive {
                     BatchMoveApplyType::StatelessBatchMove {
                         in_tree_type: TreeType::NormalTree,
                         tree_type: None,
-                        estimated_key_size: 5,   // fixed‑size “info” key
-                        estimated_value_size: 0, // value size unknown / not critical
+                        estimated_key_size: 1,
+                        estimated_value_size: 3,
                         flags_len: 0,
                     }
                 };
@@ -418,13 +418,15 @@ impl Drive {
 
                 let delete_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some(NotTree),
-                    }
-                } else {
-                    BatchDeleteApplyType::StatefulBatchDelete {
                         is_known_to_be_subtree_with_sum: Some(MaybeTree::Tree(
                             TreeType::NormalTree,
                         )),
+                    }
+                } else {
+                    BatchDeleteApplyType::StatelessBatchDelete {
+                        in_tree_type: TreeType::NormalTree,
+                        estimated_key_size: 32,
+                        estimated_value_size: 32,
                     }
                 };
 
