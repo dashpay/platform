@@ -150,7 +150,7 @@ async fn test_fetch_all_group_actions() {
     assert_matches!(
         group_actions.get(&GROUP_ACTION_ID),
         Some(Some(GroupAction::V0(GroupActionV0 {
-            contract_id: DATA_CONTRACT_ID, token_contract_position: 0, event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some(note))),
+            contract_id: DATA_CONTRACT_ID, token_contract_position: 2, event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some(note))),
         }))) if note == "world on fire"
     );
 }
