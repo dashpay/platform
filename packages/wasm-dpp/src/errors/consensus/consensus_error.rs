@@ -76,7 +76,7 @@ use dpp::consensus::state::document::document_contest_not_joinable_error::Docume
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
-use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError};
+use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
@@ -414,6 +414,10 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityMemberOfGroupNotFoundError(e) => {
             generic_consensus_error!(IdentityMemberOfGroupNotFoundError, e).into()
+        }
+        StateError::ModificationOfGroupActionMainParametersNotPermittedError(e) => {
+            generic_consensus_error!(ModificationOfGroupActionMainParametersNotPermittedError, e)
+                .into()
         }
     }
 }

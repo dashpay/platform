@@ -331,6 +331,7 @@ impl ErrorWithCode for StateError {
             Self::GroupActionDoesNotExistError(_) => 40801,
             Self::GroupActionAlreadyCompletedError(_) => 40802,
             Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
+            Self::ModificationOfGroupActionMainParametersNotPermittedError(_) => 40804,
         }
     }
 }

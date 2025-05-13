@@ -15,6 +15,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub type TokenEventPublicNote = Option<String>;
 pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;
@@ -135,6 +136,66 @@ pub enum TokenEvent {
     /// - `TokenAmount`: The amount of tokens purchased.
     /// - `Credits`: The number of credits paid.
     DirectPurchase(TokenAmount, Credits),
+}
+
+impl fmt::Display for TokenEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenEvent::Mint(amount, recipient, note) => {
+                write!(f, "Mint {} to {}{}", amount, recipient, format_note(note))
+            }
+            TokenEvent::Burn(amount, note) => {
+                write!(f, "Burn {}{}", amount, format_note(note))
+            }
+            TokenEvent::Freeze(identity, note) => {
+                write!(f, "Freeze {}{}", identity, format_note(note))
+            }
+            TokenEvent::Unfreeze(identity, note) => {
+                write!(f, "Unfreeze {}{}", identity, format_note(note))
+            }
+            TokenEvent::DestroyFrozenFunds(identity, amount, note) => {
+                write!(
+                    f,
+                    "Destroy {} frozen from {}{}",
+                    amount,
+                    identity,
+                    format_note(note)
+                )
+            }
+            TokenEvent::Transfer(to, note, _, _, amount) => {
+                write!(f, "Transfer {} to {}{}", amount, to, format_note(note))
+            }
+            TokenEvent::Claim(recipient, amount, note) => {
+                write!(
+                    f,
+                    "Claim {} by {:?}{}",
+                    amount,
+                    recipient,
+                    format_note(note)
+                )
+            }
+            TokenEvent::EmergencyAction(action, note) => {
+                write!(f, "Emergency action {:?}{}", action, format_note(note))
+            }
+            TokenEvent::ConfigUpdate(change, note) => {
+                write!(f, "Configuration update {:?}{}", change, format_note(note))
+            }
+            TokenEvent::ChangePriceForDirectPurchase(schedule, note) => match schedule {
+                Some(s) => write!(f, "Change price schedule to {:?}{}", s, format_note(note)),
+                None => write!(f, "Disable direct purchase{}", format_note(note)),
+            },
+            TokenEvent::DirectPurchase(amount, credits) => {
+                write!(f, "Direct purchase of {} for {} credits", amount, credits)
+            }
+        }
+    }
+}
+
+fn format_note(note: &Option<String>) -> String {
+    match note {
+        Some(n) => format!(" (note: {})", n),
+        None => String::new(),
+    }
 }
 
 impl TokenEvent {

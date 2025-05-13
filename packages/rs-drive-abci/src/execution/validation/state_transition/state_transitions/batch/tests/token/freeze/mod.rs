@@ -855,7 +855,9 @@ mod token_freeze_tests {
         use super::*;
         use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
         use dpp::group::group_action_status::GroupActionStatus;
-        use dpp::state_transition::batch_transition::TokenFreezeTransition;
+        use dpp::state_transition::batch_transition::{
+            TokenDestroyFrozenFundsTransition, TokenFreezeTransition,
+        };
         use dpp::state_transition::proof_result::StateTransitionProofResult;
         use dpp::tokens::info::v0::IdentityTokenInfoV0;
         use dpp::tokens::info::IdentityTokenInfo;
@@ -1427,6 +1429,776 @@ mod token_freeze_tests {
                 .unwrap()
                 .map(|i| i.frozen());
             assert_eq!(frozen, Some(true));
+        }
+
+        #[test]
+        fn test_token_freeze_two_member_group_and_destroy_frozen_funds() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(44);
+            let platform_state = platform.state.load();
+
+            let (id1, sign1, key1) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (id2, sign2, key2) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (target, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                id1.id(),
+                Some(|cfg: &mut TokenConfiguration| {
+                    cfg.keeps_history_mut().set_keeps_freezing_history(true);
+                    cfg.set_freeze_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        ..Default::default()
+                    }));
+                    cfg.set_manual_minting_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        ..Default::default()
+                    }));
+                    cfg.distribution_rules_mut()
+                        .set_minting_allow_choosing_destination(true);
+                    cfg.set_destroy_frozen_funds_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            ..Default::default()
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(id1.id(), 1), (id2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                platform_version,
+            );
+
+            let token_mint_transition = BatchTransition::new_token_mint_transition(
+                token_id,
+                id1.id(),
+                contract.id(),
+                0,
+                1337,
+                Some(target.id()),
+                Some("minty".to_string()),
+                None,
+                &key1,
+                2,
+                0,
+                &sign1,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_mint_serialized_transition = token_mint_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_mint_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, Some(1337));
+
+            // proposer
+            let token_freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                id1.id(),
+                contract.id(),
+                0,
+                target.id(),
+                None,
+                None,
+                &key1,
+                3,
+                0,
+                &sign1,
+                platform_version,
+                None,
+            )
+            .expect("expect to create batch transition");
+
+            let token_freeze_serialized_transition = token_freeze_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_freeze_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Verify still frozen
+            let frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .map(|i| i.frozen());
+            assert_eq!(frozen, Some(true));
+
+            let token_destroy_frozen_funds_transition =
+                BatchTransition::new_token_destroy_frozen_funds_transition(
+                    token_id,
+                    id1.id(),
+                    contract.id(),
+                    0,
+                    target.id(),
+                    None,
+                    Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                    &key1,
+                    4,
+                    0,
+                    &sign1,
+                    platform_version,
+                    None,
+                )
+                .unwrap();
+
+            let token_destroy_frozen_funds_serialized_transition =
+                token_destroy_frozen_funds_transition
+                    .serialize_to_bytes()
+                    .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_destroy_frozen_funds_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // second signer
+            let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+                token_id.as_bytes(),
+                id1.id().as_bytes(),
+                4,
+                target.id().as_bytes(),
+            );
+
+            let token_destroy_frozen_funds_confirm_transition =
+                BatchTransition::new_token_destroy_frozen_funds_transition(
+                    token_id,
+                    id2.id(),
+                    contract.id(),
+                    0,
+                    target.id(),
+                    None,
+                    Some(
+                        GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                            GroupStateTransitionInfo {
+                                group_contract_position: 0,
+                                action_id,
+                                action_is_proposer: false,
+                            },
+                        ),
+                    ),
+                    &key2,
+                    2,
+                    0,
+                    &sign2,
+                    platform_version,
+                    None,
+                )
+                .unwrap();
+
+            let token_destroy_frozen_funds_serialized_confirm_transition =
+                token_destroy_frozen_funds_confirm_transition
+                    .serialize_to_bytes()
+                    .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_destroy_frozen_funds_serialized_confirm_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Prove & verify
+            let proof = platform
+                .drive
+                .prove_state_transition(
+                    &token_destroy_frozen_funds_confirm_transition,
+                    None,
+                    platform_version,
+                )
+                .expect("expect to prove state transition");
+            let (_root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+                &token_destroy_frozen_funds_confirm_transition,
+                &BlockInfo::default(),
+                proof.data.as_ref().expect("expected data"),
+                &|_| Ok(Some(contract.clone().into())),
+                platform_version,
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "expect to verify state transition proof {}, error is {}",
+                    hex::encode(proof.data.expect("expected data")),
+                    e
+                )
+            });
+            assert_matches!(
+                result,
+                StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
+                    assert_eq!(power, 2);
+                    assert_eq!(doc.expect("expected document").properties().get_identifier("frozenIdentityId").expect("expected frozen id"), target.id());
+                }
+            );
+
+            // Verify still frozen
+            let frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .map(|i| i.frozen());
+            assert_eq!(frozen, Some(true));
+
+            // Verify balance is 0
+            let frozen_identity_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(frozen_identity_balance, Some(0));
+        }
+
+        #[test]
+        fn test_token_freeze_two_member_group_and_destroy_frozen_funds_change_target_id_mid_group_action(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(44);
+            let platform_state = platform.state.load();
+
+            let (id1, sign1, key1) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (id2, sign2, key2) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (target, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (target2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                id1.id(),
+                Some(|cfg: &mut TokenConfiguration| {
+                    cfg.keeps_history_mut().set_keeps_freezing_history(true);
+                    cfg.set_freeze_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        ..Default::default()
+                    }));
+                    cfg.set_manual_minting_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        ..Default::default()
+                    }));
+                    cfg.distribution_rules_mut()
+                        .set_minting_allow_choosing_destination(true);
+                    cfg.set_destroy_frozen_funds_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            ..Default::default()
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(id1.id(), 1), (id2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                platform_version,
+            );
+
+            let token_mint_transition = BatchTransition::new_token_mint_transition(
+                token_id,
+                id1.id(),
+                contract.id(),
+                0,
+                1337,
+                Some(target.id()),
+                Some("minty".to_string()),
+                None,
+                &key1,
+                2,
+                0,
+                &sign1,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_mint_serialized_transition = token_mint_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_mint_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_mint_transition = BatchTransition::new_token_mint_transition(
+                token_id,
+                id1.id(),
+                contract.id(),
+                0,
+                4000,
+                Some(target2.id()),
+                Some("minty".to_string()),
+                None,
+                &key1,
+                6,
+                0,
+                &sign1,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_mint_serialized_transition = token_mint_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_mint_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, Some(1337));
+
+            let token_freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                id1.id(),
+                contract.id(),
+                0,
+                target.id(),
+                None,
+                None,
+                &key1,
+                3,
+                0,
+                &sign1,
+                platform_version,
+                None,
+            )
+            .expect("expect to create batch transition");
+
+            let token_freeze_serialized_transition = token_freeze_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_freeze_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                id1.id(),
+                contract.id(),
+                0,
+                target2.id(),
+                None,
+                None,
+                &key1,
+                7,
+                0,
+                &sign1,
+                platform_version,
+                None,
+            )
+            .expect("expect to create batch transition");
+
+            let token_freeze_serialized_transition = token_freeze_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_freeze_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Verify still frozen
+            let frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .map(|i| i.frozen());
+            assert_eq!(frozen, Some(true));
+
+            let token_destroy_frozen_funds_transition =
+                BatchTransition::new_token_destroy_frozen_funds_transition(
+                    token_id,
+                    id1.id(),
+                    contract.id(),
+                    0,
+                    target.id(),
+                    None,
+                    Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                    &key1,
+                    4,
+                    0,
+                    &sign1,
+                    platform_version,
+                    None,
+                )
+                .unwrap();
+
+            let token_destroy_frozen_funds_serialized_transition =
+                token_destroy_frozen_funds_transition
+                    .serialize_to_bytes()
+                    .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_destroy_frozen_funds_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // second signer
+            let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+                token_id.as_bytes(),
+                id1.id().as_bytes(),
+                4,
+                target.id().as_bytes(),
+            );
+
+            // Here is the test, we switch to target2, which should not be allowed
+            let token_destroy_frozen_funds_confirm_transition =
+                BatchTransition::new_token_destroy_frozen_funds_transition(
+                    token_id,
+                    id2.id(),
+                    contract.id(),
+                    0,
+                    target2.id(),
+                    None,
+                    Some(
+                        GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                            GroupStateTransitionInfo {
+                                group_contract_position: 0,
+                                action_id,
+                                action_is_proposer: false,
+                            },
+                        ),
+                    ),
+                    &key2,
+                    2,
+                    0,
+                    &sign2,
+                    platform_version,
+                    None,
+                )
+                .unwrap();
+
+            let token_destroy_frozen_funds_serialized_confirm_transition =
+                token_destroy_frozen_funds_confirm_transition
+                    .serialize_to_bytes()
+                    .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_destroy_frozen_funds_serialized_confirm_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
+                    ),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Verify balance is not 0
+            let frozen_identity_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    target.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(frozen_identity_balance, Some(1337));
+
+            // Verify balance is not 0
+            let frozen_identity_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    target2.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(frozen_identity_balance, Some(4000));
         }
     }
 }

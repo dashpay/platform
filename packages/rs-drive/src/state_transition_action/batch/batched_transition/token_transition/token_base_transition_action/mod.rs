@@ -1,6 +1,7 @@
 use derive_more::From;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::TokenContractPosition;
+use dpp::group::group_action::GroupAction;
 use dpp::group::GroupStateTransitionResolvedInfo;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
@@ -68,6 +69,12 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
     fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo> {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.store_in_group(),
+        }
+    }
+
+    fn original_group_action(&self) -> Option<&GroupAction> {
+        match self {
+            TokenBaseTransitionAction::V0(v0) => v0.original_group_action(),
         }
     }
 

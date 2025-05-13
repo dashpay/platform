@@ -69,45 +69,24 @@ impl TokenBaseTransitionActionV0 {
                         Err(e) => return Err(e.into()),
                     };
                     let required_power = group.required_power();
-                    let (current_power, change_to_original_public_note) = if action_is_proposer {
-                        (0, None)
-                    } else {
-                        let closed = drive.fetch_action_is_closed(
-                            data_contract_id,
-                            group_contract_position,
-                            action_id,
-                            transaction,
-                            drive_operations,
-                            platform_version,
-                        )?;
+                    let (current_power, current_group_action_event, change_to_original_public_note) =
+                        if action_is_proposer {
+                            (0, None, None)
+                        } else {
+                            let closed = drive.fetch_action_is_closed(
+                                data_contract_id,
+                                group_contract_position,
+                                action_id,
+                                transaction,
+                                drive_operations,
+                                platform_version,
+                            )?;
 
-                        if closed {
-                            return Ok(ConsensusValidationResult::new_with_error(
-                                ConsensusError::StateError(
-                                    StateError::GroupActionAlreadyCompletedError(
-                                        GroupActionAlreadyCompletedError::new(
-                                            data_contract_id,
-                                            group_contract_position,
-                                            action_id,
-                                        ),
-                                    ),
-                                ),
-                            ));
-                        }
-                        let power = match drive.fetch_action_id_signers_power_and_add_operations(
-                            data_contract_id,
-                            group_contract_position,
-                            action_id,
-                            approximate_without_state_for_costs,
-                            transaction,
-                            drive_operations,
-                            platform_version,
-                        )? {
-                            None => {
+                            if closed {
                                 return Ok(ConsensusValidationResult::new_with_error(
                                     ConsensusError::StateError(
-                                        StateError::GroupActionDoesNotExistError(
-                                            GroupActionDoesNotExistError::new(
+                                        StateError::GroupActionAlreadyCompletedError(
+                                            GroupActionAlreadyCompletedError::new(
                                                 data_contract_id,
                                                 group_contract_position,
                                                 action_id,
@@ -116,12 +95,32 @@ impl TokenBaseTransitionActionV0 {
                                     ),
                                 ));
                             }
-                            Some(power) => power,
-                        };
+                            let power = match drive
+                                .fetch_action_id_signers_power_and_add_operations(
+                                    data_contract_id,
+                                    group_contract_position,
+                                    action_id,
+                                    approximate_without_state_for_costs,
+                                    transaction,
+                                    drive_operations,
+                                    platform_version,
+                                )? {
+                                None => {
+                                    return Ok(ConsensusValidationResult::new_with_error(
+                                        ConsensusError::StateError(
+                                            StateError::GroupActionDoesNotExistError(
+                                                GroupActionDoesNotExistError::new(
+                                                    data_contract_id,
+                                                    group_contract_position,
+                                                    action_id,
+                                                ),
+                                            ),
+                                        ),
+                                    ));
+                                }
+                                Some(power) => power,
+                            };
 
-                        let change_to_original_public_note = if power.saturating_add(signer_power)
-                            >= required_power
-                        {
                             let group_action = drive.fetch_active_action_info_and_add_operations(
                                 data_contract_id,
                                 group_contract_position,
@@ -132,18 +131,20 @@ impl TokenBaseTransitionActionV0 {
                                 platform_version,
                             )?;
 
-                            Some(
-                                group_action
-                                    .event()
-                                    .public_note()
-                                    .map(|str| str.to_string()),
-                            )
-                        } else {
-                            None
-                        };
+                            let change_to_original_public_note =
+                                if power.saturating_add(signer_power) >= required_power {
+                                    Some(
+                                        group_action
+                                            .event()
+                                            .public_note()
+                                            .map(|str| str.to_string()),
+                                    )
+                                } else {
+                                    None
+                                };
 
-                        (power, change_to_original_public_note)
-                    };
+                            (power, Some(group_action), change_to_original_public_note)
+                        };
                     if current_power >= required_power {
                         return Ok(ConsensusValidationResult::new_with_error(
                             ConsensusError::StateError(
@@ -172,7 +173,7 @@ impl TokenBaseTransitionActionV0 {
                     };
                     (
                         perform_action,
-                        Some(store_in_group),
+                        Some((store_in_group, current_group_action_event)),
                         change_to_original_public_note,
                     )
                 }
@@ -240,45 +241,24 @@ impl TokenBaseTransitionActionV0 {
                         Err(e) => return Err(e.into()),
                     };
                     let required_power = group.required_power();
-                    let (current_power, change_to_original_public_note) = if *action_is_proposer {
-                        (0, None)
-                    } else {
-                        let closed = drive.fetch_action_is_closed(
-                            *data_contract_id,
-                            *group_contract_position,
-                            *action_id,
-                            transaction,
-                            drive_operations,
-                            platform_version,
-                        )?;
+                    let (current_power, current_group_action_event, change_to_original_public_note) =
+                        if *action_is_proposer {
+                            (0, None, None)
+                        } else {
+                            let closed = drive.fetch_action_is_closed(
+                                *data_contract_id,
+                                *group_contract_position,
+                                *action_id,
+                                transaction,
+                                drive_operations,
+                                platform_version,
+                            )?;
 
-                        if closed {
-                            return Ok(ConsensusValidationResult::new_with_error(
-                                ConsensusError::StateError(
-                                    StateError::GroupActionAlreadyCompletedError(
-                                        GroupActionAlreadyCompletedError::new(
-                                            *data_contract_id,
-                                            *group_contract_position,
-                                            *action_id,
-                                        ),
-                                    ),
-                                ),
-                            ));
-                        }
-                        let power = match drive.fetch_action_id_signers_power_and_add_operations(
-                            *data_contract_id,
-                            *group_contract_position,
-                            *action_id,
-                            approximate_without_state_for_costs,
-                            transaction,
-                            drive_operations,
-                            platform_version,
-                        )? {
-                            None => {
+                            if closed {
                                 return Ok(ConsensusValidationResult::new_with_error(
                                     ConsensusError::StateError(
-                                        StateError::GroupActionDoesNotExistError(
-                                            GroupActionDoesNotExistError::new(
+                                        StateError::GroupActionAlreadyCompletedError(
+                                            GroupActionAlreadyCompletedError::new(
                                                 *data_contract_id,
                                                 *group_contract_position,
                                                 *action_id,
@@ -287,12 +267,32 @@ impl TokenBaseTransitionActionV0 {
                                     ),
                                 ));
                             }
-                            Some(power) => power,
-                        };
+                            let power = match drive
+                                .fetch_action_id_signers_power_and_add_operations(
+                                    *data_contract_id,
+                                    *group_contract_position,
+                                    *action_id,
+                                    approximate_without_state_for_costs,
+                                    transaction,
+                                    drive_operations,
+                                    platform_version,
+                                )? {
+                                None => {
+                                    return Ok(ConsensusValidationResult::new_with_error(
+                                        ConsensusError::StateError(
+                                            StateError::GroupActionDoesNotExistError(
+                                                GroupActionDoesNotExistError::new(
+                                                    *data_contract_id,
+                                                    *group_contract_position,
+                                                    *action_id,
+                                                ),
+                                            ),
+                                        ),
+                                    ));
+                                }
+                                Some(power) => power,
+                            };
 
-                        let change_to_original_public_note = if power.saturating_add(signer_power)
-                            >= required_power
-                        {
                             let group_action = drive.fetch_active_action_info_and_add_operations(
                                 *data_contract_id,
                                 *group_contract_position,
@@ -303,18 +303,20 @@ impl TokenBaseTransitionActionV0 {
                                 platform_version,
                             )?;
 
-                            Some(
-                                group_action
-                                    .event()
-                                    .public_note()
-                                    .map(|str| str.to_string()),
-                            )
-                        } else {
-                            None
-                        };
+                            let change_to_original_public_note =
+                                if power.saturating_add(signer_power) >= required_power {
+                                    Some(
+                                        group_action
+                                            .event()
+                                            .public_note()
+                                            .map(|str| str.to_string()),
+                                    )
+                                } else {
+                                    None
+                                };
 
-                        (power, change_to_original_public_note)
-                    };
+                            (power, Some(group_action), change_to_original_public_note)
+                        };
                     if current_power >= required_power {
                         return Ok(ConsensusValidationResult::new_with_error(
                             ConsensusError::StateError(
@@ -343,7 +345,7 @@ impl TokenBaseTransitionActionV0 {
                     };
                     (
                         perform_action,
-                        Some(store_in_group),
+                        Some((store_in_group, current_group_action_event)),
                         change_to_original_public_note,
                     )
                 }
