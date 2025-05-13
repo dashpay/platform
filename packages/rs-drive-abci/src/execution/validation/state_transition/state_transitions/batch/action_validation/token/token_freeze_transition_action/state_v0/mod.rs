@@ -17,7 +17,12 @@ use crate::platform_types::platform::PlatformStateRef;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use dpp::consensus::ConsensusError;
+use dpp::consensus::state::group::ModificationOfGroupActionMainParametersNotPermittedError;
+use dpp::group::action_event::GroupActionEvent;
+use dpp::group::group_action::GroupActionAccessors;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
+use dpp::tokens::token_event::TokenEvent;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait TokenFreezeTransitionActionStateValidationV0 {
     fn validate_state_v0(
@@ -70,6 +75,43 @@ impl TokenFreezeTransitionActionStateValidationV0 for TokenFreezeTransitionActio
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        if let Some(original_group_action) = self.base().original_group_action() {
+            // we shouldn't compare the amount, because that is figured out at the end
+            if let GroupActionEvent::TokenEvent(TokenEvent::Freeze(identifier, _)) =
+                original_group_action.event()
+            {
+                let mut changed_internal_fields = vec![];
+                if identifier != &self.identity_to_freeze_id() {
+                    changed_internal_fields.push("identity_to_freeze_id".to_string());
+                }
+                if !changed_internal_fields.is_empty() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                                ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                    original_group_action.event().event_name(),
+                                    "Token: freeze".to_string(),
+                                    changed_internal_fields,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            } else {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                            ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                original_group_action.event().event_name(),
+                                "Token: freeze".to_string(),
+                                vec![],
+                            ),
+                        ),
+                    ),
+                ));
+            }
         }
 
         // Check if the identity is already frozen
