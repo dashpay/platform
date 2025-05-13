@@ -19,6 +19,12 @@ impl TokenNoteOnlyAllowedWhenProposerError {
     }
 }
 
+impl Default for TokenNoteOnlyAllowedWhenProposerError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<TokenNoteOnlyAllowedWhenProposerError> for ConsensusError {
     fn from(err: TokenNoteOnlyAllowedWhenProposerError) -> Self {
         Self::BasicError(BasicError::TokenNoteOnlyAllowedWhenProposerError(err))
