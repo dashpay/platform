@@ -116,8 +116,7 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
     fn original_group_action(&self) -> Option<&GroupAction> {
         self.store_in_group
             .as_ref()
-            .map(|(_, group_action)| group_action.as_ref())
-            .flatten()
+            .and_then(|(_, group_action)| group_action.as_ref())
     }
 
     fn perform_action(&self) -> bool {
