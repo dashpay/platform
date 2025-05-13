@@ -160,6 +160,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenConfigUpdateNoChangeError(_) => 10457,
             Self::InvalidTokenAmountError(_) => 10458,
             Self::InvalidTokenNoteTooBigError(_) => 10459,
+            Self::TokenNoteOnlyAllowedWhenProposerError(_) => 10460,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,

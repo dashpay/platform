@@ -363,9 +363,20 @@ impl Drive {
                                 // so we need to ignore them
                                 let ignore_fields = match token_transition {
                                     TokenTransition::DestroyFrozenFunds(_) => {
-                                        Some(vec!["destroyedAmount"])
+                                        Some(vec!["destroyedAmount", "note"])
                                     }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
+                                    TokenTransition::Burn(_)
+                                    | TokenTransition::Mint(_)
+                                    | TokenTransition::Freeze(_)
+                                    | TokenTransition::Unfreeze(_)
+                                    | TokenTransition::EmergencyAction(_)
+                                    | TokenTransition::ConfigUpdate(_)
+                                    | TokenTransition::SetPriceForDirectPurchase(_)
+                                        if token_transition.base().using_group_info().is_some() =>
+                                    {
+                                        Some(vec!["note"])
+                                    }
                                     _ => None,
                                 };
 

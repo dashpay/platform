@@ -59,17 +59,19 @@ impl TokenTransferTransitionActionV0 {
         let mut drive_operations = vec![];
 
         // Lookup the base action using the base transition data and contract information
-        let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
-            drive,
-            owner_id,
-            base,
-            approximate_without_state_for_costs,
-            transaction,
-            &mut drive_operations,
-            get_data_contract,
-            platform_version,
-        )?
-        .into_data()?;
+        // There is no change note for transfer tokens
+        let (base_action, _change_note) =
+            TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                base,
+                approximate_without_state_for_costs,
+                transaction,
+                &mut drive_operations,
+                get_data_contract,
+                platform_version,
+            )?
+            .into_data()?;
 
         let fee_result = Drive::calculate_fee(
             None,
@@ -141,7 +143,8 @@ impl TokenTransferTransitionActionV0 {
         let mut drive_operations = vec![];
 
         // Lookup the base action using the borrowed base transition data and contract information
-        let base_action =
+        // We can never change the note
+        let (base_action, _change_note) =
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 drive,
                 owner_id,

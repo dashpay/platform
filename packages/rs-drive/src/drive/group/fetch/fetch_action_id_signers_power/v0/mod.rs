@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
-use crate::util::grove_operations::QueryTarget::{QueryTargetTree, QueryTargetValue};
+use crate::util::grove_operations::QueryTarget::QueryTargetTree;
 use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;

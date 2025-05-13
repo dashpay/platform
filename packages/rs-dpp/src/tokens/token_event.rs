@@ -154,6 +154,23 @@ impl TokenEvent {
         }
     }
 
+    /// Returns a reference to the public note if the variant includes one.
+    pub fn public_note(&self) -> Option<&str> {
+        match self {
+            TokenEvent::Mint(_, _, Some(note))
+            | TokenEvent::Burn(_, Some(note))
+            | TokenEvent::Freeze(_, Some(note))
+            | TokenEvent::Unfreeze(_, Some(note))
+            | TokenEvent::DestroyFrozenFunds(_, _, Some(note))
+            | TokenEvent::Transfer(_, Some(note), _, _, _)
+            | TokenEvent::Claim(_, _, Some(note))
+            | TokenEvent::EmergencyAction(_, Some(note))
+            | TokenEvent::ConfigUpdate(_, Some(note))
+            | TokenEvent::ChangePriceForDirectPurchase(_, Some(note)) => Some(note),
+            _ => None,
+        }
+    }
+
     pub fn associated_document_type<'a>(
         &self,
         token_history_contract: &'a DataContract,
