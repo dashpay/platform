@@ -87,7 +87,7 @@ impl TokenFreezeTransitionActionV0 {
             None,
         )?;
 
-        let base_action = match base_action_validation_result.is_valid() {
+        let (base_action, change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
                 let bump_action = BumpIdentityDataContractNonceAction::from_token_base_transition(
@@ -113,7 +113,7 @@ impl TokenFreezeTransitionActionV0 {
                 TokenFreezeTransitionActionV0 {
                     base: base_action,
                     identity_to_freeze_id,
-                    public_note,
+                    public_note: change_note.unwrap_or(public_note),
                 }
                 .into(),
             ))
@@ -196,7 +196,7 @@ impl TokenFreezeTransitionActionV0 {
             None,
         )?;
 
-        let base_action = match base_action_validation_result.is_valid() {
+        let (base_action, change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
                 let bump_action =
@@ -223,7 +223,7 @@ impl TokenFreezeTransitionActionV0 {
                 TokenFreezeTransitionActionV0 {
                     base: base_action,
                     identity_to_freeze_id: *identity_to_freeze_id,
-                    public_note: public_note.clone(),
+                    public_note: change_note.unwrap_or(public_note.clone()),
                 }
                 .into(),
             ))

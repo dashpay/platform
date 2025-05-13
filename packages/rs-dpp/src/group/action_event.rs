@@ -10,3 +10,12 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 pub enum GroupActionEvent {
     TokenEvent(TokenEvent),
 }
+
+impl GroupActionEvent {
+    /// Returns a reference to the public note if the variant includes one.
+    pub fn public_note(&self) -> Option<&str> {
+        match self {
+            GroupActionEvent::TokenEvent(token_event) => token_event.public_note(),
+        }
+    }
+}
