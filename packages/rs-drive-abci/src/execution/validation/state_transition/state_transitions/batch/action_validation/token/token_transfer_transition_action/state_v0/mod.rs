@@ -16,6 +16,7 @@ use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
+use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait TokenTransferTransitionActionStateValidationV0 {
@@ -161,13 +162,15 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         }
 
         // Make sure recipient exists
-        let recipient_balance = platform.drive.fetch_identity_balance(
-            self.recipient_id().to_buffer(),
+        let recipient_exists = validate_identity_exists(
+            platform.drive,
+            &self.recipient_id(),
+            execution_context,
             transaction,
             platform_version,
         )?;
 
-        if recipient_balance.is_none() {
+        if !recipient_exists {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 TokenTransferRecipientIdentityNotExistError::new(self.recipient_id()).into(),
             ));

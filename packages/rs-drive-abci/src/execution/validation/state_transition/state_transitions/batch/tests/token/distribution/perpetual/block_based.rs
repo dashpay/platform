@@ -2906,23 +2906,6 @@ mod test_suite {
             balance
         }
 
-        /// Retrieve token balance for the identity and assert it matches expected value.
-        pub(crate) fn assert_balance(
-            &mut self,
-            expected_balance: Option<u64>,
-        ) -> Result<(), String> {
-            let token_balance = self.get_balance()?;
-
-            if token_balance != expected_balance {
-                return Err(format!(
-                    "expected balance {:?} but got {:?}",
-                    expected_balance, token_balance
-                ));
-            }
-
-            Ok(())
-        }
-
         fn block_info(&self) -> BlockInfo {
             *self
                 .platform

@@ -285,6 +285,7 @@ impl ErrorWithCode for StateError {
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,
+            Self::IdentityToFreezeDoesNotExistError(_) => 40217,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
