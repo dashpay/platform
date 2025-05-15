@@ -28,6 +28,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
                 validate_unique_identity_public_key_hashes_in_state: 0,
                 validate_master_key_uniqueness: 0,
                 validate_simple_pre_check_balance: 0,
+                validate_non_masternode_identity_exists: 0,
+                validate_identity_exists: 0,
             },
             max_asset_lock_usage_attempts: 16,
             identity_create_state_transition: DriveAbciStateTransitionValidationVersion {

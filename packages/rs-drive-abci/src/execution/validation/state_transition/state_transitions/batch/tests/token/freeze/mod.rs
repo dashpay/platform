@@ -68,7 +68,7 @@ mod token_freeze_tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![freeze_serialized_transition.clone()],
+                    &[freeze_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -101,6 +101,106 @@ mod token_freeze_tests {
                 .expect("expected to fetch token info")
                 .map(|info| info.frozen());
             assert_eq!(token_frozen, Some(true));
+        }
+
+        #[test]
+        fn test_token_freeze_identity_does_not_exist() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let identity_2_id = Identifier::random_with_rng(&mut rng);
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                platform_version,
+            );
+
+            let freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                identity_2_id,
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let freeze_serialized_transition = freeze_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[freeze_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityToFreezeDoesNotExistError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_frozen = platform
+                .drive
+                .fetch_identity_token_info(
+                    token_id.to_buffer(),
+                    identity_2_id.to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token info")
+                .map(|info| info.frozen());
+            assert_eq!(token_frozen, None);
         }
 
         #[test]
@@ -175,7 +275,7 @@ mod token_freeze_tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![freeze_serialized_transition.clone()],
+                    &[freeze_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -342,7 +442,7 @@ mod token_freeze_tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![freeze_serialized_transition.clone()],
+                    &[freeze_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -492,7 +592,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [PaidConsensusError(
                     ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(_)),
                     _
                 )]
@@ -739,7 +839,7 @@ mod token_freeze_tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![freeze_serialized_transition.clone()],
+                    &[freeze_serialized_transition.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
