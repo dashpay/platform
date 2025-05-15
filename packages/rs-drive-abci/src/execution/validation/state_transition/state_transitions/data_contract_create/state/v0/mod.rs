@@ -246,7 +246,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                         if !validated_identities.contains(identifier) {
                             let identity_exists = validate_identity_exists(
                                 platform.drive,
-                                &identifier,
+                                identifier,
                                 execution_context,
                                 tx,
                                 platform_version,

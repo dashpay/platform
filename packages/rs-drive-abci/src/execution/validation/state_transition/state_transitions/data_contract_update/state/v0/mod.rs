@@ -174,7 +174,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 if !validated_identities.contains(member_identity_id) {
                     let identity_exists = validate_non_masternode_identity_exists(
                         platform.drive,
-                        &member_identity_id,
+                        member_identity_id,
                         execution_context,
                         tx,
                         platform_version,
