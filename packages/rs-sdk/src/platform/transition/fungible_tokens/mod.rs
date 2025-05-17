@@ -7,5 +7,7 @@ pub mod destroy;
 pub mod emergency_action;
 pub mod freeze;
 pub mod mint;
+pub mod purchase;
+pub mod set_price;
 pub mod transfer;
 pub mod unfreeze;
