@@ -111,15 +111,22 @@ impl TokenBurnTransitionActionV0 {
                 ));
             }
         };
-        
-        let burn_from_identifier = if let Some(original_group_action) = base_action.original_group_action() {
-            let GroupActionEvent::TokenEvent(TokenEvent::Burn(_, burn_from_id, _)) = original_group_action.event() else {
-                return Err(ProtocolError::CorruptedCodeExecution(format!("received a non burn token event: {}", original_group_action.event())).into());
+
+        let burn_from_identifier =
+            if let Some(original_group_action) = base_action.original_group_action() {
+                let GroupActionEvent::TokenEvent(TokenEvent::Burn(_, burn_from_id, _)) =
+                    original_group_action.event()
+                else {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "received a non burn token event: {}",
+                        original_group_action.event()
+                    ))
+                    .into());
+                };
+                *burn_from_id
+            } else {
+                owner_id
             };
-            *burn_from_id
-        } else {
-            owner_id
-        };
 
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::BurnAction(
@@ -228,14 +235,21 @@ impl TokenBurnTransitionActionV0 {
             }
         };
 
-        let burn_from_identifier = if let Some(original_group_action) = base_action.original_group_action() {
-            let GroupActionEvent::TokenEvent(TokenEvent::Burn(_, burn_from_id, _)) = original_group_action.event() else {
-                return Err(ProtocolError::CorruptedCodeExecution(format!("received a non burn token event: {}", original_group_action.event())).into());
+        let burn_from_identifier =
+            if let Some(original_group_action) = base_action.original_group_action() {
+                let GroupActionEvent::TokenEvent(TokenEvent::Burn(_, burn_from_id, _)) =
+                    original_group_action.event()
+                else {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "received a non burn token event: {}",
+                        original_group_action.event()
+                    ))
+                    .into());
+                };
+                *burn_from_id
+            } else {
+                owner_id
             };
-            *burn_from_id
-        } else {
-            owner_id
-        };
 
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::BurnAction(

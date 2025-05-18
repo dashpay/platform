@@ -27,7 +27,7 @@ pub trait TokenBurnTransitionActionAccessorsV0 {
 
     /// Consumes self and returns the base token transition action
     fn base_owned(self) -> TokenBaseTransitionAction;
-    
+
     /// Returns the identifier of the identity account from which we will burn
     fn burn_from_identifier(&self) -> Identifier;
 

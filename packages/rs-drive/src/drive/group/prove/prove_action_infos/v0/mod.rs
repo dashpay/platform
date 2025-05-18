@@ -177,14 +177,16 @@ mod tests {
 
         let action_1 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_1_id,
             token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_1_id, None)),
         });
 
         let action_2 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_2_id,
             token_contract_position: 0,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, None)),
+            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, identity_1_id, None)),
         });
 
         // Add actions using `add_group_action`
@@ -414,18 +416,21 @@ mod tests {
 
         let action_1 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_1_id,
             token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Mint(200, identity_1_id, None)),
         });
 
         let action_2 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_1_id,
             token_contract_position: 0,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, None)),
+            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, identity_1_id, None)),
         });
 
         let action_3 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_2_id,
             token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Transfer(
                 identity_2_id,
@@ -438,6 +443,7 @@ mod tests {
 
         let action_4 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_3_id,
             token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Transfer(
                 identity_3_id,

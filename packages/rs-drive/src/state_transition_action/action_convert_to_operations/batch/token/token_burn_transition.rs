@@ -49,11 +49,14 @@ impl DriveHighLevelBatchOperationConverter for TokenBurnTransitionAction {
                     action_id,
                     action_is_proposer,
                     signer_power,
-                    
                     ..
                 }) = self.base().store_in_group()
                 {
-                    let event = TokenEvent::Burn(self.burn_amount(), self.burn_from_identifier(), self.public_note().cloned());
+                    let event = TokenEvent::Burn(
+                        self.burn_amount(),
+                        self.burn_from_identifier(),
+                        self.public_note().cloned(),
+                    );
 
                     let initialize_with_insert_action_info = if *action_is_proposer {
                         Some(GroupAction::V0(GroupActionV0 {
@@ -90,7 +93,11 @@ impl DriveHighLevelBatchOperationConverter for TokenBurnTransitionAction {
                             token_id: self.token_id(),
                             owner_id,
                             nonce: identity_contract_nonce,
-                            event: TokenEvent::Burn(self.burn_amount(), self.burn_from_identifier(), self.public_note_owned()),
+                            event: TokenEvent::Burn(
+                                self.burn_amount(),
+                                self.burn_from_identifier(),
+                                self.public_note_owned(),
+                            ),
                         }));
                     }
                 }

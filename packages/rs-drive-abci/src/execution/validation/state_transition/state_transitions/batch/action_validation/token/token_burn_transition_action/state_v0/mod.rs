@@ -75,7 +75,7 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
         }
 
         if let Some(original_group_action) = self.base().original_group_action() {
-            if let GroupActionEvent::TokenEvent(TokenEvent::Burn(old_group_action_amount, _ , _)) =
+            if let GroupActionEvent::TokenEvent(TokenEvent::Burn(old_group_action_amount, _, _)) =
                 original_group_action.event()
             {
                 if old_group_action_amount != &self.burn_amount() {

@@ -149,7 +149,13 @@ impl fmt::Display for TokenEvent {
                 write!(f, "Mint {} to {}{}", amount, recipient, format_note(note))
             }
             TokenEvent::Burn(amount, burn_from_identifier, note) => {
-                write!(f, "Burn {} from {}{}", amount, burn_from_identifier, format_note(note))
+                write!(
+                    f,
+                    "Burn {} from {}{}",
+                    amount,
+                    burn_from_identifier,
+                    format_note(note)
+                )
             }
             TokenEvent::Freeze(identity, note) => {
                 write!(f, "Freeze {}{}", identity, format_note(note))
