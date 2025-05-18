@@ -5,6 +5,7 @@ use std::sync::Arc;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::InvalidGroupPositionError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::group::group_action::GroupActionAccessors;
@@ -50,7 +51,22 @@ impl TokenBaseTransitionActionV0 {
                     action_id,
                     action_is_proposer,
                 }) => {
-                    let group = data_contract.contract.group(group_contract_position)?;
+                    let group = match data_contract
+                        .contract
+                        .expected_group(group_contract_position)
+                    {
+                        Ok(group) => group,
+                        Err(_) => {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(StateError::InvalidGroupPositionError(
+                                    InvalidGroupPositionError::new(
+                                        data_contract.contract.groups().keys().last().copied(),
+                                        group_contract_position,
+                                    ),
+                                )),
+                            ));
+                        }
+                    };
                     let signer_power = match group.member_power(owner_id) {
                         Ok(signer_power) => signer_power,
                         Err(ProtocolError::GroupMemberNotFound(_)) => {
@@ -222,7 +238,22 @@ impl TokenBaseTransitionActionV0 {
                     action_id,
                     action_is_proposer,
                 }) => {
-                    let group = data_contract.contract.group(*group_contract_position)?;
+                    let group = match data_contract
+                        .contract
+                        .expected_group(*group_contract_position)
+                    {
+                        Ok(group) => group,
+                        Err(_) => {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(StateError::InvalidGroupPositionError(
+                                    InvalidGroupPositionError::new(
+                                        data_contract.contract.groups().keys().last().copied(),
+                                        *group_contract_position,
+                                    ),
+                                )),
+                            ));
+                        }
+                    };
                     let signer_power = match group.member_power(owner_id) {
                         Ok(signer_power) => signer_power,
                         Err(ProtocolError::GroupMemberNotFound(_)) => {

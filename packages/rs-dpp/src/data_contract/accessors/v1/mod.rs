@@ -10,9 +10,6 @@ use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 pub trait DataContractV1Getters: DataContractV0Getters {
-    /// Gets a group at a certain position.
-    fn group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError>;
-
     /// Returns a reference to the groups map.
     fn groups(&self) -> &BTreeMap<GroupContractPosition, Group>;
 

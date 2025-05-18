@@ -46,18 +46,34 @@ impl AuthorizedActionTakers {
             AuthorizedActionTakers::NoOne => false,
 
             // Only the contract owner is allowed
-            AuthorizedActionTakers::ContractOwner => match action_taker {
-                ActionTaker::SingleIdentity(action_taker) => action_taker == contract_owner_id,
-                ActionTaker::SpecifiedIdentities(action_takers) => {
-                    action_takers.contains(contract_owner_id)
+            AuthorizedActionTakers::ContractOwner => {
+                if goal == ActionGoal::ActionParticipation {
+                    false
+                } else {
+                    match action_taker {
+                        ActionTaker::SingleIdentity(action_taker) => {
+                            action_taker == contract_owner_id
+                        }
+                        ActionTaker::SpecifiedIdentities(action_takers) => {
+                            action_takers.contains(contract_owner_id)
+                        }
+                    }
                 }
-            },
+            }
 
             // Only an identity is allowed
-            AuthorizedActionTakers::Identity(identity) => match action_taker {
-                ActionTaker::SingleIdentity(action_taker) => action_taker == identity,
-                ActionTaker::SpecifiedIdentities(action_takers) => action_takers.contains(identity),
-            },
+            AuthorizedActionTakers::Identity(identity) => {
+                if goal == ActionGoal::ActionParticipation {
+                    false
+                } else {
+                    match action_taker {
+                        ActionTaker::SingleIdentity(action_taker) => action_taker == identity,
+                        ActionTaker::SpecifiedIdentities(action_takers) => {
+                            action_takers.contains(identity)
+                        }
+                    }
+                }
+            }
 
             // MainGroup allows multiparty actions with specific power requirements
             AuthorizedActionTakers::MainGroup => {
