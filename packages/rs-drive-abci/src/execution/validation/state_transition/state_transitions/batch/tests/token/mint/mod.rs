@@ -3483,5 +3483,108 @@ mod token_mint_tests {
                 .expect("expected to fetch token balance");
             assert_eq!(token_balance, None);
         }
+
+        #[test]
+        fn test_token_mint_by_owner_does_not_require_group_but_sends_group_info() {
+            // We are using a group, and two members need to sign for the event to happen
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, _, _) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration
+                        .keeps_history_mut()
+                        .set_keeps_minting_history(true);
+                    token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                platform_version,
+            );
+
+            let token_mint_transition = BatchTransition::new_token_mint_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                Some(identity.id()),
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let token_mint_serialized_transition = token_mint_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[token_mint_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
     }
 }

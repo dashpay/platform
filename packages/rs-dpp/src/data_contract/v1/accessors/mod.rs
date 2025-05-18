@@ -136,16 +136,6 @@ impl DataContractV0Setters for DataContractV1 {
 }
 
 impl DataContractV1Getters for DataContractV1 {
-    fn group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError> {
-        self.groups
-            .get(&position)
-            .ok_or(ProtocolError::GroupNotFound(format!(
-                "Group not found in contract {} at position {}",
-                self.id(),
-                position
-            )))
-    }
-
     fn groups(&self) -> &BTreeMap<GroupContractPosition, Group> {
         &self.groups
     }
