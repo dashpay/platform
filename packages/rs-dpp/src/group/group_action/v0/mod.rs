@@ -12,6 +12,7 @@ use platform_value::Identifier;
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub struct GroupActionV0 {
     pub contract_id: Identifier,
+    pub proposer_id: Identifier,
     pub token_contract_position: TokenContractPosition,
     pub event: GroupActionEvent,
 }
@@ -19,6 +20,10 @@ pub struct GroupActionV0 {
 impl GroupActionAccessors for GroupActionV0 {
     fn contract_id(&self) -> Identifier {
         self.contract_id
+    }
+
+    fn proposer_id(&self) -> Identifier {
+        self.proposer_id
     }
 
     fn token_contract_position(&self) -> TokenContractPosition {

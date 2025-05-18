@@ -365,8 +365,10 @@ impl Drive {
                                     TokenTransition::DestroyFrozenFunds(_) => {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
+                                    TokenTransition::Burn(_) => {
+                                        Some(vec!["burnFromId", "note"])
+                                    }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
-                                    TokenTransition::Burn(_)
                                     | TokenTransition::Mint(_)
                                     | TokenTransition::Freeze(_)
                                     | TokenTransition::Unfreeze(_)

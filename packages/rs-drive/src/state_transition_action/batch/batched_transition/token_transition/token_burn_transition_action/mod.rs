@@ -1,4 +1,5 @@
 use derive_more::From;
+use dpp::identifier::Identifier;
 
 /// transformer module for token burn transition action
 pub mod transformer;
@@ -25,6 +26,18 @@ impl TokenBurnTransitionActionAccessorsV0 for TokenBurnTransitionAction {
     fn base_owned(self) -> TokenBaseTransitionAction {
         match self {
             TokenBurnTransitionAction::V0(v0) => v0.base,
+        }
+    }
+
+    fn burn_from_identifier(&self) -> Identifier {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.burn_from_identifier,
+        }
+    }
+
+    fn set_burn_from_identifier(&mut self, burn_from_identifier: Identifier) {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.burn_from_identifier = burn_from_identifier,
         }
     }
 

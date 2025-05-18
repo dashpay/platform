@@ -75,7 +75,7 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
         }
 
         if let Some(original_group_action) = self.base().original_group_action() {
-            if let GroupActionEvent::TokenEvent(TokenEvent::Burn(old_group_action_amount, _)) =
+            if let GroupActionEvent::TokenEvent(TokenEvent::Burn(old_group_action_amount, _ , _)) =
                 original_group_action.event()
             {
                 if old_group_action_amount != &self.burn_amount() {
@@ -111,7 +111,7 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
             .drive
             .fetch_identity_token_balance(
                 self.token_id().to_buffer(),
-                owner_id.to_buffer(),
+                self.burn_from_identifier().to_buffer(),
                 transaction,
                 platform_version,
             )?
@@ -123,7 +123,7 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
                 ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                     IdentityDoesNotHaveEnoughTokenBalanceError::new(
                         self.token_id(),
-                        owner_id,
+                        self.burn_from_identifier(),
                         self.burn_amount(),
                         balance,
                         "burn".to_string(),

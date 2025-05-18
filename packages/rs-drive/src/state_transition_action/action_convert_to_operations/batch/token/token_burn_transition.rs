@@ -49,14 +49,16 @@ impl DriveHighLevelBatchOperationConverter for TokenBurnTransitionAction {
                     action_id,
                     action_is_proposer,
                     signer_power,
+                    
                     ..
                 }) = self.base().store_in_group()
                 {
-                    let event = TokenEvent::Burn(self.burn_amount(), self.public_note().cloned());
+                    let event = TokenEvent::Burn(self.burn_amount(), self.burn_from_identifier(), self.public_note().cloned());
 
                     let initialize_with_insert_action_info = if *action_is_proposer {
                         Some(GroupAction::V0(GroupActionV0 {
                             contract_id: self.base().data_contract_id(),
+                            proposer_id: owner_id,
                             token_contract_position: self.base().token_position(),
                             event: GroupActionEvent::TokenEvent(event),
                         }))
@@ -78,7 +80,7 @@ impl DriveHighLevelBatchOperationConverter for TokenBurnTransitionAction {
                 if self.base().perform_action() {
                     ops.push(TokenOperation(TokenOperationType::TokenBurn {
                         token_id: self.token_id(),
-                        identity_balance_holder_id: owner_id,
+                        identity_balance_holder_id: self.burn_from_identifier(),
                         burn_amount: self.burn_amount(),
                     }));
 
@@ -88,7 +90,7 @@ impl DriveHighLevelBatchOperationConverter for TokenBurnTransitionAction {
                             token_id: self.token_id(),
                             owner_id,
                             nonce: identity_contract_nonce,
-                            event: TokenEvent::Burn(self.burn_amount(), self.public_note_owned()),
+                            event: TokenEvent::Burn(self.burn_amount(), self.burn_from_identifier(), self.public_note_owned()),
                         }));
                     }
                 }

@@ -40,6 +40,20 @@
             "$createdAt": "asc"
           }
         ]
+      },
+      {
+        "name": "byBurnFromId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "burnFromId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
       }
     ],
     "properties": {
@@ -52,17 +66,26 @@
         "position": 0,
         "contentMediaType": "application/x.dash.dpp.identifier"
       },
+      "burnFromId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identifier of the identity from which tokens will be burned",
+        "position": 1,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
       "amount": {
         "type": "integer",
         "minimum": 0,
         "description": "The amount that was burned",
-        "position": 1
+        "position": 2
       },
       "note": {
         "type": "string",
         "maxLength": 2048,
         "description": "An optional explanation of why this burn took place",
-        "position": 2
+        "position": 3
       }
     },
     "required": [
@@ -145,7 +168,7 @@
         "byteArray": true,
         "minItems": 32,
         "maxItems": 32,
-        "description": "The token ID",
+        "description": "The recipient ID",
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
       },

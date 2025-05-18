@@ -61,6 +61,7 @@ impl DriveHighLevelBatchOperationConverter for TokenMintTransitionAction {
                     let initialize_with_insert_action_info = if *action_is_proposer {
                         Some(GroupAction::V0(GroupActionV0 {
                             contract_id: self.base().data_contract_id(),
+                            proposer_id: owner_id,
                             token_contract_position: self.base().token_position(),
                             event: GroupActionEvent::TokenEvent(event),
                         }))

@@ -1660,7 +1660,8 @@ message GetGroupActionsResponse {
     // Burn event
     message BurnEvent {
       uint64 amount = 1;               // Amount to burn
-      optional string public_note = 2; // Public note
+      bytes burn_from_id = 2;          // The identifier to burn from
+      optional string public_note = 3; // Public note
     }
 
     // Freeze event

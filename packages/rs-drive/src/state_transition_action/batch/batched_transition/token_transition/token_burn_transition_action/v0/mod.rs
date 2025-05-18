@@ -1,6 +1,7 @@
 mod transformer;
 
 use std::sync::Arc;
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use crate::drive::contract::DataContractFetchInfo;
@@ -11,8 +12,10 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 pub struct TokenBurnTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
+    /// Burn from identifier
+    pub burn_from_identifier: Identifier,
     /// The amount of tokens to burn
-    pub burn_amount: u64,
+    pub burn_amount: TokenAmount,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -24,6 +27,12 @@ pub trait TokenBurnTransitionActionAccessorsV0 {
 
     /// Consumes self and returns the base token transition action
     fn base_owned(self) -> TokenBaseTransitionAction;
+    
+    /// Returns the identifier of the identity account from which we will burn
+    fn burn_from_identifier(&self) -> Identifier;
+
+    /// Sets the identifier of the identity account from which we will burn
+    fn set_burn_from_identifier(&mut self, burn_from_identifier: Identifier);
 
     /// Returns the amount of tokens to burn
     fn burn_amount(&self) -> u64;
@@ -78,6 +87,14 @@ impl TokenBurnTransitionActionAccessorsV0 for TokenBurnTransitionActionV0 {
 
     fn base_owned(self) -> TokenBaseTransitionAction {
         self.base
+    }
+
+    fn burn_from_identifier(&self) -> Identifier {
+        self.burn_from_identifier
+    }
+
+    fn set_burn_from_identifier(&mut self, burn_from_identifier: Identifier) {
+        self.burn_from_identifier = burn_from_identifier;
     }
 
     fn burn_amount(&self) -> u64 {
