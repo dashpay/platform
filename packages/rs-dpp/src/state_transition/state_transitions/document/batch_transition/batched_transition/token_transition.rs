@@ -347,7 +347,7 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::ConfigUpdate(_) => "configUpdate",
             TokenTransition::Claim(_) => "claim",
             TokenTransition::DirectPurchase(_) => "directPurchase",
-            TokenTransition::SetPriceForDirectPurchase(_) => "setPriceForDirectPurchase",
+            TokenTransition::SetPriceForDirectPurchase(_) => "directPricing",
         }
     }
 

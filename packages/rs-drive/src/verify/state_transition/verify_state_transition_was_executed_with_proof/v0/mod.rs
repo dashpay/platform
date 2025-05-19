@@ -367,6 +367,17 @@ impl Drive {
                                     }
                                     TokenTransition::Burn(_) => Some(vec!["burnFromId", "note"]),
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
+                                    TokenTransition::DirectPurchase(_) => {
+                                        let purchase_cost: Credits =
+                                            document.properties().get_integer("purchaseCost")?;
+                                        let agreed_to_purchase_cost: Credits = expected_document
+                                            .properties()
+                                            .get_integer("purchaseCost")?;
+                                        if purchase_cost > agreed_to_purchase_cost {
+                                            return Err(Error::Proof(ProofError::UnexpectedResultProof(format!("proof of state transition execution showed a purchase price of {}, whereas we only agreed to {}, state transition is [{}]", purchase_cost, agreed_to_purchase_cost, token_transition))));
+                                        }
+                                        Some(vec!["purchaseCost"])
+                                    }
                                     TokenTransition::Mint(_)
                                     | TokenTransition::Freeze(_)
                                     | TokenTransition::Unfreeze(_)
