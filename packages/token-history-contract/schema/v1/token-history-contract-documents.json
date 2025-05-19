@@ -90,6 +90,7 @@
     },
     "required": [
       "tokenId",
+      "burnFromId",
       "amount",
       "$createdAt",
       "$createdAtBlockHeight"
