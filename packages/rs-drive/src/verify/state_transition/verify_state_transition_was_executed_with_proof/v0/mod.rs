@@ -366,6 +366,9 @@ impl Drive {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
+                                    TokenTransition::DirectPurchase(_) => {
+                                        Some(vec!["purchaseCost"])
+                                    }
                                     TokenTransition::Burn(_)
                                     | TokenTransition::Mint(_)
                                     | TokenTransition::Freeze(_)
