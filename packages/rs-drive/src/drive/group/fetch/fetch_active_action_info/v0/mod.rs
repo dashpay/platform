@@ -52,7 +52,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupAction, Error> {
+    ) -> Result<Option<GroupAction>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
         let path = group_active_action_path(
@@ -80,8 +80,12 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let group_action = GroupAction::deserialize_from_bytes(&value)?;
+        if !approximate_without_state_for_costs {
+            let group_action = GroupAction::deserialize_from_bytes(&value)?;
 
-        Ok(group_action)
+            Ok(Some(group_action))
+        } else {
+            Ok(None)
+        }
     }
 }

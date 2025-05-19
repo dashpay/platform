@@ -15,6 +15,7 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBas
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionV0;
@@ -93,6 +94,7 @@ impl TokenBaseTransitionActionV0 {
                                 data_contract_id,
                                 group_contract_position,
                                 action_id,
+                                !approximate_without_state_for_costs,
                                 transaction,
                                 drive_operations,
                                 platform_version,
@@ -147,19 +149,27 @@ impl TokenBaseTransitionActionV0 {
                                 platform_version,
                             )?;
 
+                            if !approximate_without_state_for_costs && group_action.is_none() {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution("group action should always exist if we are stateful, or we should have errored earlier")));
+                            }
+
                             let change_to_original_public_note =
-                                if power.saturating_add(signer_power) >= required_power {
-                                    Some(
-                                        group_action
-                                            .event()
-                                            .public_note()
-                                            .map(|str| str.to_string()),
-                                    )
+                                if let Some(group_action) = &group_action {
+                                    if power.saturating_add(signer_power) >= required_power {
+                                        Some(
+                                            group_action
+                                                .event()
+                                                .public_note()
+                                                .map(|str| str.to_string()),
+                                        )
+                                    } else {
+                                        None
+                                    }
                                 } else {
                                     None
                                 };
 
-                            (power, Some(group_action), change_to_original_public_note)
+                            (power, group_action, change_to_original_public_note)
                         };
                     if current_power >= required_power {
                         return Ok(ConsensusValidationResult::new_with_error(
@@ -280,6 +290,7 @@ impl TokenBaseTransitionActionV0 {
                                 *data_contract_id,
                                 *group_contract_position,
                                 *action_id,
+                                !approximate_without_state_for_costs,
                                 transaction,
                                 drive_operations,
                                 platform_version,
@@ -334,19 +345,27 @@ impl TokenBaseTransitionActionV0 {
                                 platform_version,
                             )?;
 
+                            if !approximate_without_state_for_costs && group_action.is_none() {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution("group action should always exist if we are stateful, or we should have errored earlier")));
+                            }
+
                             let change_to_original_public_note =
-                                if power.saturating_add(signer_power) >= required_power {
-                                    Some(
-                                        group_action
-                                            .event()
-                                            .public_note()
-                                            .map(|str| str.to_string()),
-                                    )
+                                if let Some(group_action) = &group_action {
+                                    if power.saturating_add(signer_power) >= required_power {
+                                        Some(
+                                            group_action
+                                                .event()
+                                                .public_note()
+                                                .map(|str| str.to_string()),
+                                        )
+                                    } else {
+                                        None
+                                    }
                                 } else {
                                     None
                                 };
 
-                            (power, Some(group_action), change_to_original_public_note)
+                            (power, group_action, change_to_original_public_note)
                         };
                     if current_power >= required_power {
                         return Ok(ConsensusValidationResult::new_with_error(
