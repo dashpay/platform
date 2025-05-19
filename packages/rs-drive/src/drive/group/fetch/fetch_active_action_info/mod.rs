@@ -76,7 +76,8 @@ impl Drive {
     /// - `platform_version`: The version of the platform that determines the correct method version.
     ///
     /// # Returns
-    /// - `Ok(GroupAction)`: The `GroupAction` for the specified action ID and contract position, along with any added operations.
+    /// - `Ok(Option<GroupAction>)`: The `GroupAction` for the specified action ID and contract position, along with any added operations.
+    ///    We will always get back a value unless we are approximating without state.
     /// - `Err(Error)`: If an error occurs, a generic error is returned.
     ///
     /// # Errors
@@ -91,7 +92,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupAction, Error> {
+    ) -> Result<Option<GroupAction>, Error> {
         match platform_version
             .drive
             .methods
