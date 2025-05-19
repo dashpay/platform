@@ -5,7 +5,10 @@ use grovedb::TransactionArg;
 use std::sync::Arc;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::group::action_event::GroupActionEvent;
+use dpp::group::group_action::GroupActionAccessors;
 use dpp::prelude::UserFeeIncrease;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::validation::ConsensusValidationResult;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
@@ -13,7 +16,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::v0::TokenBurnTransitionActionV0;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
@@ -109,10 +112,27 @@ impl TokenBurnTransitionActionV0 {
             }
         };
 
+        let burn_from_identifier =
+            if let Some(original_group_action) = base_action.original_group_action() {
+                let GroupActionEvent::TokenEvent(TokenEvent::Burn(_, burn_from_id, _)) =
+                    original_group_action.event()
+                else {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "received a non burn token event: {}",
+                        original_group_action.event()
+                    ))
+                    .into());
+                };
+                *burn_from_id
+            } else {
+                owner_id
+            };
+
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::BurnAction(
                 TokenBurnTransitionActionV0 {
                     base: base_action,
+                    burn_from_identifier,
                     burn_amount,
                     public_note: change_note.unwrap_or(public_note),
                 }
@@ -215,10 +235,27 @@ impl TokenBurnTransitionActionV0 {
             }
         };
 
+        let burn_from_identifier =
+            if let Some(original_group_action) = base_action.original_group_action() {
+                let GroupActionEvent::TokenEvent(TokenEvent::Burn(_, burn_from_id, _)) =
+                    original_group_action.event()
+                else {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "received a non burn token event: {}",
+                        original_group_action.event()
+                    ))
+                    .into());
+                };
+                *burn_from_id
+            } else {
+                owner_id
+            };
+
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::BurnAction(
                 TokenBurnTransitionActionV0 {
                     base: base_action,
+                    burn_from_identifier,
                     burn_amount: *burn_amount,
                     public_note: change_note.unwrap_or(public_note.clone()),
                 }

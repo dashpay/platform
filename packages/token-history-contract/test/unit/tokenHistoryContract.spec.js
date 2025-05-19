@@ -49,6 +49,7 @@ describe('Token History Contract', () => {
       beforeEach(() => {
         rawBurnDocument = {
           tokenId: crypto.randomBytes(32),
+          burnFromId: crypto.randomBytes(32),
           amount: 100,
           note: 'Burning tokens',
         };

@@ -18,6 +18,8 @@ pub enum GroupAction {
 
 pub trait GroupActionAccessors {
     fn contract_id(&self) -> Identifier;
+
+    fn proposer_id(&self) -> Identifier;
     fn token_contract_position(&self) -> TokenContractPosition;
     fn event(&self) -> &GroupActionEvent;
 }
@@ -25,6 +27,12 @@ impl GroupActionAccessors for GroupAction {
     fn contract_id(&self) -> Identifier {
         match self {
             GroupAction::V0(inner) => inner.contract_id(),
+        }
+    }
+
+    fn proposer_id(&self) -> Identifier {
+        match self {
+            GroupAction::V0(inner) => inner.proposer_id(),
         }
     }
 

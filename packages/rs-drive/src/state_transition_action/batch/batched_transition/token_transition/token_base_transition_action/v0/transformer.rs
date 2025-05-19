@@ -85,7 +85,7 @@ impl TokenBaseTransitionActionV0 {
                         Err(e) => return Err(e.into()),
                     };
                     let required_power = group.required_power();
-                    let (current_power, current_group_action_event, change_to_original_public_note) =
+                    let (current_power, current_group_action, change_to_original_public_note) =
                         if action_is_proposer {
                             (0, None, None)
                         } else {
@@ -189,7 +189,7 @@ impl TokenBaseTransitionActionV0 {
                     };
                     (
                         perform_action,
-                        Some((store_in_group, current_group_action_event)),
+                        Some((store_in_group, current_group_action)),
                         change_to_original_public_note,
                     )
                 }

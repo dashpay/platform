@@ -89,8 +89,13 @@ impl<C> Platform<C> {
         let action_id = Identifier::new([32; 32]);
         let group_action = GroupAction::V0(GroupActionV0 {
             contract_id: DATA_CONTRACT_ID,
+            proposer_id: IDENTITY_ID_1,
             token_contract_position: 2,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some("world on fire".into()))),
+            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(
+                10,
+                IDENTITY_ID_1,
+                Some("world on fire".into()),
+            )),
         });
 
         self.drive.add_group_action(

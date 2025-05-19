@@ -33,6 +33,9 @@ use crate::ProtocolError;
 /// Alias representing the identity that will receive tokens or other effects from a token operation.
 pub type RecipientIdentifier = Identifier;
 
+/// Alias representing the identity that will have tokens burned from their account.
+pub type BurnFromIdentifier = Identifier;
+
 /// Alias representing the identity performing a token purchase.
 pub type PurchaserIdentifier = Identifier;
 
@@ -65,8 +68,9 @@ pub enum TokenEvent {
     /// Event representing the burning of tokens, removing them from circulation.
     ///
     /// - `TokenAmount`: The amount of tokens burned.
+    /// - `BurnFromIdentifier`: The account to burn from.
     /// - `TokenEventPublicNote`: Optional note associated with the event.
-    Burn(TokenAmount, TokenEventPublicNote),
+    Burn(TokenAmount, BurnFromIdentifier, TokenEventPublicNote),
 
     /// Event representing freezing of tokens for a specific identity.
     ///
@@ -144,8 +148,14 @@ impl fmt::Display for TokenEvent {
             TokenEvent::Mint(amount, recipient, note) => {
                 write!(f, "Mint {} to {}{}", amount, recipient, format_note(note))
             }
-            TokenEvent::Burn(amount, note) => {
-                write!(f, "Burn {}{}", amount, format_note(note))
+            TokenEvent::Burn(amount, burn_from_identifier, note) => {
+                write!(
+                    f,
+                    "Burn {} from {}{}",
+                    amount,
+                    burn_from_identifier,
+                    format_note(note)
+                )
             }
             TokenEvent::Freeze(identity, note) => {
                 write!(f, "Freeze {}{}", identity, format_note(note))
@@ -219,7 +229,7 @@ impl TokenEvent {
     pub fn public_note(&self) -> Option<&str> {
         match self {
             TokenEvent::Mint(_, _, Some(note))
-            | TokenEvent::Burn(_, Some(note))
+            | TokenEvent::Burn(_, _, Some(note))
             | TokenEvent::Freeze(_, Some(note))
             | TokenEvent::Unfreeze(_, Some(note))
             | TokenEvent::DestroyFrozenFunds(_, _, Some(note))
@@ -266,9 +276,10 @@ impl TokenEvent {
                 }
                 properties
             }
-            TokenEvent::Burn(burn_amount, public_note) => {
+            TokenEvent::Burn(burn_amount, burn_from_identifier, public_note) => {
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
+                    ("burnFromId".to_string(), burn_from_identifier.into()),
                     ("amount".to_string(), burn_amount.into()),
                 ]);
                 if let Some(note) = public_note {

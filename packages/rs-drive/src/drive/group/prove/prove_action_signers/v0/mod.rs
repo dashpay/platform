@@ -173,14 +173,16 @@ mod tests {
 
         let action_1 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_1_id,
             token_contract_position: 0,
             event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_1_id, None)),
         });
 
         let action_2 = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_2_id,
             token_contract_position: 1,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, None)),
+            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, identity_2_id, None)),
         });
 
         // Add actions using `add_group_action`
@@ -443,8 +445,9 @@ mod tests {
         let action_id = Identifier::random();
         let action = GroupAction::V0(GroupActionV0 {
             contract_id,
+            proposer_id: identity_2_id,
             token_contract_position: 0,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, None)),
+            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, identity_2_id, None)),
         });
 
         drive

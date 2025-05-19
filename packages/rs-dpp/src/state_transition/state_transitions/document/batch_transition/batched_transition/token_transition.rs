@@ -399,7 +399,9 @@ impl TokenTransitionV0Methods for TokenTransition {
     ) -> Result<TokenEvent, ProtocolError> {
         Ok(match self {
             TokenTransition::Burn(burn) => {
-                TokenEvent::Burn(burn.burn_amount(), burn.public_note().cloned())
+                // The owner id might be incorrect when doing group actions
+                // However it will be fixed in verify_state_transition was executed area.
+                TokenEvent::Burn(burn.burn_amount(), owner_id, burn.public_note().cloned())
             }
             TokenTransition::Mint(mint) => {
                 let recipient = match mint.issued_to_identity_id() {
