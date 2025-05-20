@@ -1,5 +1,6 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::prelude::TimestampMillisInterval;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,15 +12,15 @@ use thiserror::Error;
 #[error("TimeBasedDistribution interval {interval} is not divisible by 60,000 ms (1 minute).")]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenDistributionTimeIntervalNotMinuteAlignedError {
-    interval: u64,
+    interval: TimestampMillisInterval,
 }
 
 impl InvalidTokenDistributionTimeIntervalNotMinuteAlignedError {
-    pub fn new(interval: u64) -> Self {
+    pub fn new(interval: TimestampMillisInterval) -> Self {
         Self { interval }
     }
 
-    pub fn interval(&self) -> u64 {
+    pub fn interval(&self) -> TimestampMillisInterval {
         self.interval
     }
 }
