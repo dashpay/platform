@@ -1,5 +1,6 @@
 mod accessors;
 mod evaluate_interval;
+mod validation;
 
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_CYCLES_PARAM};
 use crate::prelude::{BlockHeightInterval, DataContract, EpochInterval, TimestampMillisInterval};

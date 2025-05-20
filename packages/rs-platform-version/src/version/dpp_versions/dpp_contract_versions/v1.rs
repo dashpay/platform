@@ -1,7 +1,7 @@
 use crate::version::dpp_versions::dpp_contract_versions::{
     DPPContractVersions, DataContractMethodVersions, DocumentTypeClassMethodVersions,
     DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
-    DocumentTypeVersions, RecursiveSchemaValidatorVersions,
+    DocumentTypeVersions, RecursiveSchemaValidatorVersions, TokenVersions,
 };
 use versioned_feature_core::FeatureVersionBounds;
 
@@ -53,5 +53,8 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             serialize_value_for_key: 0,
             deserialize_value_for_key: 0,
         },
+    },
+    token_versions: TokenVersions {
+        validate_structure_interval: 0,
     },
 };

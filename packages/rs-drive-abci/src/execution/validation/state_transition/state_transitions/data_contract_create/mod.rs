@@ -1269,7 +1269,7 @@ mod tests {
                         .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                             TokenPerpetualDistributionV0 {
                                 distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                    interval: 10,
+                                    interval: 100,
                                     function: DistributionFunction::Exponential {
                                         a: 1,
                                         d: 1,
@@ -2476,7 +2476,7 @@ mod tests {
                         .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                             TokenPerpetualDistributionV0 {
                                 distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                    interval: 10,
+                                    interval: 100,
                                     function: DistributionFunction::Exponential {
                                         a: 0,
                                         d: 0,
@@ -2594,7 +2594,7 @@ mod tests {
                         .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                             TokenPerpetualDistributionV0 {
                                 distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                    interval: 10,
+                                    interval: 100,
                                     function: DistributionFunction::Random { min: 0, max: 10 },
                                 },
                                 // we give to identity 2

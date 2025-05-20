@@ -16,6 +16,7 @@ pub struct DPPContractVersions {
     pub config: FeatureVersion,
     pub methods: DataContractMethodVersions,
     pub document_type_versions: DocumentTypeVersions,
+    pub token_versions: TokenVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,6 +48,11 @@ pub struct DocumentTypeVersions {
     pub structure_version: FeatureVersion,
     pub schema: DocumentTypeSchemaVersions,
     pub methods: DocumentTypeMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TokenVersions {
+    pub validate_structure_interval: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

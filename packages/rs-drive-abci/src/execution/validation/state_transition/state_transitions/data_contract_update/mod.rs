@@ -1904,9 +1904,9 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::GroupPositionDoesNotExistError(_))
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::GroupPositionDoesNotExistError(_)
+                ))]
             );
         }
 
@@ -1946,7 +1946,7 @@ mod tests {
                 .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                     TokenPerpetualDistributionV0 {
                         distribution_type: RewardDistributionType::BlockBasedDistribution {
-                            interval: 10,
+                            interval: 100,
                             function: DistributionFunction::Exponential {
                                 a: 0,
                                 d: 0,
@@ -2004,11 +2004,9 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(
-                        BasicError::InvalidTokenDistributionFunctionDivideByZeroError(_)
-                    )
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::InvalidTokenDistributionFunctionDivideByZeroError(_)
+                ))]
             );
         }
 
@@ -2048,7 +2046,7 @@ mod tests {
                 .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                     TokenPerpetualDistributionV0 {
                         distribution_type: RewardDistributionType::BlockBasedDistribution {
-                            interval: 10,
+                            interval: 100,
                             function: DistributionFunction::Random { min: 0, max: 10 },
                         },
                         distribution_recipient: TokenDistributionRecipient::Identity(identity.id()),
@@ -2096,9 +2094,9 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::UnsupportedFeatureError(_)
+                ))]
             );
         }
 

@@ -66,7 +66,7 @@ use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedErr
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError};
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError};
 use dpp::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -823,6 +823,16 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::TokenNoteOnlyAllowedWhenProposerError(e) => {
             generic_consensus_error!(TokenNoteOnlyAllowedWhenProposerError, e).into()
+        }
+        BasicError::InvalidTokenDistributionBlockIntervalTooShortError(e) => {
+            generic_consensus_error!(InvalidTokenDistributionBlockIntervalTooShortError, e).into()
+        }
+        BasicError::InvalidTokenDistributionTimeIntervalTooShortError(e) => {
+            generic_consensus_error!(InvalidTokenDistributionTimeIntervalTooShortError, e).into()
+        }
+        BasicError::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(e) => {
+            generic_consensus_error!(InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, e)
+                .into()
         }
     }
 }

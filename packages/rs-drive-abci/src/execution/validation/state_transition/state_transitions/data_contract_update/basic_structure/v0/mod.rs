@@ -73,6 +73,16 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 .distribution_rules()
                 .perpetual_distribution()
             {
+                // we validate the interval (that it's more than one hour or over 100 blocks)
+                // also that if it is time based we are using minute intervals
+                let validation_result = perpetual_distribution
+                    .distribution_type()
+                    .validate_structure_interval(platform_version)?;
+
+                if !validation_result.is_valid() {
+                    return Ok(validation_result);
+                }
+
                 // We use 0 as the start moment to show that we are starting now with no offset
                 let validation_result = perpetual_distribution
                     .distribution_type()
