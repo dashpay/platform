@@ -96,7 +96,8 @@ impl TokenDirectPurchaseTransitionActionV0 {
             None,
         )?;
 
-        let base_action = match base_action_validation_result.is_valid() {
+        // We can not change the note on a direct purchase
+        let (base_action, _change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
                 let bump_action =

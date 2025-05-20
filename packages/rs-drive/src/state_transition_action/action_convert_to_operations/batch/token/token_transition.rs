@@ -74,6 +74,7 @@ impl TokenTransitionAction {
         match self {
             TokenTransitionAction::BurnAction(burn_action) => TokenEvent::Burn(
                 burn_action.burn_amount(),
+                burn_action.burn_from_identifier(),
                 burn_action.public_note().cloned(),
             ),
             TokenTransitionAction::MintAction(mint_action) => TokenEvent::Mint(

@@ -160,6 +160,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenConfigUpdateNoChangeError(_) => 10457,
             Self::InvalidTokenAmountError(_) => 10458,
             Self::InvalidTokenNoteTooBigError(_) => 10459,
+            Self::TokenNoteOnlyAllowedWhenProposerError(_) => 10460,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -284,6 +285,7 @@ impl ErrorWithCode for StateError {
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,
+            Self::IdentityToFreezeDoesNotExistError(_) => 40217,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
@@ -330,6 +332,7 @@ impl ErrorWithCode for StateError {
             Self::GroupActionDoesNotExistError(_) => 40801,
             Self::GroupActionAlreadyCompletedError(_) => 40802,
             Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
+            Self::ModificationOfGroupActionMainParametersNotPermittedError(_) => 40804,
         }
     }
 }

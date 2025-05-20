@@ -1,13 +1,17 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::group::ModificationOfGroupActionMainParametersNotPermittedError;
 use dpp::errors::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::errors::consensus::state::state_error::StateError;
 use dpp::errors::consensus::state::token::{IdentityTokenAccountFrozenError, TokenMintPastMaxSupplyError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::group::action_event::GroupActionEvent;
+use dpp::group::group_action::GroupActionAccessors;
 use dpp::prelude::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -70,6 +74,48 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        if let Some(original_group_action) = self.base().original_group_action() {
+            if let GroupActionEvent::TokenEvent(TokenEvent::Mint(
+                old_group_action_amount,
+                old_group_action_recipient,
+                _,
+            )) = original_group_action.event()
+            {
+                let mut changed_internal_fields = vec![];
+                if old_group_action_amount != &self.mint_amount() {
+                    changed_internal_fields.push("mint_amount".to_string());
+                }
+                if old_group_action_recipient != &self.identity_balance_holder_id() {
+                    changed_internal_fields.push("recipient".to_string());
+                }
+                if !changed_internal_fields.is_empty() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                                ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                    original_group_action.event().event_name(),
+                                    "Token: mint".to_string(),
+                                    changed_internal_fields,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            } else {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                            ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                original_group_action.event().event_name(),
+                                "Token: mint".to_string(),
+                                vec![],
+                            ),
+                        ),
+                    ),
+                ));
+            }
         }
 
         if let Some(max_supply) = token_configuration.max_supply() {

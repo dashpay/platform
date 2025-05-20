@@ -155,6 +155,88 @@ mod token_selling_tests {
     }
 
     #[test]
+    fn test_direct_purchase_change_using_group_without_needing_group() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(12345);
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+
+        let (identity_2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+
+        let single_price = TokenPricingSchedule::SinglePrice(dash_to_credits!(1));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            seller.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_change_direct_purchase_pricing_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(seller.id(), 1), (identity_2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            platform_version,
+        );
+
+        // Seller sets single price
+        let set_price_transition =
+            BatchTransition::new_token_change_direct_purchase_price_transition(
+                token_id,
+                seller.id(),
+                contract.id(),
+                0,
+                Some(single_price.clone()), // Price per token
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                &seller_key,
+                2,
+                0,
+                &seller_signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+
+        let platform_state = platform.state.load();
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            set_price_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError(
+                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                _
+            )]
+        );
+    }
+
+    #[test]
     fn test_direct_purchase_single_price_not_paying_full_price() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()

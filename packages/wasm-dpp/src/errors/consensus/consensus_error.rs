@@ -79,6 +79,7 @@ use dpp::errors::consensus::state::document::document_not_for_sale_error::Docume
 use dpp::errors::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
 use dpp::errors::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::errors::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use dpp::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::errors::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
 use dpp::errors::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
@@ -414,6 +415,13 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityMemberOfGroupNotFoundError(e) => {
             generic_consensus_error!(IdentityMemberOfGroupNotFoundError, e).into()
+        }
+        StateError::ModificationOfGroupActionMainParametersNotPermittedError(e) => {
+            generic_consensus_error!(ModificationOfGroupActionMainParametersNotPermittedError, e)
+                .into()
+        }
+        StateError::IdentityToFreezeDoesNotExistError(e) => {
+            generic_consensus_error!(IdentityToFreezeDoesNotExistError, e).into()
         }
     }
 }
@@ -812,6 +820,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::GroupRequiredPowerIsInvalidError(e) => {
             generic_consensus_error!(GroupRequiredPowerIsInvalidError, e).into()
+        }
+        BasicError::TokenNoteOnlyAllowedWhenProposerError(e) => {
+            generic_consensus_error!(TokenNoteOnlyAllowedWhenProposerError, e).into()
         }
     }
 }

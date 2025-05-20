@@ -42,7 +42,7 @@ impl Drive {
                         )?)
                     }
                     _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "can not query a non tree",
+                        "can not query a non tree in grove_get_big_sum_tree_total_value",
                     ))),
                 }?;
 

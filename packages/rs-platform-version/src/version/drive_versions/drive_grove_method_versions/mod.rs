@@ -57,6 +57,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
     pub batch_insert_empty_sum_tree: FeatureVersion,
+    pub batch_move: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

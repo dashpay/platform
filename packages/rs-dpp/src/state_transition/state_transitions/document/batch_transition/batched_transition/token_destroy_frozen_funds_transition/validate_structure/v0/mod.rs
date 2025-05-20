@@ -2,8 +2,10 @@ use crate::ProtocolError;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::errors::consensus::basic::BasicError;
-use crate::errors::consensus::basic::token::InvalidTokenNoteTooBigError;
+use crate::errors::consensus::basic::token::{InvalidTokenNoteTooBigError, TokenNoteOnlyAllowedWhenProposerError};
 use crate::errors::consensus::ConsensusError;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 
@@ -23,6 +25,17 @@ impl TokenDestroyFrozenFundsTransitionStructureValidationV0 for TokenDestroyFroz
                         ),
                     )),
                 ));
+            }
+            if let Some(group_state_transition_info) = self.base().using_group_info() {
+                if !group_state_transition_info.action_is_proposer {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(
+                            BasicError::TokenNoteOnlyAllowedWhenProposerError(
+                                TokenNoteOnlyAllowedWhenProposerError::new(),
+                            ),
+                        ),
+                    ));
+                }
             }
         }
 

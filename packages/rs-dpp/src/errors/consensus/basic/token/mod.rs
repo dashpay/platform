@@ -8,6 +8,7 @@ pub mod invalid_token_id_error;
 pub mod invalid_token_note_too_big_error;
 pub mod invalid_token_position_error;
 pub mod missing_default_localization;
+pub mod token_note_only_allowed_on_proposer_error;
 pub mod token_transfer_to_ourselves_error;
 
 pub use choosing_token_mint_recipient_not_allowed_error::ChoosingTokenMintRecipientNotAllowedError;
@@ -20,4 +21,5 @@ pub use invalid_token_id_error::InvalidTokenIdError;
 pub use invalid_token_note_too_big_error::InvalidTokenNoteTooBigError;
 pub use invalid_token_position_error::InvalidTokenPositionError;
 pub use missing_default_localization::MissingDefaultLocalizationError;
+pub use token_note_only_allowed_on_proposer_error::TokenNoteOnlyAllowedWhenProposerError;
 pub use token_transfer_to_ourselves_error::TokenTransferToOurselfError;

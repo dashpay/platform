@@ -1,4 +1,4 @@
-use crate::errors::consensus::basic::token::InvalidTokenNoteTooBigError;
+use crate::errors::consensus::basic::token::{InvalidTokenNoteTooBigError, TokenNoteOnlyAllowedWhenProposerError};
 use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
@@ -6,6 +6,8 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 
 pub(super) trait TokenFreezeTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError>;
@@ -23,6 +25,17 @@ impl TokenFreezeTransitionStructureValidationV0 for TokenFreezeTransition {
                         ),
                     )),
                 ));
+            }
+            if let Some(group_state_transition_info) = self.base().using_group_info() {
+                if !group_state_transition_info.action_is_proposer {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(
+                            BasicError::TokenNoteOnlyAllowedWhenProposerError(
+                                TokenNoteOnlyAllowedWhenProposerError::new(),
+                            ),
+                        ),
+                    ));
+                }
             }
         }
 

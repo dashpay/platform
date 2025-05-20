@@ -13,6 +13,7 @@ pub const DRIVE_GROUP_METHOD_VERSIONS_V1: DriveGroupMethodVersions = DriveGroupM
         fetch_group_infos: 0,
         fetch_action_infos: 0,
         fetch_action_signers: 0,
+        fetch_action_is_closed: 0,
     },
     prove: DriveGroupProveMethodVersions {
         prove_group_info: 0,

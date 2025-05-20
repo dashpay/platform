@@ -88,7 +88,7 @@ pub fn group_active_action_root_path_vec(
 }
 
 /// Group path
-pub fn group_action_path<'a>(
+pub fn group_active_action_path<'a>(
     contract_id: &'a [u8],
     group_contract_position_bytes: &'a [u8],
     action_id: &'a [u8],
@@ -103,7 +103,7 @@ pub fn group_action_path<'a>(
 }
 
 /// Group path vector
-pub fn group_action_path_vec(
+pub fn group_active_action_path_vec(
     contract_id: &[u8],
     group_contract_position: GroupContractPosition,
     action_id: &[u8],

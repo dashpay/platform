@@ -1,9 +1,9 @@
-use crate::drive::group::paths::{group_action_path, ACTION_SIGNERS_KEY};
+use crate::drive::group::paths::{group_active_action_path, ACTION_SIGNERS_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
-use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::QueryTarget::QueryTargetTree;
 use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
@@ -44,7 +44,7 @@ impl Drive {
     ) -> Result<Option<GroupSumPower>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
+        let path = group_active_action_path(
             contract_id.as_ref(),
             &group_contract_position_bytes,
             action_id.as_ref(),
@@ -101,7 +101,7 @@ impl Drive {
     ) -> Result<Option<GroupSumPower>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
+        let path = group_active_action_path(
             contract_id.as_ref(),
             &group_contract_position_bytes,
             action_id.as_ref(),
@@ -111,7 +111,8 @@ impl Drive {
         let direct_query_type = if estimate_costs_only {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                query_target: QueryTargetValue(8),
+                // 33 because of 1 byte for epoch and 32 for owner id
+                query_target: QueryTargetTree(33, TreeType::SumTree),
             }
         } else {
             DirectQueryType::StatefulDirectQuery

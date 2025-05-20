@@ -17,7 +17,14 @@ use crate::platform_types::platform::PlatformStateRef;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::group::ModificationOfGroupActionMainParametersNotPermittedError;
+use dpp::errors::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
+use dpp::group::action_event::GroupActionEvent;
+use dpp::group::group_action::GroupActionAccessors;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
+use dpp::tokens::token_event::TokenEvent;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
+use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait TokenFreezeTransitionActionStateValidationV0 {
     fn validate_state_v0(
@@ -72,6 +79,43 @@ impl TokenFreezeTransitionActionStateValidationV0 for TokenFreezeTransitionActio
             return Ok(validation_result);
         }
 
+        if let Some(original_group_action) = self.base().original_group_action() {
+            // we shouldn't compare the amount, because that is figured out at the end
+            if let GroupActionEvent::TokenEvent(TokenEvent::Freeze(identifier, _)) =
+                original_group_action.event()
+            {
+                let mut changed_internal_fields = vec![];
+                if identifier != &self.identity_to_freeze_id() {
+                    changed_internal_fields.push("identity_to_freeze_id".to_string());
+                }
+                if !changed_internal_fields.is_empty() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                                ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                    original_group_action.event().event_name(),
+                                    "Token: freeze".to_string(),
+                                    changed_internal_fields,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            } else {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                            ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                original_group_action.event().event_name(),
+                                "Token: freeze".to_string(),
+                                vec![],
+                            ),
+                        ),
+                    ),
+                ));
+            }
+        }
+
         // Check if the identity is already frozen
         let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
             self.token_id().to_buffer(),
@@ -94,7 +138,24 @@ impl TokenFreezeTransitionActionStateValidationV0 for TokenFreezeTransitionActio
                     )),
                 ));
             }
-        };
+        } else {
+            //make sure the identity to freeze exists if we didn't find info
+            let recipient_exists = validate_identity_exists(
+                platform.drive,
+                &self.identity_to_freeze_id(),
+                execution_context,
+                transaction,
+                platform_version,
+            )?;
+
+            if !recipient_exists {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::IdentityToFreezeDoesNotExistError(
+                        IdentityToFreezeDoesNotExistError::new(self.identity_to_freeze_id()),
+                    )),
+                ));
+            }
+        }
 
         Ok(SimpleConsensusValidationResult::new())
     }

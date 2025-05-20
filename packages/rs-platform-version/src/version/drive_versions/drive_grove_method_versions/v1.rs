@@ -48,6 +48,7 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         batch_delete_up_tree_while_empty: 0,
         batch_refresh_reference: 0,
         batch_insert_empty_sum_tree: 0,
+        batch_move: 0,
     },
     apply: DriveGroveApplyMethodVersions {
         grove_apply_operation: 0,

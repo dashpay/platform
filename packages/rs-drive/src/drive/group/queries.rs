@@ -1,6 +1,7 @@
 use crate::drive::group::paths::{
-    group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY,
-    GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
+    group_action_signers_path_vec, group_closed_action_signers_path_vec, group_contract_path_vec,
+    group_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY, GROUP_ACTIVE_ACTIONS_KEY,
+    GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
 };
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
@@ -91,6 +92,35 @@ impl Drive {
     }
 
     /// Gets the action signers query
+    pub fn group_action_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
+        action_id: [u8; 32],
+    ) -> PathQuery {
+        let mut group_actions_path = group_path_vec(&contract_id, group_contract_position);
+        match action_status {
+            GroupActionStatus::ActionActive => {
+                group_actions_path.push(GROUP_ACTIVE_ACTIONS_KEY.to_vec())
+            }
+            GroupActionStatus::ActionClosed => {
+                group_actions_path.push(GROUP_CLOSED_ACTIONS_KEY.to_vec())
+            }
+        }
+        group_actions_path.push(action_id.to_vec());
+        let query = Query::new_single_key(ACTION_SIGNERS_KEY.to_vec());
+
+        PathQuery {
+            path: group_actions_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// Gets the action signers query
     pub fn group_action_signers_query(
         contract_id: [u8; 32],
         group_contract_position: GroupContractPosition,
@@ -112,6 +142,130 @@ impl Drive {
 
         PathQuery {
             path: group_actions_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// Query for a single active signer
+    pub fn group_active_action_single_signer_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_id: [u8; 32],
+        identity_id: [u8; 32],
+    ) -> PathQuery {
+        let group_actions_path =
+            group_action_signers_path_vec(&contract_id, group_contract_position, &action_id);
+        let query = Query::new_single_key(identity_id.to_vec());
+
+        PathQuery {
+            path: group_actions_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// Query for a single active signer
+    pub fn group_closed_action_single_signer_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_id: [u8; 32],
+        identity_id: [u8; 32],
+    ) -> PathQuery {
+        let group_actions_path =
+            group_closed_action_signers_path_vec(&contract_id, group_contract_position, &action_id);
+        let query = Query::new_single_key(identity_id.to_vec());
+
+        PathQuery {
+            path: group_actions_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// Query for a single active signer
+    pub fn group_active_or_closed_action_single_signer_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_id: [u8; 32],
+        action_status: GroupActionStatus,
+        identity_id: [u8; 32],
+    ) -> PathQuery {
+        let mut group_actions_path = group_path_vec(&contract_id, group_contract_position);
+        match action_status {
+            GroupActionStatus::ActionActive => {
+                group_actions_path.push(GROUP_ACTIVE_ACTIONS_KEY.to_vec())
+            }
+            GroupActionStatus::ActionClosed => {
+                group_actions_path.push(GROUP_CLOSED_ACTIONS_KEY.to_vec())
+            }
+        }
+        group_actions_path.push(action_id.to_vec());
+        group_actions_path.push(ACTION_SIGNERS_KEY.to_vec());
+        let query = Query::new_single_key(identity_id.to_vec());
+
+        PathQuery {
+            path: group_actions_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// Gets query to figure out if the proof is for active or closed
+    pub fn group_active_or_closed_action_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+    ) -> PathQuery {
+        let group_path = group_path_vec(&contract_id, group_contract_position);
+        let mut query = Query::new_with_direction(true);
+        query.insert_keys(vec![
+            GROUP_ACTIVE_ACTIONS_KEY.to_vec(),
+            GROUP_CLOSED_ACTIONS_KEY.to_vec(),
+        ]);
+
+        PathQuery {
+            path: group_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// Gets the signer in both the active and closed action places
+    pub fn group_active_and_closed_action_single_signer_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_id: [u8; 32],
+        identity_id: [u8; 32],
+    ) -> PathQuery {
+        let group_path = group_path_vec(&contract_id, group_contract_position);
+        let mut query = Query::new_with_direction(true);
+        query.insert_keys(vec![
+            GROUP_ACTIVE_ACTIONS_KEY.to_vec(),
+            GROUP_CLOSED_ACTIONS_KEY.to_vec(),
+        ]);
+        query.set_subquery_path(vec![
+            action_id.to_vec(),
+            ACTION_SIGNERS_KEY.to_vec(),
+            identity_id.to_vec(),
+        ]);
+
+        PathQuery {
+            path: group_path,
             query: SizedQuery {
                 query,
                 limit: None,

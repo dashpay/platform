@@ -2,16 +2,21 @@ use dpp::block::block_info::BlockInfo;
 use dpp::errors::consensus::state::state_error::StateError;
 use dpp::errors::consensus::state::token::{TokenAlreadyPausedError, TokenNotPausedError};
 use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::group::ModificationOfGroupActionMainParametersNotPermittedError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::group::action_event::GroupActionEvent;
+use dpp::group::group_action::GroupActionAccessors;
 use dpp::prelude::Identifier;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::{TokenEmergencyActionTransitionAction, TokenEmergencyActionTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
@@ -70,6 +75,43 @@ impl TokenEmergencyActionTransitionActionStateValidationV0
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        if let Some(original_group_action) = self.base().original_group_action() {
+            // we shouldn't compare the amount, because that is figured out at the end
+            if let GroupActionEvent::TokenEvent(TokenEvent::EmergencyAction(action, _)) =
+                original_group_action.event()
+            {
+                let mut changed_internal_fields = vec![];
+                if action != &self.emergency_action() {
+                    changed_internal_fields.push("emergency_action".to_string());
+                }
+                if !changed_internal_fields.is_empty() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                                ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                    original_group_action.event().event_name(),
+                                    "Token: emergencyAction".to_string(),
+                                    changed_internal_fields,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            } else {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                            ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                original_group_action.event().event_name(),
+                                "Token: emergencyAction".to_string(),
+                                vec![],
+                            ),
+                        ),
+                    ),
+                ));
+            }
         }
 
         // Check if we are paused

@@ -143,10 +143,11 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
-                                        TokenEvent::Burn(amount, public_note) => {
+                                        TokenEvent::Burn(amount, burn_from_id, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::Burn(BurnEvent {
                                                     amount,
+                                                    burn_from_id: burn_from_id.to_vec(),
                                                     public_note,
                                                 })),
                                             })

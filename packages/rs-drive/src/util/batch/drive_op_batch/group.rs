@@ -29,6 +29,8 @@ pub enum GroupOperationType {
         signer_identity_id: Identifier,
         /// The signer's power in the group
         signer_power: GroupMemberPower,
+        /// Should we close the group action and mark it as complete?
+        closes_group_action: bool,
     },
 }
 
@@ -51,10 +53,12 @@ impl DriveLowLevelOperationConverter for GroupOperationType {
                 action_id,
                 signer_identity_id,
                 signer_power,
+                closes_group_action,
             } => drive.add_group_action_operations(
                 contract_id,
                 group_contract_position,
                 initialize_with_insert_action_info,
+                closes_group_action,
                 action_id,
                 signer_identity_id,
                 signer_power,
