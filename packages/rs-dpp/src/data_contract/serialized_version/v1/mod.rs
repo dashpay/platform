@@ -15,6 +15,7 @@ use crate::prelude::BlockHeight;
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
@@ -75,15 +76,25 @@ fn deserialize_u16_group_map<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    let map: BTreeMap<String, Group> = BTreeMap::deserialize(deserializer)?;
-    map.into_iter()
+    let raw: Value = Value::deserialize(deserializer)?;
+
+    let json: JsonValue = raw
+        .try_into()
+        .map_err(|e| serde::de::Error::custom(format!("groups: {}", e)))?;
+
+    let by_string: BTreeMap<String, Group> =
+        serde_json::from_value(json).map_err(serde::de::Error::custom)?;
+
+    by_string
+        .into_iter()
         .map(|(k, v)| {
             k.parse::<GroupContractPosition>()
-                .map_err(serde::de::Error::custom)
-                .map(|key| (key, v))
+                .map(|pos| (pos, v))
+                .map_err(|e| serde::de::Error::custom(format!("invalid group key '{}': {}", k, e)))
         })
         .collect()
 }
+
 fn deserialize_u16_token_configuration_map<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<TokenContractPosition, TokenConfiguration>, D::Error>
