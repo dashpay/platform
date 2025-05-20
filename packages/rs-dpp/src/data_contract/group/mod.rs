@@ -18,6 +18,7 @@ pub type RequiredSigners = u8;
 
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type GroupMemberPower = u32;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type GroupSumPower = u32;
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type GroupRequiredPower = u32;

@@ -1,6 +1,7 @@
 use anyhow::bail;
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Eq)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum GroupActionStatus {
     ActionActive,
     ActionClosed,

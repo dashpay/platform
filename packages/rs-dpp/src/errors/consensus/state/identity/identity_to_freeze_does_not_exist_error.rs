@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Identity to freeze {} does not exist", identity_to_freeze_id)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityToFreezeDoesNotExistError {
-    identity_to_freeze_id: Identifier,
+    pub identity_to_freeze_id: Identifier,
 }
 
 impl IdentityToFreezeDoesNotExistError {
