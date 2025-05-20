@@ -46,7 +46,6 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
         token_position: TokenContractPosition,
         owner_id: Identifier,
         update_token_configuration_item: TokenConfigurationChangeItem,
-        using_group_info: Option<GroupStateTransitionInfoStatus>,
     ) -> Self {
         // TODO: Validate token position
 
@@ -56,7 +55,7 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
             owner_id,
             update_token_configuration_item,
             public_note: None,
-            using_group_info,
+            using_group_info: None,
             settings: None,
             user_fee_increase: None,
         }
@@ -87,6 +86,23 @@ impl<'a> TokenConfigUpdateTransitionBuilder<'a> {
     /// * `Self` - The updated builder
     pub fn with_user_fee_increase(mut self, user_fee_increase: UserFeeIncrease) -> Self {
         self.user_fee_increase = Some(user_fee_increase);
+        self
+    }
+
+    /// Adds group information to the token config update transition
+    ///
+    /// # Arguments
+    ///
+    /// * `group_info` - The group information to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
+        self.using_group_info = Some(group_info);
+
+        // TODO: Simplify group actions automatically find position if group action is required
+
         self
     }
 

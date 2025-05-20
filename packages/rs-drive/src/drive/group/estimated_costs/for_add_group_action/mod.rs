@@ -51,6 +51,7 @@ impl Drive {
         contract_id: [u8; 32],
         group_contract_position: GroupContractPosition,
         action_id: Option<[u8; 32]>,
+        also_add_closed_tree: bool,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -65,6 +66,7 @@ impl Drive {
                     contract_id,
                     group_contract_position,
                     action_id,
+                    also_add_closed_tree,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())

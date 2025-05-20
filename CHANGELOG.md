@@ -1,3 +1,18 @@
+## [2.0.0-rc.11](https://github.com/dashpay/platform/compare/v2.0.0-rc.10...v2.0.0-rc.11) (2025-05-19)
+
+
+### Features
+
+* **platform:** don't allow freezing non existent identity ([#2612](https://github.com/dashpay/platform/issues/2612))
+* **sdk:** token purchase and set price transitions ([#2613](https://github.com/dashpay/platform/issues/2613))
+
+
+### Bug Fixes
+
+* **dpp:** historical document type name for token direct pricing ([#2616](https://github.com/dashpay/platform/issues/2616))
+* **drive:** verification of token purchase can not verify the purchase cost as this can be lower than the agreed price ([#2617](https://github.com/dashpay/platform/issues/2617))
+* **platform:** consensus error for invalid group position, config update won't allow group action if group action is not required, and tests ([#2614](https://github.com/dashpay/platform/issues/2614))
+
 ## [1.8.0](https://github.com/dashpay/platform/compare/v1.7.1...v1.8.0) (2025-01-16)
 
 

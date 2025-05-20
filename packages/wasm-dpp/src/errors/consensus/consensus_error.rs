@@ -66,7 +66,7 @@ use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedErr
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenTransferToOurselfError};
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError};
 use dpp::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -76,9 +76,10 @@ use dpp::consensus::state::document::document_contest_not_joinable_error::Docume
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
-use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError};
+use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
 use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
@@ -414,6 +415,13 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityMemberOfGroupNotFoundError(e) => {
             generic_consensus_error!(IdentityMemberOfGroupNotFoundError, e).into()
+        }
+        StateError::ModificationOfGroupActionMainParametersNotPermittedError(e) => {
+            generic_consensus_error!(ModificationOfGroupActionMainParametersNotPermittedError, e)
+                .into()
+        }
+        StateError::IdentityToFreezeDoesNotExistError(e) => {
+            generic_consensus_error!(IdentityToFreezeDoesNotExistError, e).into()
         }
     }
 }
@@ -812,6 +820,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::GroupRequiredPowerIsInvalidError(e) => {
             generic_consensus_error!(GroupRequiredPowerIsInvalidError, e).into()
+        }
+        BasicError::TokenNoteOnlyAllowedWhenProposerError(e) => {
+            generic_consensus_error!(TokenNoteOnlyAllowedWhenProposerError, e).into()
         }
     }
 }

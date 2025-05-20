@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use crate::drive::group::paths::{group_action_path, ACTION_INFO_KEY};
+use crate::drive::group::paths::{group_active_action_path, ACTION_INFO_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -11,8 +9,7 @@ use dpp::group::group_action::GroupAction;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn fetch_active_action_info_v0(
@@ -25,7 +22,7 @@ impl Drive {
     ) -> Result<GroupAction, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
+        let path = group_active_action_path(
             contract_id.as_ref(),
             &group_contract_position_bytes,
             action_id.as_ref(),
@@ -46,35 +43,31 @@ impl Drive {
     }
 
     #[allow(clippy::too_many_arguments)]
-    // TODO: Is not using
-    #[allow(dead_code)]
     pub(super) fn fetch_active_action_info_and_add_operations_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         action_id: Identifier,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupAction, Error> {
+    ) -> Result<Option<GroupAction>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
+        let path = group_active_action_path(
             contract_id.as_ref(),
             &group_contract_position_bytes,
             action_id.as_ref(),
         );
 
         // no estimated_costs_only_with_layer_info, means we want to apply to state
-        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
+        let direct_query_type = if !approximate_without_state_for_costs {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                query_target: QueryTargetValue(8),
+                query_target: QueryTargetValue(40),
             }
         };
 
@@ -87,8 +80,12 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let group_action = GroupAction::deserialize_from_bytes(&value)?;
+        if !approximate_without_state_for_costs {
+            let group_action = GroupAction::deserialize_from_bytes(&value)?;
 
-        Ok(group_action)
+            Ok(Some(group_action))
+        } else {
+            Ok(None)
+        }
     }
 }

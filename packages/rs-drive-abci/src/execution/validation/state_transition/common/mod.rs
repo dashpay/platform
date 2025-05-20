@@ -1,8 +1,10 @@
 /// A module for validating asset locks
 pub mod asset_lock;
+pub mod validate_identity_exists;
 pub mod validate_identity_public_key_contract_bounds;
 pub mod validate_identity_public_key_ids_dont_exist_in_state;
 pub mod validate_identity_public_key_ids_exist_in_state;
+pub mod validate_non_masternode_identity_exists;
 pub mod validate_not_disabling_last_master_key;
 pub mod validate_simple_pre_check_balance;
 pub mod validate_state_transition_identity_signed;

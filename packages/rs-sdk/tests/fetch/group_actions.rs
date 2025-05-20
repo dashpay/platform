@@ -150,7 +150,7 @@ async fn test_fetch_all_group_actions() {
     assert_matches!(
         group_actions.get(&GROUP_ACTION_ID),
         Some(Some(GroupAction::V0(GroupActionV0 {
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some(note))),
+            contract_id: DATA_CONTRACT_ID, proposer_id: IDENTITY_ID_1, token_contract_position: 2, event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, IDENTITY_ID_1, Some(note))),
         }))) if note == "world on fire"
     );
 }
@@ -182,7 +182,7 @@ async fn test_fetch_one_group_action_since_existing_one_with_limit() {
     assert_matches!(
         group_actions.get(&GROUP_ACTION_ID),
         Some(Some(GroupAction::V0(GroupActionV0 {
-            event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, Some(note))),
+            contract_id: DATA_CONTRACT_ID, proposer_id: IDENTITY_ID_1, token_contract_position: 2, event: GroupActionEvent::TokenEvent(TokenEvent::Burn(10, IDENTITY_ID_1, Some(note))),
         }))) if note == "world on fire"
     );
 }

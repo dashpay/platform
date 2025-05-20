@@ -15,6 +15,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub type TokenEventPublicNote = Option<String>;
 pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;
@@ -31,6 +32,9 @@ use crate::ProtocolError;
 
 /// Alias representing the identity that will receive tokens or other effects from a token operation.
 pub type RecipientIdentifier = Identifier;
+
+/// Alias representing the identity that will have tokens burned from their account.
+pub type BurnFromIdentifier = Identifier;
 
 /// Alias representing the identity performing a token purchase.
 pub type PurchaserIdentifier = Identifier;
@@ -64,8 +68,9 @@ pub enum TokenEvent {
     /// Event representing the burning of tokens, removing them from circulation.
     ///
     /// - `TokenAmount`: The amount of tokens burned.
+    /// - `BurnFromIdentifier`: The account to burn from.
     /// - `TokenEventPublicNote`: Optional note associated with the event.
-    Burn(TokenAmount, TokenEventPublicNote),
+    Burn(TokenAmount, BurnFromIdentifier, TokenEventPublicNote),
 
     /// Event representing freezing of tokens for a specific identity.
     ///
@@ -137,6 +142,72 @@ pub enum TokenEvent {
     DirectPurchase(TokenAmount, Credits),
 }
 
+impl fmt::Display for TokenEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenEvent::Mint(amount, recipient, note) => {
+                write!(f, "Mint {} to {}{}", amount, recipient, format_note(note))
+            }
+            TokenEvent::Burn(amount, burn_from_identifier, note) => {
+                write!(
+                    f,
+                    "Burn {} from {}{}",
+                    amount,
+                    burn_from_identifier,
+                    format_note(note)
+                )
+            }
+            TokenEvent::Freeze(identity, note) => {
+                write!(f, "Freeze {}{}", identity, format_note(note))
+            }
+            TokenEvent::Unfreeze(identity, note) => {
+                write!(f, "Unfreeze {}{}", identity, format_note(note))
+            }
+            TokenEvent::DestroyFrozenFunds(identity, amount, note) => {
+                write!(
+                    f,
+                    "Destroy {} frozen from {}{}",
+                    amount,
+                    identity,
+                    format_note(note)
+                )
+            }
+            TokenEvent::Transfer(to, note, _, _, amount) => {
+                write!(f, "Transfer {} to {}{}", amount, to, format_note(note))
+            }
+            TokenEvent::Claim(recipient, amount, note) => {
+                write!(
+                    f,
+                    "Claim {} by {:?}{}",
+                    amount,
+                    recipient,
+                    format_note(note)
+                )
+            }
+            TokenEvent::EmergencyAction(action, note) => {
+                write!(f, "Emergency action {:?}{}", action, format_note(note))
+            }
+            TokenEvent::ConfigUpdate(change, note) => {
+                write!(f, "Configuration update {:?}{}", change, format_note(note))
+            }
+            TokenEvent::ChangePriceForDirectPurchase(schedule, note) => match schedule {
+                Some(s) => write!(f, "Change price schedule to {:?}{}", s, format_note(note)),
+                None => write!(f, "Disable direct purchase{}", format_note(note)),
+            },
+            TokenEvent::DirectPurchase(amount, credits) => {
+                write!(f, "Direct purchase of {} for {} credits", amount, credits)
+            }
+        }
+    }
+}
+
+fn format_note(note: &Option<String>) -> String {
+    match note {
+        Some(n) => format!(" (note: {})", n),
+        None => String::new(),
+    }
+}
+
 impl TokenEvent {
     pub fn associated_document_type_name(&self) -> &str {
         match self {
@@ -151,6 +222,23 @@ impl TokenEvent {
             TokenEvent::ConfigUpdate(..) => "configUpdate",
             TokenEvent::DirectPurchase(..) => "directPurchase",
             TokenEvent::ChangePriceForDirectPurchase(..) => "directPricing",
+        }
+    }
+
+    /// Returns a reference to the public note if the variant includes one.
+    pub fn public_note(&self) -> Option<&str> {
+        match self {
+            TokenEvent::Mint(_, _, Some(note))
+            | TokenEvent::Burn(_, _, Some(note))
+            | TokenEvent::Freeze(_, Some(note))
+            | TokenEvent::Unfreeze(_, Some(note))
+            | TokenEvent::DestroyFrozenFunds(_, _, Some(note))
+            | TokenEvent::Transfer(_, Some(note), _, _, _)
+            | TokenEvent::Claim(_, _, Some(note))
+            | TokenEvent::EmergencyAction(_, Some(note))
+            | TokenEvent::ConfigUpdate(_, Some(note))
+            | TokenEvent::ChangePriceForDirectPurchase(_, Some(note)) => Some(note),
+            _ => None,
         }
     }
 
@@ -188,9 +276,10 @@ impl TokenEvent {
                 }
                 properties
             }
-            TokenEvent::Burn(burn_amount, public_note) => {
+            TokenEvent::Burn(burn_amount, burn_from_identifier, public_note) => {
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
+                    ("burnFromId".to_string(), burn_from_identifier.into()),
                     ("amount".to_string(), burn_amount.into()),
                 ]);
                 if let Some(note) = public_note {

@@ -1,6 +1,4 @@
-use crate::consensus::basic::token::{
-    InvalidTokenConfigUpdateNoChangeError, InvalidTokenNoteTooBigError,
-};
+use crate::consensus::basic::token::{InvalidTokenConfigUpdateNoChangeError, InvalidTokenNoteTooBigError, TokenNoteOnlyAllowedWhenProposerError};
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
@@ -9,6 +7,8 @@ use crate::state_transition::batch_transition::TokenConfigUpdateTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
+use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 
 pub(super) trait TokenConfigUpdateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError>;
@@ -37,6 +37,17 @@ impl TokenConfigUpdateTransitionStructureValidationV0 for TokenConfigUpdateTrans
                         ),
                     )),
                 ));
+            }
+            if let Some(group_state_transition_info) = self.base().using_group_info() {
+                if !group_state_transition_info.action_is_proposer {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(
+                            BasicError::TokenNoteOnlyAllowedWhenProposerError(
+                                TokenNoteOnlyAllowedWhenProposerError::new(),
+                            ),
+                        ),
+                    ));
+                }
             }
         }
 

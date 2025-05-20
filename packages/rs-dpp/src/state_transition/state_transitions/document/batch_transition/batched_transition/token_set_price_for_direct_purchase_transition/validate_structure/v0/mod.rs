@@ -1,4 +1,4 @@
-use crate::consensus::basic::token::InvalidTokenNoteTooBigError;
+use crate::consensus::basic::token::{InvalidTokenNoteTooBigError, TokenNoteOnlyAllowedWhenProposerError};
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
@@ -6,6 +6,8 @@ use crate::state_transition::batch_transition::TokenSetPriceForDirectPurchaseTra
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
+use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 
 pub(super) trait TokenSetPriceForDirectPurchaseTransitionActionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError>;
@@ -27,6 +29,17 @@ impl TokenSetPriceForDirectPurchaseTransitionActionStructureValidationV0
                         ),
                     )),
                 ));
+            }
+            if let Some(group_state_transition_info) = self.base().using_group_info() {
+                if !group_state_transition_info.action_is_proposer {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(
+                            BasicError::TokenNoteOnlyAllowedWhenProposerError(
+                                TokenNoteOnlyAllowedWhenProposerError::new(),
+                            ),
+                        ),
+                    ));
+                }
             }
         }
         Ok(SimpleConsensusValidationResult::default())

@@ -29,19 +29,17 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::drive::identity::key::fetch::KeyRequestType::LatestAuthenticationMasterKey;
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
-};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
-use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use drive::state_transition_action::StateTransitionAction;
+use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
+use crate::execution::validation::state_transition::common::validate_non_masternode_identity_exists::validate_non_masternode_identity_exists;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
@@ -174,24 +172,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         for (position, group) in self.data_contract().groups() {
             for member_identity_id in group.members().keys() {
                 if !validated_identities.contains(member_identity_id) {
-                    let maybe_key = platform
-                        .drive
-                        .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
-                            IdentityKeysRequest {
-                                identity_id: member_identity_id.to_buffer(),
-                                request_type: LatestAuthenticationMasterKey,
-                                limit: Some(1),
-                                offset: None,
-                            },
-                            tx,
-                            platform_version,
-                        )?;
+                    let identity_exists = validate_non_masternode_identity_exists(
+                        platform.drive,
+                        member_identity_id,
+                        execution_context,
+                        tx,
+                        platform_version,
+                    )?;
 
-                    execution_context.add_operation(ValidationOperation::RetrieveIdentity(
-                        RetrieveIdentityInfo::one_key(),
-                    ));
-
-                    if maybe_key.is_none() {
+                    if !identity_exists {
                         let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                             BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                                 self,
@@ -227,24 +216,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     {
                         // we need to make sure this identity exists
                         if !validated_identities.contains(identity_id) {
-                            let maybe_key = platform
-                                .drive
-                                .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
-                                    IdentityKeysRequest {
-                                        identity_id: identity_id.to_buffer(),
-                                        request_type: LatestAuthenticationMasterKey,
-                                        limit: Some(1),
-                                        offset: None,
-                                    },
-                                    tx,
-                                    platform_version,
-                                )?;
+                            let identity_exists = validate_non_masternode_identity_exists(
+                                platform.drive,
+                                identity_id,
+                                execution_context,
+                                tx,
+                                platform_version,
+                            )?;
 
-                            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
-                                RetrieveIdentityInfo::one_key(),
-                            ));
-
-                            if maybe_key.is_none() {
+                            if !identity_exists {
                                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                                         self,
@@ -280,16 +260,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         distribution.distribution_recipient()
                     {
                         if !validated_identities.contains(&identifier) {
-                            let maybe_balance = platform.drive.fetch_identity_balance(
-                                identifier.to_buffer(),
+                            let identity_exists = validate_identity_exists(
+                                platform.drive,
+                                &identifier,
+                                execution_context,
                                 tx,
                                 platform_version,
                             )?;
 
-                            execution_context
-                                .add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
-
-                            if maybe_balance.is_none() {
+                            if !identity_exists {
                                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                                         self,
@@ -321,17 +300,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     for distribution in distributions.distributions().values() {
                         for identifier in distribution.keys() {
                             if !validated_identities.contains(identifier) {
-                                let maybe_balance = platform.drive.fetch_identity_balance(
-                                    identifier.to_buffer(),
+                                let identity_exists = validate_identity_exists(
+                                    platform.drive,
+                                    identifier,
+                                    execution_context,
                                     tx,
                                     platform_version,
                                 )?;
 
-                                execution_context.add_operation(
-                                    ValidationOperation::RetrieveIdentityTokenBalance,
-                                );
-
-                                if maybe_balance.is_none() {
+                                if !identity_exists {
                                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                         BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                                             self,
@@ -365,16 +342,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     .new_tokens_destination_identity()
                 {
                     if !validated_identities.contains(minting_recipient) {
-                        let maybe_balance = platform.drive.fetch_identity_balance(
-                            minting_recipient.to_buffer(),
+                        let identity_exists = validate_identity_exists(
+                            platform.drive,
+                            minting_recipient,
+                            execution_context,
                             tx,
                             platform_version,
                         )?;
 
-                        execution_context
-                            .add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
-
-                        if maybe_balance.is_none() {
+                        if !identity_exists {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                                     self,

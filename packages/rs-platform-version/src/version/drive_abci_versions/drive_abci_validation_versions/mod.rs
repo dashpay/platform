@@ -60,6 +60,8 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
     pub validate_master_key_uniqueness: FeatureVersion,
     pub validate_simple_pre_check_balance: FeatureVersion,
+    pub validate_non_masternode_identity_exists: FeatureVersion,
+    pub validate_identity_exists: FeatureVersion,
 }
 
 /// All of these penalty amounts are in credits

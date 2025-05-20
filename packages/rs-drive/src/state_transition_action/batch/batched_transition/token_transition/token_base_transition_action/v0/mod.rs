@@ -4,6 +4,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::TokenContractPosition;
+use dpp::group::group_action::GroupAction;
 use dpp::group::GroupStateTransitionResolvedInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
@@ -12,6 +13,9 @@ use std::sync::Arc;
 
 /// transformer
 pub mod transformer;
+
+/// A type for the original group action if one exists
+pub type OriginalGroupAction = Option<GroupAction>;
 
 /// Token base transition action v0
 #[derive(Debug, Clone)]
@@ -26,7 +30,7 @@ pub struct TokenBaseTransitionActionV0 {
     pub data_contract: Arc<DataContractFetchInfo>,
     /// Using group multi party rules for authentication
     /// If this is set we should store in group
-    pub store_in_group: Option<GroupStateTransitionResolvedInfo>,
+    pub store_in_group: Option<(GroupStateTransitionResolvedInfo, OriginalGroupAction)>,
     /// Should the action be performed.
     /// This is true if we don't store in group.
     /// And also true if we store in group and with this have enough signatures to perform the action
@@ -58,6 +62,9 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
 
     /// Gets the store_in_group field (optional)
     fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo>;
+
+    /// Gets the original group action if we are in a group action, and we are not the proposer
+    fn original_group_action(&self) -> Option<&GroupAction>;
 
     /// Gets the perform_action field
     fn perform_action(&self) -> bool;
@@ -103,7 +110,13 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
     }
 
     fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo> {
-        self.store_in_group.as_ref()
+        self.store_in_group.as_ref().map(|(s, _)| s)
+    }
+
+    fn original_group_action(&self) -> Option<&GroupAction> {
+        self.store_in_group
+            .as_ref()
+            .and_then(|(_, group_action)| group_action.as_ref())
     }
 
     fn perform_action(&self) -> bool {

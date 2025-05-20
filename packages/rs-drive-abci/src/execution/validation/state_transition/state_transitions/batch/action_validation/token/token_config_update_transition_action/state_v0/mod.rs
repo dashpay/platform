@@ -1,5 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
+use dpp::consensus::state::group::ModificationOfGroupActionMainParametersNotPermittedError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,8 +8,11 @@ use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use dpp::group::action_event::GroupActionEvent;
 use dpp::group::action_taker::{ActionGoal, ActionTaker};
+use dpp::group::group_action::GroupActionAccessors;
 use dpp::prelude::Identifier;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::{TokenConfigUpdateTransitionAction, TokenConfigUpdateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -58,6 +62,44 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;
         let main_control_group = token_configuration.main_control_group();
+
+        if let Some(original_group_action) = self.base().original_group_action() {
+            if let GroupActionEvent::TokenEvent(TokenEvent::ConfigUpdate(
+                old_config_update_change_item,
+                _,
+            )) = original_group_action.event()
+            {
+                let mut changed_internal_fields = vec![];
+                if old_config_update_change_item != self.update_token_configuration_item() {
+                    changed_internal_fields.push("update_token_configuration_item".to_string());
+                }
+                if !changed_internal_fields.is_empty() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                                ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                    original_group_action.event().event_name(),
+                                    "Token: configUpdate".to_string(),
+                                    changed_internal_fields,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            } else {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(
+                            ModificationOfGroupActionMainParametersNotPermittedError::new(
+                                original_group_action.event().event_name(),
+                                "Token: configUpdate".to_string(),
+                                vec![],
+                            ),
+                        ),
+                    ),
+                ));
+            }
+        }
 
         let goal = if self.base().store_in_group().is_some() {
             // We are using a group
