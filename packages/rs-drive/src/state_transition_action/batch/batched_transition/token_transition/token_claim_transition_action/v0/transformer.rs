@@ -486,7 +486,7 @@ impl TokenClaimTransitionActionV0 {
                                 max_cycle_moment,
                                 Some(|range_epoch_index: RangeInclusive<EpochIndex>| {
                                     if range_epoch_index.start() == range_epoch_index.end() {
-                                        epochs.get(&range_epoch_index.start()).map(|epoch_info| RewardRatio {
+                                        epochs.get(range_epoch_index.start()).map(|epoch_info| RewardRatio {
                                             numerator: epoch_info
                                                 .block_proposers()
                                                 .get(&owner_id)

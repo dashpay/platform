@@ -76,6 +76,7 @@ use crate::prelude::{AssetLockProof, UserFeeIncrease};
 use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
 use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
