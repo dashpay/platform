@@ -84,7 +84,6 @@ pub struct DataContractInSerializationFormatV1 {
 ///   }
 /// }
 /// ```
-/// Deserialize `groups` map with stringified u16 keys and enum-wrapped `Group` values.
 fn deserialize_u16_group_map<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<GroupContractPosition, Group>, D::Error>
