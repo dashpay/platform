@@ -4,6 +4,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::group::v0::GroupV0;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
@@ -15,7 +16,6 @@ use crate::prelude::BlockHeight;
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
@@ -70,29 +70,62 @@ pub struct DataContractInSerializationFormatV1 {
     pub description: Option<String>,
 }
 
+/// Deserialize `groups` map with stringified u16 keys and enum-wrapped `Group` values.
+///
+/// Accepts:
+/// ```json
+/// {
+///   "0": {
+///     "V0": {
+///       "members": { "...": 1 },
+///       "required_power": 3
+///     }
+///   }
+/// }
+/// ```
 fn deserialize_u16_group_map<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<GroupContractPosition, Group>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let raw: Value = Value::deserialize(deserializer)?;
+    let map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
 
-    let json: JsonValue = raw
-        .try_to_validating_json()
-        .map_err(|e| serde::de::Error::custom(format!("groups: {}", e)))?;
+    let mut out = BTreeMap::new();
 
-    let by_string: BTreeMap<String, Group> =
-        serde_json::from_value(json).map_err(serde::de::Error::custom)?;
+    for (key_str, group_value) in map {
+        // Parse key to GroupContractPosition
+        let key = key_str.parse::<GroupContractPosition>().map_err(|e| {
+            serde::de::Error::custom(format!("invalid group key '{}': {}", key_str, e))
+        })?;
 
-    by_string
-        .into_iter()
-        .map(|(k, v)| {
-            k.parse::<GroupContractPosition>()
-                .map(|pos| (pos, v))
-                .map_err(|e| serde::de::Error::custom(format!("invalid group key '{}': {}", k, e)))
-        })
-        .collect()
+        // Extract the V0 variant manually
+        let group_obj = group_value.into_btree_string_map().map_err(|e| {
+            serde::de::Error::custom(format!("invalid group structure at '{}': {}", key_str, e))
+        })?;
+
+        let v0_payload = group_obj.get("V0").ok_or_else(|| {
+            serde::de::Error::custom(format!("missing 'V0' variant under group '{}'", key_str))
+        })?;
+
+        // Deserialize the GroupV0 struct and wrap in Group::V0
+        let serde_value: serde_json::Value = v0_payload.clone().try_into().map_err(|e| {
+            serde::de::Error::custom(format!(
+                "failed to convert platform_value::Value to serde_json::Value at '{}': {}",
+                key_str, e
+            ))
+        })?;
+        let group_v0: GroupV0 = GroupV0::deserialize(&serde_value).map_err(|e| {
+            serde::de::Error::custom(format!(
+                "failed to deserialize GroupV0 at '{}': {}",
+                key_str, e
+            ))
+        })?;
+
+        out.insert(key, Group::V0(group_v0));
+    }
+
+    Ok(out)
 }
 
 fn deserialize_u16_token_configuration_map<'de, D>(
