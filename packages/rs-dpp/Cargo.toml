@@ -49,7 +49,7 @@ serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "2.0.12" }
 data-contracts = { path = "../data-contracts", optional = true }
-platform-value = { path = "../rs-platform-value" }
+platform-value = { path = "../rs-platform-value", features = ["json"] }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }

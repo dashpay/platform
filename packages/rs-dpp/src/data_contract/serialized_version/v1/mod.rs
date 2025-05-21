@@ -16,6 +16,7 @@ use crate::prelude::BlockHeight;
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
@@ -83,6 +84,7 @@ pub struct DataContractInSerializationFormatV1 {
 ///   }
 /// }
 /// ```
+/// Deserialize `groups` map with stringified u16 keys and enum-wrapped `Group` values.
 fn deserialize_u16_group_map<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<GroupContractPosition, Group>, D::Error>
@@ -94,28 +96,23 @@ where
     let mut out = BTreeMap::new();
 
     for (key_str, group_value) in map {
-        // Parse key to GroupContractPosition
         let key = key_str.parse::<GroupContractPosition>().map_err(|e| {
             serde::de::Error::custom(format!("invalid group key '{}': {}", key_str, e))
         })?;
 
-        // Extract the V0 variant manually
         let group_obj = group_value.into_btree_string_map().map_err(|e| {
             serde::de::Error::custom(format!("invalid group structure at '{}': {}", key_str, e))
         })?;
 
-        let v0_payload = group_obj.get("V0").ok_or_else(|| {
+        let v0_value = group_obj.get("V0").ok_or_else(|| {
             serde::de::Error::custom(format!("missing 'V0' variant under group '{}'", key_str))
         })?;
 
-        // Deserialize the GroupV0 struct and wrap in Group::V0
-        let serde_value: serde_json::Value = v0_payload.clone().try_into().map_err(|e| {
-            serde::de::Error::custom(format!(
-                "failed to convert platform_value::Value to serde_json::Value at '{}': {}",
-                key_str, e
-            ))
+        let v0_json: JsonValue = v0_value.clone().try_into_validating_json().map_err(|e| {
+            serde::de::Error::custom(format!("failed to convert to json at '{}': {}", key_str, e))
         })?;
-        let group_v0: GroupV0 = GroupV0::deserialize(&serde_value).map_err(|e| {
+
+        let group_v0: GroupV0 = serde_json::from_value(v0_json).map_err(|e| {
             serde::de::Error::custom(format!(
                 "failed to deserialize GroupV0 at '{}': {}",
                 key_str, e
