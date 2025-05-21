@@ -79,7 +79,7 @@ where
     let raw: Value = Value::deserialize(deserializer)?;
 
     let json: JsonValue = raw
-        .try_into()
+        .try_to_validating_json()
         .map_err(|e| serde::de::Error::custom(format!("groups: {}", e)))?;
 
     let by_string: BTreeMap<String, Group> =
