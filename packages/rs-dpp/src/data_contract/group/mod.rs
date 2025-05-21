@@ -32,7 +32,9 @@ pub type GroupRequiredPower = u32;
     Eq,
 )]
 #[platform_serialize(unversioned)]
+#[serde(tag = "$format_version")]
 pub enum Group {
+    #[serde(rename = "0")]
     V0(GroupV0),
 }
 
