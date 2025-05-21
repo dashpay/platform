@@ -1,3 +1,4 @@
+use std::ops::RangeInclusive;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
@@ -35,7 +36,7 @@ impl RewardDistributionType {
         get_epoch_reward_ratio: Option<F>,
     ) -> Result<TokenAmount, ProtocolError>
     where
-        F: Fn(EpochIndex) -> Option<RewardRatio>,
+        F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
     {
         self.function().evaluate_interval(
             distribution_start,

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::balances::credits::TokenAmount;
@@ -440,7 +441,7 @@ impl TokenClaimTransitionActionV0 {
                         ),
                         perpetual_distribution
                             .distribution_type()
-                            .rewards_in_interval::<fn(EpochIndex) -> Option<RewardRatio>>(
+                            .rewards_in_interval::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>(
                                 contract_creation_cycle_start,
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
@@ -451,7 +452,7 @@ impl TokenClaimTransitionActionV0 {
                         TokenDistributionResolvedRecipient::Identity(identifier),
                         perpetual_distribution
                             .distribution_type()
-                            .rewards_in_interval::<fn(EpochIndex) -> Option<RewardRatio>>(
+                            .rewards_in_interval::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>(
                                 contract_creation_cycle_start,
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
@@ -483,15 +484,41 @@ impl TokenClaimTransitionActionV0 {
                                 contract_creation_cycle_start,
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
-                                Some(|epoch_index| {
-                                    epochs.get(&epoch_index).map(|epoch_info| RewardRatio {
-                                        numerator: epoch_info
-                                            .block_proposers()
-                                            .get(&owner_id)
-                                            .copied()
-                                            .unwrap_or_default(),
-                                        denominator: epoch_info.total_blocks_in_epoch(),
-                                    })
+                                Some(|range_epoch_index: RangeInclusive<EpochIndex>| {
+                                    if range_epoch_index.start() == range_epoch_index.end() {
+                                        epochs.get(&range_epoch_index.start()).map(|epoch_info| RewardRatio {
+                                            numerator: epoch_info
+                                                .block_proposers()
+                                                .get(&owner_id)
+                                                .copied()
+                                                .unwrap_or_default(),
+                                            denominator: epoch_info.total_blocks_in_epoch(),
+                                        })
+                                    } else {
+                                        let mut total_blocks = 0;
+                                        let mut total_proposed_blocks = 0;
+
+                                        for epoch_index in range_epoch_index {
+                                            if let Some(epoch_info) = epochs.get(&epoch_index) {
+                                                total_blocks += epoch_info.total_blocks_in_epoch();
+                                                total_proposed_blocks += epoch_info
+                                                    .block_proposers()
+                                                    .get(&owner_id)
+                                                    .copied()
+                                                    .unwrap_or_default();
+                                            }
+                                        }
+
+                                        // Return ratio if we have non-zero total blocks
+                                        if total_blocks > 0 {
+                                            Some(RewardRatio {
+                                                numerator: total_proposed_blocks,
+                                                denominator: total_blocks,
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                    }
                                 }),
                             )?;
 

@@ -175,6 +175,7 @@ mod tests {
                 config.clone(),
                 1,
                 &mut None,
+                &mut None,
             );
 
             for tx_results_per_block in outcome.state_transition_results_per_block.values() {
@@ -853,6 +854,7 @@ mod tests {
                 start_strategy,
                 config.clone(),
                 1,
+                &mut None,
                 &mut None,
             );
 
@@ -1559,6 +1561,7 @@ mod tests {
                 start_strategy,
                 config.clone(),
                 1,
+                &mut None,
                 &mut None,
             );
 
@@ -2275,6 +2278,7 @@ mod tests {
                 start_strategy,
                 config.clone(),
                 1,
+                &mut None,
                 &mut None,
             );
 
