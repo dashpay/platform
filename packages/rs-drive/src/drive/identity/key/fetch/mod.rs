@@ -517,7 +517,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
-            "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
+            "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements in IdentityPublicKeyResult",
         )))
     }
 }
@@ -595,7 +595,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
         _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
-            "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
+            "KeyIDOptionalIdentityPublicKeyPairBTreeMap try from QueryResultElements in IdentityPublicKeyResult",
         )))
     }
 }

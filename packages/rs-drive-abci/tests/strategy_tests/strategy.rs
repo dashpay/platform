@@ -476,6 +476,7 @@ impl NetworkStrategy {
                 let old_id = contract.id();
                 let new_id =
                     DataContract::generate_data_contract_id_v0(identity.id, identity_nonce);
+                println!("new contract id is {}", new_id);
                 contract.set_id(new_id);
 
                 if let Some(contract_updates) = contract_updates {

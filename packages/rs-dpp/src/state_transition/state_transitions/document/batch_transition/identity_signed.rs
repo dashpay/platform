@@ -23,4 +23,11 @@ impl StateTransitionIdentitySigned for BatchTransition {
             BatchTransition::V1(transition) => transition.security_level_requirement(purpose),
         }
     }
+
+    fn purpose_requirement(&self) -> Vec<Purpose> {
+        match self {
+            BatchTransition::V0(transition) => transition.purpose_requirement(),
+            BatchTransition::V1(transition) => transition.purpose_requirement(),
+        }
+    }
 }
