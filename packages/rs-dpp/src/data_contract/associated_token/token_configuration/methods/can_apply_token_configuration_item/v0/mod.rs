@@ -281,7 +281,15 @@ impl TokenConfigurationV0 {
                     goal,
                 )
             }
-            TokenConfigurationChangeItem::MainControlGroup(_) => false, // Main control group cannot be updated directly
+            TokenConfigurationChangeItem::MainControlGroup(_) => self
+                .main_control_group_can_be_modified
+                .allowed_for_action_taker(
+                    contract_owner_id,
+                    main_group,
+                    groups,
+                    action_taker,
+                    goal,
+                ),
         }
     }
 }
