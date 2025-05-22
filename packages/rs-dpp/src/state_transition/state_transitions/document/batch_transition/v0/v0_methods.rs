@@ -78,6 +78,14 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
             .first_mut()
             .map(BatchedTransitionMutRef::Document)
     }
+
+    fn contains_document_transition(&self) -> bool {
+        true
+    }
+
+    fn contains_token_transition(&self) -> bool {
+        false
+    }
 }
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV0 {

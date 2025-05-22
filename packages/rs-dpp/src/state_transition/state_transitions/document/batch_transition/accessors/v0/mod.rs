@@ -16,4 +16,6 @@ pub trait DocumentsBatchTransitionAccessorsV0 {
     fn first_transition(&self) -> Option<BatchedTransitionRef>;
 
     fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef>;
+    fn contains_document_transition(&self) -> bool;
+    fn contains_token_transition(&self) -> bool;
 }
