@@ -7,7 +7,7 @@ use crate::util::grove_operations::{push_drive_operation_result, BatchMoveApplyT
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::delete::DeleteOptions;
-use grovedb::{GroveDb, TransactionArg};
+use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb_epoch_based_storage_flags::StorageFlags;
 use grovedb_path::SubtreePath;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
@@ -27,18 +27,29 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         // ── 1. Fetch and validate the element ───────────────────────────────
-        let mut element = self
-            .grove_get(
-                from_path.clone(),
-                key,
-                QueryType::StatefulQuery,
-                transaction,
-                drive_operations,
-                drive_version,
-            )?
-            .ok_or_else(|| {
-                Error::Drive(DriveError::ElementNotFound("element to move not found"))
-            })?;
+        let mut element = match apply_type {
+            BatchMoveApplyType::StatelessBatchMove {
+                estimated_value_size,
+                flags_len,
+                ..
+            } => {
+                let value = vec![0u8; estimated_value_size as usize]; // if you want to simulate size
+                let flags = vec![0u8; flags_len as usize];
+                Element::new_item_with_flags(value, Some(flags))
+            }
+            BatchMoveApplyType::StatefulBatchMove { .. } => self
+                .grove_get(
+                    from_path.clone(),
+                    key,
+                    QueryType::StatefulQuery,
+                    transaction,
+                    drive_operations,
+                    drive_version,
+                )?
+                .ok_or_else(|| {
+                    Error::Drive(DriveError::ElementNotFound("element to move not found"))
+                })?,
+        };
 
         if element.is_any_tree() {
             return Err(Error::Drive(DriveError::NotSupported(

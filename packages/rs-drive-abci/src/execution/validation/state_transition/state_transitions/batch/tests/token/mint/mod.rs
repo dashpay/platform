@@ -1093,6 +1093,8 @@ mod token_mint_tests {
 
     mod token_mint_tests_authorization_scenarios {
         use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::platform_types::platform::PlatformRef;
         use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
         use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -2330,6 +2332,24 @@ mod token_mint_tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let validation_result = platform
+                .check_tx(
+                    &token_mint_serialized_transition,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to be able to check tx");
+
+            assert_eq!(validation_result.errors.as_slice(), &[]);
+
             let transaction = platform.drive.grove.start_transaction();
 
             let processing_result = platform
@@ -2405,6 +2425,17 @@ mod token_mint_tests {
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
+
+            let validation_result = platform
+                .check_tx(
+                    &confirm_token_mint_serialized_transition,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to be able to check tx");
+
+            assert_eq!(validation_result.errors.as_slice(), &[]);
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -2980,6 +3011,24 @@ mod token_mint_tests {
             let confirm_token_mint_serialized_transition = confirm_token_mint_transition
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let validation_result = platform
+                .check_tx(
+                    &confirm_token_mint_serialized_transition,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to be able to check tx");
+
+            assert_eq!(validation_result.errors.as_slice(), &[]);
 
             let transaction = platform.drive.grove.start_transaction();
 

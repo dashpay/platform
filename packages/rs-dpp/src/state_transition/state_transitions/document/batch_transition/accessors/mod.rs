@@ -93,4 +93,24 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransition {
                 .map(|batch_transition| batch_transition.borrow_as_mut()),
         }
     }
+
+    fn contains_document_transition(&self) -> bool {
+        match self {
+            BatchTransition::V0(_) => true,
+            BatchTransition::V1(v1) => v1
+                .transitions
+                .iter()
+                .any(|transition| matches!(transition, BatchedTransition::Document(_))),
+        }
+    }
+
+    fn contains_token_transition(&self) -> bool {
+        match self {
+            BatchTransition::V0(_) => false,
+            BatchTransition::V1(v1) => v1
+                .transitions
+                .iter()
+                .any(|transition| matches!(transition, BatchedTransition::Token(_))),
+        }
+    }
 }
