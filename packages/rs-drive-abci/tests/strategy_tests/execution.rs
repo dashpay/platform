@@ -1011,6 +1011,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
             platform,
+            block_start,
             &block_info,
             &mut current_identities,
             &mut current_identity_nonce_counter,
