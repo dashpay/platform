@@ -10,6 +10,7 @@ use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
@@ -22,6 +23,7 @@ pub trait PutDocument<S: Signer>: Waitable {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
@@ -33,6 +35,7 @@ pub trait PutDocument<S: Signer>: Waitable {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
@@ -46,6 +49,7 @@ impl<S: Signer> PutDocument<S> for Document {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
@@ -67,7 +71,7 @@ impl<S: Signer> PutDocument<S> for Document {
             &identity_public_key,
             new_identity_contract_nonce,
             settings.user_fee_increase.unwrap_or_default(),
-            None,
+            token_payment_info,
             signer,
             sdk.version(),
             settings.state_transition_creation_options,
@@ -84,6 +88,7 @@ impl<S: Signer> PutDocument<S> for Document {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
@@ -93,6 +98,7 @@ impl<S: Signer> PutDocument<S> for Document {
                 document_type,
                 document_state_transition_entropy,
                 identity_public_key,
+                token_payment_info,
                 signer,
                 settings,
             )
