@@ -17,6 +17,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 pub trait PutDocument<S: Signer>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
+    #[allow(clippy::too_many_arguments)]
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -29,6 +30,7 @@ pub trait PutDocument<S: Signer>: Waitable {
     ) -> Result<StateTransition, Error>;
 
     /// Puts an identity on platform and waits for the confirmation proof
+    #[allow(clippy::too_many_arguments)]
     async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
