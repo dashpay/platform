@@ -4,6 +4,9 @@ pub mod v1;
 pub struct SystemLimits {
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,
+    /// Max size of a state transition in bytes.
+    ///
+    /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
     pub max_state_transition_size: u64,
     pub max_transitions_in_documents_batch: u16,
     pub withdrawal_transactions_per_block_limit: u16,
