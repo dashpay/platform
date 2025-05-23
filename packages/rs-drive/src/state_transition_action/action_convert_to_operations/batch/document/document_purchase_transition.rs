@@ -84,12 +84,15 @@ impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction 
                 if let Some((token_id, effect, cost)) = document_purchase_token_cost {
                     match effect {
                         DocumentActionTokenEffect::TransferTokenToContractOwner => {
-                            ops.push(TokenOperation(TokenOperationType::TokenTransfer {
-                                token_id,
-                                sender_id: owner_id,
-                                recipient_id: contract_owner_id,
-                                amount: cost,
-                            }));
+                            // If we are the owner, no need to send anything
+                            if owner_id != contract_owner_id {
+                                ops.push(TokenOperation(TokenOperationType::TokenTransfer {
+                                    token_id,
+                                    sender_id: owner_id,
+                                    recipient_id: contract_owner_id,
+                                    amount: cost,
+                                }));
+                            }
                         }
                         DocumentActionTokenEffect::BurnToken => {
                             ops.push(TokenOperation(TokenOperationType::TokenBurn {
