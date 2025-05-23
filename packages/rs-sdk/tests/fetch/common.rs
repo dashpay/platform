@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use dash_sdk::{mock::Mockable, platform::Query, Sdk};
 use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
@@ -39,6 +40,7 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
         "document_type_name",
         schema,
         None,
+        &BTreeMap::new(),
         &config,
         true,
         &mut vec![],
