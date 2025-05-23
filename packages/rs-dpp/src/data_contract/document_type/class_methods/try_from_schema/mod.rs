@@ -5,6 +5,7 @@ use crate::data_contract::document_type::{
     property_names, DocumentProperty, DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::util::json_schema::resolve_uri;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
@@ -42,6 +43,7 @@ impl DocumentType {
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
         data_contact_config: &DataContractConfig,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
@@ -70,6 +72,7 @@ impl DocumentType {
                 name,
                 schema,
                 schema_defs,
+                token_configurations,
                 data_contact_config,
                 full_validation,
                 validation_operations,

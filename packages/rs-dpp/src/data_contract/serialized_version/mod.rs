@@ -6,6 +6,7 @@ use crate::data_contract::{
 use crate::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+use super::EMPTY_KEYWORDS;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
@@ -20,8 +21,6 @@ use platform_version::TryFromPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
-
-use super::EMPTY_KEYWORDS;
 
 pub(in crate::data_contract) mod v0;
 pub(in crate::data_contract) mod v1;

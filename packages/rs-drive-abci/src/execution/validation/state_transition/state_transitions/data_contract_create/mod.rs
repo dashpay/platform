@@ -2444,6 +2444,246 @@ mod tests {
             }
 
             #[test]
+            fn test_data_contract_creation_with_single_token_setting_transfer_of_external_token_that_does_not_exist(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, contract_signer, contract_key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/crypto-card-game/crypto-card-game-use-external-currency.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                    .expect("expected to get json based contract");
+
+                {
+                    let document_type = data_contract
+                        .document_types_mut()
+                        .get_mut("card")
+                        .expect("expected a document type with name card");
+                    document_type.set_document_creation_token_cost(Some(DocumentActionTokenCost {
+                        contract_id: Some(Identifier::new([0; 32])),
+                        token_contract_position: 0,
+                        token_amount: 5,
+                        effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
+                        gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                    }));
+                    let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
+                    let schema = document_type.schema_mut();
+                    let token_cost = schema
+                        .get_mut("tokenCost")
+                        .expect("expected to get token cost")
+                        .expect("expected token cost to be set");
+                    let creation_token_cost = token_cost
+                        .get_mut("create")
+                        .expect("expected to get creation token cost")
+                        .expect("expected creation token cost to be set");
+                    creation_token_cost
+                        .set_value("contractId", Identifier::new([0; 32]).into())
+                        .expect("expected to set token contract id");
+                    creation_token_cost
+                        .set_value("tokenPosition", 0.into())
+                        .expect("expected to set token position");
+                    creation_token_cost
+                        .set_value("amount", 5.into())
+                        .expect("expected to set token amount");
+                    creation_token_cost
+                        .set_value(
+                            "effect",
+                            Value::U8(
+                                DocumentActionTokenEffect::TransferTokenToContractOwner.into(),
+                            ),
+                        )
+                        .expect("expected to set token pay effect");
+                    creation_token_cost
+                        .set_value("gasFeesPaidBy", gas_fees_paid_by_int.into())
+                        .expect("expected to set token amount");
+                }
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        contract_key.id(),
+                        &contract_signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create data contract create batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError(
+                        ConsensusError::StateError(StateError::DataContractNotFoundError(_)),
+                        _
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+            }
+
+            #[test]
+            fn test_data_contract_creation_with_single_token_setting_transfer_of_external_token_that_does_not_exist_in_contract_that_does_exist(
+            ) {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, contract_signer, contract_key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let (token_contract_owner_id, _, _) =
+                    setup_identity(&mut platform, 11, dash_to_credits!(0.1));
+
+                let (token_contract, _) = create_token_contract_with_owner_identity(
+                    &mut platform,
+                    token_contract_owner_id.id(),
+                    None::<fn(&mut TokenConfiguration)>,
+                    None,
+                    None,
+                    platform_version,
+                );
+
+                let token_contract_id = token_contract.id();
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/crypto-card-game/crypto-card-game-use-external-currency.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                    .expect("expected to get json based contract");
+
+                {
+                    let document_type = data_contract
+                        .document_types_mut()
+                        .get_mut("card")
+                        .expect("expected a document type with name card");
+                    document_type.set_document_creation_token_cost(Some(DocumentActionTokenCost {
+                        contract_id: Some(token_contract_id),
+                        token_contract_position: 4,
+                        token_amount: 5,
+                        effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
+                        gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                    }));
+                    let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
+                    let schema = document_type.schema_mut();
+                    let token_cost = schema
+                        .get_mut("tokenCost")
+                        .expect("expected to get token cost")
+                        .expect("expected token cost to be set");
+                    let creation_token_cost = token_cost
+                        .get_mut("create")
+                        .expect("expected to get creation token cost")
+                        .expect("expected creation token cost to be set");
+                    creation_token_cost
+                        .set_value("contractId", token_contract_id.into())
+                        .expect("expected to set token contract id");
+                    creation_token_cost
+                        .set_value("tokenPosition", 4.into())
+                        .expect("expected to set token position");
+                    creation_token_cost
+                        .set_value("amount", 5.into())
+                        .expect("expected to set token amount");
+                    creation_token_cost
+                        .set_value(
+                            "effect",
+                            Value::U8(
+                                DocumentActionTokenEffect::TransferTokenToContractOwner.into(),
+                            ),
+                        )
+                        .expect("expected to set token pay effect");
+                    creation_token_cost
+                        .set_value("gasFeesPaidBy", gas_fees_paid_by_int.into())
+                        .expect("expected to set token amount");
+                }
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        contract_key.id(),
+                        &contract_signer,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expect to create data contract create batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError(
+                        ConsensusError::StateError(StateError::InvalidTokenPositionStateError(_)),
+                        _
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+            }
+
+            #[test]
             fn test_data_contract_creation_with_single_token_with_invalid_perpetual_distribution_should_cause_error(
             ) {
                 let platform_version = PlatformVersion::latest();

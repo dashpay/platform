@@ -1,4 +1,4 @@
-use crate::consensus::basic::BasicError;
+use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::TokenContractPosition;
 use crate::ProtocolError;
@@ -18,12 +18,12 @@ use thiserror::Error;
     }
 )]
 #[platform_serialize(unversioned)]
-pub struct InvalidTokenPositionError {
+pub struct InvalidTokenPositionStateError {
     max_token_position: Option<TokenContractPosition>,
     invalid_token_position: TokenContractPosition,
 }
 
-impl InvalidTokenPositionError {
+impl InvalidTokenPositionStateError {
     pub fn new(
         max_token_position: Option<TokenContractPosition>,
         invalid_token_position: TokenContractPosition,
@@ -43,8 +43,8 @@ impl InvalidTokenPositionError {
     }
 }
 
-impl From<InvalidTokenPositionError> for ConsensusError {
-    fn from(err: InvalidTokenPositionError) -> Self {
-        Self::BasicError(BasicError::InvalidTokenPositionError(err))
+impl From<InvalidTokenPositionStateError> for ConsensusError {
+    fn from(err: InvalidTokenPositionStateError) -> Self {
+        Self::StateError(StateError::InvalidTokenPositionStateError(err))
     }
 }
