@@ -1227,6 +1227,8 @@ mod tests {
         use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use dpp::data_contract::change_control_rules::ChangeControlRules;
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use drive::drive::Drive;
 
         #[test]
         fn test_data_contract_update_can_add_new_token() {
@@ -1288,7 +1290,7 @@ mod tests {
 
             let data_contract_update_transition =
                 DataContractUpdateTransition::new_from_data_contract(
-                    updated_data_contract,
+                    updated_data_contract.clone(),
                     &identity.into_partial_identity_info(),
                     key.id(),
                     2,
@@ -1328,6 +1330,27 @@ mod tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+
+            // Prove & verify
+            let proof = platform
+                .drive
+                .prove_state_transition(&data_contract_update_transition, None, platform_version)
+                .expect("expect to prove state transition");
+            let (_root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+                &data_contract_update_transition,
+                &BlockInfo::default(),
+                proof.data.as_ref().expect("expected data"),
+                &|_| Ok(None),
+                platform_version,
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "expect to verify state transition proof {}, error is {}",
+                    hex::encode(proof.data.expect("expected data")),
+                    e
+                )
+            });
+            assert_matches!(result, StateTransitionProofResult::VerifiedDataContract(_));
         }
 
         #[test]
