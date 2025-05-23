@@ -215,6 +215,76 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn test_data_contract_creation_with_additional_property() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+        println!("Creating data contract from file");
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/additional_properties.json",
+            None,
+            None,
+            true,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        println!("Creating data contract create transition");
+        let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
+            data_contract,
+            1,
+            &identity.into_partial_identity_info(),
+            key.id(),
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expect to create documents batch transition");
+
+        println!("Serializing data contract create transition");
+        let data_contract_create_serialized_transition = data_contract_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        println!("Creating transaction");
+        let transaction = platform.drive.grove.start_transaction();
+
+        println!("Processing data contract create transition");
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[data_contract_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        println!("Processing result: {:?}", processing_result);
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        println!("Committing transaction");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+    }
+
+    #[test]
     fn test_data_contract_creation_with_contested_unique_index() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()

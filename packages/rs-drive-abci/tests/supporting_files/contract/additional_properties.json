@@ -1,0 +1,65 @@
+{
+    "$format_version": "1",
+    "id": "AB74kqWmJhJKUaCRDHn4Jqmpx6kivF2U4Lm9QnwSbAHL",
+    "config": {
+        "$format_version": "1",
+        "canBeDeleted": false,
+        "readonly": false,
+        "keepsHistory": false,
+        "documentsKeepHistoryContractDefault": false,
+        "documentsMutableContractDefault": true,
+        "documentsCanBeDeletedContractDefault": true,
+        "requiresIdentityEncryptionBoundedKey": null,
+        "requiresIdentityDecryptionBoundedKey": null,
+        "sizedIntegerTypes": true
+    },
+    "version": 1,
+    "ownerId": "9gj5bnv3MG1c7Q4Pa4H8bnxcMConknjCCPAxcqEhCgEd",
+    "schemaDefs": null,
+    "documentSchemas": {
+        "blob": {
+            "type": "object",
+            "indices": [
+                {
+                    "name": "saltedHash",
+                    "properties": [
+                        {
+                            "saltedDomainHash": "asc"
+                        }
+                    ],
+                    "unique": true
+                }
+            ],
+            "properties": {
+                "saltedDomainHash": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 0,
+                    "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
+                }
+            },
+            "somethingStupid": {
+                "V0": {
+                    "create": 10
+                }
+            },
+            "required": [
+                "saltedDomainHash"
+            ],
+            "additionalProperties": false,
+            "$comment": "Preorder documents are immutable: modification and deletion are restricted"
+        }
+    },
+    "createdAt": 1747842966204,
+    "updatedAt": 1747843075596,
+    "createdAtBlockHeight": 1225,
+    "updatedAtBlockHeight": 1228,
+    "createdAtEpoch": 408,
+    "updatedAtEpoch": 408,
+    "groups": {},
+    "tokens": {},
+    "keywords": [],
+    "description": null
+}
