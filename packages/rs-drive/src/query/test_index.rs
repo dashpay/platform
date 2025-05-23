@@ -1,6 +1,7 @@
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use crate::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveDocumentQuery;
@@ -85,6 +86,7 @@ mod tests {
             "indexed_type",
             schema,
             None,
+            &BTreeMap::new(),
             &config,
             true,
             &mut vec![],
