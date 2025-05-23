@@ -130,6 +130,8 @@ impl DataContractInSerializationFormat {
                     && v1_self.document_schemas == v1_other.document_schemas
                     && v1_self.groups == v1_other.groups
                     && v1_self.tokens == v1_other.tokens
+                    && v1_self.keywords == v1_other.keywords
+                    && v1_self.description == v1_other.description
             }
             // Cross-version comparisons return false
             (
