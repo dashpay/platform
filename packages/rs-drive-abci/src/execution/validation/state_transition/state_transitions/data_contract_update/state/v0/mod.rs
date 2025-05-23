@@ -403,7 +403,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         contract_fetch_info
                             .0
                             .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "fee must exist in validate state for data contract create transition",
+                            "fee must exist in validate state for data contract update transition",
                         )))?;
 
                     // We add the cost for fetching the contract even if the contract doesn't exist or was in cache
