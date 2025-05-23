@@ -1,3 +1,4 @@
+use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -21,6 +22,7 @@ impl DataContractSchemaMethodsV0 for DataContractV1 {
             self.id,
             schemas,
             defs.as_ref(),
+            &self.tokens,
             &self.config,
             full_validation,
             !self.tokens.is_empty(),
@@ -44,6 +46,7 @@ impl DataContractSchemaMethodsV0 for DataContractV1 {
             name,
             schema,
             self.schema_defs.as_ref(),
+            self.tokens(),
             &self.config,
             full_validation,
             validation_operations,
