@@ -13,6 +13,7 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::data_contract::TokenContractPosition;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -152,5 +153,46 @@ impl DocumentTypeV1Getters for DocumentTypeV1 {
 
     fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_purchase_token_cost()
+    }
+
+    fn all_document_token_costs(&self) -> Vec<&DocumentActionTokenCost> {
+        let mut result = Vec::new();
+
+        if let Some(cost) = self.token_costs.document_creation_token_cost_ref() {
+            result.push(cost);
+        }
+        if let Some(cost) = self.token_costs.document_replacement_token_cost_ref() {
+            result.push(cost);
+        }
+        if let Some(cost) = self.token_costs.document_deletion_token_cost_ref() {
+            result.push(cost);
+        }
+        if let Some(cost) = self.token_costs.document_transfer_token_cost_ref() {
+            result.push(cost);
+        }
+        if let Some(cost) = self.token_costs.document_price_update_token_cost_ref() {
+            result.push(cost);
+        }
+        if let Some(cost) = self.token_costs.document_purchase_token_cost_ref() {
+            result.push(cost);
+        }
+
+        result
+    }
+
+    fn all_external_token_costs_contract_tokens(
+        &self,
+    ) -> BTreeMap<Identifier, BTreeSet<TokenContractPosition>> {
+        let mut map = BTreeMap::new();
+
+        for cost in self.all_document_token_costs() {
+            if let Some(contract_id) = cost.contract_id {
+                map.entry(contract_id)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(cost.token_contract_position);
+            }
+        }
+
+        map
     }
 }

@@ -19,6 +19,24 @@ pub trait TokenCostGettersV0 {
 
     /// Returns the token cost associated with document purchase, if applicable.
     fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost>;
+
+    /// Returns a reference to the token cost associated with document creation, if applicable.
+    fn document_creation_token_cost_ref(&self) -> Option<&DocumentActionTokenCost>;
+
+    /// Returns a reference to the token cost associated with document replacement (updating), if applicable.
+    fn document_replacement_token_cost_ref(&self) -> Option<&DocumentActionTokenCost>;
+
+    /// Returns a reference to the token cost associated with document deletion, if applicable.
+    fn document_deletion_token_cost_ref(&self) -> Option<&DocumentActionTokenCost>;
+
+    /// Returns a reference to the token cost associated with document transfer, if applicable.
+    fn document_transfer_token_cost_ref(&self) -> Option<&DocumentActionTokenCost>;
+
+    /// Returns a reference to the token cost associated with updating the price of a document, if applicable.
+    fn document_price_update_token_cost_ref(&self) -> Option<&DocumentActionTokenCost>;
+
+    /// Returns a reference to the token cost associated with document purchase, if applicable.
+    fn document_purchase_token_cost_ref(&self) -> Option<&DocumentActionTokenCost>;
 }
 
 /// Trait providing setters for modifying token costs associated with different operations.

@@ -248,6 +248,8 @@ impl ErrorWithCode for StateError {
             Self::PreProgrammedDistributionTimestampInPastError(_) => 40005,
             Self::IdentityInTokenConfigurationNotFoundError(_) => 40006,
             Self::IdentityMemberOfGroupNotFoundError(_) => 40007,
+            Self::DataContractNotFoundError(_) => 40008,
+            Self::InvalidTokenPositionStateError(_) => 40009,
 
             // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,

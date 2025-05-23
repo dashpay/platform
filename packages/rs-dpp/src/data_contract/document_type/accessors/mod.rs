@@ -12,6 +12,7 @@ use crate::data_contract::document_type::restricted_creation::CreationRestrictio
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::data_contract::TokenContractPosition;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -625,6 +626,22 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V1(v1) => v1.document_purchase_token_cost(),
         }
     }
+
+    fn all_document_token_costs(&self) -> Vec<&DocumentActionTokenCost> {
+        match self {
+            DocumentType::V0(_) => vec![],
+            DocumentType::V1(v1) => v1.all_document_token_costs(),
+        }
+    }
+
+    fn all_external_token_costs_contract_tokens(
+        &self,
+    ) -> BTreeMap<Identifier, BTreeSet<TokenContractPosition>> {
+        match self {
+            DocumentType::V0(_) => BTreeMap::new(),
+            DocumentType::V1(v1) => v1.all_external_token_costs_contract_tokens(),
+        }
+    }
 }
 
 impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
@@ -669,6 +686,22 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V1(v1) => v1.document_purchase_token_cost(),
         }
     }
+
+    fn all_document_token_costs(&self) -> Vec<&DocumentActionTokenCost> {
+        match self {
+            DocumentTypeRef::V0(_) => vec![],
+            DocumentTypeRef::V1(v1) => v1.all_document_token_costs(),
+        }
+    }
+
+    fn all_external_token_costs_contract_tokens(
+        &self,
+    ) -> BTreeMap<Identifier, BTreeSet<TokenContractPosition>> {
+        match self {
+            DocumentTypeRef::V0(_) => BTreeMap::new(),
+            DocumentTypeRef::V1(v1) => v1.all_external_token_costs_contract_tokens(),
+        }
+    }
 }
 
 impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
@@ -711,6 +744,22 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_purchase_token_cost(),
+        }
+    }
+
+    fn all_document_token_costs(&self) -> Vec<&DocumentActionTokenCost> {
+        match self {
+            DocumentTypeMutRef::V0(_) => vec![],
+            DocumentTypeMutRef::V1(v1) => v1.all_document_token_costs(),
+        }
+    }
+
+    fn all_external_token_costs_contract_tokens(
+        &self,
+    ) -> BTreeMap<Identifier, BTreeSet<TokenContractPosition>> {
+        match self {
+            DocumentTypeMutRef::V0(_) => BTreeMap::new(),
+            DocumentTypeMutRef::V1(v1) => v1.all_external_token_costs_contract_tokens(),
         }
     }
 }
