@@ -116,6 +116,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidKeywordCharacterError(_) => 10269,
             Self::InvalidKeywordLengthError(_) => 10270,
             Self::DecimalsOverLimitError(_) => 10271,
+            Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10272,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
