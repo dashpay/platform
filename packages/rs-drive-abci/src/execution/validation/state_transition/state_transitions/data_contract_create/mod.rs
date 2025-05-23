@@ -225,7 +225,6 @@ mod tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
 
-        println!("Creating data contract from file");
         let data_contract = json_document_to_contract_with_ids(
             "tests/supporting_files/contract/additional_properties.json",
             None,
@@ -235,7 +234,6 @@ mod tests {
         )
         .expect("expected to get json based contract");
 
-        println!("Creating data contract create transition");
         let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
             data_contract,
             1,
@@ -247,15 +245,12 @@ mod tests {
         )
         .expect("expect to create documents batch transition");
 
-        println!("Serializing data contract create transition");
         let data_contract_create_serialized_transition = data_contract_create_transition
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
-        println!("Creating transaction");
         let transaction = platform.drive.grove.start_transaction();
 
-        println!("Processing data contract create transition");
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -269,13 +264,11 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        println!("Processing result: {:?}", processing_result);
         assert_matches!(
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
         );
 
-        println!("Committing transaction");
         platform
             .drive
             .grove
