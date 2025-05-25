@@ -1,6 +1,7 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 impl TokenConfigurationV0 {
     /// Returns the authorized action takers for a specific `TokenConfigurationChangeItem`.
@@ -105,6 +106,18 @@ impl TokenConfigurationV0 {
                 *self.emergency_action_rules.admin_action_takers()
             }
             TokenConfigurationChangeItem::MainControlGroup(_) => AuthorizedActionTakers::NoOne,
+            TokenConfigurationChangeItem::MarketplaceTradeMode(_) => *self
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .authorized_to_make_change_action_takers(),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(_) => *self
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .admin_action_takers(),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(_) => *self
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .admin_action_takers(),
         }
     }
 }
