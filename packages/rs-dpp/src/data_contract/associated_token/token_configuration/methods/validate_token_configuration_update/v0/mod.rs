@@ -194,7 +194,7 @@ impl TokenConfiguration {
             }
         }
 
-        // Check changes to change_direct_purchase_pricing_rules and its rules
+        // Check changes to marketplace trade mode and its rules
         #[allow(clippy::collapsible_if)]
         if old.marketplace_rules.trade_mode() != new.marketplace_rules.trade_mode()
             || old.marketplace_rules.trade_mode_change_rules()
