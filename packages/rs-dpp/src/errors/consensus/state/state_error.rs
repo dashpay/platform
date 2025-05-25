@@ -56,6 +56,7 @@ use crate::errors::consensus::state::token::invalid_group_position_error::Invali
 use crate::errors::consensus::state::token::invalid_token_claim_no_current_rewards::InvalidTokenClaimNoCurrentRewards;
 use crate::errors::consensus::state::token::invalid_token_claim_property_mismatch::InvalidTokenClaimPropertyMismatch;
 use crate::errors::consensus::state::token::invalid_token_claim_wrong_claimant::InvalidTokenClaimWrongClaimant;
+use crate::errors::consensus::state::token::invalid_token_position_error::InvalidTokenPositionStateError;
 use crate::errors::consensus::state::token::new_authorized_action_taker_group_does_not_exist_error::NewAuthorizedActionTakerGroupDoesNotExistError;
 use crate::errors::consensus::state::token::new_authorized_action_taker_identity_does_not_exist_error::NewAuthorizedActionTakerIdentityDoesNotExistError;
 use crate::errors::consensus::state::token::new_authorized_action_taker_main_group_not_set_error::NewAuthorizedActionTakerMainGroupNotSetError;

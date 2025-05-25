@@ -96,17 +96,6 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionSignable,
-};
-use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
-    DataContractUpdateTransition, DataContractUpdateTransitionSignable,
-};
-use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionRef;
-use crate::state_transition::state_transitions::document::batch_transition::{
-    BatchTransition, BatchTransitionSignable,
-};
 use crate::state_transition::state_transitions::identity::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };

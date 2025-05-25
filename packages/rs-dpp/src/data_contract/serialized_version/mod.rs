@@ -22,8 +22,6 @@ use platform_versioning::PlatformVersioned;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use super::EMPTY_KEYWORDS;
-
 pub mod v0;
 pub mod v1;
 

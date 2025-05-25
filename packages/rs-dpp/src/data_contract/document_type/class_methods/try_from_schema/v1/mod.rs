@@ -28,11 +28,13 @@ use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexOnMutabl
 use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::errors::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::errors::consensus::basic::data_contract::RedundantDocumentPaidForByTokenWithContractId;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+#[cfg(feature = "validation")]
 use crate::errors::consensus::basic::token::InvalidTokenPositionError;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::BasicError;

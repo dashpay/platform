@@ -3,8 +3,8 @@ use crate::identity::{
     identity_public_key::{Purpose, SecurityLevel},
     KeyID,
 };
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::state_transitions::document::batch_transition::BatchTransitionV1;
 use crate::state_transition::StateTransitionIdentitySigned;
 
