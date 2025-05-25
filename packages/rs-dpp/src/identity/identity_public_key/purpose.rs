@@ -35,6 +35,7 @@ pub enum Purpose {
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
     /// this key is used to sign credit transfer and withdrawal state transitions
+    /// this key can also be used by identities for claims and transfers of tokens
     TRANSFER = 3,
     /// this key cannot be used for signing documents
     SYSTEM = 4,

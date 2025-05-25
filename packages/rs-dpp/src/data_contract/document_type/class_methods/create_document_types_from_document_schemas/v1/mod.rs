@@ -1,21 +1,21 @@
 use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::DocumentName;
+use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-impl DocumentTypeV0 {
+impl DocumentType {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v1(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
         data_contact_config: &DataContractConfig,
         full_validation: bool,
         has_tokens: bool,
@@ -42,6 +42,7 @@ impl DocumentTypeV0 {
                     &name,
                     schema,
                     schema_defs,
+                    token_configurations,
                     data_contact_config,
                     full_validation,
                     validation_operations,

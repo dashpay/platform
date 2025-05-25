@@ -53,6 +53,42 @@ impl TokenCostGettersV0 for TokenCosts {
             TokenCosts::V0(inner) => inner.document_purchase_token_cost(),
         }
     }
+
+    fn document_creation_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        match self {
+            TokenCosts::V0(inner) => inner.document_creation_token_cost_ref(),
+        }
+    }
+
+    fn document_replacement_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        match self {
+            TokenCosts::V0(inner) => inner.document_replacement_token_cost_ref(),
+        }
+    }
+
+    fn document_deletion_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        match self {
+            TokenCosts::V0(inner) => inner.document_deletion_token_cost_ref(),
+        }
+    }
+
+    fn document_transfer_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        match self {
+            TokenCosts::V0(inner) => inner.document_transfer_token_cost_ref(),
+        }
+    }
+
+    fn document_price_update_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        match self {
+            TokenCosts::V0(inner) => inner.document_price_update_token_cost_ref(),
+        }
+    }
+
+    fn document_purchase_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        match self {
+            TokenCosts::V0(inner) => inner.document_purchase_token_cost_ref(),
+        }
+    }
 }
 
 impl TokenCostSettersV0 for TokenCosts {

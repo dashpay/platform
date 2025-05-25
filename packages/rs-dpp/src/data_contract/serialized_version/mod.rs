@@ -6,6 +6,7 @@ use crate::data_contract::{
 use crate::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+use super::EMPTY_KEYWORDS;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
@@ -132,6 +133,8 @@ impl DataContractInSerializationFormat {
                     && v1_self.document_schemas == v1_other.document_schemas
                     && v1_self.groups == v1_other.groups
                     && v1_self.tokens == v1_other.tokens
+                    && v1_self.keywords == v1_other.keywords
+                    && v1_self.description == v1_other.description
             }
             // Cross-version comparisons return false
             (

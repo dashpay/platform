@@ -9,6 +9,7 @@ use dpp::data_contract::associated_token::token_configuration_localization::v0::
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::config::DataContractConfig;
@@ -259,6 +260,11 @@ impl<C> Platform<C> {
                 minting_allow_choosing_destination: true,
                 minting_allow_choosing_destination_rules: ChangeControlRulesV0::default().into(),
                 change_direct_purchase_pricing_rules: ChangeControlRulesV0::default().into(),
+            }
+            .into(),
+            marketplace_rules: TokenMarketplaceRulesV0 {
+                trade_mode: Default::default(),
+                trade_mode_change_rules: ChangeControlRulesV0::default().into(),
             }
             .into(),
             manual_minting_rules: ChangeControlRulesV0 {

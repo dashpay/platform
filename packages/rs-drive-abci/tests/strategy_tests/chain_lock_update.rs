@@ -74,6 +74,14 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
+        run_chain_for_strategy(
+            &mut platform,
+            50,
+            strategy,
+            config,
+            13,
+            &mut None,
+            &mut None,
+        );
     }
 }

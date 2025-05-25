@@ -1596,6 +1596,7 @@ impl NetworkStrategy {
     pub fn state_transitions_for_block(
         &mut self,
         platform: &Platform<MockCoreRPCLike>,
+        start_block_height: BlockHeight,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -1631,17 +1632,22 @@ impl NetworkStrategy {
 
         current_identities.append(&mut identities);
 
-        if block_info.height == 1 {
-            // add contracts on block 1
-            let mut contract_state_transitions = self.initial_contract_state_transitions(
-                current_identities,
-                signer,
-                contract_nonce_counter,
-                rng,
-                platform_version,
-            );
-            state_transitions.append(&mut contract_state_transitions);
-        } else {
+        let should_do_operation_transitions =
+            if block_info.height == start_block_height && !current_identities.is_empty() {
+                // add contracts on block 1
+                let mut contract_state_transitions = self.initial_contract_state_transitions(
+                    current_identities,
+                    signer,
+                    contract_nonce_counter,
+                    rng,
+                    platform_version,
+                );
+                state_transitions.append(&mut contract_state_transitions);
+                block_info.height != 1
+            } else {
+                true
+            };
+        if should_do_operation_transitions {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .operations_based_transitions(

@@ -1,6 +1,7 @@
 use crate::frequency::Frequency;
 use bincode::{Decode, Encode};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::{
     DocumentFieldFillSize, DocumentFieldFillType,
@@ -430,6 +431,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                                 name_str,
                                 schema_json,
                                 None,
+                                contract.tokens(),
                                 contract.config(),
                                 full_validation,
                                 &mut vec![],

@@ -83,6 +83,18 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
             .first_mut()
             .map(|transition| transition.borrow_as_mut())
     }
+
+    fn contains_document_transition(&self) -> bool {
+        self.transitions
+            .iter()
+            .any(|transition| matches!(transition, BatchedTransition::Document(_)))
+    }
+
+    fn contains_token_transition(&self) -> bool {
+        self.transitions
+            .iter()
+            .any(|transition| matches!(transition, BatchedTransition::Token(_)))
+    }
 }
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {

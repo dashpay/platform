@@ -38,6 +38,7 @@ pub fn generate_test_masternodes(
     updates: Option<GenerateTestMasternodeUpdates>,
     rng: &mut StdRng,
     add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+    add_payout_keys_to_signer: &mut Option<SimpleSigner>,
 ) -> (
     Vec<MasternodeListItemWithUpdates>,
     Vec<MasternodeListItemWithUpdates>,
@@ -208,6 +209,25 @@ pub fn generate_test_masternodes(
         }
     }
 
+    fn generate_payout_address(
+        rng: &mut StdRng,
+        add_transfer_keys_to_signer: &mut Option<SimpleSigner>,
+    ) -> [u8; 20] {
+        if let Some(simple_signer) = add_transfer_keys_to_signer {
+            let (identity_public_key, private_key) =
+                IdentityPublicKey::random_masternode_transfer_key_with_rng(
+                    0,
+                    rng,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected a random voting key");
+            simple_signer.add_key(identity_public_key.clone(), private_key);
+            identity_public_key.public_key_hash().unwrap()
+        } else {
+            rng.gen()
+        }
+    }
+
     for i in 0..masternode_count {
         let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
             .expect("expected to generate a private key")
@@ -235,7 +255,7 @@ pub fn generate_test_masternodes(
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: generate_payout_address(rng, add_payout_keys_to_signer),
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
@@ -372,7 +392,7 @@ pub fn generate_test_masternodes(
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: generate_payout_address(rng, add_payout_keys_to_signer),
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
@@ -605,10 +625,22 @@ mod tests {
         let mut rng1 = StdRng::seed_from_u64(12345);
         let mut rng2 = StdRng::seed_from_u64(12345);
 
-        let (masternodes1, hpmn1) =
-            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1, &mut None);
-        let (masternodes2, hpmn2) =
-            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2, &mut None);
+        let (masternodes1, hpmn1) = generate_test_masternodes(
+            masternode_count,
+            hpmn_count,
+            None,
+            &mut rng1,
+            &mut None,
+            &mut None,
+        );
+        let (masternodes2, hpmn2) = generate_test_masternodes(
+            masternode_count,
+            hpmn_count,
+            None,
+            &mut rng2,
+            &mut None,
+            &mut None,
+        );
 
         assert_eq!(masternodes1, masternodes2);
         assert_eq!(hpmn1, hpmn2);
@@ -671,12 +703,14 @@ mod tests {
             updates.clone(),
             &mut rng1,
             &mut None,
+            &mut None,
         );
         let (masternodes2, hpmn2) = generate_test_masternodes(
             masternode_count,
             hpmn_count,
             updates.clone(),
             &mut rng2,
+            &mut None,
             &mut None,
         );
 
@@ -700,10 +734,22 @@ mod tests {
             };
             let hpmn_count = rng.gen_range(50..=150);
 
-            let (masternodes1, hpmn1) =
-                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1, &mut None);
-            let (masternodes2, hpmn2) =
-                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2, &mut None);
+            let (masternodes1, hpmn1) = generate_test_masternodes(
+                masternode_count,
+                hpmn_count,
+                None,
+                &mut rng1,
+                &mut None,
+                &mut None,
+            );
+            let (masternodes2, hpmn2) = generate_test_masternodes(
+                masternode_count,
+                hpmn_count,
+                None,
+                &mut rng2,
+                &mut None,
+                &mut None,
+            );
 
             assert_eq!(masternodes1, masternodes2);
             assert_eq!(hpmn1, hpmn2);
@@ -777,12 +823,14 @@ mod tests {
                 updates.clone(),
                 &mut rng1,
                 &mut None,
+                &mut None,
             );
             let (masternodes2, hpmn2) = generate_test_masternodes(
                 masternode_count,
                 hpmn_count,
                 updates.clone(),
                 &mut rng2,
+                &mut None,
                 &mut None,
             );
 

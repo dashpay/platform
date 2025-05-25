@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("feature {feature_name} is not supported in version {current_protocol_version}")]
+#[error("feature {feature_name} is not supported. This validation was done in protocol version {current_protocol_version}")]
 #[platform_serialize(unversioned)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnsupportedFeatureError {

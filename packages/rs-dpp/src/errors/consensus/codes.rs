@@ -116,6 +116,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidKeywordCharacterError(_) => 10269,
             Self::InvalidKeywordLengthError(_) => 10270,
             Self::DecimalsOverLimitError(_) => 10271,
+            Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10272,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -247,6 +248,8 @@ impl ErrorWithCode for StateError {
             Self::PreProgrammedDistributionTimestampInPastError(_) => 40005,
             Self::IdentityInTokenConfigurationNotFoundError(_) => 40006,
             Self::IdentityMemberOfGroupNotFoundError(_) => 40007,
+            Self::DataContractNotFoundError(_) => 40008,
+            Self::InvalidTokenPositionStateError(_) => 40009,
 
             // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,

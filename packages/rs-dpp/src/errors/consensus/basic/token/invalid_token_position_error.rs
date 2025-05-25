@@ -10,20 +10,23 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Invalid token position {}, max {}",
-    invalid_token_position,
-    max_token_position
+    "Invalid token position: {invalid_token_position}. {max_token_message}",
+    max_token_message = if let Some(max) = self.max_token_position {
+        format!("The maximum allowed token position is {}", max)
+    } else {
+        "No maximum token position limit is set.".to_string()
+    }
 )]
 #[platform_serialize(unversioned)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenPositionError {
-    pub max_token_position: TokenContractPosition,
+    pub max_token_position: Option<TokenContractPosition>,
     pub invalid_token_position: TokenContractPosition,
 }
 
 impl InvalidTokenPositionError {
     pub fn new(
-        max_token_position: TokenContractPosition,
+        max_token_position: Option<TokenContractPosition>,
         invalid_token_position: TokenContractPosition,
     ) -> Self {
         Self {
@@ -32,7 +35,7 @@ impl InvalidTokenPositionError {
         }
     }
 
-    pub fn max_token_position(&self) -> TokenContractPosition {
+    pub fn max_token_position(&self) -> Option<TokenContractPosition> {
         self.max_token_position
     }
 

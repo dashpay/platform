@@ -51,6 +51,30 @@ impl TokenCostGettersV0 for TokenCostsV0 {
     fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.purchase
     }
+
+    fn document_creation_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        self.create.as_ref()
+    }
+
+    fn document_replacement_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        self.replace.as_ref()
+    }
+
+    fn document_deletion_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        self.delete.as_ref()
+    }
+
+    fn document_transfer_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        self.transfer.as_ref()
+    }
+
+    fn document_price_update_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        self.update_price.as_ref()
+    }
+
+    fn document_purchase_token_cost_ref(&self) -> Option<&DocumentActionTokenCost> {
+        self.purchase.as_ref()
+    }
 }
 
 /// Implementation of the `TokenCostSettersV0` trait for `TokenCostsV0`.

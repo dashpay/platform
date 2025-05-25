@@ -6,6 +6,7 @@ use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::version::PlatformVersionCurrentVersion;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
 use crate::validation::operations::ProtocolValidationOperation;
@@ -95,6 +96,7 @@ impl DataContractV0 {
             id,
             document_schemas,
             schema_defs.as_ref(),
+            &BTreeMap::new(),
             &config,
             full_validation,
             false,
@@ -135,6 +137,7 @@ impl DataContractV0 {
             id,
             document_schemas,
             schema_defs.as_ref(),
+            &BTreeMap::new(),
             &config,
             full_validation,
             false,

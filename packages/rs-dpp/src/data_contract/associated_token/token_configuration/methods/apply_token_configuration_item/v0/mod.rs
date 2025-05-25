@@ -3,6 +3,9 @@ use crate::data_contract::associated_token::token_configuration_item::TokenConfi
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
+use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::{
+    TokenMarketplaceRulesV0Getters, TokenMarketplaceRulesV0Setters,
+};
 
 impl TokenConfigurationV0 {
     /// Applies a `TokenConfigurationChangeItem` to this token configuration.
@@ -134,6 +137,19 @@ impl TokenConfigurationV0 {
             }
             TokenConfigurationChangeItem::MainControlGroup(main_group) => {
                 self.main_control_group = main_group;
+            }
+            TokenConfigurationChangeItem::MarketplaceTradeMode(trade_mode) => {
+                self.marketplace_rules.set_trade_mode(trade_mode);
+            }
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(control_group) => {
+                self.marketplace_rules
+                    .trade_mode_change_rules_mut()
+                    .set_authorized_to_make_change_action_takers(control_group);
+            }
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(admin_group) => {
+                self.marketplace_rules
+                    .trade_mode_change_rules_mut()
+                    .set_admin_action_takers(admin_group);
             }
         }
     }

@@ -134,7 +134,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
+        run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
     }
 
     #[test]
@@ -179,7 +187,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
+        run_chain_for_strategy(
+            &mut platform,
+            50,
+            strategy,
+            config,
+            13,
+            &mut None,
+            &mut None,
+        );
     }
 
     #[test]
@@ -244,6 +260,7 @@ mod tests {
             strategy.clone(),
             config.clone(),
             40,
+            &mut None,
             &mut None,
         );
 
@@ -388,6 +405,7 @@ mod tests {
             config.clone(),
             40,
             &mut None,
+            &mut None,
         );
 
         let state = abci_app.platform.state.load();
@@ -512,7 +530,8 @@ mod tests {
             .with_initial_protocol_version(1)
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None);
+        let outcome =
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None);
 
         let balance = outcome
             .abci_app
@@ -590,7 +609,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None);
+        let outcome =
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None);
 
         let balance = outcome
             .abci_app
@@ -652,7 +672,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
+        run_chain_for_strategy(
+            &mut platform,
+            1000,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
     }
 
     #[test]
@@ -702,7 +730,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            1000,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -760,7 +796,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            1000,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -832,8 +876,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40, &mut None);
+        let ChainExecutionOutcome { abci_app, .. } = run_chain_for_strategy(
+            &mut platform,
+            2000,
+            strategy,
+            config,
+            40,
+            &mut None,
+            &mut None,
+        );
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
@@ -858,7 +909,13 @@ mod tests {
                 .index,
             0
         );
-        assert!(counter.get(&1).unwrap().unwrap() > &240);
+        assert!(
+            counter
+                .get(&platform_version.protocol_version)
+                .unwrap()
+                .unwrap()
+                > &240
+        );
     }
 
     #[test]
@@ -928,8 +985,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
+        let ChainExecutionOutcome { abci_app, .. } = run_chain_for_strategy(
+            &mut platform,
+            300,
+            strategy,
+            config,
+            43,
+            &mut None,
+            &mut None,
+        );
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
@@ -1011,8 +1075,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
+        let ChainExecutionOutcome { abci_app, .. } = run_chain_for_strategy(
+            &mut platform,
+            300,
+            strategy,
+            config,
+            43,
+            &mut None,
+            &mut None,
+        );
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -1093,7 +1164,15 @@ mod tests {
             abci_app,
             proposers,
             ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
+        } = run_chain_for_strategy(
+            &mut platform,
+            300,
+            strategy,
+            config,
+            43,
+            &mut None,
+            &mut None,
+        );
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -1186,7 +1265,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -1242,7 +1329,15 @@ mod tests {
             .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            150,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1328,7 +1423,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
+        let outcome =
+            run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None, &mut None);
 
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
@@ -1457,7 +1553,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 30, strategy, config, 15, &mut None);
+        run_chain_for_strategy(
+            &mut platform,
+            30,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
     }
 
     #[test]
@@ -1544,7 +1648,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         outcome
             .abci_app
@@ -1648,7 +1760,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
+        run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
     }
 
     #[test]
@@ -1730,8 +1850,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1839,8 +1966,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1969,8 +2103,15 @@ mod tests {
             .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -2100,8 +2241,15 @@ mod tests {
             .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -2230,8 +2378,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
                 assert_eq!(
@@ -2345,8 +2500,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
@@ -2473,6 +2635,7 @@ mod tests {
                     strategy,
                     config,
                     15,
+                    &mut None,
                     &mut None,
                 );
                 assert_eq!(outcome.identities.len() as u64, 472);
@@ -2616,8 +2779,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         let issues = outcome
             .abci_app
@@ -2765,8 +2935,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         let issues = outcome
             .abci_app
@@ -2922,6 +3099,7 @@ mod tests {
                     strategy,
                     config,
                     15,
+                    &mut None,
                     &mut None,
                 );
                 assert_eq!(outcome.identities.len() as u64, 296);
@@ -3113,6 +3291,7 @@ mod tests {
                     config,
                     15,
                     &mut None,
+                    &mut None,
                 );
                 assert_eq!(outcome.identities.len() as u64, 201);
                 assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -3186,7 +3365,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
         let balances = outcome
@@ -3267,7 +3454,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
         let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -3352,7 +3547,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         let identities = outcome
             .abci_app
@@ -3467,8 +3670,15 @@ mod tests {
                     })
                 });
 
-            let outcome =
-                run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7, &mut None);
+            let outcome = run_chain_for_strategy(
+                platform,
+                1,
+                strategy.clone(),
+                config.clone(),
+                7,
+                &mut None,
+                &mut None,
+            );
             outcomes.push(outcome);
         }
 
@@ -3666,8 +3876,17 @@ mod tests {
             config.clone(),
             7,
             &mut None,
+            &mut None,
         );
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7, &mut None);
+        let outcome_b = run_chain_for_strategy(
+            &mut platform_b,
+            18,
+            strategy,
+            config,
+            7,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3828,9 +4047,17 @@ mod tests {
             config.clone(),
             7,
             &mut None,
+            &mut None,
         );
-        let outcome_b =
-            run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7, &mut None);
+        let outcome_b = run_chain_for_strategy(
+            &mut platform_b,
+            100,
+            strategy,
+            config,
+            7,
+            &mut None,
+            &mut None,
+        );
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3972,6 +4199,7 @@ mod tests {
             config.clone(),
             89,
             &mut None,
+            &mut None,
         );
 
         let state = abci_app.platform.state.load();
@@ -4108,7 +4336,15 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
 
         let _balances = &outcome
             .abci_app
@@ -4165,7 +4401,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
+        let outcome =
+            run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None, &mut None);
         let state_transitions = outcome
             .state_transition_results_per_block
             .get(&1)

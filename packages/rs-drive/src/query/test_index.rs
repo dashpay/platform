@@ -10,6 +10,7 @@ mod tests {
     use dpp::platform_value::{platform_value, Identifier};
     use dpp::util::cbor_serializer;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -85,6 +86,7 @@ mod tests {
             "indexed_type",
             schema,
             None,
+            &BTreeMap::new(),
             &config,
             true,
             &mut vec![],

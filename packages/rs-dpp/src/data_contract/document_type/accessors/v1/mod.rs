@@ -1,4 +1,7 @@
+use crate::data_contract::TokenContractPosition;
 use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
+use platform_value::Identifier;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait providing getters for retrieving token costs associated with different document operations.
 pub trait DocumentTypeV1Getters {
@@ -43,6 +46,15 @@ pub trait DocumentTypeV1Getters {
     /// - `Some(TokenActionCost)` if a purchase cost exists.
     /// - `None` if no cost is set for document purchase.
     fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost>;
+
+    /// Returns all document token costs. This is generally used only in internal validation.
+    fn all_document_token_costs(&self) -> Vec<&DocumentActionTokenCost>;
+
+    /// Returns the tokens used by external token costs as a set of token contract positions per contract.
+    /// This is generally used only in internal validation.
+    fn all_external_token_costs_contract_tokens(
+        &self,
+    ) -> BTreeMap<Identifier, BTreeSet<TokenContractPosition>>;
 }
 
 /// Trait providing setters for assigning token costs to different document operations.

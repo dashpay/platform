@@ -25,6 +25,7 @@ use crate::errors::consensus::state::identity::max_identity_public_key_limit_rea
 use crate::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 use crate::errors::consensus::state::identity::{IdentityAlreadyExistsError, IdentityInsufficientBalanceError, RecipientIdentityDoesNotExistError};
 use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use crate::errors::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -343,6 +344,12 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityToFreezeDoesNotExistError(IdentityToFreezeDoesNotExistError),
+
+    #[error(transparent)]
+    DataContractNotFoundError(DataContractNotFoundError),
+
+    #[error(transparent)]
+    InvalidTokenPositionStateError(InvalidTokenPositionStateError),
 }
 
 impl From<StateError> for ConsensusError {

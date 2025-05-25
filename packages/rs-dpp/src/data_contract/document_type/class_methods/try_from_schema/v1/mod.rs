@@ -28,10 +28,12 @@ use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexOnMutabl
 use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::errors::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+use crate::errors::consensus::basic::data_contract::RedundantDocumentPaidForByTokenWithContractId;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+use crate::errors::consensus::basic::token::InvalidTokenPositionError;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
@@ -56,7 +58,7 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::data_contract::TokenContractPosition;
+use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::identity::SecurityLevel;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_amount_on_contract_token::{
@@ -78,6 +80,7 @@ impl DocumentTypeV1 {
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
         data_contact_config: &DataContractConfig,
         full_validation: bool, // we don't need to validate if loaded from state
         validation_operations: &mut Vec<ProtocolValidationOperation>,
@@ -562,7 +565,7 @@ impl DocumentTypeV1 {
                 .transpose()?
                 .map(|action_cost| {
                     // Extract an optional contract_id. Adjust the key if necessary.
-                    let contract_id = action_cost.get_optional_identifier("contractId")?;
+                    let target_contract_id = action_cost.get_optional_identifier("contractId")?;
                     // Extract token_contract_position as an integer, then convert it.
                     let token_contract_position =
                         action_cost.get_integer::<TokenContractPosition>("tokenPosition")?;
@@ -577,15 +580,38 @@ impl DocumentTypeV1 {
 
                     #[cfg(feature = "validation")]
                     if full_validation {
+                        // contract id is none if we are on our own contract
+                        if target_contract_id.is_none() && !token_configurations.contains_key(&token_contract_position) {
+                            return Err(ProtocolError::ConsensusError(
+                                ConsensusError::BasicError(
+                                    BasicError::InvalidTokenPositionError(
+                                        InvalidTokenPositionError::new(
+                                            token_configurations.last_key_value().map(|(position, _)| *position),
+                                            token_contract_position,
+                                        ),
+                                    ),
+                                )
+                                    .into(),
+                            ));
+                        }
 
                         // If contractId is present and user tries to burn, bail out:
-                        if let Some(contract_id) = contract_id {
+                        if let Some(target_contract_id) = target_contract_id {
+                            if target_contract_id == data_contract_id {
+                                // we are in the same contract, but we set the data contract id
+                                return Err(ProtocolError::ConsensusError(
+                                    ConsensusError::BasicError(
+                                        BasicError::RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId::new(target_contract_id))
+                                    )
+                                        .into(),
+                                ));
+                            }
                             if effect == DocumentActionTokenEffect::BurnToken {
                                 return Err(ProtocolError::ConsensusError(
                                     ConsensusError::BasicError(
                                         BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
                                             TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
-                                                contract_id,
+                                                target_contract_id,
                                                 token_contract_position,
                                                 key.to_string(),
                                             ),
@@ -605,7 +631,7 @@ impl DocumentTypeV1 {
                         .unwrap_or(GasFeesPaidBy::DocumentOwner);
 
                     Ok(DocumentActionTokenCost {
-                        contract_id,
+                        contract_id: target_contract_id,
                         token_contract_position,
                         token_amount,
                         effect,
@@ -686,6 +712,7 @@ mod tests {
                 "valid_name-a-b-123",
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 true,
                 &mut vec![],
@@ -717,6 +744,7 @@ mod tests {
                 "",
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 true,
                 &mut vec![],
@@ -759,6 +787,7 @@ mod tests {
                 &"a".repeat(65),
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 true,
                 &mut vec![],
@@ -827,6 +856,7 @@ mod tests {
                 "invalid&name",
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 true,
                 &mut vec![],

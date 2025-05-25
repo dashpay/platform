@@ -142,10 +142,10 @@ impl JsonSchemaExt for serde_json::Value {
 
 #[cfg(test)]
 mod test {
-
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::document_type::DocumentType;
+    use std::collections::BTreeMap;
 
     use platform_value::Identifier;
     use platform_version::version::PlatformVersion;
@@ -213,6 +213,7 @@ mod test {
             "doc",
             platform_value,
             None,
+            &BTreeMap::new(),
             &config,
             false,
             &mut vec![],

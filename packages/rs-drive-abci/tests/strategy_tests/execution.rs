@@ -55,6 +55,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
     config: PlatformConfig,
     seed: u64,
     add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+    add_payout_keys_to_signer: &mut Option<SimpleSigner>,
 ) -> ChainExecutionOutcome<'a> {
     // TODO: Do we want to sign instant locks or just disable verification?
 
@@ -122,6 +123,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
             generate_updates,
             &mut rng,
             add_voting_keys_to_signer,
+            add_payout_keys_to_signer,
         );
 
         let mut all_masternodes = initial_masternodes.clone();
@@ -173,6 +175,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
                         generate_updates,
                         &mut rng,
                         add_voting_keys_to_signer,
+                        add_payout_keys_to_signer,
                     );
 
                 if strategy.proposer_strategy.removed_masternodes.is_set() {
@@ -216,6 +219,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
             None,
             &mut rng,
             add_voting_keys_to_signer,
+            add_payout_keys_to_signer,
         );
         (
             initial_masternodes,
@@ -985,6 +989,8 @@ pub(crate) fn continue_chain_for_strategy(
 
         let current_core_height = state.last_committed_core_height();
 
+        let current_version = state.current_protocol_version_in_consensus();
+
         drop(state);
 
         let block_info = BlockInfo {
@@ -1005,6 +1011,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
             platform,
+            block_start,
             &block_info,
             &mut current_identities,
             &mut current_identity_nonce_counter,
@@ -1033,7 +1040,7 @@ pub(crate) fn continue_chain_for_strategy(
                     *current_protocol_version
                 }
             })
-            .unwrap_or(1);
+            .unwrap_or(current_version);
 
         let rounds = strategy
             .failure_testing

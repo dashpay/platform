@@ -73,8 +73,19 @@ use crate::identity::state_transition::OptionallyAssetLockProved;
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionRef;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use crate::state_transition::state_transitions::document::batch_transition::{BatchTransition, BatchTransitionSignable};
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
+    DataContractCreateTransition, DataContractCreateTransitionSignable,
+};
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionSignable,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
 #[cfg(all(feature = "state-transitions", feature = "validation"))]
@@ -113,11 +124,10 @@ use crate::state_transition::state_transitions::identity::identity_update_transi
 };
 use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransitionSignable;
-use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
-use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-
+use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
+use crate::prelude::UserFeeIncrease;
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
 
@@ -547,13 +557,29 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::Batch(st) => {
+                let allow_token_transfer_keys = st.transitions_len() == 1
+                    && (st
+                        .first_transition()
+                        .expect("expected first transition with len 1")
+                        .as_transition_token_claim()
+                        .is_some()
+                        || st
+                            .first_transition()
+                            .expect("expected first transition with len 1")
+                            .as_transition_token_transfer()
+                            .is_some());
+                let allowed_key_purposes = if allow_token_transfer_keys {
+                    vec![Purpose::AUTHENTICATION, Purpose::TRANSFER]
+                } else {
+                    vec![Purpose::AUTHENTICATION]
+                };
                 if !options.allow_signing_with_any_purpose
-                    && identity_public_key.purpose() != Purpose::AUTHENTICATION
+                    && !allowed_key_purposes.contains(&identity_public_key.purpose())
                 {
                     return Err(ProtocolError::WrongPublicKeyPurposeError(
                         WrongPublicKeyPurposeError::new(
                             identity_public_key.purpose(),
-                            vec![Purpose::AUTHENTICATION],
+                            allowed_key_purposes,
                         ),
                     ));
                 }

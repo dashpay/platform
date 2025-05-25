@@ -72,7 +72,7 @@ where
             // Better to restart the Drive, so we might self-heal the node
             // reloading state form the disk
             panic!(
-                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+                "drive and platform state app hash mismatch (prepare proposal): drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
                 drive_storage_root_hash, platform_state_app_hash
             );
         }

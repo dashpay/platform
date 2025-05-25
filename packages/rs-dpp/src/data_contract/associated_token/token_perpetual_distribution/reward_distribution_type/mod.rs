@@ -187,7 +187,8 @@ impl RewardDistributionType {
                 RewardDistributionMoment::EpochBasedMoment(step),
                 RewardDistributionMoment::EpochBasedMoment(current),
             ) => Ok(RewardDistributionMoment::EpochBasedMoment(
-                (start + step.saturating_mul(max_cycles as u16)).min(current),
+                // For an epoch reward, if you are in epoch 3 you can't get rewarded for epoch 3, but only epoch 2
+                (start + step.saturating_mul(max_cycles as u16)).min(current.saturating_sub(1)),
             )),
             _ => Err(ProtocolError::CorruptedCodeExecution(
                 "Mismatch moment types".to_string(),

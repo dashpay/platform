@@ -6,11 +6,13 @@ use std::collections::BTreeSet;
 
 use dpp::errors::consensus::basic::document::DataContractNotPresentError;
 use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use dpp::errors::consensus::state::group::IdentityMemberOfGroupNotFoundError;
 use dpp::errors::consensus::state::identity::identity_for_token_configuration_not_found_error::{
     IdentityInTokenConfigurationNotFoundError, TokenConfigurationIdentityContext,
 };
 use dpp::errors::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::token::InvalidTokenPositionStateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -19,6 +21,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
@@ -372,6 +375,81 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         } else {
                             validated_identities.insert(*minting_recipient);
                         }
+                    }
+                }
+            }
+        }
+
+        // now we need to validate that all documents with token costs using external tokens
+        // point to tokens that actually exist
+        if let StateTransitionAction::DataContractUpdateAction(update_action) =
+            action.data_as_borrowed()?
+        {
+            // this should always be the case, except if we already have a bump action,
+            // in which case we don't need to validate anymore
+            for document_type in update_action.data_contract_ref().document_types().values() {
+                for (contract_id, token_positions) in
+                    document_type.all_external_token_costs_contract_tokens()
+                {
+                    let contract_fetch_info = platform.drive.get_contract_with_fetch_info_and_fee(
+                        contract_id.to_buffer(),
+                        Some(&block_info.epoch),
+                        false,
+                        tx,
+                        platform_version,
+                    )?;
+
+                    let fee =
+                        contract_fetch_info
+                            .0
+                            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "fee must exist in validate state for data contract update transition",
+                        )))?;
+
+                    // We add the cost for fetching the contract even if the contract doesn't exist or was in cache
+                    execution_context
+                        .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+                    // Data contract should exist
+                    if let Some(fetch_info) = contract_fetch_info.1 {
+                        let contract_tokens = fetch_info.contract.tokens();
+                        for token_position in &token_positions {
+                            if !contract_tokens.contains_key(token_position) {
+                                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                        self,
+                                    ),
+                                );
+                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                    bump_action,
+                                    vec![StateError::InvalidTokenPositionStateError(
+                                        InvalidTokenPositionStateError::new(
+                                            contract_tokens.last_key_value().map(
+                                                |(token_contract_position, _)| {
+                                                    *token_contract_position
+                                                },
+                                            ),
+                                            *token_position,
+                                        ),
+                                    )
+                                    .into()],
+                                ));
+                            }
+                        }
+                    } else {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                self,
+                            ),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            vec![StateError::DataContractNotFoundError(
+                                DataContractNotFoundError::new(contract_id),
+                            )
+                            .into()],
+                        ));
                     }
                 }
             }

@@ -67,6 +67,7 @@ use dpp::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError
 use dpp::errors::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::errors::consensus::basic::overflow_error::OverflowError;
 use dpp::errors::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenTransferToOurselfError};
+use dpp::errors::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use dpp::errors::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use dpp::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::errors::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -422,6 +423,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityToFreezeDoesNotExistError(e) => {
             generic_consensus_error!(IdentityToFreezeDoesNotExistError, e).into()
+        }
+        StateError::DataContractNotFoundError(e) => {
+            generic_consensus_error!(DataContractNotFoundError, e).into()
+        }
+        StateError::InvalidTokenPositionStateError(e) => {
+            generic_consensus_error!(InvalidTokenPositionStateError, e).into()
         }
     }
 }
@@ -823,6 +830,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::TokenNoteOnlyAllowedWhenProposerError(e) => {
             generic_consensus_error!(TokenNoteOnlyAllowedWhenProposerError, e).into()
+        }
+        BasicError::RedundantDocumentPaidForByTokenWithContractId(e) => {
+            generic_consensus_error!(RedundantDocumentPaidForByTokenWithContractId, e).into()
         }
     }
 }

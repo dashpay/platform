@@ -32,12 +32,7 @@ impl TokenBaseTransitionActionStructureValidationV0 for TokenBaseTransitionActio
             } else {
                 Ok(SimpleConsensusValidationResult::new_with_error(
                     BasicError::InvalidTokenPositionError(InvalidTokenPositionError::new(
-                        *contract
-                            .contract
-                            .tokens()
-                            .keys()
-                            .last()
-                            .expect("we already checked this was not empty"),
+                        contract.contract.tokens().keys().last().copied(),
                         token_position,
                     ))
                     .into(),

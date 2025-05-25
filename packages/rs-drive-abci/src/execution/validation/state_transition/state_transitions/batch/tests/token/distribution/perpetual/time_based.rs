@@ -166,7 +166,7 @@ mod perpetual_distribution_time {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
                 _
             )]
@@ -344,7 +344,7 @@ mod perpetual_distribution_time {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
                 _
             )]
@@ -839,7 +839,7 @@ mod perpetual_distribution_time {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
                 _
             )]
@@ -1026,7 +1026,7 @@ mod perpetual_distribution_time {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
                 _
             )]

@@ -100,6 +100,10 @@ pub enum ExecutionError {
     #[error("corrupted credits not balanced error: {0}")]
     CorruptedCreditsNotBalanced(String),
 
+    /// Corrupted tokens are not balanced.
+    #[error("corrupted tokens not balanced error: {0}")]
+    CorruptedTokensNotBalanced(String),
+
     /// The transaction is not present.
     #[error("transaction not present error: {0}")]
     NotInTransaction(&'static str),

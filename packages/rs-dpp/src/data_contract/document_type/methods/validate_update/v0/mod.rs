@@ -255,6 +255,7 @@ mod tests {
 
     mod validate_config {
         use super::*;
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_return_invalid_result_when_creation_restriction_mode_is_changed() {
@@ -282,6 +283,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -309,6 +311,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -354,6 +357,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -381,6 +385,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -426,6 +431,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -453,6 +459,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -498,6 +505,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -525,6 +533,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -570,6 +579,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -597,6 +607,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -642,6 +653,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -669,6 +681,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -714,6 +727,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -738,6 +752,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -783,6 +798,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -807,6 +823,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -852,6 +869,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -876,6 +894,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -899,6 +918,7 @@ mod tests {
     mod validate_schema {
         use super::*;
         use crate::errors::consensus::basic::BasicError;
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_pass_when_schema_is_not_changed() {
@@ -926,6 +946,7 @@ mod tests {
                 document_type_name,
                 schema.clone(),
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -941,6 +962,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -982,6 +1004,7 @@ mod tests {
                 document_type_name,
                 schema.clone(),
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),
@@ -1006,6 +1029,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
+                &BTreeMap::new(),
                 &config,
                 false,
                 &mut Vec::new(),

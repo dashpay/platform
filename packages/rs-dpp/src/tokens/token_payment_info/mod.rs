@@ -87,6 +87,12 @@ impl TokenPaymentInfoAccessorsV0 for TokenPaymentInfo {
         }
     }
 
+    fn gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            TokenPaymentInfo::V0(v0) => v0.gas_fees_paid_by(),
+        }
+    }
+
     // Setters
     fn set_payment_token_contract_id(&mut self, id: Option<Identifier>) {
         match self {
@@ -109,12 +115,6 @@ impl TokenPaymentInfoAccessorsV0 for TokenPaymentInfo {
     fn set_maximum_token_cost(&mut self, cost: Option<TokenAmount>) {
         match self {
             TokenPaymentInfo::V0(v0) => v0.set_maximum_token_cost(cost),
-        }
-    }
-
-    fn gas_fees_paid_by(&self) -> GasFeesPaidBy {
-        match self {
-            TokenPaymentInfo::V0(v0) => v0.gas_fees_paid_by(),
         }
     }
 
