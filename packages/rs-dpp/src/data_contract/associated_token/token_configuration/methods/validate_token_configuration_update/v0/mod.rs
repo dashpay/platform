@@ -2,6 +2,7 @@ use crate::consensus::basic::data_contract::DataContractTokenConfigurationUpdate
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
@@ -150,6 +151,71 @@ impl TokenConfiguration {
                     DataContractTokenConfigurationUpdateError::new(
                         "update".to_string(),
                         "mintingAllowChoosingDestination or mintingAllowChoosingDestinationRules"
+                            .to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        // Check changes to change_direct_purchase_pricing_rules and its rules
+        #[allow(clippy::collapsible_if)]
+        if old
+            .distribution_rules
+            .change_direct_purchase_pricing_rules()
+            != new
+                .distribution_rules
+                .change_direct_purchase_pricing_rules()
+        {
+            if !old
+                .distribution_rules
+                .change_direct_purchase_pricing_rules()
+                .can_change_to(
+                    new.distribution_rules
+                        .change_direct_purchase_pricing_rules(),
+                    contract_owner_id,
+                    self.main_control_group(),
+                    groups,
+                    action_taker,
+                    goal,
+                )
+            {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "change_direct_purchase_pricing_rules".to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        // Check changes to change_direct_purchase_pricing_rules and its rules
+        #[allow(clippy::collapsible_if)]
+        if old.marketplace_rules.trade_mode() != new.marketplace_rules.trade_mode()
+            || old.marketplace_rules.trade_mode_change_rules()
+                != new.marketplace_rules.trade_mode_change_rules()
+        {
+            if !old
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .can_change_to(
+                    new.marketplace_rules.trade_mode_change_rules(),
+                    contract_owner_id,
+                    self.main_control_group(),
+                    groups,
+                    action_taker,
+                    goal,
+                )
+            {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "marketplace_rules trade_mode or marketplace_rules trade_mode_change_rules"
                             .to_string(),
                         self.clone(),
                         new_config.clone(),

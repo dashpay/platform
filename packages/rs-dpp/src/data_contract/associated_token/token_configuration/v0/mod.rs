@@ -7,6 +7,10 @@ use crate::data_contract::associated_token::token_distribution_rules::v0::TokenD
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+use crate::data_contract::associated_token::token_marketplace_rules::v0::{
+    TokenMarketplaceRulesV0, TokenTradeMode,
+};
+use crate::data_contract::associated_token::token_marketplace_rules::TokenMarketplaceRules;
 use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
@@ -69,6 +73,10 @@ pub struct TokenConfigurationV0 {
     /// Defines the token's distribution logic, including perpetual and pre-programmed distributions.
     #[serde(default = "default_token_distribution_rules")]
     pub distribution_rules: TokenDistributionRules,
+
+    /// Defines the token's marketplace logic.
+    #[serde(default = "default_token_marketplace_rules")]
+    pub marketplace_rules: TokenMarketplaceRules,
 
     /// Rules controlling who is authorized to perform manual minting of tokens.
     #[serde(default = "default_contract_owner_change_control_rules")]
@@ -161,6 +169,19 @@ fn default_token_distribution_rules() -> TokenDistributionRules {
             self_changing_admin_action_takers_allowed: false,
         }),
         change_direct_purchase_pricing_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+    })
+}
+
+fn default_token_marketplace_rules() -> TokenMarketplaceRules {
+    TokenMarketplaceRules::V0(TokenMarketplaceRulesV0 {
+        trade_mode: TokenTradeMode::NotTradeable,
+        trade_mode_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: AuthorizedActionTakers::NoOne,
             admin_action_takers: AuthorizedActionTakers::NoOne,
             changing_authorized_action_takers_to_no_one_allowed: false,
@@ -414,6 +435,13 @@ impl TokenConfigurationPreset {
         }
     }
 
+    pub fn default_marketplace_rules_v0(&self) -> TokenMarketplaceRulesV0 {
+        TokenMarketplaceRulesV0 {
+            trade_mode: TokenTradeMode::NotTradeable,
+            trade_mode_change_rules: self.default_basic_change_control_rules_v0().into(),
+        }
+    }
+
     pub fn token_configuration_v0(
         &self,
         conventions: TokenConfigurationConvention,
@@ -437,6 +465,7 @@ impl TokenConfigurationPreset {
             distribution_rules: self
                 .default_distribution_rules_v0(None, None, with_direct_pricing)
                 .into(),
+            marketplace_rules: self.default_marketplace_rules_v0().into(),
             manual_minting_rules: self.default_basic_change_control_rules_v0().into(),
             manual_burning_rules: self.default_basic_change_control_rules_v0().into(),
             freeze_rules: self.default_advanced_change_control_rules_v0().into(),

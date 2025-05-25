@@ -1,5 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::GroupContractPosition;
@@ -59,6 +60,9 @@ pub enum TokenConfigurationChangeItem {
     DestroyFrozenFundsAdminGroup(AuthorizedActionTakers),
     EmergencyAction(AuthorizedActionTakers),
     EmergencyActionAdminGroup(AuthorizedActionTakers),
+    MarketplaceTradeMode(TokenTradeMode),
+    MarketplaceTradeModeControlGroup(AuthorizedActionTakers),
+    MarketplaceTradeModeAdminGroup(AuthorizedActionTakers),
     MainControlGroup(Option<GroupContractPosition>),
 }
 impl TokenConfigurationChangeItem {
@@ -92,7 +96,10 @@ impl TokenConfigurationChangeItem {
             TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(_) => 25,
             TokenConfigurationChangeItem::EmergencyAction(_) => 26,
             TokenConfigurationChangeItem::EmergencyActionAdminGroup(_) => 27,
-            TokenConfigurationChangeItem::MainControlGroup(_) => 28,
+            TokenConfigurationChangeItem::MarketplaceTradeMode(_) => 28,
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(_) => 29,
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(_) => 30,
+            TokenConfigurationChangeItem::MainControlGroup(_) => 31,
         }
     }
 }
@@ -216,6 +223,15 @@ impl fmt::Display for TokenConfigurationChangeItem {
                 Some(pos) => write!(f, "Main Control Group: {}", pos),
                 None => write!(f, "Main Control Group: None"),
             },
+            TokenConfigurationChangeItem::MarketplaceTradeMode(mode) => {
+                write!(f, "Marketplace Trade Mode: {:?}", mode)
+            }
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(control_group) => {
+                write!(f, "Marketplace Trade Mode Control Group: {}", control_group)
+            }
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(admin_group) => {
+                write!(f, "Marketplace Trade Mode Admin Group: {}", admin_group)
+            }
         }
     }
 }
