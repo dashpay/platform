@@ -3,9 +3,9 @@ mod fetch_elements;
 /// Genesis time module
 #[cfg(feature = "server")]
 pub mod genesis_time;
-mod internal_tree_hashes;
 /// Protocol version module
 pub mod protocol_version;
+mod root_tree_proof;
 
 use crate::drive::RootTree;
 

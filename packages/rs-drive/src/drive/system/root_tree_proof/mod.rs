@@ -4,6 +4,7 @@ use grovedb::{PathQuery, Query, TransactionArg};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    /// Returns a tree proof of the root of the tree.
     pub fn root_tree_proof(
         &self,
         transaction: TransactionArg,
