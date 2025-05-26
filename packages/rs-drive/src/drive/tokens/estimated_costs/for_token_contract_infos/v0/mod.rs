@@ -11,7 +11,7 @@ use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds estimated storage costs related to token direct selling prices (v0).
+    /// Adds estimated storage costs related to token contract infos (v0).
     ///
     /// This function populates the provided `estimated_costs_only_with_layer_info` map with
     /// `EstimatedLayerInformation` entries, which represent cost estimation hints for GroveDB
