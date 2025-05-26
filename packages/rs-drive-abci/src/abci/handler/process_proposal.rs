@@ -17,6 +17,7 @@ use dpp::version::TryIntoPlatformVersioned;
 use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
+use drive::grovedb::{PathQuery, Query};
 
 pub fn process_proposal<'a, A, C>(
     app: &A,
@@ -334,18 +335,41 @@ where
 
     let elapsed_time_ms = timer.elapsed().as_millis();
 
-    tracing::info!(
-        invalid_tx_count,
-        valid_tx_count,
-        elapsed_time_ms,
-        storage_fees,
-        processing_fees,
-        "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
-        valid_tx_count + invalid_tx_count,
-        request.height,
-        request.round,
-        elapsed_time_ms,
-    );
+    if request.height == 0 {
+        let path_query = PathQuery::new_unsized(vec![], Query::new_range_full());
+        let root_proof = app.platform().drive.grove_get_proved_path_query(
+            &path_query,
+            Some(transaction),
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        tracing::info!(
+            invalid_tx_count,
+            valid_tx_count,
+            elapsed_time_ms,
+            storage_fees,
+            processing_fees,
+            "Processed proposal with {} transactions for height: {}, round: {} in {} ms, root proof is {}",
+            valid_tx_count + invalid_tx_count,
+            request.height,
+            request.round,
+            elapsed_time_ms,
+            hex::encode(&root_proof),
+        );
+    } else {
+        tracing::info!(
+            invalid_tx_count,
+            valid_tx_count,
+            elapsed_time_ms,
+            storage_fees,
+            processing_fees,
+            "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
+            valid_tx_count + invalid_tx_count,
+            request.height,
+            request.round,
+            elapsed_time_ms,
+        );
+    }
 
     Ok(response)
 }
