@@ -226,10 +226,10 @@ mod tests {
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
 
         let data_contract = json_document_to_contract_with_ids(
-            "tests/supporting_files/contract/additional_properties.json",
+            "tests/supporting_files/contract/other/additional_properties.json",
             None,
             None,
-            true,
+            false,
             platform_version,
         )
         .expect("expected to get json based contract");
@@ -266,7 +266,10 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::BasicError(BasicError::JsonSchemaError(_)),
+                _
+            )]
         );
 
         platform
