@@ -347,7 +347,7 @@ where
         elapsed_time_ms,
     );
 
-    if request.height == 0 {
+    if request.height == 1 {
         let root_proof = app
             .platform()
             .drive
