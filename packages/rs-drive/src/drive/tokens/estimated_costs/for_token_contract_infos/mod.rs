@@ -12,16 +12,14 @@ impl Drive {
     /// Adds estimation costs for token contract infos changes based on the provided drive version.
     ///
     /// This method updates the `estimated_costs_only_with_layer_info` HashMap with entries
-    /// representing the estimated costs for different layers of the token selling prices tree. The method
+    /// representing the estimated costs for different layers of the token contract infos tree. The method
     /// adjusts its behavior depending on the provided `drive_version`, allowing it to support
     /// different versioned implementations for cost estimation.
     ///
     /// # Parameters
-    /// - `token_id`: A 32-byte identifier for the token whose balance changes are being estimated.
     /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap that holds
-    ///   `KeyInfoPath` and `EstimatedLayerInformation` for each token balance layer.
+    ///   `KeyInfoPath` and `EstimatedLayerInformation` for each token contract info layer.
     /// - `drive_version`: The version of the drive to determine which estimation logic to apply.
-    ///
     /// # Returns
     /// - `Ok(())` if the operation is successful.
     /// - `Err(DriveError::UnknownVersionMismatch)` if the provided `drive_version` does not match
