@@ -270,7 +270,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        retry!(self.inner.get_quorum_listextended_reversed(height))
+        retry!(self.inner.get_quorum_listextended(height))
     }
 
     fn get_quorum_info(
@@ -281,7 +281,7 @@ impl CoreRPCLike for DefaultCoreRPC {
     ) -> Result<QuorumInfoResult, Error> {
         retry!(self
             .inner
-            .get_quorum_info_reversed(quorum_type, hash, include_secret_key_share))
+            .get_quorum_info(quorum_type, hash, include_secret_key_share))
     }
 
     fn get_protx_diff_with_masternodes(
