@@ -335,7 +335,7 @@ where
 
     let elapsed_time_ms = timer.elapsed().as_millis();
 
-    if request.height == 0 {
+    if request.height == 1 {
         let path_query = PathQuery::new_unsized(vec![], Query::new_range_full());
         let root_proof = app.platform().drive.grove_get_proved_path_query(
             &path_query,
