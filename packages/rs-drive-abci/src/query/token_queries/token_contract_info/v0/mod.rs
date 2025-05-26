@@ -22,7 +22,7 @@ impl<C> Platform<C> {
         let token_id: [u8; 32] =
             check_validation_result_with_data!(token_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
-                    "token_ids must be a list of valid identifiers (32 bytes long)".to_string(),
+                    "token_id must be a valid identifier (32 bytes long)".to_string(),
                 )
             }));
 
