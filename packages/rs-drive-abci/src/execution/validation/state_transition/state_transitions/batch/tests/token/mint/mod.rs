@@ -26,6 +26,7 @@ mod token_mint_tests {
                 None::<fn(&mut TokenConfiguration)>,
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -109,6 +110,7 @@ mod token_mint_tests {
                 &mut platform,
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 None,
                 platform_version,
@@ -196,6 +198,7 @@ mod token_mint_tests {
                 Some(|token_configuration: &mut TokenConfiguration| {
                     token_configuration.set_max_supply(Some(1000000));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -288,6 +291,7 @@ mod token_mint_tests {
                 None::<fn(&mut TokenConfiguration)>,
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -373,6 +377,7 @@ mod token_mint_tests {
                 &mut platform,
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 None,
                 platform_version,
@@ -463,6 +468,7 @@ mod token_mint_tests {
                 None::<fn(&mut TokenConfiguration)>,
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -548,6 +554,7 @@ mod token_mint_tests {
                         .distribution_rules_mut()
                         .set_minting_allow_choosing_destination(false);
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -644,6 +651,7 @@ mod token_mint_tests {
                         .distribution_rules_mut()
                         .set_minting_allow_choosing_destination(false);
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -740,6 +748,7 @@ mod token_mint_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -828,6 +837,7 @@ mod token_mint_tests {
                         .distribution_rules_mut()
                         .set_new_tokens_destination_identity(Some(identity.id()));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -927,6 +937,7 @@ mod token_mint_tests {
                         .distribution_rules_mut()
                         .set_new_tokens_destination_identity(Some(identity.id()));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -1024,6 +1035,7 @@ mod token_mint_tests {
                         .distribution_rules_mut()
                         .set_new_tokens_destination_identity(Some(identity.id()));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -1138,6 +1150,7 @@ mod token_mint_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -1248,6 +1261,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1360,6 +1374,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1480,6 +1495,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1757,6 +1773,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2079,6 +2096,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2307,6 +2325,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2544,6 +2563,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2832,6 +2852,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -3130,6 +3151,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -3244,6 +3266,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -3440,6 +3463,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -3580,6 +3604,7 @@ mod token_mint_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
