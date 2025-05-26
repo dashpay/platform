@@ -351,7 +351,7 @@ where
         let root_proof = app
             .platform()
             .drive
-            .root_tree_proof(Some(&transaction), platform_version)?;
+            .root_tree_proof(Some(transaction), platform_version)?;
         tracing::info!(
             invalid_tx_count,
             valid_tx_count,
