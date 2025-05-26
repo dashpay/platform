@@ -1135,6 +1135,7 @@ mod tests {
                     None::<fn(&mut TokenConfiguration)>,
                     None,
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -2338,6 +2339,7 @@ mod tests {
                     None::<fn(&mut TokenConfiguration)>,
                     None,
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -2576,6 +2578,7 @@ mod tests {
                     &mut platform,
                     token_contract_owner_id.id(),
                     None::<fn(&mut TokenConfiguration)>,
+                    None,
                     None,
                     None,
                     platform_version,

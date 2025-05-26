@@ -42,6 +42,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -143,6 +144,7 @@ mod token_config_update_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -291,6 +293,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -398,6 +401,7 @@ mod token_config_update_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -553,6 +557,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -643,6 +648,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -731,6 +737,7 @@ mod token_config_update_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -829,6 +836,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -949,6 +957,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1065,6 +1074,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1279,6 +1289,7 @@ mod token_config_update_tests {
                     ]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1669,6 +1680,7 @@ mod token_config_update_tests {
                     ]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2130,6 +2142,7 @@ mod token_config_update_tests {
                     ]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2879,6 +2892,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 

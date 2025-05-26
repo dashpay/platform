@@ -197,6 +197,7 @@ mod token_selling_tests {
                 )]
                 .into(),
             ),
+            None,
             platform_version,
         );
 
@@ -266,6 +267,7 @@ mod token_selling_tests {
                         },
                     ));
             }),
+            None,
             None,
             None,
             platform_version,
@@ -384,6 +386,7 @@ mod token_selling_tests {
                         },
                     ));
             }),
+            None,
             None,
             None,
             platform_version,
@@ -617,6 +620,7 @@ mod token_selling_tests {
                         },
                     ));
             }),
+            None,
             None,
             None,
             platform_version,

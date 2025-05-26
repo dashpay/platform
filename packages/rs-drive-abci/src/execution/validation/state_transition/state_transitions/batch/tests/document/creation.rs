@@ -3662,6 +3662,7 @@ mod creation_tests {
             None::<fn(&mut TokenConfiguration)>,
             None,
             None,
+            None,
             platform_version,
         );
 

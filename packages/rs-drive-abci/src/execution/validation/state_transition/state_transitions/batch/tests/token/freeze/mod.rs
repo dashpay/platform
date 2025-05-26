@@ -39,6 +39,7 @@ mod token_freeze_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -134,6 +135,7 @@ mod token_freeze_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -244,6 +246,7 @@ mod token_freeze_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -411,6 +414,7 @@ mod token_freeze_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -810,6 +814,7 @@ mod token_freeze_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -1008,6 +1013,7 @@ mod token_freeze_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1103,6 +1109,7 @@ mod token_freeze_tests {
                     )]
                     .into(),
                 ),
+                None,
                 version,
             );
 
@@ -1212,6 +1219,7 @@ mod token_freeze_tests {
                     )]
                     .into(),
                 ),
+                None,
                 version,
             );
 
@@ -1324,6 +1332,7 @@ mod token_freeze_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1584,6 +1593,7 @@ mod token_freeze_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1935,6 +1945,7 @@ mod token_freeze_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
