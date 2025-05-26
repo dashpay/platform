@@ -7,7 +7,7 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Fetches the token contract info from the backing store.
+    /// Generates a proof for the token contract info from the backing store.
     ///
     /// # Arguments
     ///
