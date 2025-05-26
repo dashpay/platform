@@ -347,5 +347,38 @@ where
         elapsed_time_ms,
     );
 
+    if request.height == 0 {
+        let root_proof = app
+            .platform()
+            .drive
+            .root_tree_proof(Some(&transaction), platform_version)?;
+        tracing::info!(
+            invalid_tx_count,
+            valid_tx_count,
+            elapsed_time_ms,
+            storage_fees,
+            processing_fees,
+            "Processed proposal with {} transactions for height: {}, round: {} in {} ms, root proof is {}",
+            valid_tx_count + invalid_tx_count,
+            request.height,
+            request.round,
+            elapsed_time_ms,
+            hex::encode(&root_proof),
+        );
+    } else {
+        tracing::info!(
+            invalid_tx_count,
+            valid_tx_count,
+            elapsed_time_ms,
+            storage_fees,
+            processing_fees,
+            "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
+            valid_tx_count + invalid_tx_count,
+            request.height,
+            request.round,
+            elapsed_time_ms,
+        );
+    }
+
     Ok(response)
 }
