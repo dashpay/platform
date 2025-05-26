@@ -70,6 +70,7 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_direct_selling_price: FeatureVersion,
     pub verify_token_direct_selling_prices: FeatureVersion,
     pub verify_token_perpetual_distribution_last_paid_time: FeatureVersion,
+    pub verify_token_contract_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

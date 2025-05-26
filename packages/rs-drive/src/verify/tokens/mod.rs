@@ -1,6 +1,7 @@
 mod verify_token_balance_for_identity_id;
 mod verify_token_balances_for_identity_id;
 mod verify_token_balances_for_identity_ids;
+mod verify_token_contract_info;
 mod verify_token_direct_selling_price;
 mod verify_token_direct_selling_prices;
 mod verify_token_info_for_identity_id;

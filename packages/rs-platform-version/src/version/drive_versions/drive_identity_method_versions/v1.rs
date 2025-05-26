@@ -137,6 +137,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             for_token_pre_programmed_distribution: 0,
             for_root_token_ms_interval_distribution: 0,
             for_token_selling_prices: 0,
+            for_token_contract_infos: 0,
         },
         withdrawals: DriveIdentityWithdrawalMethodVersions {
             document: DriveIdentityWithdrawalDocumentMethodVersions {
