@@ -68,7 +68,7 @@ impl Waitable for Document {
                 ),
             )));
         };
-
+        println!("wait_for_response: {:?}", doc_id);
         let mut documents: BTreeMap<Identifier, Option<Document>> =
             state_transition.wait_for_response(sdk, settings).await?;
 

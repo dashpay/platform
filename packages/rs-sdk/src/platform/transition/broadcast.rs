@@ -49,6 +49,7 @@ impl BroadcastStateTransition for StateTransition {
                         address: None,
                         retries: 0,
                     })?;
+            println!("Sending request to broadcast state transition ... {:?}", request);
             request
                 .execute(sdk, request_settings)
                 .await

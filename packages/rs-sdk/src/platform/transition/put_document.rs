@@ -94,6 +94,7 @@ impl<S: Signer> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
+        println!("put_to_platform_and_wait_for_response.1: {:?} / {:?} / {:?} / {:?}", sdk.version(), document_type, document_state_transition_entropy, identity_public_key);
         let state_transition = self
             .put_to_platform(
                 sdk,
@@ -106,6 +107,7 @@ impl<S: Signer> PutDocument<S> for Document {
             )
             .await?;
 
+        println!("put_to_platform_and_wait_for_response.3: {:?}", state_transition);
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 }
