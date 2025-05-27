@@ -86,6 +86,8 @@ service Platform {
       returns (GetTokenStatusesResponse);
   rpc getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest)
       returns (GetTokenDirectPurchasePricesResponse);
+  rpc getTokenContractInfo(GetTokenContractInfoRequest)
+      returns (GetTokenContractInfoResponse);
   rpc getTokenPreProgrammedDistributions(
       GetTokenPreProgrammedDistributionsRequest)
       returns (GetTokenPreProgrammedDistributionsResponse);
@@ -1370,6 +1372,27 @@ message GetTokenStatusesResponse {
   oneof version { GetTokenStatusesResponseV0 v0 = 1; }
 }
 
+// Retrieve direct purchase prices defined for one or more tokens.
+//
+// Some tokens can have a direct purchase price defined using
+// `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
+// This request retrieves the direct purchase prices for those tokens and
+// returns [GetTokenDirectPurchasePricesResponse].
+message GetTokenDirectPurchasePricesRequest {
+  message GetTokenDirectPurchasePricesRequestV0 {
+    // List of token IDs to get prices for.
+    //
+    // The list must not be empty.
+    // Token IDs must have 32 bytes and be unique.
+    // Results for non-unique token IDs are undefined.
+    repeated bytes token_ids = 1;
+    // Whether to return proofs for the response, or just direct response.
+    bool prove = 2;
+  }
+  oneof version { GetTokenDirectPurchasePricesRequestV0 v0 = 1; }
+}
+
+
 // Response to GetTokenDirectPurchasePricesRequest, containing information about
 // direct purchase prices defined for requested token IDs.
 message GetTokenDirectPurchasePricesResponse {
@@ -1419,24 +1442,49 @@ message GetTokenDirectPurchasePricesResponse {
   oneof version { GetTokenDirectPurchasePricesResponseV0 v0 = 1; }
 }
 
-// Retrieve direct purchase prices defined for one or more tokens.
-//
-// Some tokens can have a direct purchase price defined using
-// `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
-// This request retrieves the direct purchase prices for those tokens and
-// returns [GetTokenDirectPurchasePricesResponse].
-message GetTokenDirectPurchasePricesRequest {
-  message GetTokenDirectPurchasePricesRequestV0 {
-    // List of token IDs to get prices for.
-    //
-    // The list must not be empty.
-    // Token IDs must have 32 bytes and be unique.
-    // Results for non-unique token IDs are undefined.
-    repeated bytes token_ids = 1;
-    // Whether to return proofs for the response, or just direct response.
+// Request to retrieve token contract info for a specific token ID.
+message GetTokenContractInfoRequest {
+  message GetTokenContractInfoRequestV0 {
+    // The token ID to retrieve contract info for.
+    // Must be exactly 32 bytes.
+    bytes token_id = 1;
+
+    // Whether to return a cryptographic proof.
     bool prove = 2;
   }
-  oneof version { GetTokenDirectPurchasePricesRequestV0 v0 = 1; }
+
+  oneof version {
+    GetTokenContractInfoRequestV0 v0 = 1;
+  }
+}
+
+// Response to GetTokenContractInfoRequest.
+message GetTokenContractInfoResponse {
+  message GetTokenContractInfoResponseV0 {
+    // Direct token contract info.
+    message TokenContractInfoData {
+      // The ID of the contract associated with the token.
+      bytes contract_id = 1;
+
+      // The position of the token within the contract.
+      uint32 token_contract_position = 2;
+    }
+
+    oneof result {
+      // Direct token contract data
+      TokenContractInfoData data = 1;
+
+      // Cryptographic proof of token contract info
+      Proof proof = 2;
+    }
+
+    // Metadata about the blockchain state at the time of the query
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetTokenContractInfoResponseV0 v0 = 1;
+  }
 }
 
 message GetTokenPreProgrammedDistributionsRequest {

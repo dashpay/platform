@@ -48,6 +48,7 @@ pub mod unfreeze;
 #[cfg(feature = "server")]
 pub mod calculate_total_tokens_balance;
 
+mod contract_info;
 mod direct_purchase;
 /// Distribution module
 pub mod distribution;
