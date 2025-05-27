@@ -67,6 +67,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error> {
+        println!("put_to_platform_and_wait_for_response.1: {:p} / {:p} / {:p} / {:p} / {:p}", sdk, &asset_lock_proof, asset_lock_proof_private_key, signer, &settings);
         let state_transition = self
             .put_to_platform(
                 sdk,
@@ -76,7 +77,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
                 settings,
             )
             .await?;
-
+        println!("put_to_platform_and_wait_for_response.2: {:p}", &state_transition);
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 }
