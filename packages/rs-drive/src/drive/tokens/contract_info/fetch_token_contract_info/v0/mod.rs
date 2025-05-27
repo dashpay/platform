@@ -40,7 +40,7 @@ impl Drive {
         } else {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                query_target: QueryTargetValue(8),
+                query_target: QueryTargetValue(36),
             }
         };
 
