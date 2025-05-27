@@ -582,11 +582,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bls-dash-sys"
+version = "1.2.5"
+source = "git+https://github.com/dashpay/bls-signatures?rev=b840e447227dbe6e9a302c97acdf45b95c4d3b21#b840e447227dbe6e9a302c97acdf45b95c4d3b21"
+dependencies = [
+ "bindgen 0.65.1",
+ "cc",
+ "glob",
+]
+
+[[package]]
 name = "bls-signatures"
 version = "1.2.5"
 source = "git+https://github.com/dashpay/bls-signatures?rev=a0fec2f4da2bdbb753e6287b0546ae0b08e74e02#a0fec2f4da2bdbb753e6287b0546ae0b08e74e02"
 dependencies = [
- "bls-dash-sys",
+ "bls-dash-sys 1.2.5 (git+https://github.com/dashpay/bls-signatures?rev=a0fec2f4da2bdbb753e6287b0546ae0b08e74e02)",
+ "hex",
+ "rand",
+ "serde",
+]
+
+[[package]]
+name = "bls-signatures"
+version = "1.2.5"
+source = "git+https://github.com/dashpay/bls-signatures?rev=b840e447227dbe6e9a302c97acdf45b95c4d3b21#b840e447227dbe6e9a302c97acdf45b95c4d3b21"
+dependencies = [
+ "bls-dash-sys 1.2.5 (git+https://github.com/dashpay/bls-signatures?rev=b840e447227dbe6e9a302c97acdf45b95c4d3b21)",
  "hex",
  "rand",
  "serde",
@@ -1265,7 +1286,7 @@ dependencies = [
  "bech32",
  "bitflags 2.9.0",
  "blake3",
- "bls-signatures",
+ "bls-signatures 1.2.5 (git+https://github.com/dashpay/bls-signatures?rev=a0fec2f4da2bdbb753e6287b0546ae0b08e74e02)",
  "blsful",
  "dashcore-private",
  "dashcore_hashes",
@@ -1589,7 +1610,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bincode",
- "bls-signatures",
+ "bls-signatures 1.2.5 (git+https://github.com/dashpay/bls-signatures?rev=b840e447227dbe6e9a302c97acdf45b95c4d3b21)",
  "bs58",
  "chrono",
  "ciborium",

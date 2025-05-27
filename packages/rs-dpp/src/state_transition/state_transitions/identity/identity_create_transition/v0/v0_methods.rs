@@ -44,7 +44,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
-        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.1: {:?} {:?} {:?}", identity, asset_lock_proof, asset_lock_proof_private_key);
+        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.1: {:p} {:p} {:p}", identity, &asset_lock_proof, asset_lock_proof_private_key);
         let mut identity_create_transition = IdentityCreateTransitionV0 {
             user_fee_increase,
             ..Default::default()
@@ -62,7 +62,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         let state_transition: StateTransition = identity_create_transition.clone().into();
 
         let key_signable_bytes = state_transition.signable_bytes()?;
-        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.2: {:?}", key_signable_bytes);
+        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.2: {:p}", &key_signable_bytes);
         identity_create_transition
             .public_keys
             .iter_mut()
@@ -76,9 +76,10 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             })?;
 
         let mut state_transition: StateTransition = identity_create_transition.into();
-        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.3: {:?}", asset_lock_proof_private_key);
+        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.3: {:p}", &asset_lock_proof_private_key);
 
         state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
+        println!("IdentityCreateTransitionV0::try_from_identity_with_signer.4: {:p}", &state_transition);
 
         Ok(state_transition)
     }

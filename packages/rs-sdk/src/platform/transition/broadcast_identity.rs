@@ -105,6 +105,7 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
         signer: &S,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
+        println!("broadcast_request_for_new_identity.1: {:p} / {:p}", &asset_lock_proof, &asset_lock_proof_private_key);
         let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
             self,
             asset_lock_proof,
@@ -114,6 +115,7 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
             0,
             platform_version,
         )?;
+        println!("broadcast_request_for_new_identity.2: {:p}", &identity_create_transition);
         let request = identity_create_transition.broadcast_request_for_state_transition()?;
         Ok((identity_create_transition, request))
     }

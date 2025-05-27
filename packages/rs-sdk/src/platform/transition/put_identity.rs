@@ -45,15 +45,17 @@ impl<S: Signer> PutIdentity<S> for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
+        println!("PutIdentity::put_to_platform.1: {:p} {:p}", &asset_lock_proof, &asset_lock_proof_private_key);
         let (state_transition, _) = self.broadcast_request_for_new_identity(
             asset_lock_proof,
             asset_lock_proof_private_key,
             signer,
             sdk.version(),
         )?;
-
+        println!("PutIdentity::put_to_platform.2: {:p}", &state_transition);
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         state_transition.broadcast(sdk, settings).await?;
+        println!("PutIdentity::put_to_platform.3: {:p}", &state_transition);
         Ok(state_transition)
     }
 
