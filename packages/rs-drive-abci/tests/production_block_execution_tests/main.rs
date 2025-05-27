@@ -6,6 +6,7 @@ mod tests {
     use drive_abci::config::PlatformConfig;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
+    use std::fs::File;
     use tenderdash_abci::proto::abci::{CommitInfo, RequestInitChain, RequestProcessProposal};
     use tenderdash_abci::proto::google::protobuf::{Duration, Timestamp};
     use tenderdash_abci::proto::types::version_params::ConsensusVersion::ConsensusVersion0;
@@ -14,9 +15,24 @@ mod tests {
         TimeoutParams, ValidatorParams, VersionParams,
     };
     use tenderdash_abci::proto::version::Consensus;
+    use tracing_subscriber::fmt::writer::BoxMakeWriter;
 
     #[test]
     fn test_mainnet_genesis_block() {
+        // Create the output file (append mode)
+        let file = File::create("test_log.txt").expect("Failed to create log file");
+        let writer = BoxMakeWriter::new(file);
+
+        tracing_subscriber::fmt::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new(
+                "error,drive::util::grove_operations=trace",
+            ))
+            .json()
+            .with_ansi(false)
+            .with_writer(writer)
+            .try_init()
+            .ok();
+
         let platform_version = PlatformVersion::first();
         let mainnet_for_tests_core_rpc_like = MainnetForTestsCoreRpcLike::default();
         let mut platform = TestPlatformBuilder::new()
