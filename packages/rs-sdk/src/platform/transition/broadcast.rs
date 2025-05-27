@@ -49,10 +49,12 @@ impl BroadcastStateTransition for StateTransition {
                         address: None,
                         retries: 0,
                     })?;
-            println!("Sending request to broadcast state transition ... {:?}", request);
-            request
+            println!("Sending request to broadcast state transition => {:p} {:?}", sdk, request);
+            let result = request
                 .execute(sdk, request_settings)
-                .await
+                .await;
+            println!("Sending request to broadcast state transition <= {:p} {:?}", sdk, result);
+            result
                 .map_err(|e| e.inner_into())
         };
 
