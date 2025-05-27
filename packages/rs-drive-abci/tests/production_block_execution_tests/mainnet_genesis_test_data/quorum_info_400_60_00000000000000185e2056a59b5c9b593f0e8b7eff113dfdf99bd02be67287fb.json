@@ -1,0 +1,2410 @@
+{
+  "height": 2128608,
+  "type": 2,
+  "quorumHash": "00000000000000185e2056a59b5c9b593f0e8b7eff113dfdf99bd02be67287fb",
+  "quorumIndex": 0,
+  "minedBlock": "000000000000000ad4b35870d282f4f10239f09d4ef2c3d4534c0cadaa7f99ad",
+  "members": [
+    {
+      "proTxHash": "e752169d4531641579b4c87c8bb36ed4cd2c26f395e5a7e655e64c47c1b47de7",
+      "service": "46.4.217.252:9999",
+      "pubKeyOperator": "002795bdb9c708229f4b3fdffdc0a079a101e7dba7f0b4c5a57f91081ce1e9978008b47c63129502f4ed06046501d11a",
+      "valid": true
+    },
+    {
+      "proTxHash": "6144173f3c0217de8666cacbd954da12f8f3e19599cefbc2c725c11ce708e8c3",
+      "service": "69.61.107.224:9999",
+      "pubKeyOperator": "93c119570fb8f6217336c1baaff0cc3c1042843bae6057399359774f17cd4ac966a7bd6d75191e5d80c50bf8dca0f925",
+      "valid": true
+    },
+    {
+      "proTxHash": "f80ace3f1a5099a4807578388a5bf07c71dd6ef075df03b2763271d467dacf8f",
+      "service": "68.183.92.68:9999",
+      "pubKeyOperator": "952a626f6d528d5cdd45a6e2259af1a8b35521404cc2c1b26c0457fca3df2b4e8b3f4d419bcff424efbc8347c75776ff",
+      "valid": true
+    },
+    {
+      "proTxHash": "f0aa7bc9df9e9e855172ea47f199a0cce14facf9466c770c96d784a0e9fc1b76",
+      "service": "136.243.115.133:9999",
+      "pubKeyOperator": "0c86cebef43bc0e93014ad2d38cda55085af4bbd5d7191e7728ec50733ae6a21a42e2d598abfd4e6298e4d263ecaed75",
+      "valid": true
+    },
+    {
+      "proTxHash": "4ea27896413c952cdef0df94f8875d870414a039b827ddacc60d703084cbe98b",
+      "service": "15.235.72.253:9999",
+      "pubKeyOperator": "0435753cd32a916ad051451ecee454139ca16cd7ef40a16d1a45b8816c53f9a7082e613b17aeafd3f2f02f31dd5d7118",
+      "valid": true
+    },
+    {
+      "proTxHash": "2c41989563fb0caf8580c89afbadc6443a1b852a26971b4336681f34e4231862",
+      "service": "82.211.25.77:9999",
+      "pubKeyOperator": "83da4cca499eff56909809acfc4a79c8fe3ca901430b71952599dbaaa5bcd103761f9d38de6bbe5775037c0e7c1ce373",
+      "valid": true
+    },
+    {
+      "proTxHash": "542c37bf022d714c599fb79516b7644310dd6f3316ec26e3b4fcedf42615f8e9",
+      "service": "139.162.131.197:9999",
+      "pubKeyOperator": "139799cff261e45118408dbd9d70b8f4c9e0944c5f954fcda731a8050546951bf7cc8dddf1375e773836e146649c2841",
+      "valid": true
+    },
+    {
+      "proTxHash": "02e8a113c2de4f0db9c0fd8b205f0851a134fe5d08d3bcf20049e6d751afd0a5",
+      "service": "8.219.234.148:9999",
+      "pubKeyOperator": "86374b08f04af35e872e37c5e1317ba99cbbdc28ce80ba68a4e9a1bb7f85d07df453ff259a9f409b5a57f93201899e6a",
+      "valid": true
+    },
+    {
+      "proTxHash": "49f6941da238d6c98fbdec2f6c90b8a067328bf661082b342757ab90bde1c4b2",
+      "service": "188.40.184.70:9999",
+      "pubKeyOperator": "95f430a5255c2fdc1127e076104cd4f0684fdf29f1f53591e6f1fd7bd54282d41796bf42061e2fe6f7c6730e43d59a3f",
+      "valid": true
+    },
+    {
+      "proTxHash": "5942017987a75dad698f89eee17e91d587e2e669ce341ed00fc329208f8b032a",
+      "service": "82.211.21.21:9999",
+      "pubKeyOperator": "0ccbb3fde3de721bf7797290cdbed6f5fa139b6b37bf5c663ad2d668827b52b31e82cf37e2d73c6e43ea0cfaae987ac4",
+      "valid": true
+    },
+    {
+      "proTxHash": "94ec9cf9726317a29ee2e12bc84d8d374048083c9b5aec5e3636d9c7fd55a165",
+      "service": "188.40.21.233:9999",
+      "pubKeyOperator": "105fa81b3df254a135b3d5a03476e5129cf5aa032e3a2aefda9920deed648a5ccd96999c270edabda333d5f4a98f0e29",
+      "valid": true
+    },
+    {
+      "proTxHash": "b9033fb3593219ff1ec52aed9ad24043f222bd3ce6970781a52b473b90826f65",
+      "service": "43.130.237.111:9999",
+      "pubKeyOperator": "93f4f40e8bd2d8e60319d6a514b15166d58df02f35b2bd9990be74370ef4a5d7adc2f8623d9180d453e673472a0b188f",
+      "valid": true
+    },
+    {
+      "proTxHash": "f749484bea3c3770ef8bfc8c8c87be43b1f1ec57804db47adc02518f491b2458",
+      "service": "89.40.8.160:9999",
+      "pubKeyOperator": "8ac9249bfa440a7142cd7a15536649ddc219555f6d9e65fdd3ca2adf9a00ca8014aaa6b54e4a0be45c8de6cf1f895ac0",
+      "valid": true
+    },
+    {
+      "proTxHash": "932d373f6098c2556500aaad9dc749b65c9b11d1000dcd58fc37f6149b8f086a",
+      "service": "88.99.38.175:9999",
+      "pubKeyOperator": "a30930b543669edfcd610632e7dcc6b31ce7162528e153b0aec3b173ae42460eb409137742822bffc5d40ceb8a79ae8d",
+      "valid": true
+    },
+    {
+      "proTxHash": "69974be59ab9b117c9eeac2ad50fbb352c1fd61418e7962070bf39e51968de88",
+      "service": "82.211.25.54:9999",
+      "pubKeyOperator": "0fb14c31c4140d462aeb60c48741dafbe78a08ce77640d912d0439b3b083819d751c81c426842f2246229b2574381128",
+      "valid": true
+    },
+    {
+      "proTxHash": "fe9ffe483559c6236628ae22e92c47f2451fb0f12e1a90514906aca42c914049",
+      "service": "8.222.135.26:9999",
+      "pubKeyOperator": "890c460c4a57fa509297a6ddc68fd0a0d624f29b18b8beb85bc977d33215c79d118d13e08bb28754dbb7e5f5fe12f4d3",
+      "valid": true
+    },
+    {
+      "proTxHash": "feeeba72d96bba076b65f350c48fa03484676e5e1ae3c5b0f2bfd869a690aa87",
+      "service": "213.199.44.112:9999",
+      "pubKeyOperator": "8283e55bfda843a22bf5622febdd284209812e014666a5de4d8f7da7526ee84dd5e4eec0c85a73a5d73888bc8ba27c6c",
+      "valid": true
+    },
+    {
+      "proTxHash": "d91fb1eb92da94094eb6ed73418e7436d0908e684b5329dee02dbfed02f8c481",
+      "service": "188.40.182.208:9999",
+      "pubKeyOperator": "01f444a45f32c21ae048627996cad12b9a7b327d2d52652b0107391d008261ff58bd632c794bcd5aeadcf09a81542482",
+      "valid": true
+    },
+    {
+      "proTxHash": "e8a285c75be16c4777e7acd77101dd2ceaa2b71fbc615a37c2e0a5bd718e3989",
+      "service": "104.248.202.14:9999",
+      "pubKeyOperator": "a889e54c136f0cf1af6013590961a0ac4b350a7ff1b2c961f1bd439fba4d05c45663a081fb33248c1a468bf3b095c2d2",
+      "valid": true
+    },
+    {
+      "proTxHash": "bd71ff0ed86646382b19d28a490f92a2e8a7be87da339e493ad9c58e912df384",
+      "service": "168.119.87.150:9999",
+      "pubKeyOperator": "10dd17d1ce48ea34e1d2b23ee1a2ca3db0a81424a36cc3bf45cd844e7b6ff8b1fc7086ee3eb9800e77fe9ec7b4a4d60c",
+      "valid": true
+    },
+    {
+      "proTxHash": "c2a1621c37eefebf77cbddb4d6bb0eaf03d4037a3936aea7291859648996a4a1",
+      "service": "143.110.242.218:9999",
+      "pubKeyOperator": "912498832a2fa34467b226770de76509bef6737ac3a0b13e77e03848bb4f7c8918c7683f5eaaa62369b88c1f5ab17e64",
+      "valid": true
+    },
+    {
+      "proTxHash": "9ef71a1e00b9605f5523c6557cde0b5a3d280b0101f419bf3f8029a3022c04de",
+      "service": "178.157.91.189:9999",
+      "pubKeyOperator": "939a849f1241a1e8967b649928a19a117b681a50a66a1964bbc9aaa0cf497ad6106b953b20f083f4a930bdb88082ce11",
+      "valid": false
+    },
+    {
+      "proTxHash": "0467d2d224faa3de7bd50874b5f7af1e0764fe52735f535ad576c07f04bb56f8",
+      "service": "178.128.80.241:9999",
+      "pubKeyOperator": "1991f093a3057f008924813c1e1823e5c8631c9f8823594be545bb65b9cb58321fa65990170f32b22c7ebb0e1f95d3e6",
+      "valid": true
+    },
+    {
+      "proTxHash": "e9872f0282fad1f00d60a5bc2c3d63f48082a08b4856b667406558923f0705a9",
+      "service": "88.99.11.24:9999",
+      "pubKeyOperator": "07319ec88d7bab2df77fe2b7c30944161316423e4c4f3d07504351308cc0103dba47fdbad6e50ef4057b9b12137a3bd2",
+      "valid": true
+    },
+    {
+      "proTxHash": "4d459a1f05c80c3bf5ceb4bf9f98d505b9bd1884de303abcac7b6d68f3069b08",
+      "service": "95.216.255.78:9999",
+      "pubKeyOperator": "8a5caeac98f9fbcb4c1e15734b9fc10bdcc8a3dbbe74b636095f8b218064b05beabeea0317945346d4d5017c3086a48d",
+      "valid": true
+    },
+    {
+      "proTxHash": "a6237660068ca2e13e4179a19ed20d678d653c2186e7d5732bb012cfa94e06c8",
+      "service": "188.40.190.55:9999",
+      "pubKeyOperator": "14af3978b5ebbca357feaeaf936708d7a99d7698e0a1309bb1e99fc9274659ffac55c8da8e83f1ad76d176c7f83ad4a4",
+      "valid": true
+    },
+    {
+      "proTxHash": "fb221628cf6e255eda07cb7fe02fb121ad6e7c732e57c30c37a9fd35ea20d4a4",
+      "service": "82.211.25.169:9999",
+      "pubKeyOperator": "85c649e189357b57c9f7d2ef0afb13b3f9ff2c68492553f435d09df5174bea666a0d621b6e7d96c786ca915c71c2d5b2",
+      "valid": true
+    },
+    {
+      "proTxHash": "e7c5e345e8af1e7cc29a0a32fa40c09f7a691ffacd7c084b7bf9571d47c1d240",
+      "service": "95.216.230.99:9999",
+      "pubKeyOperator": "8cba87d2cc96739a43b063ceed9dc6a9a0f1a4aff48e38c20c501db498d58eb46284a398e112dc28d62ca1db51cb6ba5",
+      "valid": true
+    },
+    {
+      "proTxHash": "34f3652d00b037affa47d1e79ebc0cfde37f1d6dfd2967daef829a15f3752038",
+      "service": "188.40.180.132:9999",
+      "pubKeyOperator": "1999fca81b0b7d831db434b9ecab31a7f0dfab37050af79d8aa93464e1a3f6946bf0c4f36a0dbd506d6ae65036741c3d",
+      "valid": true
+    },
+    {
+      "proTxHash": "36d014b83c54f35061dcc08178315fca46c951ffa6c606e2c0ac3222bb0d01eb",
+      "service": "172.104.90.249:9999",
+      "pubKeyOperator": "898b7babc611a4f6ef51cab87722f08d823df46a1c73d1a9a0c17e5b1c1a6d206f2db4975371b60aa9ca1f91a0e6dbf4",
+      "valid": true
+    },
+    {
+      "proTxHash": "3681187d4209f47c6e430a60866fb1e7dc5e1d59432844541a22b4d1ade91bb0",
+      "service": "188.40.241.121:9999",
+      "pubKeyOperator": "0b6b0ee296a3785d5374bbcd830dbb0285ea6eaacaf859b42468d358d427e1a48cb00e2be3e3c6c8a0f41958491ccd5a",
+      "valid": true
+    },
+    {
+      "proTxHash": "25da1991bb9d488698dd15a005536df573f2597a78ed0b5f6f443070f73f3e72",
+      "service": "85.208.51.189:9999",
+      "pubKeyOperator": "190cbbb53cbfd66c04f337dcaf1bc09aa122626fcdaa07253eee7273194e681132497917072f0a81682e0e19fad946f2",
+      "valid": true
+    },
+    {
+      "proTxHash": "00a6aa2d8bc371d4577c887a5c68003b75dba238eebc9c6d76941b1e7b7a4304",
+      "service": "168.119.87.148:9999",
+      "pubKeyOperator": "0511a3fd6483e847ec3743388a0b27d6e06ec4fc5aaddbef55be1dc0ed8b18dae49d3090157bdee6e0ee14ae100deb46",
+      "valid": true
+    },
+    {
+      "proTxHash": "cd7ddfcf2a14181c21027e61c9d0143ea6bd73db2c9ade17d803163187840c08",
+      "service": "188.40.251.218:9999",
+      "pubKeyOperator": "13eaa96bf6e245c6625cc86bb1f243bb570aa76a30c17a4879e642b4e7de05b8cda042a416b8e85e5e580965b4f8f8d6",
+      "valid": true
+    },
+    {
+      "proTxHash": "a29b36a4fcc2611ecc3aeab51abe52684a3fe5cfda3db429101c61bc333a94fe",
+      "service": "188.40.182.199:9999",
+      "pubKeyOperator": "13274c2e22e9e9881fd5132ebd22d59dd02959707553975e6ff602b2422f37675c0aa54de399aa92e24da378fcd1c5f7",
+      "valid": true
+    },
+    {
+      "proTxHash": "8b20c3e31b9e76b702635100de5c10abd4275037cb64293bdbc010bb2562cf7c",
+      "service": "8.219.67.30:9999",
+      "pubKeyOperator": "9424f4bfeff28f897e59ca7f9ef439c39ff444d9b5dc9197a6f3d1a9127e49e09a3c83491c496597c0c017d577410e55",
+      "valid": true
+    },
+    {
+      "proTxHash": "dec802210b8b7ec86cc24407c602c88bea23cbf81f504e9db2851194d5911ebf",
+      "service": "135.181.53.200:9999",
+      "pubKeyOperator": "b4fb41c5919d1eb2259cbf4015903d2a9dd4e15b420db3d606af7a3f03c8b64db7a99ec9d1fa90764890de289a85afe9",
+      "valid": true
+    },
+    {
+      "proTxHash": "dea6bfb946bb3614f5e24f805e20739c97a48fde9c0dc2513f5d70a65bd0c63b",
+      "service": "88.99.11.10:9999",
+      "pubKeyOperator": "a7e46cae98e76f8f5355e261718c4f8130e36d541e68c91a5c7c46f2f163a90982af786c940286f98bc3998f719bf44a",
+      "valid": true
+    },
+    {
+      "proTxHash": "754285ad30ce2aa5f9d799770a2e06afff77613e09c240d3019d1f266e2f1167",
+      "service": "8.222.141.118:9999",
+      "pubKeyOperator": "0396b11c000274daa8208d2dcd7081b01e738c3c582c072606e4a9aef73fc5327dffa9418d92f7b81585d6d848c50e5a",
+      "valid": true
+    },
+    {
+      "proTxHash": "9208962a55a96f3f47ffbf5fca0f89a5da6a07dd5b7d04a8cc7a3e70a860cec7",
+      "service": "89.47.167.94:9999",
+      "pubKeyOperator": "b5e50c6c01641327e335381605794706152a2d9ff1c9ac22c81684d9a908f7b9e50035e2b8df6644866b70778b20e468",
+      "valid": true
+    },
+    {
+      "proTxHash": "f45a565c6239259548b4e33fda555a2d614daff9678d57adf699b9881c2f8470",
+      "service": "185.81.164.103:9999",
+      "pubKeyOperator": "0da914b67d250b8f86b961ef105e60ea2e7348653db783c2ab0d8505c343c63f7d3149b343c968b836729362e71593cf",
+      "valid": true
+    },
+    {
+      "proTxHash": "5e1902db56ee99fa843e677ceaef055d781cf5f16537a406d5640c6ec4694d42",
+      "service": "8.219.190.253:9999",
+      "pubKeyOperator": "0ec78a198dfd16c2b4704f11b010216c5373992acf3bee71f6d66e9e8f50eea1204c0cbd6db661f7af975fab7ced9225",
+      "valid": true
+    },
+    {
+      "proTxHash": "7e2e02e600a83109de4b7458e6b8a77aff6421a89a70db82d5f2910e21072ee3",
+      "service": "94.176.234.106:9999",
+      "pubKeyOperator": "01ae87b6c776f2dbfcd0b418ee21a5bc36e689191b7a084d89cf3e63fb4ecbfeee3d0494b74be4d842163db75ac5b864",
+      "valid": true
+    },
+    {
+      "proTxHash": "fd69326e35a79545df532ad99cd821f950f878ef37df37b555b4624b71b1c2bb",
+      "service": "135.181.8.69:9999",
+      "pubKeyOperator": "0abfde7128087fe355e845eba02d78fdb03f704853de0fca9cb45796d843d5da29c2e725b979294b739cad9f3f848029",
+      "valid": true
+    },
+    {
+      "proTxHash": "4e0ebb223e12094323c7d6c4b8d543bacd0a468248b01c85f0d7a79885f52d35",
+      "service": "165.22.224.28:9999",
+      "pubKeyOperator": "0704c5f35bf5e5bde34391886bd2ca1db359171c09b72f750929a4da6b8d3d6a72385f504c67d3af107ff2095129801e",
+      "valid": true
+    },
+    {
+      "proTxHash": "dfd32c90966000c9b4316457d1c87ee343d6cd52becbf0e907b28539f7ea14c1",
+      "service": "43.130.238.198:9999",
+      "pubKeyOperator": "865d47bc780a26526472cec8305942aa23c304db3bedb365f9a38c432cf6530545ea82e74e5cabf48843286872aba4d8",
+      "valid": true
+    },
+    {
+      "proTxHash": "ffb927c847edb34e6e22154019cb3ae880041796de510037c764cedbfbee00d8",
+      "service": "146.103.48.51:9999",
+      "pubKeyOperator": "9185f8a9cbbe4a39084f37ab9326cb82ab3224ef962b332a5ba9746ff16845ce34c2e9337d4c43d1acf87269d83a40f7",
+      "valid": true
+    },
+    {
+      "proTxHash": "3bd644760dd5a407a4117ca4075b1f56922f70fd2814b9e2487484b8bc03fe49",
+      "service": "178.62.45.13:9999",
+      "pubKeyOperator": "9780b81e61a4d3704abc5fc9a82864bde6831fc104cc6d1d382b993cf79d2933431dce71ac5b0150a9cf89ddf6a101cd",
+      "valid": true
+    },
+    {
+      "proTxHash": "5acdf4ec4fa90a6d3cc301ac584bb29ea1c8ec8bf9dd6f1ee030cd76c187a6c3",
+      "service": "82.153.207.47:9999",
+      "pubKeyOperator": "0f9336c7a3e6318c2476a86903025e399cf0420a6e9aa9d1aa03b311cc343b01d51dcaa940205db81229f8fd272d4d73",
+      "valid": true
+    },
+    {
+      "proTxHash": "604b507247fb857c51f0d794ad8f4f8c61f2223d85520e88f97fd6cc0a805f71",
+      "service": "140.82.52.184:9999",
+      "pubKeyOperator": "138f21d388656fdd3ecc30ec37e57fabc2787de93c2efed98ca4189d1dd9ea56c2dcd8a31beee58c0bcdb245bccd53c9",
+      "valid": true
+    },
+    {
+      "proTxHash": "99beef03e2692bca95c463a143ab32fe9c1117bd973366f1a7ada23a9388249f",
+      "service": "85.209.241.214:9999",
+      "pubKeyOperator": "063ad45b1dab6bb712caeeda4aea34ebe7a48d2516818f46109956700819671967ea7938e5002842ccb01c877769c1e2",
+      "valid": true
+    },
+    {
+      "proTxHash": "31ce7e11cbcaf8596dfb73a68dd7bed15dff54d513896ce5682faa7e991267cb",
+      "service": "37.60.236.249:9999",
+      "pubKeyOperator": "a8fb2c743766d6404e192282aa73c5d1c947bb7bd03de5a9ddb02baa0ccc8e7549ebd682d07bfa1f91e5c754b1eab476",
+      "valid": true
+    },
+    {
+      "proTxHash": "206c1ba4e21033dbe925c94fb77d151a437c3841134e90a694f4a5200779cf2b",
+      "service": "82.211.21.49:9999",
+      "pubKeyOperator": "8fd97561bdccd9900317a20f83d600d119abafafefb3d04ac5365911a57664c729cec9076f75c4a0abc24b997c719b5a",
+      "valid": true
+    },
+    {
+      "proTxHash": "071d1ca48c393818289269b01369c6be6a163dd3c0eee02debdf2356c5d5435a",
+      "service": "139.59.143.169:9999",
+      "pubKeyOperator": "97c749ffcd49142ad760c4ca6309b27ad5b86421fcc14d8c5a63f3c08b789450dbd2d86106f64dd5e6e84c96f10914a7",
+      "valid": true
+    },
+    {
+      "proTxHash": "f4e1a77592ce2328c8a02c0ed2135abc6c8063eeb359ea0708d7ad95801fa62c",
+      "service": "194.26.138.21:9999",
+      "pubKeyOperator": "86992436d9de68ff7b32915091f5e167f425ffa485529c5b7dc9e62abf659646d169909790a542a8f18b88d0ff51763c",
+      "valid": true
+    },
+    {
+      "proTxHash": "1d3f38a1e8683e340961c0e72df95fee1a788a6047069c2336bb23ae38399f20",
+      "service": "89.223.65.183:9999",
+      "pubKeyOperator": "8a4f3c9061746ba632a6a8ca89c6eca62a1042ecf1d311c96a3cb15408a04ae283feb7ee115ccde67aae5ed0d97f714c",
+      "valid": true
+    },
+    {
+      "proTxHash": "3a350046627d0d571e70ca6a57ac9cd9d5f103ec7f32a125a6bd5451c8b0d44e",
+      "service": "138.197.131.115:9999",
+      "pubKeyOperator": "abad76f4971ee86e63c792a035311447f6c3e8561f12ce7ba8a05efdf86ae75acd2b20a68655f23fd79665846f0e6896",
+      "valid": true
+    },
+    {
+      "proTxHash": "1a72394be79d9e10be18043dcbaf8287ee077d7045d491f1415eb3e352896f50",
+      "service": "192.99.244.220:9999",
+      "pubKeyOperator": "94fc7e0f97f5c4d46310bfa784603fa7e6961831c0f28f7f4083715d15b972fd31f2edaed55adb60cd0d608b529c2106",
+      "valid": true
+    },
+    {
+      "proTxHash": "3ce69e89cbf5395be75e6c7e008df678ca97fc021b1c0fb8937e536de4b50abd",
+      "service": "178.63.236.114:9999",
+      "pubKeyOperator": "898b6b70365bed305763eca4229a25370ab5109f53f968ce744b42d143cb9b6f9140b25605acfbc73d480c52d48b2363",
+      "valid": true
+    },
+    {
+      "proTxHash": "2945e3d075945de246dfdada279ce63d4d282ac570c5106c5e47b8308fc797b0",
+      "service": "135.181.248.214:9999",
+      "pubKeyOperator": "8ebbfcfe2c7c0b7b6fa06512b465f561da5aaf01f3b78341e7d82b30135005cadb6910ee985732c0e865875ca2b47510",
+      "valid": true
+    },
+    {
+      "proTxHash": "53ee6c66f32d26d9a1b7c59c9250f38da94e03d7d8c075259bd654981b46c487",
+      "service": "46.30.189.21:9999",
+      "pubKeyOperator": "962a9e9ea0437968f1514f8267d6185062b0de15009fe812f70d38f8f24bd6e3e23ae4f8f215bf4c8a4ee1ef951f5997",
+      "valid": true
+    },
+    {
+      "proTxHash": "86922fb9c8130b4834d021a24efd8e1c2126be6921670bfd7b55dc587fa97f7b",
+      "service": "95.217.125.100:9999",
+      "pubKeyOperator": "0fc0abc65510e6c1b17b06f3ccec240889cfbbcc0c96e1136f8ed42c4e9f8a28fc09f5671425d66efde55d4260f37bde",
+      "valid": true
+    },
+    {
+      "proTxHash": "a604705dda2e4998448516af87bf35a44b363bd0797c02ff399a5dd8af7fde14",
+      "service": "85.209.241.82:9999",
+      "pubKeyOperator": "87d26451e46cf2ab1088a2bab24dde16b8a883a01e0ce185022a7e62bca15cc8ac099fbe666981c5637996ec1498cd9b",
+      "valid": true
+    },
+    {
+      "proTxHash": "4917499c57b200696910ff3b118b328eb9c02dbb954ea5652d024b32ae362d8a",
+      "service": "85.209.241.170:9999",
+      "pubKeyOperator": "958f34e34c0b050cd3da0be731e40c88090ec6896581d70534334fd7de105d4b21270d9be5782ec9da634ba6e5dd85d7",
+      "valid": true
+    },
+    {
+      "proTxHash": "638ff7161ade356206bb9a6136faf24ec1e9d6939a993fd9730668c4d0cb1fa3",
+      "service": "139.180.139.146:9999",
+      "pubKeyOperator": "945a0cfcf67e868b4ba34c18943549472b17cdd60a2dc93739fb475fdd0e80d7b93cd148508a54f1e4f3802a1bf7c505",
+      "valid": true
+    },
+    {
+      "proTxHash": "4930133c83958393188b359636a293e20cf9b7c37497e75e9cf4a2c42ec6d176",
+      "service": "82.211.25.21:9999",
+      "pubKeyOperator": "99e62339847d6d36b0eee5ffb927f1660debdedbaa9ae0ad6b748159c91436ea5a5da6c75900b2e96304b5c10168dded",
+      "valid": true
+    },
+    {
+      "proTxHash": "1c4dfd1578b8baaeb0fca6aa037bc417c71e293465deb428bb4465e96e1ef66c",
+      "service": "168.119.83.5:9999",
+      "pubKeyOperator": "87a42c2f0c116342555b7e2c45d1db50f08dddb6df6066784fa9007f147dd80bf791752c084df8907f7095276ef2545d",
+      "valid": true
+    },
+    {
+      "proTxHash": "dd4054524304438baf94b21be33a495d068384c911df7fcb051804efc1440916",
+      "service": "85.209.241.2:9999",
+      "pubKeyOperator": "16feca1d699d6c9803448ce180bae228dc32d23ec31cc7337d97aa18c26052cd59a12ebdade1e05f0ee3528b3c11f65e",
+      "valid": true
+    },
+    {
+      "proTxHash": "180b9e2017d5a33086d02c4cdff0fa8d2814003dfb4046d639c873ca6d5f95d4",
+      "service": "207.148.126.128:9999",
+      "pubKeyOperator": "10d4a334b9f032f196660052f911cbbf6a847744df83481ccd833b0e40e55ab4f86be22979ef4f69541d45a8719e27e1",
+      "valid": true
+    },
+    {
+      "proTxHash": "5543a38d0d24a7df97c10f979e93bbcc4879e167e1871c6e0118fb2e2221067e",
+      "service": "195.98.95.210:9999",
+      "pubKeyOperator": "019a66139c4052009b8615c73dda4740357bbb8120603d641de76911bcbf4ed747c2c5a1b88069a5395a442dc1cd880d",
+      "valid": true
+    },
+    {
+      "proTxHash": "d092de644b2432ce2673eb5b97f3a52e726fbcd4eca1c1e8c66564240faa5a3c",
+      "service": "136.243.115.138:9999",
+      "pubKeyOperator": "874d06b9b71272e5173298474e72e4811a6fe7624b595837af224c022ffd80193346cd03c03d0bdb637c2bee683baece",
+      "valid": true
+    },
+    {
+      "proTxHash": "a69548e3df63ca468ea46004ba22d8cf0e702a507461f93b4ee570ef5adc7efd",
+      "service": "95.217.99.207:9999",
+      "pubKeyOperator": "841a1dc503d16ff03297e220a2e0995a7fe68593b0bf76bfb9b90301bf408ff87094523d6961163b0fdca52226821d3a",
+      "valid": true
+    },
+    {
+      "proTxHash": "2ce489b307579637861a19785606c2c12eee311450f30c9fa194ce455fe8c2d5",
+      "service": "108.160.131.192:9999",
+      "pubKeyOperator": "981220dc263a13266615315a8acf05444f7556216e4db0087bd7f4f1e4fe221f278623d7b5fa332a54be91ca6b3416ea",
+      "valid": true
+    },
+    {
+      "proTxHash": "ac0d77c6bdeebdc05f6dac11253baf5d504f7df637ead36f172e3b9d2f558db0",
+      "service": "188.40.182.207:9999",
+      "pubKeyOperator": "8e2093d9cbd082705ea17d1062dcb4f457c1914260ce5898842fd072c26ca9c868e2f8127d5d7ef7ac06ab168b89d912",
+      "valid": true
+    },
+    {
+      "proTxHash": "a4cb133878fae0cac9d361f54c99f6586e4f401b81b13aba5473d5d34f9e5752",
+      "service": "178.63.236.117:9999",
+      "pubKeyOperator": "00b813a012973396cb8bc298ff0ac9a135f0aeaa9d9527ae5ca1cba54c4ccae278dc2e704252fe18eb19014c51030850",
+      "valid": true
+    },
+    {
+      "proTxHash": "221492f2b49bc96952f4cf84893b456e45b014bb516f267b0b3ca6d7d64300c6",
+      "service": "64.227.142.41:9999",
+      "pubKeyOperator": "b026135bf55abcdfea1a2afe56501024103b44f4425d1f0b2cd2a7360e9edb28f242585a7a0983a1323c33721c7a12a6",
+      "valid": true
+    },
+    {
+      "proTxHash": "02a1268116bde0a980168f608ced34f4dcc05c759dbd4c9e54f04f2c7d14863b",
+      "service": "188.40.180.135:9999",
+      "pubKeyOperator": "a5cc12a7791f529e354c93087f10c826ad2c465c0f65a650d1a08cddcf15e177b7a293103c2fd93508e4be3c39fe54e6",
+      "valid": true
+    },
+    {
+      "proTxHash": "464ebcf16843872466d242bb63b50abb0606cdd126379ea850934c982e82c19b",
+      "service": "149.28.130.175:9999",
+      "pubKeyOperator": "a7224210ff5d4730fc4ab1462e2d2003eeca392418af12df45495cb148a8607b313ae19dc466f12fad8123befaf66d13",
+      "valid": true
+    },
+    {
+      "proTxHash": "4dbb3aeb27e306076516944680a9f7f38e7c889d71deb212be5e0ce79442bd17",
+      "service": "95.85.48.49:9999",
+      "pubKeyOperator": "96a3da1d9fbc05293e475a5195d263b13666374ddd42eaf69627cf31a50d20dd418faaeeb3fe2d16fe1a985318ad6697",
+      "valid": true
+    },
+    {
+      "proTxHash": "2ed7b3471b988297cbe6a5d1367209522927a03dc814e2128c66e3827e130ccb",
+      "service": "167.172.87.128:9999",
+      "pubKeyOperator": "18051a2d947fc1772edc420e4478f7b0e440f70cc0dd14f3e5248ba81719e45fb16a5d15e82d4f11218fdedd2e35fa24",
+      "valid": true
+    },
+    {
+      "proTxHash": "9f7702f3e459cfcbd5f6bb3a8c76012ca28347f0c781e85e73d87056491e199b",
+      "service": "188.40.190.37:9999",
+      "pubKeyOperator": "81cf4c6c36847b878cd2b42424e49267269c021f354e7960e8e6be16ecec5315fe41aac5757c8264b4083634a60760c4",
+      "valid": true
+    },
+    {
+      "proTxHash": "2128727b5683dd30f86f520a469e294afea635ae048ba6fd925adada777c9c4d",
+      "service": "206.189.148.201:9999",
+      "pubKeyOperator": "0d34f34b2965e56761b22b1a090d73e69d8dc6bc87997b9ed044ac1ad4d3078e0b6bfd9c045721d4d78121e49e5fb6e4",
+      "valid": true
+    },
+    {
+      "proTxHash": "79f6b7508b8982b883ea1a6e6657e005fc751729bd6ebefae6d5b012c3661323",
+      "service": "65.108.74.95:9999",
+      "pubKeyOperator": "b9f6ee4e924c3647dc43ca8bfc6821e896fbacc5157130dd89c3d2c3df4a1a21a3974aded03cf540d1ec9f84528c9ece",
+      "valid": true
+    },
+    {
+      "proTxHash": "035d2fa64db2b9a59aa90445dc84499e4911fc75b382a9b83682a5e8cbba6a15",
+      "service": "185.197.250.227:9999",
+      "pubKeyOperator": "94792df22b5bee16fd1079ce20ca16f56c6880e23958ec5f28ba4a8d4a3e70de8f364441bf239206c6cee2b254dae4f9",
+      "valid": true
+    },
+    {
+      "proTxHash": "7a169a665418adce927a071c0fa21050abadfde068a2d053f06f0da723ea1d48",
+      "service": "159.223.60.202:9999",
+      "pubKeyOperator": "027207eef74d579a943a5c606c445d1616e80a46b3d0cdbe73142b4aa60c878ec8c9a940cec3fca6118a35503c3b3164",
+      "valid": true
+    },
+    {
+      "proTxHash": "c5c4612ee4dff316beda43489e5edb5e7e11d84796f07ac8d2a4bfb4e5f72b27",
+      "service": "82.211.21.241:9999",
+      "pubKeyOperator": "96a49f41704cb6a365aaa537b23ca8592db9790df76a65f2a8fa45e478a5fd8075fbc842e98b738174d8ac16061bf7ae",
+      "valid": true
+    },
+    {
+      "proTxHash": "4112d78386ac5f78666ff63c5bde0b01237289a0eb30958e344390be18154475",
+      "service": "5.255.106.192:9999",
+      "pubKeyOperator": "12954e602b3f82a33cf7ee3c4b2267fc37f1681ff855e7cc3e9977a64ab74f3a9ede5644d6581e1f9af07d1adfa8c8f8",
+      "valid": true
+    },
+    {
+      "proTxHash": "85087a52479b6b6e65ef3afc40744cfaf61f9fcf740b5482dd10831fecadbfc0",
+      "service": "139.180.208.62:9999",
+      "pubKeyOperator": "99190c97478967d9706bd44e01525057c4fd2ebe8351de65768526aed90e9ff2f7e22244c67a7fa929def1254c430e1e",
+      "valid": true
+    },
+    {
+      "proTxHash": "dfc96c99ab162f37a005c0d2c6010a258cf012ed38f0d11b142c3d51cb460e19",
+      "service": "46.4.217.229:9999",
+      "pubKeyOperator": "ae62e082e0ea87aa42ddc715e329f1161fc3d906b243604a78f7ce05a6ffc540c99f622e8dc8aebd6b8a96fe53f6adb2",
+      "valid": true
+    },
+    {
+      "proTxHash": "8bf772f30d6e63185f880213c1a458613656a3306e13965460a280874a39b531",
+      "service": "8.222.146.30:9999",
+      "pubKeyOperator": "0e11201b87d762286646f1933894fa9829e9822486a842df1f776b4da2ec48ea41f4f0a61dfb2c861583a6a9c49a106a",
+      "valid": true
+    },
+    {
+      "proTxHash": "9a8aa10f1b62a4dae39e173c21995395c0b5ae33a708d0c1faa8188ea17cdc20",
+      "service": "216.238.75.46:9999",
+      "pubKeyOperator": "b269fddfa6077d430450e23b59654c4a550119e6c4ccccc841fe47e6e0d4dea04a3cfaf196f2048e729c82587522fab4",
+      "valid": true
+    },
+    {
+      "proTxHash": "12e46bce64971700da615da8c988a3e9fa887172900ffb35f267ab9273e31e6b",
+      "service": "149.28.154.79:9999",
+      "pubKeyOperator": "104eec66980b46a1f288db5c75cb0c785e577aae128fb860d89725e738411d579743a3949551b2885118e8e8532f5be9",
+      "valid": true
+    },
+    {
+      "proTxHash": "1de6e6e776cdbbd61b64bc73146fa78985b31bc253490390911624ca0365ccd7",
+      "service": "5.9.237.33:9999",
+      "pubKeyOperator": "874a4030ed11f5b0e8da01c74828befef03fe961c7141e2de5ae1d76a7199571eefd7935201b17bed667a88b3e107da3",
+      "valid": true
+    },
+    {
+      "proTxHash": "3e78ad110f975ae69e73c27fa41d095916df6974c17d449203fe3d1b63b8d976",
+      "service": "136.243.142.36:9999",
+      "pubKeyOperator": "8318f8b40a577512a8d507e8b72855103371e238b34c8cb1cabbc6f9b2da021676e7ebbd7c27133f1779c65821ed64d6",
+      "valid": true
+    },
+    {
+      "proTxHash": "83680aaafe08e21cb545f658b7f4d81414e3a3e710e36baa49ed325a37b1880e",
+      "service": "159.203.47.250:9999",
+      "pubKeyOperator": "95467379b1e5474254884d990765dce13f7d9cbc9d439fbff77db113542bc4cfdaf3142e364f394ed05a1c46d2e04ddd",
+      "valid": true
+    },
+    {
+      "proTxHash": "490cb3db5089a2e018a5289ce7eb04e312c3ae192eebbdfb9612fbc98092aa15",
+      "service": "49.13.115.10:9999",
+      "pubKeyOperator": "809c0ef7a847295a5fda3850cf60ddead94594ee763e816d2c13d02938baeacabb8156859e418f972f55e30b736d0fbf",
+      "valid": true
+    },
+    {
+      "proTxHash": "96172a5caeee869b8662a1dbc6ad2d4da43a5678fd91b5fb87ba4cfbb93324a1",
+      "service": "135.181.8.66:9999",
+      "pubKeyOperator": "94bfa631b7421ee9db633af657f9d51f2ef3a01bf9025d6759ae01aa03ae9e27f3748474355dd9114fe65966948300d7",
+      "valid": true
+    },
+    {
+      "proTxHash": "821eb332f3d3f81fd9dbbadea70c081135cec9a57288163883edde8902cde837",
+      "service": "103.160.95.219:9999",
+      "pubKeyOperator": "9568d0e92c50e6071312d8b415fdb2d53113cf17820ccf91d7c6cb181061ba461ddac2af6ada58d7fa27454c90101879",
+      "valid": true
+    },
+    {
+      "proTxHash": "15e9b286ff76a27491ef3533da8f8a63571fd5e997c5ffcb651545bedf6fa437",
+      "service": "168.119.87.134:9999",
+      "pubKeyOperator": "05610de73f6b4ade43ba892997acf90950063e40e3aef7d0c0ea7b5d325a830e3273a88071190b1e325b1af47bdd8f57",
+      "valid": true
+    },
+    {
+      "proTxHash": "49f18efbf5d19809e697d4c726d56b1a5a4568f6ec073168eb05a1407919c613",
+      "service": "159.65.151.61:9999",
+      "pubKeyOperator": "922f51fea28c9c398704200edc44166fae040ceb21b4de1b57f28f52b879de44fccab9055bd68bd74c18af6165f8978f",
+      "valid": true
+    },
+    {
+      "proTxHash": "481a668a5b44f0e6a2434b93f6d70140939056c4b98673514c5f3d705d981ffc",
+      "service": "188.40.163.5:9999",
+      "pubKeyOperator": "8423478ef4819061df464c896549ac53cbf1194c45f5f5486f2428ef5cf34b2cc7b62adde8267ae8964771fc70f6c1ef",
+      "valid": true
+    },
+    {
+      "proTxHash": "cd1d11b4c20bb7c861f1df84a39b6d5970bb8a05f771991baa3b115944cbbe0d",
+      "service": "134.122.110.220:9999",
+      "pubKeyOperator": "0079209cbcf3d3b198263250078c15ad7e6a95bbd90b0c0e31d49e8e1aaa2fb0afab9ce6e92a83e6de31bfe98f15f7bf",
+      "valid": true
+    },
+    {
+      "proTxHash": "941aaac75af7f3562862a961eddfa747c2e39459744cb2bcee1723454c49b8f9",
+      "service": "168.119.83.4:9999",
+      "pubKeyOperator": "0ff6cad0f0fdd54bedebc2e2b7139e5a736478867fdb5e1a56380c10f62f03a93658776ca62a3931e5edf004f9f6446b",
+      "valid": true
+    },
+    {
+      "proTxHash": "a13179cf741a1b08a5b154f1da09cba62b5d7c658f7de49f448492f000a9c941",
+      "service": "85.209.241.93:9999",
+      "pubKeyOperator": "8271aeb8e231356fab3315fd7c8b56ae9e648d34c07658999f2b0f4d30c2c56e59fcb1a609ebb97b7a876d60debc4d0e",
+      "valid": true
+    },
+    {
+      "proTxHash": "56d3d205fe14631dba42666696f3e125206697bedc32cfeb1ca18daed44b12cb",
+      "service": "145.239.237.77:9999",
+      "pubKeyOperator": "9135ea25c7e9c4e8651c856ef39c51390ec7f2d206e0cef29801d1eca7b5a10912d85ba9589553f870207c74edb769bf",
+      "valid": true
+    },
+    {
+      "proTxHash": "d8a63569aa7c6dc178e1da842ca053b46e9496e7665fa30bf7d9a779be722966",
+      "service": "88.99.11.3:9999",
+      "pubKeyOperator": "b5e7b08023d4d58ade5e57b0e2b10f066c9c98d212c3ae1cdb760505b6e9600d5d5353e85ad4262cf41ece91cbaf7946",
+      "valid": true
+    },
+    {
+      "proTxHash": "2b87e50306b31a729151a607215272f4227913d4fb195f06fb02f0f50993af58",
+      "service": "216.189.154.59:9999",
+      "pubKeyOperator": "0bb0dea2d65f9a8a1d635584dd2f7ca3a16231ff9d0573400ec4f273406e85cef2b16e6c405a3e9d770bb98ec2e9cccc",
+      "valid": true
+    },
+    {
+      "proTxHash": "a717fb0d0df097f7566aedf57b4486099126b7038448d27e88a83b9873730e2c",
+      "service": "144.202.37.1:9999",
+      "pubKeyOperator": "97679d86641b4b42a0ba07ddfe0af173aae13f8aabb2c24e372a2a4defe92276d101b6f4b95caad515d63e74cda952ec",
+      "valid": true
+    },
+    {
+      "proTxHash": "db34356f10d01c81dca0cefa9a580cb2aee454ac3d1e38da99ecaa8999cf131c",
+      "service": "162.243.136.66:9999",
+      "pubKeyOperator": "0f60df6e188e15f35fee974f8c24fba8ccb743738d3c948e6a9b45dae4fb15e6ec3d9864ba80b9ee54be10bc749e43ec",
+      "valid": true
+    },
+    {
+      "proTxHash": "bd454d237c0d1f9710e24f07eed2b6757ed0161ad9eb60c4fcde74d6dee0031a",
+      "service": "188.40.231.15:9999",
+      "pubKeyOperator": "114c1e474aadae7281a7a2965edd5c6215dbdfd3e64f5de720780fb036d52104c2ee69f3aa1fad0dcb9b46bd4e02503b",
+      "valid": true
+    },
+    {
+      "proTxHash": "3ea2422b2d86f9abeaa4e340338eae7f2daec577f40028f4f28af4fdc4f9c798",
+      "service": "138.197.128.77:9999",
+      "pubKeyOperator": "96f63f2ab3c0ea487282e37b7a31ad46b047566932d7d920a981d738616518ecc63d81bbed100f49642eb7a3f7bf6342",
+      "valid": true
+    },
+    {
+      "proTxHash": "afa8aa1d7fa4d26a81b02737d228066f37ebda22ea0ac2ffb812d4ad6205ae1d",
+      "service": "85.209.242.63:9999",
+      "pubKeyOperator": "1236a311ceaaf7ec1db7fdcae75db789a407e182b66056e6d2446e4e824a57b2aa0f72deabcbc29ad8897c75f3bf76e1",
+      "valid": true
+    },
+    {
+      "proTxHash": "636cd738d98babe4406aa0eb94af93e3725cc0e8fcd75b93af840eaaf7815e53",
+      "service": "176.223.135.214:9999",
+      "pubKeyOperator": "a33d57304b4ae14242eecc58a58d0809ed80221b38987d5ed0021da4743dba9a6bc29c2df60a4b8b81f22e9759966276",
+      "valid": true
+    },
+    {
+      "proTxHash": "564ba21355e0b2f4f9f36fe34ad36ceb717f5c8d8ebc61b300cec5de2fefc96a",
+      "service": "135.181.15.236:9999",
+      "pubKeyOperator": "16457be150622cc9fc4058faaf96e1207693f05b2498197804355c7c7bb426b9dc5786392d6265f3b406d5567d374227",
+      "valid": true
+    },
+    {
+      "proTxHash": "9cf746c3fe9078681f2e3785c5c7bee5f653d547a95daec2072a52f1cf5bbb88",
+      "service": "136.243.29.222:9999",
+      "pubKeyOperator": "9520ec505eedb8884406ef7c9e664206081397d247cccad8815ef002ff9ea141332870b6d9ecefa3ca0360cb06c11cc4",
+      "valid": true
+    },
+    {
+      "proTxHash": "0563c2057d4fe4b29119ae13d45164a20172fd1bbc2a5832ab1bb649fd250f03",
+      "service": "46.4.217.228:9999",
+      "pubKeyOperator": "8c86d4948e039be1842b9a6a165670bc872428b606246257f27b98923216980c72dc8429277490cf209d4ca59a564ada",
+      "valid": true
+    },
+    {
+      "proTxHash": "5c237996a54b18ea998167dab89698c047510456e000a2223a4d644e4d08226c",
+      "service": "164.92.249.64:9999",
+      "pubKeyOperator": "88738969075cb51b6cd31d5ca494f62f0cdeb5e2473a60b54101fc24a72b4f3fcce8f4edced23841ebb342187c8bab0c",
+      "valid": true
+    },
+    {
+      "proTxHash": "10268611ffd8a8f1dd6c358d07ce56cf4da01e73148e843f1c0e5c8efde89f8d",
+      "service": "104.225.159.232:9999",
+      "pubKeyOperator": "86ba76ad30121f8f31057bcf021a38cb05e01990343dbcc9946556e2e30de6523b552eb235307b572ac75ca9f8388743",
+      "valid": true
+    },
+    {
+      "proTxHash": "1af692e45d5b8b2b62b851e23b4a51ccdc24a2565d49c15b5c78c958b59ad492",
+      "service": "207.154.235.44:9999",
+      "pubKeyOperator": "9699bbb4ba24b6ad92e8816112baa87ab4638bac785fc234e9de82312fc85dd80bcd91debfb5b43cd42f4e9e53320ed2",
+      "valid": true
+    },
+    {
+      "proTxHash": "ffaaf68b98d79e28fd26f9404696385f64d3576af39507adfc295e8037993787",
+      "service": "82.211.25.106:9999",
+      "pubKeyOperator": "17f9e6c9ffed21ca3d3357f31c18cbc541d95c232025b705a65d7a32be10227c804454b690b28ebeaad910478559cbc2",
+      "valid": true
+    },
+    {
+      "proTxHash": "53d7054f6b4845803464d2b699f329c43fea53a11da53e4d8660648651e54b23",
+      "service": "85.209.241.156:9999",
+      "pubKeyOperator": "954c04a289aa412f6b7d3a8781a50d48f2934cf8760d790467ff7b6ecc3eef00cec715e0103624a2eae2df251f5ff668",
+      "valid": true
+    },
+    {
+      "proTxHash": "1535d7b317c8b15874152756b644ad4df3128cb44290b2a782c37daf22776f29",
+      "service": "45.32.115.236:9999",
+      "pubKeyOperator": "9799709b1f7d39da3b24df0190ed9a49b17d6d26210508c2cfd1a4a19b7a7776e5ecb71c8f909d06fa596696513fc9d7",
+      "valid": true
+    },
+    {
+      "proTxHash": "23a697e38591825c2fa01c36a6934610fac8194ba1a8fcfc6629229fe6f7fe00",
+      "service": "5.161.49.32:9999",
+      "pubKeyOperator": "b0bcbb1a8a357e5abdb01f4a2a69fb6bbf3bd646cc9336e0ecb45a776bd0ea68dd1c9fa060b470f089ff542bd73ee50a",
+      "valid": true
+    },
+    {
+      "proTxHash": "642d26637caf677094a7e1a253a7554859a93f8cdebecc6e3950c652412cae3c",
+      "service": "69.61.107.211:9999",
+      "pubKeyOperator": "8d9c49c673b8a295e668af0d77e9f9b95231a1732d784869fdb02602eb210fed53e7061d4ae909493a3e9b3b8c41c01e",
+      "valid": true
+    },
+    {
+      "proTxHash": "53c902f600b06d3befbb7024b4bda8f4475f2803244f9ed23602e9a03ae97828",
+      "service": "206.189.90.249:9999",
+      "pubKeyOperator": "914ce88cdc464ce0e31b928a2fedd30ad3bcdb6de80549b953a8d86263465974efeac4a4a1186b7dd041e04d4f9b9230",
+      "valid": true
+    },
+    {
+      "proTxHash": "e681288f030775baaf3514b8eef0fe235fe235aaeecde01c32b742e6cb79b442",
+      "service": "135.181.53.134:9999",
+      "pubKeyOperator": "00ca402515cc7cc8ae8e69c8f5ac398da686cefeff5ed78556cfe0ab6bc91a67164da7d1a75be2c7f1af24bcf34ce10d",
+      "valid": true
+    },
+    {
+      "proTxHash": "45fb31b87d6e409238270f5917c351cc109bae245f83daf8c803d6be79dc9137",
+      "service": "69.61.107.212:9999",
+      "pubKeyOperator": "044865e19ca6e71089f1801e4605eb509581bcd6f051d03ee03872826652c2c803693d27399bf84f1e16ffb3aee09d94",
+      "valid": true
+    },
+    {
+      "proTxHash": "81bdf6460a9f3775b5ac11615268608baf659e19066618642d538caee0ee2957",
+      "service": "85.209.241.32:9999",
+      "pubKeyOperator": "97be43a4bc7759b59b4c1f59e0b132d1222cf4e2370a48ad0a3a4d58672706baa5e5f49630203ae5aff521258532643c",
+      "valid": true
+    },
+    {
+      "proTxHash": "1c458c0b0d51bb1b6be7282ddfc6b7b6e173f4b7cb291f446eba0a67e059fac1",
+      "service": "46.36.40.242:9999",
+      "pubKeyOperator": "8d90fb5d80d4ce47fa3d46f4eb69c516d7ffce5974938cda8a0055d4e1e4f445251c86b75327e5d776618e29b9c26ddb",
+      "valid": true
+    },
+    {
+      "proTxHash": "b2deadd3bda2551a39b99a868e8f4558c9a9ece2ff80b4361816f1d1a46cd1f5",
+      "service": "31.220.84.93:9999",
+      "pubKeyOperator": "90ed3b279798232b1b99051716f29e69ad2a6f5901235cd4b5b8b2df287a7b44ea119a48a46cb2d5617852e25a642ed1",
+      "valid": true
+    },
+    {
+      "proTxHash": "0927256960d4e34b1fd00ef8d9a5914ee041bf67989ad266015ed7c9887d8dad",
+      "service": "45.76.152.191:9999",
+      "pubKeyOperator": "966373ca8bc9de6528cc9e45431f6d3806f6d352913d3a2fdd12e2962a08de74869f03e6e8d7396e8ca349227f3a0340",
+      "valid": true
+    },
+    {
+      "proTxHash": "d456ca2b6c4ffb7dd4be997430544155c4261dd96dcb920ee1792ab163881f41",
+      "service": "129.213.36.72:9999",
+      "pubKeyOperator": "03dfc8f214dae21ee2513e3333e5892dc748458a306800c92a7e9dcc777f960139e02e9b1259cf48adb3e03efc0e352d",
+      "valid": true
+    },
+    {
+      "proTxHash": "113ff81c88decba3dddbec1e5fcb33501fdb2aaec807a8cadc0ea021d5a98a53",
+      "service": "178.128.221.170:9999",
+      "pubKeyOperator": "10617472da90bc1c3a2792c26740a54c135c4ae12543d6a834f7f1fc1ea02bba5344eeaba1129910081d544fa90195a1",
+      "valid": true
+    },
+    {
+      "proTxHash": "ff58cc0157e12eb2d20890a2f19b39960611329e7da1994098ad38bf6c1929a3",
+      "service": "95.216.255.72:9999",
+      "pubKeyOperator": "80113626b7a736c08fcd2d78a280757c38974ddbf907943113c5613fb78a0bafd31aed2399b8743e2e11ebb6380db33a",
+      "valid": true
+    },
+    {
+      "proTxHash": "360186441914d7aee8d160fd5f1538e6a81c738d34439e4b92218189f4db05a0",
+      "service": "212.24.110.128:9999",
+      "pubKeyOperator": "138e5f79e82fdebbb194bf87a43093330f628beb4211d35d217e2f745df3c33b9684bca2374b8a16b7cb963827841fbb",
+      "valid": true
+    },
+    {
+      "proTxHash": "905ad314f849786ca00f866b5a9db2b88e17e64d1175e7c729e0b83664b5ec45",
+      "service": "104.131.134.41:9999",
+      "pubKeyOperator": "8f119742ce6c0ee1f7f7b40a9dec2db6ffa42ec0eabfc0adaa2fff298d5284f05abc79ed716697007b1382b78fea1936",
+      "valid": true
+    },
+    {
+      "proTxHash": "331dcaca797704b754964627b656af59b31c885361d4a7e308a1434ad41a1187",
+      "service": "188.40.231.1:9999",
+      "pubKeyOperator": "0bbbe5b660800086bc5b60a2100501ed7ff4dbffcacefde6de62a377cd85d1fafd5fe35c3cf2b8f64da01e636bfb008e",
+      "valid": true
+    },
+    {
+      "proTxHash": "d3ed0776cb7498d8004cd541fb24a4d861eeee9a7a03650e1c986251341ad56f",
+      "service": "136.243.29.192:9999",
+      "pubKeyOperator": "af92fb8e9de43a02d9b4006facda38c462eca48a6312da40d884797c0432b968597322269d9488bc972fc726b53738ad",
+      "valid": true
+    },
+    {
+      "proTxHash": "93b040be3a56605fd1ab32f58f58677585dda482de626c6fd2d71e95d7b3ad06",
+      "service": "46.4.162.112:9999",
+      "pubKeyOperator": "135f473c23f97d9b930f6e257a1602105c4ad4cf5a9f81a8f875777462cee36e3a3ed1eb6082d1c4c1a41165b67878d1",
+      "valid": true
+    },
+    {
+      "proTxHash": "a9d5a2d5b79dbf0e0ff2c9a59064f48812c1ff307568e5d626bd7e4c33fbee1f",
+      "service": "94.176.236.252:9999",
+      "pubKeyOperator": "93323d3eec97b3b02577f9406739a3636486977426cebcbfcb8253eb90876b731f8e767ea4fe40807167fd61a280d797",
+      "valid": true
+    },
+    {
+      "proTxHash": "8bd1644adacb12968a913781ec7c5d6ae7ba1d9b6a65217cf45c900ef8053181",
+      "service": "213.199.34.250:9999",
+      "pubKeyOperator": "b62e8f7b6d221570111aa6d01ca01185666a00e71782fc2923eac8d98e459615fa9118df255225809344f58424f6a730",
+      "valid": true
+    },
+    {
+      "proTxHash": "47290b5a0d8af601918b68f0b8d66d9ba79c02c0687ccebdbab9131fcbbaa4a0",
+      "service": "8.219.160.147:9999",
+      "pubKeyOperator": "939cfaa411d4b25095fee9876d2a9275bbf383b1be80e372f814b4b2d06b23154ac6e64153283562ec7bdcaf659e8567",
+      "valid": true
+    },
+    {
+      "proTxHash": "4ff640fbe1244bc0007066f90776622d3a2efb9fd8a8c5c27f5e89f358fc08da",
+      "service": "165.232.187.22:9999",
+      "pubKeyOperator": "0dcc882f15743749ae6ddbef9e1be822cfd51a10a353e9184182d02628ea251d0f0d52f545b80271f83edd3113da0144",
+      "valid": true
+    },
+    {
+      "proTxHash": "cdcc5f9c69617aa36f888c3b38d29759e554ebef811440bd2e14afd4db96d617",
+      "service": "212.24.111.36:9999",
+      "pubKeyOperator": "02a33ecae053566a75d558f5f5c2c0f27b9f7e63a2dca180ad6da297c77300e6481e1b4b83823ff0c68405a4d818b2c6",
+      "valid": true
+    },
+    {
+      "proTxHash": "44a4844a552002b3da4fc70d26b8864aa6470abafd1d32028ffd352ad5400f1f",
+      "service": "178.63.236.110:9999",
+      "pubKeyOperator": "9834170a604464e3878387c8b2882c435a661635bf31b48e2d8a7aa1f08b6ed5ea9c45efea20d8aa189b8711f80cee4d",
+      "valid": true
+    },
+    {
+      "proTxHash": "5348f5464e85cfea9cb003c41c07fcd20a138310d77fc97a3a98119570d89df6",
+      "service": "213.199.34.251:9999",
+      "pubKeyOperator": "86532969f249ebb391d4576432045d1ff2a87560d57cf28683da5c31606739533ec6cc44268b7a94d2c2e94be8bbd301",
+      "valid": true
+    },
+    {
+      "proTxHash": "cc515f5dfb1c67330c048ce6338fc73d4b1b18554601c574ee9982b8a7a3dc98",
+      "service": "188.40.251.206:9999",
+      "pubKeyOperator": "17798cdf754c24c7605528730dbd4b438f4726269d95512224a43d01a715e64373b7acd177608c0cf4dde36239d02c23",
+      "valid": true
+    },
+    {
+      "proTxHash": "88944bc8f0e0a1a77699d3a0fe6dc12663a3813c92ec3c14b40d286c5f6455b6",
+      "service": "136.243.115.128:9999",
+      "pubKeyOperator": "0d6720db1bd4f71cf46d17427444545f7eaaa066fb43db7087fbfb8d7c0dfb6a9ce2ff5f36cfbbd5a9edb19b32ff8eb3",
+      "valid": true
+    },
+    {
+      "proTxHash": "856e1ad9987de4859b7029405065675bed79592cd6802e2ed885eb5dca95a97c",
+      "service": "82.211.21.225:9999",
+      "pubKeyOperator": "04d6645744e7bcc14b986de35930162452a5f7229a46bfad5f1d39da7f9205ef56fcddefd2fb14f8ee7f7f340aecbacf",
+      "valid": true
+    },
+    {
+      "proTxHash": "6ba5ccd3e46d6700ffabee07cd53fe5d302c63d53db9603cd8a55e4c4264c4e9",
+      "service": "135.181.52.145:9999",
+      "pubKeyOperator": "05d020d5e00e9adf06802c53e2e3a9bc059d41a171da9d763d0b907796aed2133a944913bd7f6721aa0653fd9490f5ec",
+      "valid": true
+    },
+    {
+      "proTxHash": "6cfdbaaede02ab2ef820f51d7657210c035c80ede422f9951ff6a5844e0a0e31",
+      "service": "82.211.21.41:9999",
+      "pubKeyOperator": "8d2c65e0f5ebb43978706a51a6fe37248a6fa866bf4bb8c848393ff722157724746cff578847273f9c2d658692088695",
+      "valid": true
+    },
+    {
+      "proTxHash": "e6245ddef3697b626a5571b82499e00fd0d68461d6a2e3ca745ddaeb0b1f79d6",
+      "service": "188.40.178.68:9999",
+      "pubKeyOperator": "0a4bb155e5c2c3fea641f46a6510ef23d1f9d2813e61ae1e6a983978491013d2337e1715578c9c451b9b411fc18c13b4",
+      "valid": true
+    },
+    {
+      "proTxHash": "2b96ad72b883391103cc3a4a0a3e9b123cce69d497f6fa9b0ecda9c2abc50137",
+      "service": "178.128.87.194:9999",
+      "pubKeyOperator": "0f7077767b2cab9e436dca9c6e9ad8b4d5c5aeb24c0278d48fc2f0bb111115d0e5f4a3bee6322268aee7eaa47ab0044f",
+      "valid": true
+    },
+    {
+      "proTxHash": "5fe57739954ff97b02fff411ad126919280881f31eb8daa7dcb20755bb17e3a9",
+      "service": "168.119.87.138:9999",
+      "pubKeyOperator": "967bf9a1e161c578a21c1744cc1c8ec14e20280d6cf93839c529556a5ed6534e8897cb0c9416b788a8ebc7536f46cbaa",
+      "valid": true
+    },
+    {
+      "proTxHash": "c9d22f2f221c7cd1b048c5e13356dd95fdc530dcf2e3bbe0e232378fbb73829c",
+      "service": "161.35.69.134:9999",
+      "pubKeyOperator": "ab458968b9b74e00915a28655ae9d3bed6c2099c4c9baf3129a68a148c6f64e7a9535b495be47c439c5f58675d625bdb",
+      "valid": true
+    },
+    {
+      "proTxHash": "64f3b1aa839287b5b7a5a72af03d697be8d7f5968a169770c63df7ac65bba472",
+      "service": "188.40.175.65:9999",
+      "pubKeyOperator": "8d57ea2cfda3be34b068acdb5f40bc50887dcb78e06c44eea7521c7ddbfba1b22ad458dcf1bb1b735f088a5d230e4e2d",
+      "valid": true
+    },
+    {
+      "proTxHash": "f8c3759161d018eec61855249f9dfd31c70dfe24dba81bc53e77e3d8bcc6c243",
+      "service": "8.222.138.140:9999",
+      "pubKeyOperator": "03c50d169a9f36561520147b7ea90b2277e038e5a1b60b34fc6339355ba112295b1c0e4b065d9dd29ee41abfae6298f7",
+      "valid": true
+    },
+    {
+      "proTxHash": "193603f5b2fedf340883110202514b8f4434194806802c8a151a188af46da9c0",
+      "service": "107.170.254.160:9999",
+      "pubKeyOperator": "16ba343e2e3e9f7eff03451252d669fb8022c32011d7825509a8bcbfc15246e75a12fc41d36be143008c6be2ec3689c0",
+      "valid": true
+    },
+    {
+      "proTxHash": "91f0bde1e452915ed101c2f4a79fcfecc8064fbbd6f0abd2017653813e59683a",
+      "service": "193.29.57.64:9999",
+      "pubKeyOperator": "05e2e0ff4488026ff18e1700c8378f50e4b84b9222ee46d0898ba7debe7da7121f98edca635bd167345e7904ee08330c",
+      "valid": true
+    },
+    {
+      "proTxHash": "8a85b23f9831ecc108b6edd355a85cab0b4b149a36533854c1aeb1cb5acd44ea",
+      "service": "178.63.236.107:9999",
+      "pubKeyOperator": "0c261f446b125fd803d4cde523eb5e94d0d43f264e2808c52e389053c2e2825d275669b9d6fa622311ee1ca0e5b0e254",
+      "valid": true
+    },
+    {
+      "proTxHash": "05231fe0fd6bba8f692306d3b86ca5435ca7c547ac62764bbe4eef7cfaa7280a",
+      "service": "188.40.185.128:9999",
+      "pubKeyOperator": "858ecee9d4152ea6902a1c32950041fbc0463612d77477a8b05a28c4936c1f79372f9eeeffdf866bbfb3c394355bf454",
+      "valid": true
+    },
+    {
+      "proTxHash": "b86f9ae4178a3425abb8053a40e1eb138b2a68b466ba2b3bd04167060cd5c1b5",
+      "service": "194.135.94.189:9999",
+      "pubKeyOperator": "919843847b2bbefe80c6e33621509fa9f1f88654c8dd153bb5aa5f3e300ef59e8a65e2da672718f69e5fea51d078a6b4",
+      "valid": true
+    },
+    {
+      "proTxHash": "bd117be08f77246d417ef12504eef539f728409f5b4bc55a6444424e81d7a214",
+      "service": "109.199.105.203:9999",
+      "pubKeyOperator": "986bafc50655399d162fe211c73a4e5bcf2899fffa163c06b5063f8b0004d220c123d20cf15a0d4a5fdd3b326917f60f",
+      "valid": true
+    },
+    {
+      "proTxHash": "369d281ceb4c4a25332c7741397aa7d815f210d6e379a155bc72387c41f52b61",
+      "service": "91.222.239.126:9999",
+      "pubKeyOperator": "899b91f07736c40773089a0a93673e7d7ba4fc1f39f0596f32bde17d6ef982ced5706c0b9941de787bdd93a8e64d814f",
+      "valid": true
+    },
+    {
+      "proTxHash": "9978a995672fb6397df7eb97b0e24d0ba7aa489d3dad7edebd98bbf70824f941",
+      "service": "178.63.236.115:9999",
+      "pubKeyOperator": "0869d8fedf9732a7c72548b6598e4c0b12c9403b7a149ec062ccbd2256bed946c6195a80f2df71144545eebb07ee6491",
+      "valid": true
+    },
+    {
+      "proTxHash": "81318461d3a453ca9d900fed0f19808dd8ab660e6fda44c55ec2097b285cc8e2",
+      "service": "69.61.107.215:9999",
+      "pubKeyOperator": "91cf78e72aa5f2c07018b92feb6f33e2a2aac6b16e592df6797a83799f0155327d07fce524f25e09482aa4ec6d069a25",
+      "valid": true
+    },
+    {
+      "proTxHash": "280705af7ab4a5b00e0c4cef3339afb62eb17bb09859b91a38e1b35b7b0aa132",
+      "service": "206.189.143.208:9999",
+      "pubKeyOperator": "066777c651ef622876753ee878e4b0d77755ed6aca97f793add7225a4658c4ee912403ead16950f7dc67b941959f569d",
+      "valid": true
+    },
+    {
+      "proTxHash": "bd0742170f987cbafbca92bf02ec4c318f8ee24c73617f26fcdad6bbb2078c6a",
+      "service": "103.160.95.225:9999",
+      "pubKeyOperator": "8ed5c4bd85ac9faaa2b8a8f005c7182fd147456d00b32c72cf4de50cfc695beaeb02b07ffe8f82d07092a4cff13eacc2",
+      "valid": true
+    },
+    {
+      "proTxHash": "2de3be6ab0ebd9de732ec2219b68abdb476bb04e76c90ade1046a2593484be7e",
+      "service": "146.103.48.50:9999",
+      "pubKeyOperator": "0beadc9773da549093f6995bb9b071ea1a149a45a3345b10b62da2fc2273271b68ecf04f63975d67acace882238e83c1",
+      "valid": true
+    },
+    {
+      "proTxHash": "093915cf03ffa4fc0621e04da393109bb9751a0a4a9ea8facdb47e5432741932",
+      "service": "82.211.25.155:9999",
+      "pubKeyOperator": "98cd4ae45074ac70c832f588ebfb28961ee690fceb0be47a9be962eb8566a04406179bace0254e3ba605a3b03288ab8e",
+      "valid": true
+    },
+    {
+      "proTxHash": "84c5857cb3974dd48043a016a6db575c4a19de2bc5a5b5410f2e0b0f70b0bdd3",
+      "service": "134.122.96.216:9999",
+      "pubKeyOperator": "a9f87e6916f7091daa0432d4fd766c4687ea4c8794f7627046633a0257ac6c8ab0bec67ea5a34ce16c83cb256cbf4fa0",
+      "valid": true
+    },
+    {
+      "proTxHash": "b481c990d08ad36402d104fc288ed65e5db7754fc7122fe0870dff92e40b57b9",
+      "service": "70.34.207.191:9999",
+      "pubKeyOperator": "823602f80d5068f5bb47e1211e25769755fe939b2949c928444d7fcc8d6406f32989d471a4e2e70581a75b2f1b392767",
+      "valid": true
+    },
+    {
+      "proTxHash": "929976d218efd33fabcea8fe87fd987f3189402476112d1df6284b93c0f81f4f",
+      "service": "82.211.25.97:9999",
+      "pubKeyOperator": "02ab52425100d319bc1b5e1382c4eba074f73f2ae94f6e1713ffd9a0f513b541f44d9a0879f48fdcaf3521ebd3b734e3",
+      "valid": true
+    },
+    {
+      "proTxHash": "6cd07585b6d1f0e208f2fa40302a6dfec36e176cd555ee960c4e2c90e959bf77",
+      "service": "45.76.156.166:9999",
+      "pubKeyOperator": "11bcb3266c44d3dc0b3e2f0e4a684f07b27e53dea63959b437bb56f6b13e7dba9a8d9c1481cb0d48b72a65f1488df4a9",
+      "valid": true
+    },
+    {
+      "proTxHash": "c942c25954b98141ced38965cdf43c204bbfae19f315483edb61103902125625",
+      "service": "46.30.189.20:9999",
+      "pubKeyOperator": "83560c4e3eb95a0ed4c549bd59b1f6a2f01b13f61adafaf75a442e57825852d330dc4a4163c02da408bdfbd8896a7c43",
+      "valid": true
+    },
+    {
+      "proTxHash": "cb698b6ff3190bd57c3ce4f382d5f490a9d5c882b52e59f82247c35ef974a439",
+      "service": "85.209.241.27:9999",
+      "pubKeyOperator": "19fa0b04474cee29e8e845a8a83db65afac0b7d0de97a2efe0dc910b5f9c0fdd6ed483eda1a4b72ce6c92c9a89d8d849",
+      "valid": true
+    },
+    {
+      "proTxHash": "31cc55e53f8e0cc890d3b9818e3298ff6d36481689a6308d184a5e49f42bbe6c",
+      "service": "95.179.243.76:9999",
+      "pubKeyOperator": "172c645665f6742c2226cc815a2c735908e0b20f949f42f7a6713b6613e17250242f6a6cd8d75ed46f335e8ee6abb22d",
+      "valid": true
+    },
+    {
+      "proTxHash": "2292551a56ef040d535e8c541e144d601d4074187b23049be2f2baea96b871f7",
+      "service": "8.219.56.203:9999",
+      "pubKeyOperator": "821157f2021495b66afb9dc1da2e10da30e779a72c854c89fd04652e86d65879ca88ba0332dede0af819a976de367ff7",
+      "valid": true
+    },
+    {
+      "proTxHash": "7fd0a504278a1e6a0cc1188c98178c279667450502a87e8e841dfaab7896657b",
+      "service": "188.40.231.17:9999",
+      "pubKeyOperator": "0140c6cce1152085456b44c005042fa5b19048e23e7ae498b831dbcffd8fcd9360d26ac8c95db2c6f41b419791915e74",
+      "valid": true
+    },
+    {
+      "proTxHash": "d0de9450f5d99452c59c12135cc6373c7077255d9aec6e0fe6e4d9a12a5890bd",
+      "service": "135.181.8.68:9999",
+      "pubKeyOperator": "826a8b6000f758dd5d16eb5fd86f78fac2cc4b2119f2fe3dd7702dc714a43f888fd1dc7e9c5ba52260a8191d30bb4c5e",
+      "valid": true
+    },
+    {
+      "proTxHash": "4f65046a3417aa3cde545ea6563e209256d8fa5221f334774bd3104c1f90f017",
+      "service": "188.40.182.205:9999",
+      "pubKeyOperator": "ab120e69244607764d356ee4aa3c8a960aa6baf7e90c0130c32e8f0b28dad8614ea78fc82f2f1f4ef967c89d5944ca7b",
+      "valid": true
+    },
+    {
+      "proTxHash": "4d84a44f531ed9efccdb85df7a6daf5bd0f5c24ca4229fa3605b342c616e01c5",
+      "service": "144.91.127.166:9999",
+      "pubKeyOperator": "11820f1af19de9438d632512d512b007148b12250455a46b2ef5023106db3bb29eb02b6cf56a4466420c76c276530e25",
+      "valid": true
+    },
+    {
+      "proTxHash": "c661655f19ec698073bf489fcdefdf1cc32e3e78f134a0f584c487b309d7e367",
+      "service": "135.181.8.64:9999",
+      "pubKeyOperator": "85f31268e6b2667e36bf32dcdced8442288084b322fd690bc3b0b81b77268e190546cfe1664a12ccf29ce96dec34eff1",
+      "valid": true
+    },
+    {
+      "proTxHash": "02ea5d030da10c84ad09ca95289c28d6affe7cd40947ad30fa11fc782c677d75",
+      "service": "185.194.216.84:9999",
+      "pubKeyOperator": "ac1b998bb0b566a3faefaf1d76d3b20b9754e950508d43976aa93b9b5b007de58c4b2e5fea65497f6f8c0f8595137bea",
+      "valid": true
+    },
+    {
+      "proTxHash": "f4dfa237f6b65d747080c7b291f2d6df590bbffa99db4b19d63e1c1167ce25f4",
+      "service": "128.140.7.186:9999",
+      "pubKeyOperator": "86e3c6125b38e45ac439cb95c2045fbde0c42733f205f4925eb2ba9d23fad0ed856651f1378aeb364c480837de855c37",
+      "valid": true
+    },
+    {
+      "proTxHash": "6ee0be87042267b34f8867626a580aa190d6afe3306b3ddfb97d3a0fb6f596f0",
+      "service": "95.217.187.31:9999",
+      "pubKeyOperator": "8e63c9e1e1dca75b1cc4986f774da70782b415127adb1f81d57e692ab1f425b50bf806544d7407d22cefb9351ea3150f",
+      "valid": true
+    },
+    {
+      "proTxHash": "1dae04eaae642a2594fe3a0e7c0382cedbb8d6743f7c9bbbaa0449af59c3b7a0",
+      "service": "8.219.205.129:9999",
+      "pubKeyOperator": "9344fee70f898489a569284c66010c92f389ae2b91f94d5ecdd647689c0650b10c703321a3621e570b3efb112c6ea909",
+      "valid": true
+    },
+    {
+      "proTxHash": "6400c08370692c4bea2d8b3d51f808746e63b39c678412671514afcf22609de5",
+      "service": "82.211.21.6:9999",
+      "pubKeyOperator": "0ccb7f4c1de8c75d8bc761fbb46d0d625fb416a416b22dcabdbd47becc821b80437f351abd48bb334531c92966ed3e61",
+      "valid": true
+    },
+    {
+      "proTxHash": "af53f4c094da40ce046f2a6c06f860d6354f5eb476bdcb1926dc62505bfd84ac",
+      "service": "188.40.185.132:9999",
+      "pubKeyOperator": "b9ef1d26b6efe356dc98850c9d2709d59da2997c1f689c5b86fb4bdcaa8b4e926d49ee635312cf4864e2ffc140bc5bdc",
+      "valid": true
+    },
+    {
+      "proTxHash": "0c0702ee0b2c1095645fc3acc5de92bcdfdbbf6c9e906a1d0e8985a14ac0438d",
+      "service": "51.195.117.19:9999",
+      "pubKeyOperator": "85a5848a13b4cf30093432e0b4d07243156a69f8d3bb4bd635be49d36fd98e8de3a65391e8f57bd534be801ce43b7cc4",
+      "valid": true
+    },
+    {
+      "proTxHash": "a116c0ec761f0542919fbf226b4c8d77a57ef064e09df201dfe9aacb0d9018b6",
+      "service": "149.28.247.165:9999",
+      "pubKeyOperator": "a1fd2633c2504c990c6715b22f0ccd2863d7827592de6e69ad5842135bcdd782383dc0163f21c5bbe76711b608412ee1",
+      "valid": true
+    },
+    {
+      "proTxHash": "543773032a5c7d9af702c18b2fe2f1b9c7b6f020d1c14613ce1cffbcb5d2c122",
+      "service": "104.236.58.131:9999",
+      "pubKeyOperator": "85c417521186888df0177c8208d2aa1f61d191eaa178e2e63f959c7ffb4af1a46ce31c5770d539dbb8f159c2c4eb1ea6",
+      "valid": true
+    },
+    {
+      "proTxHash": "fcde28ec31d86b57bd536c0ee818c27bb016b11f9408595c760912084473f993",
+      "service": "82.202.230.83:9999",
+      "pubKeyOperator": "0d6f95b3f2e522a21badac5569b62a09fbe860d302cd7389a35511c0211cdbdb0cb623c0dc40f8577fd172a62ec569ae",
+      "valid": true
+    },
+    {
+      "proTxHash": "e3bcdaf8ab9960668918157422a9139341a3e7b18d16e1603c9a5b91d761af6d",
+      "service": "49.13.239.68:9999",
+      "pubKeyOperator": "834bed8cbfb39d026a7872061cd1c63254df2fdee88b8cdb47420e92b6721421ac119dfd07f24f406db6cc66c1db880c",
+      "valid": false
+    },
+    {
+      "proTxHash": "a0c9b5138ac6709cc8220797fe818338788f85378934316d298c03e392d32b1e",
+      "service": "146.59.4.9:9999",
+      "pubKeyOperator": "b26c789c9fc11b03afc353ef8da03c0ff93ec03ae62ab18fd244610abe736998df539d6f784eefaa77d7355570e537b7",
+      "valid": true
+    },
+    {
+      "proTxHash": "b15684fe7dbe45cb6826072b6dd0f1a31cdc71a90329819534edc1cbb74b2895",
+      "service": "95.216.84.32:9999",
+      "pubKeyOperator": "b74b598141774ad6c8ea1b5001fbfad0f82f861f1723aecaee4940e72ea69f7b3643d33683a1ad74f8d9942f8cd89177",
+      "valid": true
+    },
+    {
+      "proTxHash": "a780b4d2e293ae7064d2c8e69714d105327cf2bc8dde7a7d2af1e185a3e8e8ef",
+      "service": "82.211.21.3:9999",
+      "pubKeyOperator": "07061624325afae759b764c97f2a37b657c4e9cc0c372beaeb6ef76afa6fd1101eb9264c3607b39329bcb43a86172134",
+      "valid": true
+    },
+    {
+      "proTxHash": "5d47e4f3a15e472c1a7f8deb474f82dc440ce769c07c9f6fe7918542de096004",
+      "service": "95.217.99.210:9999",
+      "pubKeyOperator": "b63a0aa8ecbfb23e429fbce85369d878b02cba9383b5cd1b41d06af836f9f754d897667a767ae065a672609e7cdc467c",
+      "valid": true
+    },
+    {
+      "proTxHash": "5cedca64d83b6e11d34314639d62c7f355be1f27d9c20f5dd17add9d4dd0f33c",
+      "service": "82.211.21.182:9999",
+      "pubKeyOperator": "967740ef7542035d097822a80648998181edc5f86b7a85a10febc5b52cfb2e86c94fd1851892ebca4c0b3b071323e051",
+      "valid": true
+    },
+    {
+      "proTxHash": "e15a56c66aa04e937740c0a151e7b14732f62913d992005e913244c2bb12dddc",
+      "service": "85.209.242.17:9999",
+      "pubKeyOperator": "94f26fc407123bd11ec67a2bffede806649ab6a733473360e11c53fa9c4213eeb487a4f537f37243d48869c02d5a7f84",
+      "valid": true
+    },
+    {
+      "proTxHash": "3b154e9da84f0f2f2c88b3d79a24296baefce3a0af1e26bbc051104d8de2877b",
+      "service": "185.5.55.136:9999",
+      "pubKeyOperator": "9201a6b39c9976bbb4c7c11168493d0afa5f5ef73e8e140c7c359b8ca8f63b3a70ff1aab941b21ca750ecc002f9bc27d",
+      "valid": true
+    },
+    {
+      "proTxHash": "20a063fdf88b36024774e05419248e84f09a76346c11378167601bca596e9a0a",
+      "service": "95.217.99.201:9999",
+      "pubKeyOperator": "adb39d9021a7057ed18ab7147db95c794db45e1ea9da4d1f6e95f540e4a8c7a2b18bf8e1dd9b30344c9c418fdddaf752",
+      "valid": true
+    },
+    {
+      "proTxHash": "c1d8124606ba752d78731dc950f20db6fe96d1e511d462ffa51fd540bc729f42",
+      "service": "188.40.180.136:9999",
+      "pubKeyOperator": "855c5dd5e0c34310147017aac3f217b05c4f7c5baae6c20f2962d526278f587cf9dcaee729b80a42c8a323fa2d54b983",
+      "valid": true
+    },
+    {
+      "proTxHash": "e9ae6eb82ba6f8e5f24481db185865f3a6cdc97db3708f97de46f57a23bc9350",
+      "service": "78.47.156.203:9999",
+      "pubKeyOperator": "16689fa24ea34f08ac639f3adf4d907e0c73c067efca6b54268c28730cc7514428bf48cfa8294e41d015291bb61b73f2",
+      "valid": true
+    },
+    {
+      "proTxHash": "8791812c27fd9e3fe3fe5ba400c9d709ee09b2c3399a53d32d55e0ef70182c51",
+      "service": "139.59.231.57:9999",
+      "pubKeyOperator": "14ef57b0e1c761b0fe0add1d6b761d0775d979b9f5c84faa95f82cd7d169f2d9130995df5135275706a81426819cc849",
+      "valid": true
+    },
+    {
+      "proTxHash": "ae56021d72b82a35e8cf13588c9b309070bf1adcea4557ae50b16f1d4108c9c8",
+      "service": "188.40.182.210:9999",
+      "pubKeyOperator": "831691e51184b59bbb130aef9fadc068ef877faad9fd7db92fcea7383fc798d1b4bceed4163c43eebf9a44f2faccd522",
+      "valid": true
+    },
+    {
+      "proTxHash": "035b9cbe7f9fd2c4674b34008200927a331abbfa89c3371a4c21e4f3c7a7a6f8",
+      "service": "45.71.158.54:9999",
+      "pubKeyOperator": "88258d708024ef91d4f8e43a9f1a43c46efa5e49834eec4ed43f041c7bbcb3c1467c4398cb58ed4801a166b98f10c8c2",
+      "valid": true
+    },
+    {
+      "proTxHash": "ecfd7f8b774855f1604c9b946cee860cc40ae606adc27f7341a87bbf11f40e21",
+      "service": "188.225.75.5:9999",
+      "pubKeyOperator": "81bf34de9c88dadfbc1410c4186bc4ff82bc81989f4e0b974858ff047f9b026794bddd535c1b1ce87185ae67d2b9ff78",
+      "valid": true
+    },
+    {
+      "proTxHash": "54a0e55725a32c0e34f977d2af7172baa8274bcd9c7fc30ac5b543cfba6bfe94",
+      "service": "95.216.255.76:9999",
+      "pubKeyOperator": "1536dd75a491252feab620f662e53f50ebca0a096b83051ab03ef1ecf8c22469410679f2c0252f1c61bd06a474d81b7d",
+      "valid": true
+    },
+    {
+      "proTxHash": "ce9b0789fbd6fba9616405c535139bc9f1f3b6eac418897158512df34deed15f",
+      "service": "188.40.241.100:9999",
+      "pubKeyOperator": "905096907c1dab513f0716727183b476a929fbc9f9a2a423b97ee99abd9a3302406da1f25e1330c7b53f7617ea93fda4",
+      "valid": true
+    },
+    {
+      "proTxHash": "eaed790d0b07d31430888b04f47294ea5223aacb3068423d7b55120bf9072401",
+      "service": "88.99.11.9:9999",
+      "pubKeyOperator": "b394a4b83297a3afd859dc108ad73608dc474111cb40249b2600f8aae87422d6ccfd8b478ce2a0e8f739377ad0c3ac1d",
+      "valid": true
+    },
+    {
+      "proTxHash": "eb48654887ae026a1df63a93d322e5e2e67fa4ce32c039b979b0ea25bff3f1b6",
+      "service": "132.145.158.145:9999",
+      "pubKeyOperator": "91108f57509ba0c415093840e2448efb62af23998e79ff96e815e7967576e3374708121f578b391a65a4e9f18082d828",
+      "valid": true
+    },
+    {
+      "proTxHash": "bb0f4459a4a593d92da640b3c647ac4b34782a0b3352b9633ecfab71ad4fdf85",
+      "service": "64.176.8.92:9999",
+      "pubKeyOperator": "9676bcdcc6acb1f1735b655d6b71af1b91d8b16b690a9f41c744ffdc3e8d6477bf11551ffdf3c8fa2221e7bc12d4102c",
+      "valid": true
+    },
+    {
+      "proTxHash": "a3fb3038d99c35fb20c0314abf9bf1657811f8f7ade49044a3d16b4a547d33a4",
+      "service": "212.24.104.9:9999",
+      "pubKeyOperator": "17e26dc2f3aa80354cf191333030900af4e4a339f32a59cc79a5ecc0e3b15d3f9cb2fa8a6203c8417d95edea56211b03",
+      "valid": true
+    },
+    {
+      "proTxHash": "56b257caab48f1c6a4c88dd1c86e38a2e52ee028ff45deb55efc82fa5e3b458e",
+      "service": "188.40.175.72:9999",
+      "pubKeyOperator": "838d8fa80eedf154877df254427ab23c9377b3553b21c0c8ebbd882f870b3e2e14297a4e337ec5aae3e05c710a2e664e",
+      "valid": true
+    },
+    {
+      "proTxHash": "aa3ef1b4973f851c39ffe08e42622bc6403c2e2bbd7e8a89efa33f53eafaa060",
+      "service": "82.211.25.105:9999",
+      "pubKeyOperator": "086f5c0d57ac779daae188eb2e177f49ab2dfe26114889fa0a7af5dcfca25cffad47f2b4e1cee0d90736aac589a46283",
+      "valid": true
+    },
+    {
+      "proTxHash": "afac5e66e66e8dadf0e75be50e62d1842a8773ffa5a17357497358dada4d1cbb",
+      "service": "188.40.163.11:9999",
+      "pubKeyOperator": "b0179668dea16239d2722aad88b3002582ad1d1e372d9fdb214fd44eaece8e4295fd43d0c8a5af00ab7e149c0c3ce508",
+      "valid": true
+    },
+    {
+      "proTxHash": "89c22358f68e42fb8bc7f56cb8dd842b0921bb5b392a9d5698983bdca8644f1e",
+      "service": "144.202.120.171:9999",
+      "pubKeyOperator": "9921fac5d7ce43af610416e41a2fede183981e4990226855a9e9b1662e8ac00af8eec84b4ba1da6213ddcc70d48147a8",
+      "valid": true
+    },
+    {
+      "proTxHash": "b83612423993b9f125431e90c1c01da5c4d5e31923e0976141073c4a9d566340",
+      "service": "147.182.150.185:9999",
+      "pubKeyOperator": "a9757514daa4cf1827031454a26f9869feaf4abfde96794338486bfe4404d8ef970199865ee018731792ee7dbdc97135",
+      "valid": true
+    },
+    {
+      "proTxHash": "0fb4333041be1620ce1319a58180c2b12600a3e5a6b61475683c102246e0bc94",
+      "service": "82.211.25.73:9999",
+      "pubKeyOperator": "94269ccd4003ddc0ef768ff023da06457c60b6adf7cbdb1d38a27fcb90ed59e890505bba255390170ea76d49683cef70",
+      "valid": true
+    },
+    {
+      "proTxHash": "75357ba3fb4ac057e67993de9ae8b56f7ba2b2680021a80ed2a10a8eed31a3e2",
+      "service": "135.181.53.232:9999",
+      "pubKeyOperator": "a0caf2d097cac09d478e1e7992ec6e8423f7962ed1aa0afce5a2fb34956785fa758c5d2cde66d80d69b126e1ad783b56",
+      "valid": true
+    },
+    {
+      "proTxHash": "1bb846e890e938b9c3f9a0a0adc4eaa66d1fcf7d06ab4c397344536daf31be0c",
+      "service": "85.209.241.36:9999",
+      "pubKeyOperator": "06dfca6812726aff821fe27eabe48051ed218a0f43948a902c97a348bc44473f3e347d1390ceb65b7ec4b2d4e7f90b25",
+      "valid": true
+    },
+    {
+      "proTxHash": "0e9b6f4856b31db84b1e10d8378adcca99ab571dddb602b5f7176d3ea8ba76b7",
+      "service": "135.181.50.32:9999",
+      "pubKeyOperator": "09b9e4417ac9fc8361be0c5bd30485b4a2c0f5e52cd6c685dbdff7a3e6a0e77a508d4772abe8d9ddca6eac5d5a18625c",
+      "valid": true
+    },
+    {
+      "proTxHash": "6a86eff1d0b937da4f750bf212a686e1e81a10f24a59f8a274b78f6791fd67fd",
+      "service": "43.163.231.23:9999",
+      "pubKeyOperator": "94ddbfd70e4d103e5907abb2ffd8580bdc8cc9060c98d2b31f0cc062270079d946ce7c46d02d2f9f807cd2342d38fa7b",
+      "valid": true
+    },
+    {
+      "proTxHash": "d9a6f7544671fee2f823404e51beeaa1eee8b208b9bdeddb915d05e614484fc6",
+      "service": "188.40.163.2:9999",
+      "pubKeyOperator": "05c3c84c3ba97f186b454882eefc16ebaff748caf5d3b5051ebb7302fd5448d83e3929f2ef697f6e0d7dda4d643ea8bf",
+      "valid": true
+    },
+    {
+      "proTxHash": "d82b40380059e3417da1d00a6a6bcca527cf886288c80a4e05e2870a078f0ddb",
+      "service": "45.63.120.66:9999",
+      "pubKeyOperator": "94de03921db225779ee4dbdc3c73efd2c043559c8b23a291264a52a0ae7d19ead392d89ca7cc981f96b52666bd3b6f15",
+      "valid": true
+    },
+    {
+      "proTxHash": "3510b0f3f1635eb2568a56db642c9502b72bd78e3c89fbef098f159a139d9d6d",
+      "service": "135.181.8.83:9999",
+      "pubKeyOperator": "1615d592000e2c8e31b574e160e4f3ee32f272c8d9dd4ddf3e5df863f6499bbc06009ca98a902b976872cd9e585270ed",
+      "valid": true
+    },
+    {
+      "proTxHash": "aebb4d74c20efc13e37078118a39c6f1f29f1e3e5d65133631956fb67a21e64d",
+      "service": "69.61.107.225:9999",
+      "pubKeyOperator": "82c44b0e655780ae0b1d4e96eeb49e6a7c48d5d5c00d112cb8822e2fcde9d9cbc82a64f8c5f4de6223c775295e446543",
+      "valid": true
+    },
+    {
+      "proTxHash": "8f76889580f945ef4bf7ae123233dbc494e73132c74ea1ceadb18ab30b4aa64d",
+      "service": "188.40.185.134:9999",
+      "pubKeyOperator": "850564936ada390210f1dc1eff78b827c82658dc7ac8b9ff0b9556f2f65570c80fbd031a95a6045a2d47464dc483a718",
+      "valid": true
+    },
+    {
+      "proTxHash": "88611d51071bf30b15db0a68ddd292cef0d1bf22d76db7a3db0d26e4698a89ac",
+      "service": "8.219.155.151:9999",
+      "pubKeyOperator": "0c1344cb79e5f6f5ca566d6e28a4fa89a43a37d06af20f58bad3f699a55eedb470d2f29a8e73f0fc5d49bb9cfea4913c",
+      "valid": true
+    },
+    {
+      "proTxHash": "3c21a81af32a9ed044900b90548d751deb2fc043925594a856214b96d24f2bc5",
+      "service": "188.40.175.71:9999",
+      "pubKeyOperator": "85c4227da8434eef4d3b9ee1cdbbc536c8834625c3dc55649bab2f57b77b718232819a90c8b1aea5aac27b44ffa2145f",
+      "valid": true
+    },
+    {
+      "proTxHash": "2524850ab5600627d88f68f44c76e0558a326ed12febd746dd5ef05f9b17bb44",
+      "service": "85.209.241.142:9999",
+      "pubKeyOperator": "1487ce9fd2001fc3d30496fdf73ce521369123db23a52f2edcdee20615a4c1ef320a8b166d6a8967776aa988e3f7f6bc",
+      "valid": true
+    },
+    {
+      "proTxHash": "8e483b9308737fe836d71967ddb634559a5c63c8cb8d495275952e0f6cb5a717",
+      "service": "188.40.190.34:9999",
+      "pubKeyOperator": "1113e6dada64581e5e358d28e3c8c20269ec5a6d0b01bded30bc988ebfc816cc04ca2cec66b120306209ce738f0f10a5",
+      "valid": true
+    },
+    {
+      "proTxHash": "7c3556b0b2f7683b8c125f0438328bc05c014b1e515b6e5b8421ca0c4e9368e6",
+      "service": "95.217.125.99:9999",
+      "pubKeyOperator": "950b07c2e95b0b8caef5b7b8a64a51fe660696a6433db327b6e0b325c0f26ea21cd527938d54233d338a27604f321e57",
+      "valid": true
+    },
+    {
+      "proTxHash": "85ca07dc2107988d0903d144006743d29e8701c6d90c3e46b6e8cdf60f6f738f",
+      "service": "82.211.25.176:9999",
+      "pubKeyOperator": "02948eaa492197367edfb0605592a7aaaf0058bec71b090af483dfc0f9bde93b4915a9cb8decf2d85eb692b50959b649",
+      "valid": true
+    },
+    {
+      "proTxHash": "c7537583e7b2ab80973cb1dcb8d70ecf14898038cc92a6ae6f9ffb5281574630",
+      "service": "136.243.29.199:9999",
+      "pubKeyOperator": "93f29b1ca6222b39e35b9fc398798e55ea290b25ce1bdee513a84dfe370e506a299894327240ce5588ec413daa84f8c9",
+      "valid": true
+    },
+    {
+      "proTxHash": "f4cb0938dd2d5843ed0bcd92d7609b5d4324cc986eba5bf4b8afb643bd31ac8a",
+      "service": "142.59.178.83:9999",
+      "pubKeyOperator": "016844c9d0bc3058e75dd52fc52486943a07ab3a19ca91ec2e4aa0eafdfb8aa8de83d94ceeddb30fc7320ad37cb27fda",
+      "valid": true
+    },
+    {
+      "proTxHash": "9db07647ecebfd67b71a6d015ef373353641ed189b1157420ed9a4f1559b7c7a",
+      "service": "91.222.239.115:9999",
+      "pubKeyOperator": "90b0d61808377eac02d62986d8a384729d23ea23afb9b241875bc7aaa7119668d459c559726b902f057dd65ba685c42d",
+      "valid": true
+    },
+    {
+      "proTxHash": "e0f467ceca3137f6e4d7fddc88c61ec43a7536a5ddf62e9c0c7affdde943fd8b",
+      "service": "167.99.205.145:9999",
+      "pubKeyOperator": "0420b5160aa3deb742d4dd3d079f5d798a3c3defd59a34ae25b1637cde754a4b9642a380012729ca6810e97899c04fe1",
+      "valid": true
+    },
+    {
+      "proTxHash": "81dbd7d6543a002ab33225f8ec597cfba0d17b3d5226122ba9ca2b8afb2b0a2c",
+      "service": "45.76.128.61:9999",
+      "pubKeyOperator": "143de01e9690228288e8ae2d465fca4a164ef8bf3c2eea2d18dda2972ce7d637014c8db285259fa3b19c94b54e0bf645",
+      "valid": true
+    },
+    {
+      "proTxHash": "da490287ad389dd05e6faeb8a685fe1c65840cf3c1438a38f04483d3adefc78b",
+      "service": "178.62.128.51:9999",
+      "pubKeyOperator": "89647f7632aa1d2c39469658ef7fb9046a2dc64dc2002a4d0b282b59ccb2547aa42a0a3b68b19dbbb1a994e41d9b424a",
+      "valid": true
+    },
+    {
+      "proTxHash": "66ee8e4560f013ac8a2f7ddc1c9835ff6330ad8641ad795140a8187f2f4f19da",
+      "service": "82.211.25.63:9999",
+      "pubKeyOperator": "835340ee087f26f79447f3a7fe297279ef8df88c43cfd659088ae6a1c7bfa9f5788947ad8c2e0cc3ca4a59e5d1b19609",
+      "valid": true
+    },
+    {
+      "proTxHash": "8cd8e70dde38a2110a12df3860da528d9af5e66656d6efe2e1794796cd31eef0",
+      "service": "82.211.25.36:9999",
+      "pubKeyOperator": "11cd5837b5c4654d177b351f0ee4e0be2a5eef0bff037a544c2f95eaf662c2c23d9ec59b366322ce59bccc8b3eb33104",
+      "valid": true
+    },
+    {
+      "proTxHash": "a2053ebf527fad06eb8fca90409d018511da0d2f2e68fae6e4396f95d8400583",
+      "service": "77.232.129.154:9999",
+      "pubKeyOperator": "a002f35e2a6728cafbd9de341fc62bee194592a3ab4ccb0dc45fbae2d95f51b6123574d73eb527454c6fb36ca6498b10",
+      "valid": true
+    },
+    {
+      "proTxHash": "bdae97f674de60d2d766c0cda1943669355b582f479a593b47d9fa0354d69639",
+      "service": "188.166.190.208:9999",
+      "pubKeyOperator": "86c024505c3db131e15aae1d6098f72a53e490d9e96f2b59927a3d80504217e145c8a3e3f777cdf8df0a89bc117b523e",
+      "valid": true
+    },
+    {
+      "proTxHash": "b0cfe2f82907c5a9804bfc65bb98ba1c78951252bfed6ae0ddc0e35809b74b23",
+      "service": "188.225.84.3:9999",
+      "pubKeyOperator": "0a2fee62cd4f2eae4e19039dbc5d77126d50efca27d2596840aa51e40035ae1562c9a1227468f3d9b075b9aa83ae0bb6",
+      "valid": true
+    },
+    {
+      "proTxHash": "93f4a4d224914ecd7546c2ea0d69a24bdd82b89bd6b5ec07989cac22c6383176",
+      "service": "134.209.197.15:9999",
+      "pubKeyOperator": "93eb6685495987279171cca7537c7a41554ac8b791f75e1c2decd8a80125cb3d8fb08745878b763e81625991bc37f6b2",
+      "valid": true
+    },
+    {
+      "proTxHash": "bddae505c27df1e03cea9691048d2ea6d59443df9bc876121b051ce799d0222f",
+      "service": "188.40.205.0:9999",
+      "pubKeyOperator": "8f88c1b4f3d8f658e66aa6cd78e6b422ffd67833c14ca3e9404d66f38d9c2d588c34d799465d47f50c30b7fe06302e6c",
+      "valid": true
+    },
+    {
+      "proTxHash": "2c251d609e2b32a23720d18527b351fe2d72c716a97d2934aac142a618f3dc30",
+      "service": "85.209.241.230:9999",
+      "pubKeyOperator": "0bf4e0f7bd77af2fa2e6d655e84726cf85169e21d67ca3292a8b8acb4654027e2ff4fe9fb34565b6b19f2c05d32336f7",
+      "valid": true
+    },
+    {
+      "proTxHash": "a75c65443807b24a4bf2bead6deb42e32527b1593956847fdee18042ec4fa6ba",
+      "service": "45.76.226.149:9999",
+      "pubKeyOperator": "8aeea29ce50d5a5612ebb89bbe631387412cf8a4ea06a4d3583aed8893eb56f53f3939da688fb251733b8655df653b18",
+      "valid": true
+    },
+    {
+      "proTxHash": "5d464a29e7dba9da33898515d8b45db2c3702f4c909e19de43f7ae77c190c8f5",
+      "service": "158.220.80.239:9999",
+      "pubKeyOperator": "93ebffb7d00f195aa53d3e0458921672727c775fc8f972302b098b5ae5cd1565d1769d194d7aba1e8215fc3c0ecaf8ba",
+      "valid": true
+    },
+    {
+      "proTxHash": "f3f9b88c40eda82e0a6ea5122efb3c984ef7458922a2ff1e76106ba9ef8b5505",
+      "service": "45.86.163.152:9999",
+      "pubKeyOperator": "10f5fd3cbec286dd3197288ef7f8c3c071315cf8bc8ee44f7bc63aef16e2e462a53dd4944e1d6a014c499386e5fbd2c2",
+      "valid": true
+    },
+    {
+      "proTxHash": "3ae7c93cdc96938b4e108c10cbc5658ff770b550dd0643e38e2b34e976d322c8",
+      "service": "129.213.46.160:9999",
+      "pubKeyOperator": "836ee8e039fe69ad6154c3a338ff5ce1d3094fbd2de2f517b79ac7eedb413d5e490d66167812588167e5f00ea6273ef5",
+      "valid": true
+    },
+    {
+      "proTxHash": "e126864eda4a45bfe9bc77101a9562d7e0460888c6cf79d720f0b47405aa355d",
+      "service": "178.63.236.116:9999",
+      "pubKeyOperator": "04e6c005eaaf61afad64e28ec3c9096ae5fc3ad23531642dc2fc3dc74ead78ba785cf6a7c22c965a127b9ab4a13b317d",
+      "valid": true
+    },
+    {
+      "proTxHash": "4996fcbcededcec097c74d5d67dfd9e0a691d69fcf6b8551f7b8031d3947c165",
+      "service": "64.227.139.86:9999",
+      "pubKeyOperator": "a01e093f068294804e5f861af3e9e38ef63295074c71a761e4d30becb1990b03a706ce7510f2355973e1290b50e0c70b",
+      "valid": true
+    },
+    {
+      "proTxHash": "7fa4f46adc5ac94b565bb13546bc2de630dd25524ac2dce26d4f5ae0b6459a11",
+      "service": "104.207.130.246:9999",
+      "pubKeyOperator": "11b70a4e4c15676a026dd333c75a3e2b19daff4dfb8744cef911450b55d1886c4ca116c65203662476916e6233ddf239",
+      "valid": true
+    },
+    {
+      "proTxHash": "f184c431b25677870bd83d1cb49d5ba6a68d3d4ffff464301e3d3b3b066afc85",
+      "service": "45.76.190.82:9999",
+      "pubKeyOperator": "b9018145f392d3ddf4c03785e9fc8743228ee3aa230a979e421ee0220e13c51e8f502547c28479344de9b11159c1dd26",
+      "valid": true
+    },
+    {
+      "proTxHash": "d0437d0f347b12142723407e17ce4de7ee096a6db3e31ba9198972af5a22d23f",
+      "service": "212.24.104.21:9999",
+      "pubKeyOperator": "8de86a152b717509905c5a9e3ef7dff39bc37a2cba77c24627acbdf4d52a05a43c99100a892f20078849a6157d4b87f4",
+      "valid": true
+    },
+    {
+      "proTxHash": "53fa62033273eb2d5a178a9019dd43c45d8c4c7e3697648c4263ad6d3d69389d",
+      "service": "178.157.91.177:9999",
+      "pubKeyOperator": "134057c09733f406ba830414a436c1473f7382dd76d4a5c5fd73ff9a569af3b61e59feff1f5a17eef9f7cde976853f6e",
+      "valid": true
+    },
+    {
+      "proTxHash": "0fd63137e2bc071a00593dc8bbffa59a0a06ebb71650f12ca4eabd5ae2d9d2dd",
+      "service": "188.40.178.66:9999",
+      "pubKeyOperator": "96ed97caf750564962f5a847a877c9a01ebbba36ec0f4483a953e8ee5d44a5776cddcfba3d3ca3608ae549bd9ebf6845",
+      "valid": true
+    },
+    {
+      "proTxHash": "874c4500184dc46e1a1affe5bd02298977425c0aa25ee76787aeb0b77bb5bc33",
+      "service": "88.99.11.29:9999",
+      "pubKeyOperator": "9949033f1b836cec66e675eb7d943ff04595a4e19d9e51b31d79cec9bf113e4d83f7f119201ab07488bb1f691b0b7e53",
+      "valid": true
+    },
+    {
+      "proTxHash": "28cdae2272c4e52901cb76097e4109ff96d442a9d323f37cd4d325a07a0d49dd",
+      "service": "37.27.67.156:9999",
+      "pubKeyOperator": "9183c2be1a60f242b4a9d9882646e6bb06e0c44e8e8d78b8ca1e763e67ef6d14e57388a461057e210ac15f084c90899e",
+      "valid": true
+    },
+    {
+      "proTxHash": "9b255da43c2f0b9f73b449b91765600c8d4e6d05d22f82675fc48abf7596a581",
+      "service": "178.128.207.85:9999",
+      "pubKeyOperator": "1008b5cc5ca907c6aaa246fcebe7a4634e675ce8f618d24ba120ff5dcd92777808eeef3c977241564cf21e992eb670c7",
+      "valid": true
+    },
+    {
+      "proTxHash": "c5cdebf5908af66e3d8a211d4957c669e99633826a4160a4d32bc60476376066",
+      "service": "168.119.87.197:9999",
+      "pubKeyOperator": "8b20e275a0829e2328f0a0b0eadcc2c23d7394fcc23ae11e1f8135bb58126577ca85d775f379a60a3b90c20eb2d3774f",
+      "valid": true
+    },
+    {
+      "proTxHash": "217844f21811bd6b252a5b69f0aba44f340b2c51da923e20a656bfc8aafb8169",
+      "service": "178.63.235.199:9999",
+      "pubKeyOperator": "91728b730fb7ab123bbc73fbdab23f1522033e5935b93c27bdb99dca2170e63617e4ef1e005b714a91019f4b9cc9af6d",
+      "valid": true
+    },
+    {
+      "proTxHash": "600c8240fa9b2d7809df2efbb020952c07dc235f280ebd9525dc8b96e38780db",
+      "service": "178.63.121.128:9999",
+      "pubKeyOperator": "84134dedbd138f7cf498f664dabf26db61fdf6cba819a802d9e071ba194bda24df4ef33d754a2c812cfd47428b89225e",
+      "valid": true
+    },
+    {
+      "proTxHash": "41c38e77de66d6cac56305931f41207caa9062d0334afceccce7be20fc6ec937",
+      "service": "8.219.103.216:9999",
+      "pubKeyOperator": "93d82f1b54c7f375f2017da5e0b2c95851a3d60fdf0b7f72852f7cf25d5ed9b7a248055c622bfde0c5c32b42d802aa03",
+      "valid": true
+    },
+    {
+      "proTxHash": "61187db6de788e1d33925eeeff6e9240649c2212fe4dea03858391f675de0a6a",
+      "service": "193.122.159.143:9999",
+      "pubKeyOperator": "08432040c2327d48745860a5941208ac19d29c6e3ade37e47b3f26f2967bca708a2fd554cd66f8291de5bf2956c6a0df",
+      "valid": true
+    },
+    {
+      "proTxHash": "fac5e1cb0f57d2365f958273ea7bea178e7b12388b1ba2458760c6ff9e6fd14b",
+      "service": "188.40.163.27:9999",
+      "pubKeyOperator": "80b40eeae7b6f791060882fe2a52f14b10e6a909f18be5fe6bd5810f603090bc2b4ceea7d6080cd10db0f1e19eee671c",
+      "valid": true
+    },
+    {
+      "proTxHash": "00f2b6b872a94f92d8e95ed4d61110efddc57d2b552a33bd7748006477da9fcc",
+      "service": "8.222.135.69:9999",
+      "pubKeyOperator": "19ca46b2ee631b735c7684c80b1070c71e36a2a181c76780bf79e64de0c866657601d900005753caa71884e57943b9af",
+      "valid": true
+    },
+    {
+      "proTxHash": "619ed4c9a428d0dbc99c64aba5bba2786bb92feeb1396831114f6383f706ed4d",
+      "service": "37.139.11.87:9999",
+      "pubKeyOperator": "944b04e280eca3170d5b62253df16ee2cbd90dffc3ebb581fff7ca765663f619989dff2188fbebdc804da7a93eb31e48",
+      "valid": true
+    },
+    {
+      "proTxHash": "5543983a394d7238d3ff51526343892dc9463c9910dcd9112916265cb16b6008",
+      "service": "46.10.241.191:9999",
+      "pubKeyOperator": "82d60b38e24d7623ed6c7f5af41d967f18136c6b1b4c9ae2635c9a0e75c080f9c17bbd171f4457cdf3246ccf9852afc5",
+      "valid": true
+    },
+    {
+      "proTxHash": "59e7eabfed48907490b7568a5849833e9c79e2886f0aeaf660aa76bda93aa3a9",
+      "service": "178.62.172.197:9999",
+      "pubKeyOperator": "86c83c6f3f2295e4e323ff6898e79cc25e9879dced23fe8cb17d94b3ff79c8cbe814dcaa111e7158122db5aa0b8a094b",
+      "valid": true
+    },
+    {
+      "proTxHash": "d20fa966769975356d5ad281c77a1a9431bdf2b8dcf8c86d09186cfe173687ae",
+      "service": "188.40.251.193:9999",
+      "pubKeyOperator": "8898a39b22fc9e23db59fcc00efb970866f947f289cc549e3ef0c96f017f599447112c28bd26b43bac36aa0dbad4ccaf",
+      "valid": true
+    },
+    {
+      "proTxHash": "c7f1cca19dc1af017dd6a07c6881601a1171c31ea0e0fa139ac9aa5178b8c27a",
+      "service": "104.128.239.50:9999",
+      "pubKeyOperator": "0485f93cb1c4a7780d9154b6e850e6a29294e6315c2985200720a4c96a4d75a592ae4e5047ee5efb16f619495aec1ad8",
+      "valid": true
+    },
+    {
+      "proTxHash": "b295cbb1351b9c6d507c43ee7c1b393bac873039432f587ae9bf5f623fffd843",
+      "service": "54.37.199.228:9999",
+      "pubKeyOperator": "80389e6d198ac2e5947153a4500d3ff4684eccaa111941660d83c6871dbedbf4878eeb46587f37ee4e57fa048f69f09e",
+      "valid": true
+    },
+    {
+      "proTxHash": "9fdb9dc9fd5b5103fd9961484310a27590d15d94ee4bff67f5b2dfcefbbb7436",
+      "service": "94.176.235.197:9999",
+      "pubKeyOperator": "9337bb13f2aabc53e50f054f4cc6abd7ba5923903eb47b49ff29ce6a1b90a917d172fd8e31b20f479b309cfaecd5f139",
+      "valid": true
+    },
+    {
+      "proTxHash": "6534b58e8a1c39b3d56a6af2fea0781ab48b2076febc6ccba6efaad6ee46b268",
+      "service": "51.77.194.13:9999",
+      "pubKeyOperator": "b499a1e66a27405b5bb7ea019e01826474ac0c71fcc0d55625e7fc2c4526cdb2b361aad6a1644522700d66c70b3e037d",
+      "valid": true
+    },
+    {
+      "proTxHash": "4d9e7cec54885592f2324c3e96fd2ed3a4647fe4ec25ca38652aad12ed241e63",
+      "service": "85.209.241.6:9999",
+      "pubKeyOperator": "06461cd1cad6b0659bc9b2e066e550bc04a940dab682e3159262c6788e23b5d7636e7bbc8dba16f4d0835d598c6db2b7",
+      "valid": true
+    },
+    {
+      "proTxHash": "69c92d5073e00bbb10ce391a0e5a8c15cf59a6d42750249ad350aee7331c30b2",
+      "service": "85.209.242.16:9999",
+      "pubKeyOperator": "861a58f6d5495874ccb6fd78943b106f9078cf8ac0854b67d2feec6716569570fed7fdc569b160a882ab182f8237dda2",
+      "valid": true
+    },
+    {
+      "proTxHash": "15bfd8c4f721a7b8e5b2b99b51847fd36f0a8a6696c164eeaa6157b140ac6d0b",
+      "service": "82.211.25.166:9999",
+      "pubKeyOperator": "0bbd97acdd5fe47f71f05b14fa9d885db5095b02f20edf4212eaf69efbd31aaa957c272501dd328293fc892b685fb571",
+      "valid": true
+    },
+    {
+      "proTxHash": "972f35055a6bb93993c238836f0b994c089b26227cc5eff289bb930c12b45e5d",
+      "service": "62.77.156.26:9999",
+      "pubKeyOperator": "99d62b48218e801e3669c888c8090644b677377b50fed6db99c2dbcb983e9647366b13a4542aaa1eb46c077d7533f6d1",
+      "valid": true
+    },
+    {
+      "proTxHash": "79b0db2d77cca8b80974f743aa311ef27022cbcb7f623ac727f81b3e4256805e",
+      "service": "162.246.17.248:9999",
+      "pubKeyOperator": "81dada1cac0a87e925e4484020a17a9d83100b826acb743470e71cfbf0454073df05fd7a77049912441311dce93089a6",
+      "valid": true
+    },
+    {
+      "proTxHash": "6b527d4e1f436106e12d56fd36d17b753ed694cacffc2055a2ab2ae4bca3ae2e",
+      "service": "159.89.25.25:9999",
+      "pubKeyOperator": "9514ea887da4f35ef7c08fc72c0f8f01c2f3424854956e1c5a1cbad27205553df4055b0bba8f429b314ca1b7b96ced4b",
+      "valid": true
+    },
+    {
+      "proTxHash": "26b8c4d88eb8023857a737df91f63167285ca090513e0ea5c341a63d4bf34abb",
+      "service": "188.208.196.183:9999",
+      "pubKeyOperator": "81a51a08b536e66b818847752f672a3fc9cac77355a52cdb9ac4204298eae5c0cb10dc939542c90eba3ceddb0466588a",
+      "valid": true
+    },
+    {
+      "proTxHash": "2b7e92af1a9aae3580c1f41333fed9a3f857cea779a35c40a644b9227b95b6b2",
+      "service": "168.119.83.0:9999",
+      "pubKeyOperator": "8a2b36d444c587683d833a555faf2395b42b71ea93798ee01608b4d054b8d27d9ba20f642678d2ada8167e507ffaa01d",
+      "valid": true
+    },
+    {
+      "proTxHash": "a3d855d9a84ed9ec36993fe87635fa6e3e2089f5b18286297dcf827916ef34ac",
+      "service": "139.59.32.229:9999",
+      "pubKeyOperator": "aac0c81ba671d1631ba0f82085fb72bfb2f90f1076bc921874ff571c2059b43f653a7b487003a10395b971021b97fb65",
+      "valid": true
+    },
+    {
+      "proTxHash": "e86a2089fa30b1216ec9d2c8f57727a9734c8f7f08e3fdfc78002c717b794497",
+      "service": "45.77.92.77:9999",
+      "pubKeyOperator": "0c9e8f7f160e7c001834daf5966431ced934782898ec2042395be576b667b12d99a5076d68d0de076a581efa35f06110",
+      "valid": true
+    },
+    {
+      "proTxHash": "4797d8f141b4da04768f17610a10fc19fe135d14a39af67fe2c39029e9bd4982",
+      "service": "188.40.163.21:9999",
+      "pubKeyOperator": "15a3705fca8ac9bd074a25e0fc09fe5c9ba31aa6a0e46e8e4254a1549f0fa3a91fc566df1ea071d16d3141792feeb07f",
+      "valid": true
+    },
+    {
+      "proTxHash": "05991034adf969a27058d8cd2ece6f174cc1997cdb91ea1abb1ecaf6a701c369",
+      "service": "109.235.70.107:9999",
+      "pubKeyOperator": "8d56766dd40b24f0b4c9a19e18ff322057dbf25a9ed354fb8ae5853372bfad7086772ee6ae546239b33e7e8f78c8878c",
+      "valid": true
+    },
+    {
+      "proTxHash": "dcb7a6d7eeaa524e4f4c8659bcce17d4c275b841fac468ee84cae7afc1f18dca",
+      "service": "216.238.82.102:9999",
+      "pubKeyOperator": "0cc3e63623d7c4141109f63c0ccd7e4cb24c5743e2eb349a8ebe2b78d569c99b9796740192168dac8a2509733c803bbe",
+      "valid": true
+    },
+    {
+      "proTxHash": "a06379b62ca055d9c36a604163e71719dc589e8ebe58fe9b38768b8c09de6679",
+      "service": "188.40.21.237:9999",
+      "pubKeyOperator": "08f5a78a23063d060534bb4e90929362b984cf95f496068d8fa75fdc59c1f8d272a668b976bc553bac7c63d8c59ee40c",
+      "valid": true
+    },
+    {
+      "proTxHash": "6711160f9b48d72a1770e6af69a24149a1924e9a0590023e2ee56953b878fdee",
+      "service": "142.59.176.128:9999",
+      "pubKeyOperator": "88a503dd9d96998aaada1a63ab0b00b2623f82bccf0e0bcf044689b783b5d5e08c371c78f26571fcef2a172182b9e061",
+      "valid": true
+    },
+    {
+      "proTxHash": "be740e438347006aa3b68c8961be73ca7f5f90cd7af98787854050befa3cf6bc",
+      "service": "135.181.50.41:9999",
+      "pubKeyOperator": "191a2e7e564fe218dc410a01581d0a8ce057da5e0e6ccde7e5c52c46b8951c557a68661d5eac7b5f384c3c96ab369a49",
+      "valid": true
+    },
+    {
+      "proTxHash": "d20bfd90360cc88cdabedb639618a9ce1afe2573de6f70c6cfd41521dfd3bab7",
+      "service": "173.212.220.183:9999",
+      "pubKeyOperator": "91f2b69f3ed0a25958a881e84cbbe853a290688a35adccc83fe28adda66b3ad2e0748e11c2f0080d03eb281b61bea6a0",
+      "valid": true
+    },
+    {
+      "proTxHash": "855bc3bbd9f5cc14933915023bb06895809126c9cc9aeb727e99208ed46a3e24",
+      "service": "163.172.20.209:9999",
+      "pubKeyOperator": "16f53e3f647722ec64a75fe80ef6c3914343e627af6ee67b181a8c720dc76014ad77b387b68c445319d7fa2dbcb9af49",
+      "valid": true
+    },
+    {
+      "proTxHash": "cb324143ee99c6269a5942949a87bdcdef617ec54e61fd4fbe7518b48ffcabf5",
+      "service": "139.180.217.185:9999",
+      "pubKeyOperator": "8dfe9e8b0fc154eb50cbe674fa6b6533b4722b2d6653e4664b49165e8fab7d2e50f0161c9ef344f3e0918e28a812225e",
+      "valid": true
+    },
+    {
+      "proTxHash": "4bb68e455a18495b2c52b2d26b169a7e420ee909b674002e67383c682577ab63",
+      "service": "188.40.21.245:9999",
+      "pubKeyOperator": "97a412fd4cc33fb3eaeca6fcafd8951376375a0b6a2ae0652662d5f620bb68cbcfa0612419cad34d4e79ec8e2477aed2",
+      "valid": true
+    },
+    {
+      "proTxHash": "d818a9a3ec60d12e51e6f910c48b7a4177a096bb41baa3d5d5c70acf24178cb1",
+      "service": "46.4.217.227:9999",
+      "pubKeyOperator": "0bfedc15ab70e2cd12e556670e83e44c4b6a6c03b48165b59d002eb5e4052ef5b3b0b16660a67dd6c8a58804cd9cb008",
+      "valid": true
+    },
+    {
+      "proTxHash": "6f58d3df274246328dc22a55c6352bc399e7650cd1ab14c349de7300966788db",
+      "service": "147.182.210.97:9999",
+      "pubKeyOperator": "894131ba8b284fb90ead5db09ac48f412ee4ac5120c77f84241960861bcb7bb2a457af4d6bdc94b4a6b4ce868f8194d3",
+      "valid": true
+    },
+    {
+      "proTxHash": "3a91192ba54e4e43f93eba00e864791f89786747c999a872e2b07b672a2ff188",
+      "service": "143.198.41.70:9999",
+      "pubKeyOperator": "10085cd6070ba1324e6864a32d2ab940278a3731411f9f11b0d02da64292f734bf6b18411353f82a8e8542fb2a9d872d",
+      "valid": true
+    },
+    {
+      "proTxHash": "b8db2eddde53104c5270940e8f54c7f0c813765e85723105884a398b9bc90c20",
+      "service": "135.181.53.136:9999",
+      "pubKeyOperator": "15ee7e20aca17a9aec6ea834fdb290a705785f180e6578d3a6b95ab4d81611c914b6d15898a9da2f0992ce57e1ef8632",
+      "valid": true
+    },
+    {
+      "proTxHash": "092828edc081d3ba1a54f043259b941368f2c718881b06a9d347883b21bfe313",
+      "service": "65.108.74.75:9999",
+      "pubKeyOperator": "b1b38452732a88ee6949226aa693a7f96733facba4013764a38d46b831ec78d7f4bde1906e41c6869918b8f7931de5f4",
+      "valid": true
+    },
+    {
+      "proTxHash": "61686948244f19b81bb199ccd09e7023240663345146a81613a881519bbb5fbd",
+      "service": "46.4.162.113:9999",
+      "pubKeyOperator": "00503498fbe6c47a3ef63c885e2b91679194b389e423a1f061f2a5304fce52765cbc93fda64d6950a27fb83e862e42ee",
+      "valid": true
+    },
+    {
+      "proTxHash": "fe480ec4b76fec2d77c48f3386d391750f8f87fb38874c6a22d05a12d59aa45c",
+      "service": "43.153.132.24:9999",
+      "pubKeyOperator": "99d7fd7f2b1bb1e83fb2df2ccef806dd8f301d7b2211c841c026fc05d4ee7ef1fb24118c8d7b13e4a1562ec06243e7ac",
+      "valid": true
+    },
+    {
+      "proTxHash": "b0e233241fac342d1b7aeefbb12d4062b39dc0c3ab4564d752963748da4348d8",
+      "service": "85.209.241.104:9999",
+      "pubKeyOperator": "b3e17a3d15c5a71f51d24a67e5a8acb2475ccb86eb7a925c12f8ba8d86037190aa66b0aa18b135bc31167413b03038d4",
+      "valid": true
+    },
+    {
+      "proTxHash": "8f53afa39189ea0702a1d4577ef5a767ca806aa6a6407063b528d72cd48533cb",
+      "service": "8.219.52.8:9999",
+      "pubKeyOperator": "9223b9db1eb8282414ae231d944a651eba3932cf87d43de3944bf5b3ce423a68b26686a9d7b89b6b61d2799b7e664b16",
+      "valid": true
+    },
+    {
+      "proTxHash": "7809806921bd837b9f1540aa1aa7efbb1a0572c784f4d97e1dccd4d14c33b018",
+      "service": "88.99.11.17:9999",
+      "pubKeyOperator": "13d525fcbcd03d6f8cba238ec5874f40671afd2741f9ed151fafcdb5275de937bd2b1d769465c73fe4bcd10b58e5b19a",
+      "valid": true
+    },
+    {
+      "proTxHash": "4135a60699d25c0f396880ceb2a63a8683ea8fd2d97dcdf2c55dcdc4db221a19",
+      "service": "157.230.119.39:9999",
+      "pubKeyOperator": "8734dd6cf3888f55236757d6140b7dcef62711ba8a2c730e74c129103b3c266a875fdf7b5932684d657e4d466b5cafa5",
+      "valid": true
+    },
+    {
+      "proTxHash": "7011fbe537fef15afdc96905829b0ffdf711a00706937eebd9ce774746210cc8",
+      "service": "45.77.46.21:9999",
+      "pubKeyOperator": "98c54e5ab8a0217354e2c36c95413b735ca4adc8d28b6f4297f39d66b5b9e5089a94ca5c2d3ebe53393920a4ab8c4de3",
+      "valid": true
+    },
+    {
+      "proTxHash": "db85835927f1c0bd75bc48a671116448bce93edf60c6092b786937a0981356a5",
+      "service": "178.62.163.205:9999",
+      "pubKeyOperator": "96b8cb78267ab6d966f514aab91fe25110b1c5b8bcac6542a1f622152d289c9ba347dd75581b2ce6bebca24c30cb8990",
+      "valid": true
+    },
+    {
+      "proTxHash": "8410079cef81f5b6a054c5f94c528d6c9099a3301dbe6f02b0d87a361b581ac1",
+      "service": "82.211.21.226:9999",
+      "pubKeyOperator": "88403efbdd1fbacc498d5cb83b380591cbb18d9189e1900775e2595d608660a53a5428339f4f98d9dfb2ea6246b0ef71",
+      "valid": true
+    },
+    {
+      "proTxHash": "3ac77decb0cbdf1690a83542d246c7399a24056a8e075d554bffe3cfc720223c",
+      "service": "128.199.150.159:9999",
+      "pubKeyOperator": "043b0003dc221a22d62b50be90d91d4153ad05a53a0d5e5020090a68a56ac45d60e18520910246dc874e28c06b58f45e",
+      "valid": true
+    },
+    {
+      "proTxHash": "b223f91593eb4d660acea46a0e214a295af4fa4ba84f531c9be5af3fdc2f15b6",
+      "service": "128.199.176.241:9999",
+      "pubKeyOperator": "95c414c39b6c6f2bd891458bdecc21f527ff020d89f74a4aff94657cee8859fe5ae726c1eb8058a290e7c1d3fce5164f",
+      "valid": true
+    },
+    {
+      "proTxHash": "e32ad0c733e6877b4f354300f5615dfa461282f426aff4ca7a5a053fda64ab39",
+      "service": "128.199.17.8:9999",
+      "pubKeyOperator": "a4e2b5ae146812acbeb254fbc6e5167e97bd8b0f6bd278151d686e04e67148073df2dc1fa783edace6a4835ca303b92a",
+      "valid": true
+    },
+    {
+      "proTxHash": "15adbf1d69693bc5917f816000f8902d8777ae78551908a0d47b63a7fb3585f2",
+      "service": "146.190.24.98:9999",
+      "pubKeyOperator": "0c6d6d9055847419cb118dfcb410602539e4ca252b2bc956244f55116a8a012b62ac9d01bf98febe031907b86b5e1183",
+      "valid": true
+    },
+    {
+      "proTxHash": "42db8a61c1877ff70fa6b9328db26b02fecb0a2dffa05b05e92f960dd4c5e17f",
+      "service": "139.59.77.150:9999",
+      "pubKeyOperator": "0c8860aa3c05a9bfb80e26b49dae338eccd1e846523bc7e37cbbd270c2324b28ccff19f5a2db31b9d48e7d9cb6ff9e02",
+      "valid": true
+    },
+    {
+      "proTxHash": "8f3c31571df00f49027536bc5748c662b85440530cb5f4c2073c9e9cfc1171c1",
+      "service": "43.128.72.114:9999",
+      "pubKeyOperator": "125c7c33baa0ce81c1ffdee23d5b7d7c07d4dc3a80ced2563cb647dcc83126d0a686857d7930dba5e35a8c65dd5fe465",
+      "valid": true
+    },
+    {
+      "proTxHash": "5cc4a17b64e38c50acff9aea9eb8d28235aab868989db87a06a36d903f5dc57b",
+      "service": "178.63.235.200:9999",
+      "pubKeyOperator": "aa7018be9522d17f5b72c49035ed2178b399374b3556786bbf1964cd88fd4daf15abba9142f659499a253b25157d7103",
+      "valid": true
+    },
+    {
+      "proTxHash": "8a44f87f4068e9fcbbf48a27e9107fbb42fe9cd8b6262ba6683ec97530b36508",
+      "service": "188.166.254.106:9999",
+      "pubKeyOperator": "b7b2c324a57c182d9c23cb9e2e1158b6faf92a1c7caeacec03f1d89da94b9ed5f125626317654408a83af740985726a0",
+      "valid": true
+    },
+    {
+      "proTxHash": "880d5d8cdb3b23c2152ba1cff136f4d131c4b4f95b52a6068f63af4c7ed5f209",
+      "service": "43.133.207.248:9999",
+      "pubKeyOperator": "9784cab2ab02a1f6e2111218102739deeab4d9bddadca63c511d2e1cd7a6a2c058e88b5dfb80709bdece1bd8d92d4ea4",
+      "valid": true
+    },
+    {
+      "proTxHash": "04a8dd62c3686b0d5c106a20190ff6f49c15b554546e17370fbdede760962a58",
+      "service": "46.30.189.251:9999",
+      "pubKeyOperator": "11b96022504e08656113a7757c13727dcf2269fa3f8fefe9a665f56d76623fec8d13e522b441c02886f280a4c2cd726f",
+      "valid": true
+    },
+    {
+      "proTxHash": "74a08086d3bf920c0e56748bf2d0cfed1419f251d598fdcfad1213391d23db09",
+      "service": "173.249.53.139:9999",
+      "pubKeyOperator": "b6c673df3de1344b10160ce05099b1d477c40bcadb444a10c86c205bf0b4470874e64e8b92591f582577e1f207ee2b1e",
+      "valid": true
+    },
+    {
+      "proTxHash": "aa1d7efb277b44348b44d967beee3064c55c4f2deb8a35799fe823f8eee4bece",
+      "service": "51.195.116.73:9999",
+      "pubKeyOperator": "a83d2ac03722920d1e3280a921fa3db6579e7d9827a52ae451adcab997e3f63195534a92300b712a12bd6f3a8a284ec4",
+      "valid": true
+    },
+    {
+      "proTxHash": "125c10b837535081735281606637274cd30e6ef9f127dd5f823115423353de28",
+      "service": "95.216.109.128:9999",
+      "pubKeyOperator": "aa4c63ab5c1893e15173dc4ce5029e1e841006c87f007b8a128d45770803aa2ec415e5aa0ab013022c14484e788782f2",
+      "valid": true
+    },
+    {
+      "proTxHash": "eae5b1c863af17227ee1673d483963d42b2b8e4f6d600223f19ce75fbf95f823",
+      "service": "38.99.82.21:9999",
+      "pubKeyOperator": "901e88ee4dae968aae87fa1fb6155eab7c579ee044aac262932bbda42359ae40ec6b521f07b5d0ca728e89bd1198178c",
+      "valid": false
+    },
+    {
+      "proTxHash": "bcfa6690eed123657f92dba574c6b2641986b6a30abd96fde2f5e8351e9eba1e",
+      "service": "82.211.21.142:9999",
+      "pubKeyOperator": "8f0343607b479bb9a910909700e0824e4c223fe0dfc4c43a9f9d4ffad4cb2a3e44071f4e22af03003e2aa7a8c99c0cc5",
+      "valid": true
+    },
+    {
+      "proTxHash": "f3fa73d4dd8b023b3fd05c577b05a472de4372f1b3ebb6d58200ae3338bb6b00",
+      "service": "8.219.246.164:9999",
+      "pubKeyOperator": "12d8c5be6a14f3072140b54372af8a70ee9eab1436a10e9005bbe7ed1e4ee291aa5fa42c39fe617983fed10085058467",
+      "valid": true
+    },
+    {
+      "proTxHash": "1364d12920ea44df0e8e4f26a5d58fdaf60d8c34bfd5f35701620e3eeef56cca",
+      "service": "188.40.241.108:9999",
+      "pubKeyOperator": "162f48be26dd637b2ed3740aeafc8453aa7dfc720d5093bde2a0287ea5706a90f7ae99d2d26a425340e82c6ccc789aab",
+      "valid": true
+    },
+    {
+      "proTxHash": "6b2e8b45a3eb32ce1482e9479bdc5d4d7663002213325fd39ae26f72bf1bf787",
+      "service": "65.108.204.190:9999",
+      "pubKeyOperator": "99c81d91502ed10feb1fb1ae767f7864d59fcf2e5612674054cb907fceacc83f6c58561a717b457ece77ead1a9c58f10",
+      "valid": true
+    },
+    {
+      "proTxHash": "114335549418eb61993e1a89a8432151bb2a42a2539992d9c459a8ec9b17e610",
+      "service": "188.40.184.73:9999",
+      "pubKeyOperator": "0c4a920f75c4f071c8babc2edaa20a895f330601b134a248d5ee0611da6f76f4291c841b8bd0c80113377286c86f2c68",
+      "valid": true
+    },
+    {
+      "proTxHash": "5029d0dcb6ae9fbbd86065059aa0ee6dbb5d34f737805299bd7feebbe6dbfc95",
+      "service": "45.71.159.104:9999",
+      "pubKeyOperator": "82382fb5079153b39e1b629247f1c5888a74604ec1127be575d988fe623af0e7894967e71db131c8a274661777f82f8c",
+      "valid": true
+    },
+    {
+      "proTxHash": "849bdfd2fe1b32fcf9ae83b6b4440e9700916a928a192a20fb5402dcda988a0b",
+      "service": "193.31.30.55:9999",
+      "pubKeyOperator": "0cfba11a26e06981a88790d1139611ff3ab3592f98ee467b7419dbdaacd1e176bc18ec75906b5c34d2191ea5386f243c",
+      "valid": true
+    },
+    {
+      "proTxHash": "03a9d19b983a859525724f7fb0abbbdea9858ce722376d5b37475f8c83e44c9f",
+      "service": "139.59.74.153:9999",
+      "pubKeyOperator": "850c8517b234dc315b2abccbd8c7553f9928dbfa53feaa985a19168f1e9681691273801a0ae2c31b58820c8347127d37",
+      "valid": true
+    },
+    {
+      "proTxHash": "656c1745f2c4906c784c49e922816099303d706b54946d2822c5bd671f12d0be",
+      "service": "188.40.231.5:9999",
+      "pubKeyOperator": "09f8a0fa4d99f0370e57996c722a499d1eda917b74655ffdf6507af5fd5ae9f42659ca35d5b6748c8d05b7be56237f22",
+      "valid": true
+    },
+    {
+      "proTxHash": "2b759fd7c0da427dd1c5be252dcca80feb1c9263650219cb10ea544ccb18fd1f",
+      "service": "188.40.163.25:9999",
+      "pubKeyOperator": "953b13f700916f29a8a48bff1a73e10da8b6766b22ae1fc00b942a101708714caae184513e1b8374195e009de113f6a6",
+      "valid": true
+    },
+    {
+      "proTxHash": "a1c2cb5e077bbe87573061aea0f5f13bd046699bda99ca7732347f010c613314",
+      "service": "188.40.163.26:9999",
+      "pubKeyOperator": "0f632192b8c313743474a20ba23c22d4b93c69b38090bf43ba1571651f4ab5eb0842341ae14a33aed5a66814863ee725",
+      "valid": true
+    },
+    {
+      "proTxHash": "aa737be0bcf1c0bc8ed365b778e8b2e93c91872dcdf272dcb2d5597f8e4f1050",
+      "service": "188.40.182.220:9999",
+      "pubKeyOperator": "928156d91fcecaabef3471b803c87069e7466ca8e0cb686890700bf11ba88e7dc701daf6f1b4344f6d48b537c5cc2ee6",
+      "valid": true
+    },
+    {
+      "proTxHash": "b126f9b1a05a6257efee560633263f47755d1ab76486a31c2ef17d7f81f7d845",
+      "service": "82.211.25.104:9999",
+      "pubKeyOperator": "085a3b6f1e747579c963a6a02c9877513e0ba7ef31bc522dcaaa413a41216d71dcd47ea163aafc4ac33fd1959c9b5e6c",
+      "valid": true
+    },
+    {
+      "proTxHash": "e08e168225f8c14b149b781ecafb320618a5f22c759ba8f8054caba82c78df3f",
+      "service": "93.190.140.162:9999",
+      "pubKeyOperator": "96ba1fdab8f697eb1fa7acdbe2621b389b65389ef9408a721d7217a50531f1bb049a8c6ffea0be3e40e38fd6592b1ccf",
+      "valid": true
+    },
+    {
+      "proTxHash": "6b8a7acf27e7bbc816b9efd8a6d09911c5d2eed5b608aa03eceb8a0f7f5917a6",
+      "service": "188.225.37.46:9999",
+      "pubKeyOperator": "abfcf760e181f050f3682b6a4edc7dc837367c7fe5d80f9f8f8e5c81231e3ae3e68b55e30ca6f6946dc333f862682d75",
+      "valid": true
+    },
+    {
+      "proTxHash": "3e991c57ff5f5385b20b6bc70ebc3e8dfef1c53cda08038dc15a6d84d16f4777",
+      "service": "46.4.217.247:9999",
+      "pubKeyOperator": "838f0d9d3c3ed05b49a19ba5141ddf1e67d8188f3b63101c97d413dfb8675268c41561a04a15c3e9e7834769e68626e3",
+      "valid": true
+    },
+    {
+      "proTxHash": "7a26c877c1e2dafea292b54ae37c39be5c51f27b24fd7a1e5a634523b5526eac",
+      "service": "134.255.183.250:9999",
+      "pubKeyOperator": "8600971e849a6546907feda0de785b6e458fdf47aee1480de1e6b7f8c26227cb0de2c4e9dcaca1d29f0565e57ca8e4ac",
+      "valid": true
+    },
+    {
+      "proTxHash": "895ec3a67ca98a2bb86ddd22532a31936acde4a2482c7e8fb162595061950854",
+      "service": "139.59.137.155:9999",
+      "pubKeyOperator": "0a9ebc4d2c51be3ffc133a6e678980e13390e680d24dee1a4cd764489bf0f002f641d5eddcc6b45ff47da505e9d9e971",
+      "valid": true
+    },
+    {
+      "proTxHash": "d4aeeef5c7e16fa3e10ab669e854c5581ee149aa5dc9f75fde01d9ddb535e29e",
+      "service": "46.4.162.111:9999",
+      "pubKeyOperator": "b772c2aed08f45b9bd95ab656ca92b39063f281f20f26bf4d5e464b86952c99739bae19db47ea326ec54d71c7907e4dd",
+      "valid": true
+    },
+    {
+      "proTxHash": "0cc3a17dc9e832a415ef08fb3673bda84a5e6a3265b9777682da22fc89c17476",
+      "service": "69.61.107.249:9999",
+      "pubKeyOperator": "18ea2d3b6f64ea54e10f24dbf56df0615e4264d870afd4aaed6579e48ab53b00a3419e4dda48decee8ce04fc9628f72f",
+      "valid": true
+    },
+    {
+      "proTxHash": "d06263d0628755adbb9cda300f3e7a50a47742f3253d78b89e9bdc90e348fa30",
+      "service": "46.4.217.239:9999",
+      "pubKeyOperator": "b45b3a230fb00eaaee630340ca660755ba0976ccfa5db8ce0a75f226ac5b93b7fbb9189f65e32e4770be6a3a2671eea5",
+      "valid": true
+    },
+    {
+      "proTxHash": "3145ffe2aaa0e3322cfd9cd7524a0400e0e3582dccc9deb95e820882c1bb9a15",
+      "service": "185.194.217.23:9999",
+      "pubKeyOperator": "8323578f70e5ca5590e68efc4ed98835507c1773088f82e20c5de156ec0a3119e058b9f19b1f0065e898342d4677b5a7",
+      "valid": true
+    },
+    {
+      "proTxHash": "210d4d8e65482e2ad24ca5b61836ce37cd08158b7fe593bac42a0a065b0f3d91",
+      "service": "188.40.163.17:9999",
+      "pubKeyOperator": "8c9e590379dbe1b1a16fc19348179df85f7f828e3f1902271cb0ce89d1bb4ca32cab62dcb69be6bc328c09aeee4ff5fb",
+      "valid": true
+    },
+    {
+      "proTxHash": "7cb19372485f163893df4c517fed259b0a408735926b8ce456016f7c7f73274c",
+      "service": "88.99.11.19:9999",
+      "pubKeyOperator": "8d933650b01087c12660730c155b25de969361fcafa71194691b034ae92a0a5df327beb7cd4d9ece13b79ae456c73d9b",
+      "valid": true
+    },
+    {
+      "proTxHash": "9e8ecd117e722124e27e9afa92524202bb8f8b38d29f74d5fb80c236c7923586",
+      "service": "188.40.180.128:9999",
+      "pubKeyOperator": "88b5c294afddaf031a291fef7b536c3811a9b62a4d2ae3e4abe6d97bf2b4f0961d3b9e58c9bd944d2b4d2af726f0874e",
+      "valid": true
+    },
+    {
+      "proTxHash": "c12ab4e87d71b1f5213a23ba834f367263ea8aa6857142e58941746e4af9ca9e",
+      "service": "194.135.89.174:9999",
+      "pubKeyOperator": "85783af3e12e16fa3e314079c568894577956f294dfe7b30368829c3f1384cbe08980993fdf0963702fafb8aae19835d",
+      "valid": true
+    },
+    {
+      "proTxHash": "076a86b320712712e6e236605126bf90f5b3e1ca6378dda07b0389716e31f19e",
+      "service": "194.135.81.69:9999",
+      "pubKeyOperator": "8794b2e818d32974e727fd4b766a52a22468792fae65d4d37b78de0b986469d2b3ff80d5200ac3ae50ca6b8f13af12a5",
+      "valid": true
+    },
+    {
+      "proTxHash": "36632ecb3406198fabd0d1943afe452e7a185aaba934cbc64c95088fdd158816",
+      "service": "207.148.122.33:9999",
+      "pubKeyOperator": "8da5f8c2edc89cdcb0bbef9a0cd815f77aa51e6af66ac3aac4209cc22873d924b43b4ffe8930f510918fb46ac8c096e1",
+      "valid": true
+    },
+    {
+      "proTxHash": "04c64c5321d293dfc80026f3f4635db3c31c063d906e6c05fa85b36d896f2259",
+      "service": "82.211.21.139:9999",
+      "pubKeyOperator": "840ed2ddbd922234a83ad3df0327f824ca54486edcb6ec5da9c0e3fa53ba20b0c5f4349fc0072ffdfcbe2d40af6fcb8b",
+      "valid": true
+    },
+    {
+      "proTxHash": "88d26b93a53f887053f04a8c805ec4f42cefa6fe7fc9cfe526cd6dbffd4dc527",
+      "service": "82.211.21.140:9999",
+      "pubKeyOperator": "0316c4a4cf715c858d53b3bfec7cdbe285c6cb145545a42554b45784aa8b2763fe3ec0dcf7366773948f190992631799",
+      "valid": true
+    },
+    {
+      "proTxHash": "39d29a71c08a9de7877921a57a3624b73138dd0520ae358c1b476d74ed14f4a0",
+      "service": "45.63.107.90:9999",
+      "pubKeyOperator": "81b6d9c7821984cf77b423a0b10d842378e95cfbf9b85fa287c48e2e798862a5735950cafd26d5f84a9fc0af0fc6796d",
+      "valid": true
+    },
+    {
+      "proTxHash": "be4af6fab2cd48941b4ba13110cd4843090999ed9a80bf5228c34143042927db",
+      "service": "85.209.241.102:9999",
+      "pubKeyOperator": "8b87fb684d432b19f583f0a3c1f52fa5ecaefe4690190219eb44e2150fa1f9fce4ed0951ddb2b82d25a9116b0f792026",
+      "valid": true
+    },
+    {
+      "proTxHash": "6b806b7c0baf9df9fa6c2083b7ca5e1222f87ab16ca8d465045d0a26c07b26fc",
+      "service": "85.209.242.13:9999",
+      "pubKeyOperator": "9882b1a22ecc0050a3e8c7e99733505b417079c8b3db569fafb78a335e9a6982dbdd0627116639c8dc552e389cb023cc",
+      "valid": true
+    },
+    {
+      "proTxHash": "0bf43408a4dd07edd9642b4cb4786075979da099c245dafa1db3bc8ebe86dd53",
+      "service": "143.110.243.149:9999",
+      "pubKeyOperator": "b0d2e7505454e0164676dce46954bbf27c9c79204497cc9f8a7ea71318772ed2d5790083f5cd792f120861abdfe78888",
+      "valid": true
+    },
+    {
+      "proTxHash": "9d4c4462f3b4e38b6a564865bcdf5ba25eef4f2672882799372ac158e4d6da45",
+      "service": "8.222.132.84:9999",
+      "pubKeyOperator": "88f80766980d9d33cc75968cb1945bf408d18bf0504837246eda5faaf01dd4804aa8cb5db3e82f924c8fea2f200ce097",
+      "valid": true
+    },
+    {
+      "proTxHash": "9988bd570aead7eb60e5eb90f7f9f17d233a0d12316d35ec00514d6cf41ebc2b",
+      "service": "188.40.182.209:9999",
+      "pubKeyOperator": "86347ae62dd2f50a21c362307a08fa175873700ff6b4487c6bf7c23feaf408508808d6a27a9cb74dbdbbe648e35ad762",
+      "valid": true
+    },
+    {
+      "proTxHash": "cddb6746d679b557752125cab4ae0fe2b54b95da73afea5f40d193796176702f",
+      "service": "54.37.199.226:9999",
+      "pubKeyOperator": "94229e3fb5fee9e2e7e53d0d96b0c40e77e1a1598a87b91b90444a699b71b6a8e425b54f05927f8ad2086765f681ff5f",
+      "valid": true
+    },
+    {
+      "proTxHash": "110d16a7e4f4eddb9097cd8071455e96a3143293e6734227184e97895ebf98d6",
+      "service": "82.211.25.212:9999",
+      "pubKeyOperator": "18ae95b135aa06e06975923b1225b05379f951ecc8ce587d3684b5594c9466ff5d072263d233620790b4be9259373809",
+      "valid": true
+    },
+    {
+      "proTxHash": "04b8f3d920019be17e0c22e731e3d0e07c7d3df77f21506444f8ca68991a9948",
+      "service": "178.63.236.105:9999",
+      "pubKeyOperator": "11d3f729e18d03589e5795565318007ec11675fbcd970ff72c6d8534f0a9e582f00d6254d897e5563e90286a5ab2197f",
+      "valid": true
+    },
+    {
+      "proTxHash": "b712dd73425a1756d8eed5ea8bb7be4708dd5c49d8ea80d704d9b8717e7c9fc8",
+      "service": "167.71.227.113:9999",
+      "pubKeyOperator": "00f8d070885406a6421f378067ca65a7df5c33835875fe23c756f989af5ca7487d681edfb6d7e13661d46c7affee1aba",
+      "valid": true
+    },
+    {
+      "proTxHash": "dcde9bdd7f4de7498d7db448aa942c86938ee52273ebdd3eb1a5d11d4e975bdd",
+      "service": "95.216.84.37:9999",
+      "pubKeyOperator": "0581aa4fa0b84c39aa920f538b92d7e0680d88776cfec9d41f6f599d32cdc4d53d7976e92fcfdb8e0a3a1ea5a9650582",
+      "valid": true
+    },
+    {
+      "proTxHash": "5fae706fed2344c90c8163bd2321627c81bf9f2c08bbdb960387e2aa695cf77f",
+      "service": "65.108.221.24:9999",
+      "pubKeyOperator": "82867c36ceb8f26d1f85364c6a2fb778929019006539d49038919f3d7927bb594fa84d1cc3a655b2f552ab12f7b16bcf",
+      "valid": true
+    },
+    {
+      "proTxHash": "831838a9315f5c22323cf7378c34d68c48bf7fea4e350359308b6156f0ba699b",
+      "service": "129.213.134.177:9999",
+      "pubKeyOperator": "050e809e276d9e24b72e06ecca26a9de5fc47663c851b819a3bc64a21323e8f806c5859bf14477747a4b0474379fc5ee",
+      "valid": true
+    },
+    {
+      "proTxHash": "4b50b6b2edeb62b2bb100f5ea6826bc75397474d5acb34e7c851974095755f78",
+      "service": "192.169.6.87:9999",
+      "pubKeyOperator": "8f5c9df8740a5955234e2d7dc50e324b8e60fdbbf662e9f47cd603f312656aeb098aaae0558f0fa7d7c1d1189aa0c65b",
+      "valid": true
+    },
+    {
+      "proTxHash": "5f7e649dc00d0b067db9e7f054c56b0f9d2b057e28699be6e554d447dcaf6feb",
+      "service": "95.216.109.134:9999",
+      "pubKeyOperator": "86eae2e5fa1fd14f4223335c3d6918ede1b8fa1b9b541544ccfefe8ae43ff7297c6fab3a121f8d28cb4eaf36a7b52812",
+      "valid": true
+    },
+    {
+      "proTxHash": "32d120a25e4d202cbe824312a4f60e1779438d79ff297780b6f5c942cdab501b",
+      "service": "85.209.241.3:9999",
+      "pubKeyOperator": "835bfe604b2e633573e97f8717051aec81eea1445c6a671de0a11a7030cd359007a5de28877ba8ab88ca62b2eb372726",
+      "valid": true
+    },
+    {
+      "proTxHash": "b7919fba8085a30cec91df19ae59a5bd7c398132c2b4f9057e699b8ea1623162",
+      "service": "139.59.39.142:9999",
+      "pubKeyOperator": "0747c6caca6ca007a52231e7747938cf60e6b49f00e2cfc8b222883b7c86304474add2748b1cce7d9fb1a49ada8a4fdc",
+      "valid": true
+    },
+    {
+      "proTxHash": "deadac5e0d1bea2bfc8aca4a18d8ad7e404d5b82ecf39daf69e180276a6328df",
+      "service": "95.217.71.200:9999",
+      "pubKeyOperator": "8e75193279e07615842eefedc094e1cb2d3b8768f67c47acfd479e914eae5b9e6ec4546154b7b3eab05791caa213efdc",
+      "valid": true
+    },
+    {
+      "proTxHash": "df7e24b96123ad9213e290eddea3b7c8496fdd3473150c730b2e60ecee72724f",
+      "service": "107.170.13.222:9999",
+      "pubKeyOperator": "83d28d667a3c25b02c85002103d1ea4b414722fecc8ba0c7096a032c2b2b967b8a364a93edf2ac987a00c816b735d469",
+      "valid": true
+    },
+    {
+      "proTxHash": "cf655c475813d1d4702e30a6324d1f7ab1ccc89f709769a162d31938ee069f83",
+      "service": "45.77.170.75:9999",
+      "pubKeyOperator": "93265aa5641a2703d56019313cea8ebfbc80357b709b44965a60a9b55a453bccb8d69ab6a9e0f9395359aacf1db4e0cb",
+      "valid": true
+    },
+    {
+      "proTxHash": "f4ea8f3806f7a48f4fdf21d1b9286a66bc45671f632359c93ec298f5a2527cc4",
+      "service": "95.217.99.193:9999",
+      "pubKeyOperator": "aaa650bee30f2f2fc6f131a4e4540e34d7e64f3efc3fb30d2ada3789dade20cefd8f5b5270b9d279e5312f3af716d132",
+      "valid": true
+    },
+    {
+      "proTxHash": "6809b0ea4a39bdb585f4eab9dedb7a03d6e3b32894f23891ab613d86fec1258b",
+      "service": "198.199.124.71:9999",
+      "pubKeyOperator": "97c24f32399689a22323cb3ae63bd90ac35a9fb3f083f430040004711c9e55575a61f3bce809e7e3d8db0fc7b0b9f0f2",
+      "valid": true
+    },
+    {
+      "proTxHash": "77afacf1e55e721aac2a2e41a87700539fe1b175b1f1aa95351570b52d642b88",
+      "service": "54.36.238.247:9999",
+      "pubKeyOperator": "054aefbf6622ed71ae2c86fa04dbaf2ba786c2b697a51cdd2aac8c14fd05e72fb47cd28c5f966d37a5254186b5c8dd32",
+      "valid": true
+    },
+    {
+      "proTxHash": "34ebef23bd828837b1db592213ed3cb3b7ad52469a5e6e07cfc6bdcf75c39f0b",
+      "service": "46.4.217.243:9999",
+      "pubKeyOperator": "0fa4c0334aeeda3cf366e0305f6c8c44ce3ccc1a88182b6ad712f8659efee6011da77369b5c4f8e8cb82624ca572d1db",
+      "valid": true
+    },
+    {
+      "proTxHash": "29a647921e1be4ef93794e977e46022bdcc4fcf039076b1230725df6af10dd1f",
+      "service": "107.170.120.125:9999",
+      "pubKeyOperator": "04ce9678f43158ec2b2a033cef694f6fd952e945b87ab9b456348c50f479ef8f6517f3ebe200064bb45975249f5d80d3",
+      "valid": true
+    },
+    {
+      "proTxHash": "80b4892bf01e19ef12a11e87b1b595e3003d13f2a30dd4a9e4ee14525acee24e",
+      "service": "64.227.165.75:9999",
+      "pubKeyOperator": "14a25d333ceca6a28752e60ee2e862c7b4fed111074d1c73ccdfe7dc22f999536c6f8b59080dd1c1d397fbd5aa200954",
+      "valid": true
+    },
+    {
+      "proTxHash": "6701c74bbd22b937616cd927afe043d8e26ea7261b6faee2599b62eeb2f66f50",
+      "service": "165.232.35.88:9999",
+      "pubKeyOperator": "8b2c822a369fc46b7aedb4a1f3740ea76b58242fd5749b2d6463267897c2e2ebede16e61fce20586c91254fb4b340acd",
+      "valid": true
+    },
+    {
+      "proTxHash": "fabd4c1e1dc01895f6a1f386151c67631727d3d8025f47315da3b211350e2187",
+      "service": "82.211.25.152:9999",
+      "pubKeyOperator": "1232235225905ae0f2f765dcc3908e2e40d241bf9783ee7e39831bf76b620e3c019fdb522900563dc06a0494b036c27e",
+      "valid": true
+    },
+    {
+      "proTxHash": "d8e26e34c39d79a98ea086e9f64439a7ebabe9626280655c8e4b0664d8766813",
+      "service": "82.211.21.230:9999",
+      "pubKeyOperator": "0662ce293367288a2a20709a8e602919bdb529aad4a3c2fe68b0be06b26d71010d8aa98cf23af31973e7fa7f2c4a4868",
+      "valid": true
+    },
+    {
+      "proTxHash": "54e92238c523b445d9750e4a2ffa000ab3736276680e3e7dc866fc1ec4351d3d",
+      "service": "178.128.200.170:9999",
+      "pubKeyOperator": "b6352d96f3e3190f172d07b50d9d90e25eccbda4ff4d5ef2b7e9b2069f0c319c101dc963920bca8e9a84f438e8fc08a2",
+      "valid": true
+    },
+    {
+      "proTxHash": "2ef7cc83b6986ad8b2e09b94ab93cc11d336085eb13d14b8777b718049480574",
+      "service": "45.128.156.80:9999",
+      "pubKeyOperator": "963a5684158950188d214b4597a9a960b233eb7735a4d8876d6731f3c169bcc22ca5921c5178ec4e3fd68fd12c0e8395",
+      "valid": true
+    },
+    {
+      "proTxHash": "f64f9732e92e8c2300659c9fea17443e01c09d43ff40feb499b11b62906ae1a8",
+      "service": "95.216.126.44:9999",
+      "pubKeyOperator": "967b31d50939221212d327ed0cfba612e26c439661ba76a81ef32fc77ef97a81a85b124461f235c310efee5bb1b63c4d",
+      "valid": true
+    },
+    {
+      "proTxHash": "3099cb1b4ff3ac7b4de8c8671078f3267633d0c9f5260f81e8b06a783947b205",
+      "service": "82.211.25.28:9999",
+      "pubKeyOperator": "9944f7c4990a45f0597812400cd3db875d312d4c4f5c180a276cc6a8e3851f2f32baef0148ad5158375950211c5bdc5c",
+      "valid": true
+    },
+    {
+      "proTxHash": "6391df4369d30e120a778097d5e96d8710a87eb6a77e9b96885d53db5c49002e",
+      "service": "134.122.55.145:9999",
+      "pubKeyOperator": "979081958c1266e7ef18504387421cf44fde05c2dd57453ee454b9324ce14e7b17d534ccf9d3f7baba8ebb389943e69f",
+      "valid": true
+    },
+    {
+      "proTxHash": "e6357aac5646bb4993155e6c77e2275ab80a3645547c8d101d9c6f37aedf3156",
+      "service": "136.243.142.38:9999",
+      "pubKeyOperator": "9288eb223e2f32d7e4e381841d9b6628a830d2f19e54c79c18e163ce4a4d0d2e40160c291b8d8316a8c651a42f70a07b",
+      "valid": true
+    },
+    {
+      "proTxHash": "6d69b7e463b90d7a84665e106f0196d860714bfe2a10cd04582f48fc6906b718",
+      "service": "82.211.21.25:9999",
+      "pubKeyOperator": "08d3f26462607a856da1766fd97a53955540f41ac630f7ec7b93e145c6eda8ba1272b8fa92fc4ed622e646568751ecf4",
+      "valid": true
+    },
+    {
+      "proTxHash": "87accbbdbeaf2e940bae8555388355ee67ff52dd363ab0de3606db81e98f849a",
+      "service": "149.28.128.129:9999",
+      "pubKeyOperator": "8eb054fb7e6f261e1e8d0f3637767bf89295998e088f0f6580d7596b4a4ef098a0d679aeb781889219c3701e38b504a8",
+      "valid": true
+    },
+    {
+      "proTxHash": "236987e4e61c480449cdc3714bd656d8daf80ed7229631f732fd4772d30830c9",
+      "service": "80.90.186.194:9999",
+      "pubKeyOperator": "a062c139cf691e9f674d63b760f6560fc793dd6b5298e02d04481e88ae61f743363f4d2317057de3aafe7a9bae477233",
+      "valid": true
+    },
+    {
+      "proTxHash": "f16b53578ca81447c69d6599f869bf2320d76772c474d78bdca17d8a39831331",
+      "service": "185.164.163.55:9999",
+      "pubKeyOperator": "89e947a4e6967d972dcc4a57e7d273c76a9f105d133b51f69d2665a5c7896c5d92c1b7d9050fa85cb4145481b3f47d3e",
+      "valid": true
+    },
+    {
+      "proTxHash": "ac85afef45c60a06045c2cf12624efb8d369f25ce1bcbc6242550639bd105b15",
+      "service": "45.32.120.189:9999",
+      "pubKeyOperator": "82af31436ac98ce6aff6b54d76aab9e0381d74a4718564bf3d506f480cc12e5d07e5983aa3594100e2366b583e161aa2",
+      "valid": true
+    },
+    {
+      "proTxHash": "2af26b51bb03870c55e55979623ab44bd21d0e15b908a81f22dbd56ab7bb2bbf",
+      "service": "168.119.80.0:9999",
+      "pubKeyOperator": "92036164965e17bc10032da7cb016c97bb62bc243e3b9ccc8937e831d1e586796eaa49d6926b6173ec5f14fa1289be93",
+      "valid": true
+    },
+    {
+      "proTxHash": "b5154772e13aa9665e947f58534c23475b3ac17ccb7436b49c9b305307ac32ea",
+      "service": "95.216.126.42:9999",
+      "pubKeyOperator": "8e55894085ae8353096780a38bb32b6e6494e63ec6f339f64b3c7f55ae942293af103ac3f2e78d78dcdaae3a589ff60f",
+      "valid": true
+    },
+    {
+      "proTxHash": "76b5a12b116fa98eaac9d4e127e1d84baa771b863b3cb6c0992e52620ba3b0dd",
+      "service": "185.228.83.156:9999",
+      "pubKeyOperator": "157e360dbacd9f8a4db15ab03fe5f44d4c6f019258753a86ae8954040b23dc048eb0b12332353d61de2625e896922fba",
+      "valid": true
+    },
+    {
+      "proTxHash": "3025e76f14b69315455eb528112f99b7a18fcafbeb2ea055d8dde74a17641860",
+      "service": "188.40.241.103:9999",
+      "pubKeyOperator": "99e775e172f90f9ce00ace38c21498a3c502f435715546ef313a1f0a465afa44340e73e7efe7f18a2999cd3a786708ae",
+      "valid": true
+    }
+  ],
+  "quorumPublicKey": "8ffead533ec18822608c91e7b36feff81c0cb35a0a8a0d31e012dfe371338505f80d403642ec9521eaadc30faaaca533"
+}

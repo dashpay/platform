@@ -1,0 +1,554 @@
+{
+  "llmq_60_75": [
+    {
+      "000000000000001e81e511439b16fb8cc2b63f80dda47c5dca272ed1d08cdc32": {
+        "quorumIndex": 0,
+        "creationHeight": 2131776,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000001ce882514461adea861ff22fa7451b038b185348a2b8604bcb": {
+        "quorumIndex": 1,
+        "creationHeight": 2131777,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000002c12676f495a87c4669e85f3da7afcd2f7890f6512602d584e": {
+        "quorumIndex": 2,
+        "creationHeight": 2131778,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "0000000000000028ccb236cb7f9105547ad92d7474354a3f883eb5db9f61df2b": {
+        "quorumIndex": 3,
+        "creationHeight": 2131779,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "0000000000000006f7132de7768553e4205b7c1e30b6479eb102f9aa8a0d5a5a": {
+        "quorumIndex": 4,
+        "creationHeight": 2131780,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000da999ebadb6f120ccf9c824ba9e2b68cbd201ade4760360e7": {
+        "quorumIndex": 5,
+        "creationHeight": 2131781,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000001409cbe0ee90ba5b8d134f8666a149da5535dfaa50cdb4be36": {
+        "quorumIndex": 6,
+        "creationHeight": 2131782,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000130e76bc69c4422fc55656f8ecb83b86471fcba7eed6b3a18c": {
+        "quorumIndex": 7,
+        "creationHeight": 2131783,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000269148c690b5ab76eea4165262260e3aba22165d38690b28d0": {
+        "quorumIndex": 8,
+        "creationHeight": 2131784,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000cf6ec1d4948887dbc9570702c026efe434ef1ba9a9f435206": {
+        "quorumIndex": 9,
+        "creationHeight": 2131785,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000207f7053d56d7f9b37b935f13710d01f9958752f6bf8ce92d7": {
+        "quorumIndex": 10,
+        "creationHeight": 2131786,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000001cc2abe39d774b777ed1455d0c76c52bc0e081f405c79782b6": {
+        "quorumIndex": 11,
+        "creationHeight": 2131787,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000250af8d192df5557237dbc79fffa7f9e307c70974f0fc419fc": {
+        "quorumIndex": 12,
+        "creationHeight": 2131788,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000f24584c7af502f576b5c894bd7a79f9759de296113ddccb32": {
+        "quorumIndex": 13,
+        "creationHeight": 2131789,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000227cf5e622fc7e339ce2d734c39521c678d7787f2a9270d5f8": {
+        "quorumIndex": 14,
+        "creationHeight": 2131790,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "00000000000000015a26776d6bfd3254b0d59b7f6a7ae24247c833b9a96c4a12": {
+        "quorumIndex": 15,
+        "creationHeight": 2131791,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000239cd2f461ad159590dc48385744d3cd6871a97a4e62f3dc17": {
+        "quorumIndex": 16,
+        "creationHeight": 2131792,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000c4a145babe69b0de3a0399aea3c87024969b08dc017603786": {
+        "quorumIndex": 17,
+        "creationHeight": 2131793,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000002b611920d990e1500ede261b087f8688db35b66a262c98868a": {
+        "quorumIndex": 18,
+        "creationHeight": 2131794,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000008fbaa42f9e76a84bb1f166f8d540d220492dafb97b574350b": {
+        "quorumIndex": 19,
+        "creationHeight": 2131795,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000001a05502d47177cfcd834f6d3a2ada2a040f90e7e988ae62c47": {
+        "quorumIndex": 20,
+        "creationHeight": 2131796,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000a36c419ab76c2e2575e349bd76b7419f4621343fcf8350ac7": {
+        "quorumIndex": 21,
+        "creationHeight": 2131797,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000154d0edabb9084133169356926a4b16a69ea313c676a19623": {
+        "quorumIndex": 22,
+        "creationHeight": 2131798,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000002fff01a0091b0f13ca4efdafc46f5cadcfa5d8026ac0e002a0": {
+        "quorumIndex": 23,
+        "creationHeight": 2131799,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000029146862aa620b91a1f17e1fcf8eec11ae02f898bbee93852d": {
+        "quorumIndex": 24,
+        "creationHeight": 2131800,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000002385a145035b03a9aa9398628a65b3663860c22883937d4fff": {
+        "quorumIndex": 25,
+        "creationHeight": 2131801,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000000c004f98227f8360086d28f13766d2c367ae33f39f3d0b084b": {
+        "quorumIndex": 26,
+        "creationHeight": 2131802,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000321a582900b420be1f67371c708e082bb874ee7aff4b6f111e": {
+        "quorumIndex": 27,
+        "creationHeight": 2131803,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 58,
+        "healthRatio": "0.97"
+      }
+    },
+    {
+      "000000000000000749be695d8992b4b1927f836fac82cbc0c92d42e4bbc69444": {
+        "quorumIndex": 28,
+        "creationHeight": 2131804,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 58,
+        "healthRatio": "0.97"
+      }
+    },
+    {
+      "00000000000000241513f68e91b706428b7eaf1adc2cc0bcbdea5e8ce2812d60": {
+        "quorumIndex": 29,
+        "creationHeight": 2131805,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "0000000000000034e44758c4627ec1d5c9283bdfe07f79181fbe9330b230db5e": {
+        "quorumIndex": 30,
+        "creationHeight": 2131806,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 60,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000154f91bd571cb0ce4587041fc6a279ef3b1614d703104b1ac9": {
+        "quorumIndex": 31,
+        "creationHeight": 2131807,
+        "minedBlockHash": "0000000000000027dda944fbb1457f4b6b10f90ca0c2318c1947653210168288",
+        "numValidMembers": 59,
+        "healthRatio": "0.98"
+      }
+    }
+  ],
+  "llmq_400_60": [
+    {
+      "00000000000000077f47fc0e699167eedccf20a3cb6ebf5d477c5a7b0ea33442": {
+        "creationHeight": 2132064,
+        "minedBlockHash": "0000000000000015824baf93c935326049830fcffc5b745c6072e645eb1972b1",
+        "numValidMembers": 400,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000001e81e511439b16fb8cc2b63f80dda47c5dca272ed1d08cdc32": {
+        "creationHeight": 2131776,
+        "minedBlockHash": "000000000000000a36c419ab76c2e2575e349bd76b7419f4621343fcf8350ac7",
+        "numValidMembers": 400,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000001b7004056c7b7ceeae12002e6e7bc5f103f5e4a95378238bbd": {
+        "creationHeight": 2131488,
+        "minedBlockHash": "0000000000000056f98a2450828c2dce4c5aaaa64d53105a0be9d58224566bb7",
+        "numValidMembers": 399,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000e8d0503dc49e95063f5972dd7312e249631d876e6e2d3f3ee": {
+        "creationHeight": 2131200,
+        "minedBlockHash": "000000000000000be1170921ff89451962d111e9d8f130f00bcf38161a8e1db9",
+        "numValidMembers": 400,
+        "healthRatio": "1.00"
+      }
+    }
+  ],
+  "llmq_400_85": [
+    {
+      "000000000000001e81e511439b16fb8cc2b63f80dda47c5dca272ed1d08cdc32": {
+        "creationHeight": 2131776,
+        "minedBlockHash": "000000000000000a36c419ab76c2e2575e349bd76b7419f4621343fcf8350ac7",
+        "numValidMembers": 400,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000019ac8ff5b5b4fdbc4532414354d41ff6250167c9b1284e0b14": {
+        "creationHeight": 2130624,
+        "minedBlockHash": "000000000000002f5d1f0fb9606eba980863ac9aa38e44f10c4ccf4dfae4a1d4",
+        "numValidMembers": 400,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000a8d3a9653f3da885da727e7b36b31431823458b2a9622ebf9": {
+        "creationHeight": 2130048,
+        "minedBlockHash": "0000000000000012fa5ef0641e6dd05864aa21604cf9a4c5177107fae914af68",
+        "numValidMembers": 375,
+        "healthRatio": "0.94"
+      }
+    },
+    {
+      "0000000000000029b4a3ca4f4555f0ae602dfa2095e878c48a6a403f81f6c292": {
+        "creationHeight": 2129472,
+        "minedBlockHash": "0000000000000007f7b3c2f3ee9a601717c5dc1d3d1dc7e1693387ac32a9cadd",
+        "numValidMembers": 399,
+        "healthRatio": "1.00"
+      }
+    }
+  ],
+  "llmq_100_67": [
+    {
+      "00000000000000077f47fc0e699167eedccf20a3cb6ebf5d477c5a7b0ea33442": {
+        "creationHeight": 2132064,
+        "minedBlockHash": "0000000000000019cf5d3e3fb5d5158b3ace5dc610bba4dd74218e52d69b7e66",
+        "numValidMembers": 99,
+        "healthRatio": "0.99"
+      }
+    },
+    {
+      "00000000000000198f3e44723f74a4979592bd3c95f6ffa4b972e60e79afdff8": {
+        "creationHeight": 2132040,
+        "minedBlockHash": "00000000000000159a4160883d628c5b78d32009017c3478bcadb9298059f788",
+        "numValidMembers": 98,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "0000000000000000c236de04f9d2ad2dab160bb9dd8cf810b2cbd6825c20877d": {
+        "creationHeight": 2132016,
+        "minedBlockHash": "000000000000000fccb6a8b045bdc9a33477ff22c213665bd5bc1dae968b06cd",
+        "numValidMembers": 99,
+        "healthRatio": "0.99"
+      }
+    },
+    {
+      "0000000000000006003af6cb07121d9c55dfefee5ef4526ccb4710c34585ff85": {
+        "creationHeight": 2131992,
+        "minedBlockHash": "000000000000001f34492f8833f037ee713c8949b7d773070f982ca376c6eefa",
+        "numValidMembers": 98,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "0000000000000000e5f15712fe418546195f37ffc14782911e900d908da7ff6c": {
+        "creationHeight": 2131968,
+        "minedBlockHash": "000000000000000f56b499e490ca480742206514688f53f9bc0b5945bef973a3",
+        "numValidMembers": 98,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000003909a9c98a20cc7a4f067a70f1f7733ca945b365947a5f7aa2": {
+        "creationHeight": 2131944,
+        "minedBlockHash": "0000000000000018d441e95a5f2a1f55816596046f602237187bfb6a0ee4aa7f",
+        "numValidMembers": 98,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000001a548d3223ad2c74b6d7121d5129e23f81120da98799f8d905": {
+        "creationHeight": 2131920,
+        "minedBlockHash": "000000000000000f9a98ae0905bceb3ad4d0a7a124c37de73300c119efff0995",
+        "numValidMembers": 99,
+        "healthRatio": "0.99"
+      }
+    },
+    {
+      "000000000000002684bbce6558b47e4d621e02659eedbd1aa044af98298ec035": {
+        "creationHeight": 2131896,
+        "minedBlockHash": "00000000000000349c4cd5ab86d3682bbf7abe255232305ba1c45f5f694367df",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000020ee5987983673c4458036688e77a68dbe8daf0067b5e0ae35": {
+        "creationHeight": 2131872,
+        "minedBlockHash": "000000000000003ab24da3861d0cdad2a3088be9994b8e7e5510444e85f2025c",
+        "numValidMembers": 98,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "000000000000002ac18646545ff118572199201401a25991eceeff973abd1c12": {
+        "creationHeight": 2131848,
+        "minedBlockHash": "000000000000001b2b6d60f662d1ae8203b08aa4306c429d820ae5e832699fad",
+        "numValidMembers": 97,
+        "healthRatio": "0.97"
+      }
+    },
+    {
+      "0000000000000003d33a8db8ac7540af21c03520412545ec602450e42de33b56": {
+        "creationHeight": 2131824,
+        "minedBlockHash": "000000000000000772a0911b0889d67252e3cb0269cf57e2c78c555475c1981a",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000029146862aa620b91a1f17e1fcf8eec11ae02f898bbee93852d": {
+        "creationHeight": 2131800,
+        "minedBlockHash": "000000000000000fa682bb726eb24f5c81f8243ad1bc260ecfd2a55ce015aab8",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000001e81e511439b16fb8cc2b63f80dda47c5dca272ed1d08cdc32": {
+        "creationHeight": 2131776,
+        "minedBlockHash": "000000000000001cc2abe39d774b777ed1455d0c76c52bc0e081f405c79782b6",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000002a54754fa082b4502bb32b3215a15300a59664d0903816e22a": {
+        "creationHeight": 2131752,
+        "minedBlockHash": "0000000000000034e81685534a023460b88f10454056b13c14cae2147f6182ff",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000001675813c5e0ed4b13f475aaeddbc72c0055d6a511a490fa90": {
+        "creationHeight": 2131728,
+        "minedBlockHash": "000000000000000c1c570e4a78e3f0b989aefb4253d100ada090a0d6ed2ed12e",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "0000000000000011b95cd59f504794bea1db426899c8a7b572fb9a958c374b41": {
+        "creationHeight": 2131704,
+        "minedBlockHash": "000000000000001cd1590a001e03a9d475380f371dfb1c36bdc2325acc466e86",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000016286bea375c8ac3a75e41733c753d30cf3ae0b9cee7c0f3b": {
+        "creationHeight": 2131680,
+        "minedBlockHash": "000000000000002c0463da8485103212100c7aae3ec74fb53dbe06eec8439a9c",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000187e2d6ab54b65e735fd5626665bbd0f380e6eb242aeac6b28": {
+        "creationHeight": 2131656,
+        "minedBlockHash": "0000000000000001fea516993e2d5ac58c8ee75d11d434071f96f3a2a44f763f",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "000000000000000a06e80cd1d282013551c516f249ae478e4cdc7710f6341ba5": {
+        "creationHeight": 2131632,
+        "minedBlockHash": "000000000000000bcb9ca90423bc6194c3b9476e69313512cf13be2da10ac9d9",
+        "numValidMembers": 98,
+        "healthRatio": "0.98"
+      }
+    },
+    {
+      "0000000000000014e90c3892d978c5413c2a779495637d0fabc91f35a815bd25": {
+        "creationHeight": 2131608,
+        "minedBlockHash": "000000000000000c0fa173f0ef9f58c56535db42485da07cec3fde2b8fab838b",
+        "numValidMembers": 100,
+        "healthRatio": "1.00"
+      }
+    },
+    {
+      "00000000000000024353a71588354d6b1347b814e22688348d25f2b17a38a619": {
+        "creationHeight": 2131584,
+        "minedBlockHash": "000000000000003db6635c4cb6fb0e988ba139db54453da400fee106ae0e2969",
+        "numValidMembers": 96,
+        "healthRatio": "0.96"
+      }
+    },
+    {
+      "000000000000001da351ab241216ad7c1988188772bb72b6f53d10155570faf1": {
+        "creationHeight": 2131560,
+        "minedBlockHash": "000000000000000e58c818a3b77d321a2232bdf15959bd390e6fdeb036b3e336",
+        "numValidMembers": 99,
+        "healthRatio": "0.99"
+      }
+    },
+    {
+      "00000000000000193284df1c4fa8a0f92c42045a745c8c2b3fe55c045327cf95": {
+        "creationHeight": 2131536,
+        "minedBlockHash": "000000000000002387b0ef8ad0edbe82edcdd6a3fc7d33ed8dd7fdc330eb892b",
+        "numValidMembers": 99,
+        "healthRatio": "0.99"
+      }
+    },
+    {
+      "000000000000000d6710a05e7ec592e3f19d3d08faca0397c767aacfc367d5f0": {
+        "creationHeight": 2131512,
+        "minedBlockHash": "000000000000002387dae533f3b312066bcd810f9036f48328ad645b0547bb6b",
+        "numValidMembers": 99,
+        "healthRatio": "0.99"
+      }
+    }
+  ]
+}

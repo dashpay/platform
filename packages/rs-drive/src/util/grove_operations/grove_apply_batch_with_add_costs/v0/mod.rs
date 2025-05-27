@@ -31,6 +31,8 @@ impl Drive {
         //     println!("batch {}", &ops);
         // }
 
+        tracing::info!(?ops,);
+
         if self.config.batching_consistency_verification {
             let consistency_results =
                 QualifiedGroveDbOp::verify_consistency_of_operations(&ops.operations);
