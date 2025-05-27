@@ -6,9 +6,9 @@ use crate::util::batch::GroveDbOpBatch;
 use crate::drive::system::misc_path_vec;
 use crate::drive::tokens::paths::{
     token_distributions_root_path_vec, token_timed_distributions_path_vec, tokens_root_path_vec,
-    TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_DIRECT_SELL_PRICE_KEY,
-    TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, TOKEN_IDENTITY_INFO_KEY,
-    TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
+    TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_CONTRACT_INFO_KEY,
+    TOKEN_DIRECT_SELL_PRICE_KEY, TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY,
+    TOKEN_IDENTITY_INFO_KEY, TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use crate::drive::{Drive, RootTree};
@@ -89,8 +89,14 @@ impl Drive {
         );
 
         batch.add_insert(
-            tokens_root_path,
+            tokens_root_path.clone(),
             vec![TOKEN_DIRECT_SELL_PRICE_KEY],
+            Element::empty_tree(),
+        );
+
+        batch.add_insert(
+            tokens_root_path,
+            vec![TOKEN_CONTRACT_INFO_KEY],
             Element::empty_tree(),
         );
 

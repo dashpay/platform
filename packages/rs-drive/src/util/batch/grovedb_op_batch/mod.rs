@@ -7,9 +7,9 @@ use crate::drive::credit_pools::epochs;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, tokens, RootTree};
 use crate::util::batch::grovedb_op_batch::KnownPath::{
-    TokenBalancesRoot, TokenDirectSellPriceRoot, TokenDistributionRoot, TokenIdentityInfoRoot,
-    TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot, TokenStatusRoot,
-    TokenTimedDistributionRoot,
+    TokenBalancesRoot, TokenContractInfoRoot, TokenDirectSellPriceRoot, TokenDistributionRoot,
+    TokenIdentityInfoRoot, TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot,
+    TokenStatusRoot, TokenTimedDistributionRoot,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
@@ -62,6 +62,7 @@ enum KnownPath {
     TokenPreProgrammedDistributionRoot,                               //Level 3
     TokenPerpetualDistributionRoot,                                   //Level 3
     TokenIdentityInfoRoot,                                            //Level 2
+    TokenContractInfoRoot,                                            //Level 2
     TokenStatusRoot,                                                  //Level 2
     VersionsRoot,                                                     //Level 1
     VotesRoot,                                                        //Level 1
@@ -248,6 +249,9 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     }
                     tokens::paths::TOKEN_IDENTITY_INFO_KEY => {
                             (format!("IdentityInfo({})", tokens::paths::TOKEN_IDENTITY_INFO_KEY), Some(TokenIdentityInfoRoot))
+                    }
+                    tokens::paths::TOKEN_CONTRACT_INFO_KEY => {
+                        (format!("ContractInfo({})", tokens::paths::TOKEN_CONTRACT_INFO_KEY), Some(TokenContractInfoRoot))
                     }
                     tokens::paths::TOKEN_STATUS_INFO_KEY => {
                         (format!("Status({})", tokens::paths::TOKEN_STATUS_INFO_KEY), Some(TokenStatusRoot))

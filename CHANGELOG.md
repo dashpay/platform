@@ -1,3 +1,34 @@
+## [2.0.0-rc.12](https://github.com/dashpay/platform/compare/v2.0.0-rc.11...v2.0.0-rc.12) (2025-05-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** disable changes to perpetual distribution in token configuration (#2627)
+
+### Features
+
+* **dpp:** add marketplace rules to token configuration ([#2635](https://github.com/dashpay/platform/issues/2635))
+* **dpp:** disable changes to perpetual distribution in token configuration ([#2627](https://github.com/dashpay/platform/issues/2627))
+* **sdk:** add token payment info to put_document ([#2630](https://github.com/dashpay/platform/issues/2630))
+
+
+### Bug Fixes
+
+* **dashmate:** sync max-tx-bytes between tenderdash and drive ([#2625](https://github.com/dashpay/platform/issues/2625))
+* **dpp:** allow changing main control group for token configuration ([#2628](https://github.com/dashpay/platform/issues/2628))
+* **dpp:** correct stepwise distribution logic in evaluate.rs ([#2636](https://github.com/dashpay/platform/issues/2636))
+* **dpp:** missing tags on Groups needed for deserialization ([#2624](https://github.com/dashpay/platform/issues/2624))
+* **drive:** ignore time based update fields in proof verification of data contract updates ([#2634](https://github.com/dashpay/platform/issues/2634))
+* **platform:** ensure document types only target valid tokens for token payments ([#2631](https://github.com/dashpay/platform/issues/2631))
+* **platform:** fix evonode distribution for token perpetual distribution (part 1) ([#2623](https://github.com/dashpay/platform/issues/2623))
+* **platform:** paying for a document action with tokens where tokens would be transferred to yourself as contract owner was breaking ([#2633](https://github.com/dashpay/platform/issues/2633))
+* **platform:** resolved grovedb error during signing group action finalization on check tx ([#2629](https://github.com/dashpay/platform/issues/2629))
+
+
+### Tests
+
+* **drive-abci:** add tests for epoch-based token distribution for evonodes ([#2626](https://github.com/dashpay/platform/issues/2626))
+
 ## [2.0.0-rc.11](https://github.com/dashpay/platform/compare/v2.0.0-rc.10...v2.0.0-rc.11) (2025-05-19)
 
 

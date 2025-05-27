@@ -11,8 +11,8 @@ use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::balances::total_tokens_root_supply_path_vec;
 use crate::drive::tokens::paths::{
-    token_balances_path_vec, token_balances_root_path, token_identity_infos_root_path,
-    token_statuses_root_path,
+    token_balances_path_vec, token_balances_root_path, token_contract_infos_root_path,
+    token_identity_infos_root_path, token_statuses_root_path,
 };
 use crate::error::contract::DataContractError;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
@@ -21,6 +21,7 @@ use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -182,6 +183,11 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     &platform_version.drive,
                 )?;
+
+                Drive::add_estimation_costs_for_token_contract_infos(
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
             }
         }
 
@@ -257,6 +263,20 @@ impl Drive {
                     &platform_version.drive,
                 )?;
             }
+
+            let token_contract_info =
+                TokenContractInfo::new(contract.id(), *token_pos, platform_version)?;
+            let token_contract_info_bytes = token_contract_info.serialize_consume_to_bytes()?;
+
+            self.batch_insert(
+                PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
+                    token_contract_infos_root_path(),
+                    token_id.as_slice(),
+                    Element::Item(token_contract_info_bytes, None),
+                )),
+                &mut batch_operations,
+                &platform_version.drive,
+            )?;
 
             if let Some(pre_programmed_distribution) = token_config
                 .distribution_rules()

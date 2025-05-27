@@ -74,6 +74,7 @@ pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_root_token_ms_interval_distribution: FeatureVersion,
     pub for_token_perpetual_distribution: FeatureVersion,
     pub for_token_selling_prices: FeatureVersion,
+    pub for_token_contract_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

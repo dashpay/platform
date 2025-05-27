@@ -231,6 +231,8 @@ impl Drive {
             ))?;
 
             batch_operations.extend(self.create_token_trees_operations(
+                contract.id(),
+                *token_pos,
                 token_id.to_buffer(),
                 configuration.start_as_paused(),
                 true,

@@ -862,7 +862,7 @@ impl Drive {
                         None,
                     ),
                     true,
-                    true,
+                    false,
                     false,
                     platform_version,
                 )?;

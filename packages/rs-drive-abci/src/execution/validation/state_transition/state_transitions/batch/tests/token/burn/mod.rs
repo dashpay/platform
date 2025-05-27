@@ -25,6 +25,7 @@ mod token_burn_tests {
             None::<fn(&mut TokenConfiguration)>,
             None,
             None,
+            None,
             platform_version,
         );
 
@@ -108,6 +109,7 @@ mod token_burn_tests {
             &mut platform,
             identity.id(),
             None::<fn(&mut TokenConfiguration)>,
+            None,
             None,
             None,
             platform_version,
@@ -200,6 +202,7 @@ mod token_burn_tests {
             &mut platform,
             contract_owner_identity.id(),
             None::<fn(&mut TokenConfiguration)>,
+            None,
             None,
             None,
             platform_version,
@@ -321,6 +324,7 @@ mod token_burn_tests {
                 )]
                 .into(),
             ),
+            None,
             platform_version,
         );
 
@@ -582,6 +586,7 @@ mod token_burn_tests {
                 )]
                 .into(),
             ),
+            None,
             platform_version,
         );
 

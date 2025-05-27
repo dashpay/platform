@@ -14,7 +14,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `token_ids` - A list of token IDs whose balances are to be proveed.
+    /// * `token_ids` - A list of token IDs whose balances are to be proved.
     /// * `identity_id` - The ID of the identity whose token balances are being queried.
     /// * `transaction` - The current transaction context.
     /// * `platform_version` - The version of the platform to use for compatibility checks.

@@ -24,9 +24,9 @@ use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
     token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
-    TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_DIRECT_SELL_PRICE_KEY,
-    TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, TOKEN_IDENTITY_INFO_KEY,
-    TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
+    TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_CONTRACT_INFO_KEY,
+    TOKEN_DIRECT_SELL_PRICE_KEY, TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY,
+    TOKEN_IDENTITY_INFO_KEY, TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
@@ -409,6 +409,15 @@ impl<C> Platform<C> {
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
             &[TOKEN_DIRECT_SELL_PRICE_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_CONTRACT_INFO_KEY],
             Element::empty_tree(),
             Some(transaction),
             None,

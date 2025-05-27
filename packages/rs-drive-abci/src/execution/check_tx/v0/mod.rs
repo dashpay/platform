@@ -3659,6 +3659,7 @@ mod tests {
                 )]
                 .into(),
             ),
+            None,
             platform_version,
         );
 
