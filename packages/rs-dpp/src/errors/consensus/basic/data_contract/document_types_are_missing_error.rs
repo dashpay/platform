@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 #[derive(
     Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Data Contract {data_contract_id} must have at least one document type defined.")]
+#[error("Data Contract {data_contract_id} must have at least one document type or token defined.")]
 #[platform_serialize(unversioned)]
 pub struct DocumentTypesAreMissingError {
     data_contract_id: Identifier,

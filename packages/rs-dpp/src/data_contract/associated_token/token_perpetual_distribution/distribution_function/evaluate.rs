@@ -72,12 +72,12 @@ impl DistributionFunction {
                     return Ok(*distribution_start_amount);
                 }
 
-                let steps_passed = (x - s_val) / (*step_count as u64);
+                let era_intervals_passed = (x - s_val) / (*step_count as u64);
                 let max_intervals = max_interval_count.unwrap_or(
                     DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
                 ) as u64;
 
-                if steps_passed > max_intervals {
+                if era_intervals_passed > max_intervals {
                     return Ok(*trailing_distribution_interval_amount);
                 }
 
@@ -86,7 +86,7 @@ impl DistributionFunction {
                 let reduction_numerator =
                     denominator.saturating_sub(*decrease_per_interval_numerator as u64);
 
-                for _ in 0..steps_passed {
+                for _ in 0..era_intervals_passed {
                     numerator = numerator * reduction_numerator / denominator;
                 }
 
@@ -101,9 +101,12 @@ impl DistributionFunction {
                 Ok(result)
             }
             DistributionFunction::Stepwise(steps) => {
+                if x < contract_registration_step {
+                    return Ok(0);
+                }
                 // Return the emission corresponding to the greatest key <= x.
                 Ok(steps
-                    .range(..=x)
+                    .range(..=(x - contract_registration_step))
                     .next_back()
                     .map(|(_, amount)| *amount)
                     .unwrap_or(0))

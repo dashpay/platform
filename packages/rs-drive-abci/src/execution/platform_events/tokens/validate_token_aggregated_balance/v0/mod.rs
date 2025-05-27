@@ -21,8 +21,8 @@ impl<C> Platform<C> {
 
             if !token_balance.ok()? {
                 return Err(Error::Execution(
-                    ExecutionError::CorruptedCreditsNotBalanced(format!(
-                        "credits are not balanced after block execution {:?} off by {}",
+                    ExecutionError::CorruptedTokensNotBalanced(format!(
+                        "tokens are not balanced after block execution {:?} off by {}",
                         token_balance,
                         token_balance
                             .total_identity_token_balances

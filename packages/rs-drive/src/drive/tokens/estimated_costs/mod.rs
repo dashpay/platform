@@ -21,3 +21,6 @@ pub mod for_token_perpetual_distribution;
 
 /// Module for handling operations related to direct selling prices
 pub mod for_token_direct_selling_prices;
+
+/// Module for handling operations related to token contract infos
+pub mod for_token_contract_infos;

@@ -24,7 +24,7 @@ impl TokenConfigUpdateTransitionStructureValidation for TokenConfigUpdateTransit
             .batch_state_transition
             .token_config_update_transition_structure_validation
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "TokenConfigUpdateTransition::validate_structure".to_string(),
                 known_versions: vec![0],

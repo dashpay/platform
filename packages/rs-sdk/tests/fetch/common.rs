@@ -3,6 +3,7 @@ use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
 use hex::ToHex;
 use rs_dapi_client::transport::TransportRequest;
+use std::collections::BTreeMap;
 
 use super::config::Config;
 
@@ -39,6 +40,7 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
         "document_type_name",
         schema,
         None,
+        &BTreeMap::new(),
         &config,
         true,
         &mut vec![],

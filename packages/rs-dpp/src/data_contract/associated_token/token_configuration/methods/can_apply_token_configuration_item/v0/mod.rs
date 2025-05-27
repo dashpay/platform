@@ -1,6 +1,7 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
@@ -281,7 +282,41 @@ impl TokenConfigurationV0 {
                     goal,
                 )
             }
-            TokenConfigurationChangeItem::MainControlGroup(_) => false, // Main control group cannot be updated directly
+            TokenConfigurationChangeItem::MainControlGroup(_) => self
+                .main_control_group_can_be_modified
+                .allowed_for_action_taker(
+                    contract_owner_id,
+                    main_group,
+                    groups,
+                    action_taker,
+                    goal,
+                ),
+            TokenConfigurationChangeItem::MarketplaceTradeMode(_) => self
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .can_make_change(contract_owner_id, main_group, groups, action_taker, goal),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(control_group) => self
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .can_change_authorized_action_takers(
+                    control_group,
+                    contract_owner_id,
+                    main_group,
+                    groups,
+                    action_taker,
+                    goal,
+                ),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(admin_group) => self
+                .marketplace_rules
+                .trade_mode_change_rules()
+                .can_change_admin_action_takers(
+                    admin_group,
+                    contract_owner_id,
+                    main_group,
+                    groups,
+                    action_taker,
+                    goal,
+                ),
         }
     }
 }

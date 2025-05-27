@@ -312,7 +312,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         // Data Contract must exist
         let Some(data_contract_fetch_info) = drive
             .get_contract_with_fetch_info_and_fee(
-                data_contract_id.0 .0,
+                data_contract_id.to_buffer(),
                 None,
                 false,
                 transaction,
@@ -320,6 +320,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             )?
             .1
         else {
+            println!("contract id not found {}", data_contract_id);
             return Ok(ConsensusValidationResult::new_with_error(
                 BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
                     *data_contract_id,

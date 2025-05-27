@@ -59,7 +59,7 @@ pub(in crate::execution) mod tests {
     use dpp::fee::Credits;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
-    use dpp::prelude::{Identifier, IdentityNonce};
+    use dpp::prelude::{BlockHeight, Identifier, IdentityNonce};
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::system_data_contracts::load_system_data_contract;
@@ -2335,6 +2335,7 @@ pub(in crate::execution) mod tests {
         token_configuration_modification: Option<impl FnOnce(&mut TokenConfiguration)>,
         contract_start_time: Option<TimestampMillis>,
         add_groups: Option<BTreeMap<GroupContractPosition, Group>>,
+        contract_start_block: Option<BlockHeight>,
         platform_version: &PlatformVersion,
     ) -> (DataContract, Identifier) {
         let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
@@ -2347,7 +2348,8 @@ pub(in crate::execution) mod tests {
             Some(|data_contract: &mut DataContract| {
                 data_contract.set_created_at_epoch(Some(0));
                 data_contract.set_created_at(Some(contract_start_time.unwrap_or_default()));
-                data_contract.set_created_at_block_height(Some(0));
+                data_contract
+                    .set_created_at_block_height(Some(contract_start_block.unwrap_or_default()));
                 if let Some(token_configuration_modification) = token_configuration_modification {
                     let token_configuration = data_contract
                         .token_configuration_mut(0)

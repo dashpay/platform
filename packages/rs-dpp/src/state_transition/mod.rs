@@ -76,6 +76,8 @@ use crate::prelude::{AssetLockProof, UserFeeIncrease};
 use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
 use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use crate::state_transition::data_contract_create_transition::{
@@ -112,11 +114,10 @@ use crate::state_transition::identity_update_transition::{
 };
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
-use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
-pub use state_transitions::*;
-
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
+pub use state_transitions::*;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -546,13 +547,29 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::Batch(st) => {
+                let allow_token_transfer_keys = st.transitions_len() == 1
+                    && (st
+                        .first_transition()
+                        .expect("expected first transition with len 1")
+                        .as_transition_token_claim()
+                        .is_some()
+                        || st
+                            .first_transition()
+                            .expect("expected first transition with len 1")
+                            .as_transition_token_transfer()
+                            .is_some());
+                let allowed_key_purposes = if allow_token_transfer_keys {
+                    vec![Purpose::AUTHENTICATION, Purpose::TRANSFER]
+                } else {
+                    vec![Purpose::AUTHENTICATION]
+                };
                 if !options.allow_signing_with_any_purpose
-                    && identity_public_key.purpose() != Purpose::AUTHENTICATION
+                    && !allowed_key_purposes.contains(&identity_public_key.purpose())
                 {
                     return Err(ProtocolError::WrongPublicKeyPurposeError(
                         WrongPublicKeyPurposeError::new(
                             identity_public_key.purpose(),
-                            vec![Purpose::AUTHENTICATION],
+                            allowed_key_purposes,
                         ),
                     ));
                 }

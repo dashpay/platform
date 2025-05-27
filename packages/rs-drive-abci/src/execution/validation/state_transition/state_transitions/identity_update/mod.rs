@@ -123,17 +123,23 @@ mod tests {
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::key::{Keypair, Secp256k1};
+    use dpp::dashcore::signer;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
+    use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::StateTransition;
+    use drive::drive::Drive;
     use platform_version::version::PlatformVersion;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -218,6 +224,146 @@ mod tests {
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0);
+    }
+
+    #[test]
+    fn test_identity_update_that_adds_an_authentication_key() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        let secp = Secp256k1::new();
+
+        let mut rng = StdRng::seed_from_u64(292);
+
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+
+        let mut new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: None,
+        };
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let update_transition: StateTransition = update_transition.into();
+
+        let signable_bytes = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+
+        let secret = new_key_pair.secret_key();
+        let signature =
+            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+
+        new_key.signature = signature.to_vec().into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
+        update_transition.set_signature(
+            signer
+                .sign(&key, signable_bytes.as_slice())
+                .expect("expected to sign"),
+        );
+
+        let update_transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update_transition_bytes.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let proof_result = platform
+            .platform
+            .drive
+            .prove_state_transition(&update_transition, None, platform_version)
+            .map_err(|e| e.to_string())
+            .expect("expected to create proof");
+
+        if let Some(proof_error) = proof_result.first_error() {
+            panic!("proof_result is not valid with error {}", proof_error);
+        }
+
+        let proof_data = proof_result
+            .into_data()
+            .map_err(|e| e.to_string())
+            .expect("expected to get proof data");
+
+        let (_, verification_result) = Drive::verify_state_transition_was_executed_with_proof(
+            &update_transition,
+            &BlockInfo::default(),
+            &proof_data,
+            &|_id: &Identifier| Ok(None),
+            platform_version,
+        )
+        .map_err(|e| e.to_string())
+        .expect("expected to verify state transition");
+
+        let StateTransitionProofResult::VerifiedPartialIdentity(_document) = verification_result
+        else {
+            panic!(
+                "verification_result expected partial identity, but got: {:?}",
+                verification_result
+            );
+        };
     }
 
     #[test]

@@ -56,6 +56,7 @@ mod perpetual_distribution_block {
             }),
             None,
             None,
+            None,
             platform_version,
         );
 
@@ -298,6 +299,7 @@ mod perpetual_distribution_block {
             }),
             None,
             None,
+            None,
             platform_version,
         );
 
@@ -417,6 +419,7 @@ mod perpetual_distribution_block {
                         },
                     )));
             }),
+            None,
             None,
             None,
             platform_version,
@@ -2694,6 +2697,7 @@ mod test_suite {
                 self.identity.id(),
                 token_config_fn,
                 self.start_time,
+                None,
                 None,
                 self.platform_version,
             );

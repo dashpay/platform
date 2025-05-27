@@ -1,4 +1,4 @@
-use std::ops::Div;
+use std::ops::{Div, RangeInclusive};
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
@@ -34,7 +34,7 @@ impl DistributionFunction {
         get_epoch_reward_ratio: Option<F>,
     ) -> Result<TokenAmount, ProtocolError>
     where
-        F: Fn(EpochIndex) -> Option<RewardRatio>,
+        F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
     {
         // Ensure moments are the same type.
         if !(interval_start_excluded.same_type(&step)
@@ -62,9 +62,37 @@ impl DistributionFunction {
         {
             let steps_count =
                 interval_start_excluded.steps_till(&interval_end_included, &step, false, true)?;
-            return fixed_amount
+            let total_amount = fixed_amount
                 .checked_mul(steps_count)
-                .ok_or_else(|| ProtocolError::Overflow("Overflow in FixedAmount evaluation"));
+                .ok_or_else(|| ProtocolError::Overflow("Overflow in FixedAmount evaluation"))?;
+
+            return if let (
+                RewardDistributionMoment::EpochBasedMoment(first_epoch),
+                RewardDistributionMoment::EpochBasedMoment(last_epoch),
+                Some(ref get_ratio_fn),
+            ) = (
+                interval_start_excluded,
+                interval_end_included,
+                get_epoch_reward_ratio.as_ref(),
+            ) {
+                if let Some(ratio) = get_ratio_fn(first_epoch.saturating_add(1)..=last_epoch) {
+                    total_amount
+                        .checked_mul(ratio.numerator)
+                        .and_then(|v| v.checked_div(ratio.denominator))
+                        .ok_or_else(|| {
+                            ProtocolError::Overflow(
+                                "Overflow applying reward ratio in evaluate_interval",
+                            )
+                        })
+                } else {
+                    Err(ProtocolError::MissingEpochInfo(format!(
+                        "missing epoch info for an epoch between {} excluded and {} included",
+                        first_epoch, last_epoch
+                    )))
+                }
+            } else {
+                Ok(total_amount)
+            };
         }
 
         // Let's say you have a step 10 going from 10 to 20, the first index would be 2
@@ -90,7 +118,7 @@ impl DistributionFunction {
                 Some(ref get_ratio_fn),
             ) = (current_point, get_epoch_reward_ratio.as_ref())
             {
-                if let Some(ratio) = get_ratio_fn(epoch_index) {
+                if let Some(ratio) = get_ratio_fn(epoch_index..=epoch_index) {
                     base_amount
                         .checked_mul(ratio.numerator)
                         .and_then(|v| v.checked_div(ratio.denominator))

@@ -37,7 +37,7 @@ where
     /// This function may return an `Error` variant if there is a problem with deserializing the raw
     /// state transitions, processing state transitions, or executing events.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::execution) fn process_raw_state_transitions(
+    pub fn process_raw_state_transitions(
         &self,
         raw_state_transitions: &[Vec<u8>],
         block_platform_state: &PlatformState,

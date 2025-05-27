@@ -47,6 +47,7 @@ mod pre_programmed_distribution {
             }),
             None,
             None,
+            None,
             platform_version,
         );
 
@@ -211,6 +212,7 @@ mod pre_programmed_distribution {
                         },
                     )));
             }),
+            None,
             None,
             None,
             platform_version,
@@ -382,6 +384,7 @@ mod pre_programmed_distribution {
             }),
             None,
             None,
+            None,
             platform_version,
         );
 
@@ -488,6 +491,7 @@ mod pre_programmed_distribution {
                         },
                     )));
             }),
+            None,
             None,
             None,
             platform_version,
@@ -659,6 +663,7 @@ mod pre_programmed_distribution {
             }),
             None,
             None,
+            None,
             platform_version,
         );
 
@@ -776,6 +781,7 @@ mod pre_programmed_distribution {
                         },
                     )));
             }),
+            None,
             None,
             None,
             platform_version,

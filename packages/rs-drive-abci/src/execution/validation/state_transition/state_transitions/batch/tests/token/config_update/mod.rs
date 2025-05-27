@@ -42,6 +42,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -143,6 +144,7 @@ mod token_config_update_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -291,6 +293,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -398,6 +401,7 @@ mod token_config_update_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -553,6 +557,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -641,6 +646,7 @@ mod token_config_update_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 None,
                 platform_version,
@@ -733,6 +739,7 @@ mod token_config_update_tests {
                 }),
                 None,
                 None,
+                None,
                 platform_version,
             );
 
@@ -791,6 +798,114 @@ mod token_config_update_tests {
                 .unwrap()
                 .expect("expected to commit transaction");
         }
+
+        #[test]
+        fn test_token_config_update_by_owner_changing_main_control_group() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, _, _) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_main_control_group_can_be_modified(
+                        AuthorizedActionTakers::ContractOwner,
+                    );
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let config_update_transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MainControlGroup(Some(0)),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let config_update_transition_serialized_transition = config_update_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[config_update_transition_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch token balance")
+                .expect("expected contract");
+            let updated_token_config = contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            assert_eq!(updated_token_config.main_control_group(), Some(0));
+        }
     }
 
     mod with_group {
@@ -842,6 +957,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -958,6 +1074,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1172,6 +1289,7 @@ mod token_config_update_tests {
                     ]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -1562,6 +1680,7 @@ mod token_config_update_tests {
                     ]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2023,6 +2142,7 @@ mod token_config_update_tests {
                     ]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 
@@ -2772,6 +2892,7 @@ mod token_config_update_tests {
                     )]
                     .into(),
                 ),
+                None,
                 platform_version,
             );
 

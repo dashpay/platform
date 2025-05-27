@@ -176,6 +176,7 @@ mod tests {
             config.clone(),
             15,
             &mut voting_signer,
+            &mut None,
         );
 
         let platform_state = abci_app.platform.state.load();
@@ -480,6 +481,7 @@ mod tests {
             config.clone(),
             15,
             &mut None,
+            &mut None,
         );
 
         let platform = outcome.abci_app.platform;
@@ -764,6 +766,7 @@ mod tests {
             config.clone(),
             15,
             &mut voting_signer,
+            &mut None,
         );
 
         let platform = abci_app.platform;
@@ -1115,6 +1118,7 @@ mod tests {
             config.clone(),
             15,
             &mut voting_signer,
+            &mut None,
         );
 
         let platform = abci_app.platform;
@@ -1494,6 +1498,7 @@ mod tests {
                     config.clone(),
                     15,
                     &mut voting_signer,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -1918,6 +1923,7 @@ mod tests {
                     config.clone(),
                     15,
                     &mut voting_signer,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -2356,6 +2362,7 @@ mod tests {
                     config.clone(),
                     15,
                     &mut voting_signer,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
