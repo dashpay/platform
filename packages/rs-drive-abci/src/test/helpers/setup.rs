@@ -19,6 +19,7 @@ use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::util::storage_flags::StorageFlags;
 use tempfile::TempDir;
+use crate::rpc::core::CoreRPCLike;
 
 /// A test platform builder.
 pub struct TestPlatformBuilder {
@@ -87,6 +88,17 @@ impl TestPlatformBuilder {
     /// Create a new temp platform with a default core rpc
     pub fn build_with_default_rpc(self) -> TempPlatform<DefaultCoreRPC> {
         let platform = Platform::<DefaultCoreRPC>::open(self.tempdir.path(), self.config)
+            .expect("should open Platform successfully");
+
+        TempPlatform {
+            platform,
+            tempdir: self.tempdir,
+        }
+    }
+
+    /// Create a new temp platform with a default core rpc
+    pub fn build_with_rpc<C : CoreRPCLike>(self, core_rpc: C, initial_protocol_version: Option<ProtocolVersion>) -> TempPlatform<C> {
+        let platform = Platform::<C>::open_with_client(self.tempdir.path(), self.config, core_rpc, initial_protocol_version)
             .expect("should open Platform successfully");
 
         TempPlatform {
