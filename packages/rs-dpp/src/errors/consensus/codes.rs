@@ -128,6 +128,7 @@ impl ErrorWithCode for BasicError {
             Self::GroupMemberHasPowerOverLimitError(_) => 10356,
             Self::MainGroupIsNotDefinedError(_) => 10357,
             Self::GroupRequiredPowerIsInvalidError(_) => 10358,
+            Self::GroupHasTooFewMembersError(_) => 10359,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
