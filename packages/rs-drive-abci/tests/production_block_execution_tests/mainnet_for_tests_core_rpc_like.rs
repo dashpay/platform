@@ -134,7 +134,7 @@ impl CoreRPCLike for MainnetForTestsCoreRpcLike {
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
         match height {
-            (Some(2128896)) => {
+            Some(2128896) => {
                 let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/production_block_execution_tests/mainnet_genesis_test_data/quorum_list_extended_2128896.json");
                 let file = std::fs::File::open(path.clone()).map_err(|e| {
@@ -155,7 +155,7 @@ impl CoreRPCLike for MainnetForTestsCoreRpcLike {
 
                 Ok(quorum_list_result)
             }
-            (Some(2132092)) => {
+            Some(2132092) => {
                 let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/production_block_execution_tests/mainnet_genesis_test_data/quorum_list_extended_2132092.json");
                 let file = std::fs::File::open(path.clone()).map_err(|e| {
@@ -189,7 +189,7 @@ impl CoreRPCLike for MainnetForTestsCoreRpcLike {
         hash: &QuorumHash,
         _include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error> {
-        match (quorum_type, hex::encode(hash.to_raw_hash()).as_str()) {
+        match (quorum_type, hex::encode(hash.reverse().to_raw_hash()).as_str()) {
             (QuorumType::Llmq100_67, hash) => {
                 load_quorum_info_from_file(format!("quorum_info_100_67_{}.json", hash).as_str())
             }

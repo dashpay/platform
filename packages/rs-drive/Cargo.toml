@@ -86,7 +86,7 @@ harness = false
 
 [features]
 
-default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
+default = ["full", "verify", "fixtures-and-mocks", "cbor_query", "grovedb_operations_logging"]
 grovedbg = ["grovedb/grovedbg"]
 fee-distribution = ["dpp/fee-distribution"]
 fixtures-and-mocks = [

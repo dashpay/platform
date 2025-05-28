@@ -31,8 +31,6 @@ impl Drive {
         //     println!("batch {}", &ops);
         // }
 
-        tracing::info!(?ops,);
-
         if self.config.batching_consistency_verification {
             let consistency_results =
                 QualifiedGroveDbOp::verify_consistency_of_operations(&ops.operations);
@@ -100,9 +98,9 @@ impl Drive {
 
             tracing::trace!(
                 target: "drive_grovedb_operations",
-                ?ops,
-                ?root_hash,
-                ?previous_root_hash,
+                ops = display(&ops),
+                root_hash = hex::encode(root_hash),
+                previous_root_hash = hex::encode(previous_root_hash),
                 is_transactional = transaction.is_some(),
                 "grovedb batch applied",
             );
