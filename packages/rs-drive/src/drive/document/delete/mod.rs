@@ -89,7 +89,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None, Some(platform_version))
+        let (drive, _) = Drive::open(tmp_dir, None)
             .expect("expected to open Drive successfully");
 
         drive

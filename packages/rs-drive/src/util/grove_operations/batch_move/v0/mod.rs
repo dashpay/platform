@@ -131,7 +131,7 @@ mod tests {
     /// Successfully move a single non‑tree item from `root` to `new_root`.
     #[test]
     fn test_batch_move_single_item_success() {
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let tx = drive.grove.start_transaction();
 
@@ -237,7 +237,7 @@ mod tests {
     /// Attempting to move a missing key should return a PathKeyNotFound error.
     #[test]
     fn test_batch_move_single_item_missing() {
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let tx = drive.grove.start_transaction();
 
@@ -285,7 +285,7 @@ mod tests {
     /// Moving a subtree (tree element) must fail with NotSupported.
     #[test]
     fn test_batch_move_single_item_tree_error() {
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let tx = drive.grove.start_transaction();
 

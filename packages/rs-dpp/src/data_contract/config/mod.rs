@@ -30,7 +30,12 @@ impl DataContractConfig {
     pub fn default_for_version(
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config {
+        match platform_version
+            .dpp
+            .contract_versions
+            .config
+            .default_current_version
+        {
             0 => Ok(DataContractConfigV0::default().into()),
             1 => Ok(DataContractConfigV1::default().into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -41,11 +46,36 @@ impl DataContractConfig {
         }
     }
 
+    /// Adjusts the current `DataContractConfig` to be valid for the provided platform version.
+    ///
+    /// This replaces the internal version with the `default_current_version` defined in the platform version's
+    /// feature bounds for contract config.
+    pub fn config_valid_for_platform_version(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> DataContractConfig {
+        match self {
+            DataContractConfig::V0(v0) => DataContractConfig::V0(v0),
+            DataContractConfig::V1(v1) => {
+                if platform_version.dpp.contract_versions.config.max_version == 0 {
+                    DataContractConfig::V0(v1.into())
+                } else {
+                    self
+                }
+            }
+        }
+    }
+
     pub fn from_value(
         value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config {
+        match platform_version
+            .dpp
+            .contract_versions
+            .config
+            .default_current_version
+        {
             0 => {
                 let config: DataContractConfigV0 = platform_value::from_value(value)?;
                 Ok(config.into())
@@ -85,7 +115,12 @@ impl DataContractConfig {
         contract: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config {
+        match platform_version
+            .dpp
+            .contract_versions
+            .config
+            .default_current_version
+        {
             0 => Ok(
                 DataContractConfigV0::get_contract_configuration_properties_v0(contract)?.into(),
             ),

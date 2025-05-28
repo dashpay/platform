@@ -13,7 +13,7 @@ pub struct DPPContractVersions {
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
-    pub config: FeatureVersion,
+    pub config: FeatureVersionBounds,
     pub methods: DataContractMethodVersions,
     pub document_type_versions: DocumentTypeVersions,
 }

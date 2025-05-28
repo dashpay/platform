@@ -128,14 +128,9 @@ impl<C> Platform<C> {
     {
         let config = config.unwrap_or(PlatformConfig::default_testnet());
 
-        let default_initial_platform_version = initial_protocol_version
-            .map(PlatformVersion::get)
-            .transpose()?;
-
         let (drive, current_platform_version) = Drive::open(
             path,
             Some(config.drive.clone()),
-            default_initial_platform_version,
         )
         .map_err(Error::Drive)?;
 

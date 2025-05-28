@@ -168,7 +168,7 @@ pub fn setup(
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
-    let drive = setup_drive(Some(drive_config), None);
+    let drive = setup_drive(Some(drive_config));
 
     let db_transaction = drive.grove.start_transaction();
 

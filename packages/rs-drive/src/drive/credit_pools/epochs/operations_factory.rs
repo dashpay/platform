@@ -426,7 +426,7 @@ mod tests {
 
         #[test]
         fn test_error_if_fee_pools_not_initialized() {
-            let drive = setup_drive(None, None);
+            let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
