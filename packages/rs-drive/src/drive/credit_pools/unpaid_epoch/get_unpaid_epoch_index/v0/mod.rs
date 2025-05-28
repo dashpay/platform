@@ -57,7 +57,7 @@ mod tests {
         #[test]
         fn test_error_if_fee_pools_tree_is_not_initiated() {
             let platform_version = PlatformVersion::latest();
-            let drive = setup_drive(None, None);
+            let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
             let result = drive.get_unpaid_epoch_index_v0(Some(&transaction), platform_version);

@@ -17,7 +17,7 @@ use crate::validation::operations::ProtocolValidationOperation;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::{Identifier, Value};
-use platform_version::TryFromPlatformVersioned;
+use platform_version::{IntoPlatformVersioned, TryFromPlatformVersioned};
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -161,11 +161,13 @@ impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFor
             .default_current_version
         {
             0 => {
-                let v0_format: DataContractInSerializationFormatV0 = DataContract::V0(value).into();
+                let v0_format: DataContractInSerializationFormatV0 =
+                    DataContract::V0(value).into_platform_versioned(platform_version);
                 Ok(v0_format.into())
             }
             1 => {
-                let v1_format: DataContractInSerializationFormatV1 = DataContract::V0(value).into();
+                let v1_format: DataContractInSerializationFormatV1 =
+                    DataContract::V0(value).into_platform_versioned(platform_version);
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -192,12 +194,12 @@ impl TryFromPlatformVersioned<&DataContractV0> for DataContractInSerializationFo
         {
             0 => {
                 let v0_format: DataContractInSerializationFormatV0 =
-                    DataContract::V0(value.to_owned()).into();
+                    DataContract::V0(value.to_owned()).into_platform_versioned(platform_version);
                 Ok(v0_format.into())
             }
             1 => {
                 let v1_format: DataContractInSerializationFormatV1 =
-                    DataContract::V0(value.to_owned()).into();
+                    DataContract::V0(value.to_owned()).into_platform_versioned(platform_version);
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -223,11 +225,13 @@ impl TryFromPlatformVersioned<DataContractV1> for DataContractInSerializationFor
             .default_current_version
         {
             0 => {
-                let v0_format: DataContractInSerializationFormatV0 = DataContract::V1(value).into();
+                let v0_format: DataContractInSerializationFormatV0 =
+                    DataContract::V1(value).into_platform_versioned(platform_version);
                 Ok(v0_format.into())
             }
             1 => {
-                let v1_format: DataContractInSerializationFormatV1 = DataContract::V1(value).into();
+                let v1_format: DataContractInSerializationFormatV1 =
+                    DataContract::V1(value).into_platform_versioned(platform_version);
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -254,12 +258,12 @@ impl TryFromPlatformVersioned<&DataContractV1> for DataContractInSerializationFo
         {
             0 => {
                 let v0_format: DataContractInSerializationFormatV0 =
-                    DataContract::V1(value.to_owned()).into();
+                    DataContract::V1(value.to_owned()).into_platform_versioned(platform_version);
                 Ok(v0_format.into())
             }
             1 => {
                 let v1_format: DataContractInSerializationFormatV1 =
-                    DataContract::V1(value.to_owned()).into();
+                    DataContract::V1(value.to_owned()).into_platform_versioned(platform_version);
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -285,11 +289,13 @@ impl TryFromPlatformVersioned<&DataContract> for DataContractInSerializationForm
             .default_current_version
         {
             0 => {
-                let v0_format: DataContractInSerializationFormatV0 = value.clone().into();
+                let v0_format: DataContractInSerializationFormatV0 =
+                    value.clone().into_platform_versioned(platform_version);
                 Ok(v0_format.into())
             }
             1 => {
-                let v1_format: DataContractInSerializationFormatV1 = value.clone().into();
+                let v1_format: DataContractInSerializationFormatV1 =
+                    value.clone().into_platform_versioned(platform_version);
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -315,11 +321,13 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
             .default_current_version
         {
             0 => {
-                let v0_format: DataContractInSerializationFormatV0 = value.into();
+                let v0_format: DataContractInSerializationFormatV0 =
+                    value.into_platform_versioned(platform_version);
                 Ok(v0_format.into())
             }
             1 => {
-                let v1_format: DataContractInSerializationFormatV1 = value.into();
+                let v1_format: DataContractInSerializationFormatV1 =
+                    value.into_platform_versioned(platform_version);
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {

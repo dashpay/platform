@@ -811,7 +811,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "toml",
 ]
@@ -1171,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "dapi-grpc",
  "heck 0.5.0",
@@ -1233,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1353,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1496,7 +1496,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1506,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1603,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1659,7 +1659,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1884,7 +1884,7 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "feature-flags-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3003,7 +3003,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -3062,7 +3062,7 @@ dependencies = [
 
 [[package]]
 name = "keyword-search-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3191,7 +3191,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3815,7 +3815,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3823,7 +3823,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3833,7 +3833,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3853,7 +3853,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "quote",
  "syn 2.0.100",
@@ -3861,7 +3861,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "bincode",
  "ferment-macro",
@@ -3873,7 +3873,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4359,7 +4359,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "backon",
  "chrono",
@@ -4875,7 +4875,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4960,7 +4960,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "bincode",
  "dpp",
@@ -5356,7 +5356,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "token-history-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -5967,7 +5967,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -6072,7 +6072,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6331,7 +6331,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.13"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",

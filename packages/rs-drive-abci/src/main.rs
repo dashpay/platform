@@ -470,7 +470,7 @@ mod test {
 
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(&path, None, Some(platform_version)).expect("open drive");
+        let (drive, _) = Drive::open(&path, None).expect("open drive");
 
         drive
             .create_initial_state_structure(None, platform_version)

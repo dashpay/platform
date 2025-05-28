@@ -107,7 +107,6 @@ mod tests {
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
@@ -123,9 +122,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
-                .expect("to load system data contract");
+        let data_contract = drive.cache.system_data_contracts.load_withdrawals();
 
         setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 

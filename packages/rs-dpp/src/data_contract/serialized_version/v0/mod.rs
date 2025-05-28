@@ -7,6 +7,8 @@ use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
+use platform_version::FromPlatformVersioned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -70,6 +72,63 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                     document_types,
                     ..
                 } = v1;
+
+                DataContractInSerializationFormatV0 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    document_schemas: document_types
+                        .into_iter()
+                        .map(|(key, document_type)| (key, document_type.schema_owned()))
+                        .collect(),
+                    schema_defs,
+                }
+            }
+        }
+    }
+}
+
+impl FromPlatformVersioned<DataContract> for DataContractInSerializationFormatV0 {
+    fn from_platform_versioned(value: DataContract, platform_version: &PlatformVersion) -> Self {
+        match value {
+            DataContract::V0(v0) => {
+                let DataContractV0 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    schema_defs,
+                    document_types,
+                    ..
+                } = v0;
+
+                let config = config.config_valid_for_platform_version(platform_version);
+
+                DataContractInSerializationFormatV0 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    document_schemas: document_types
+                        .into_iter()
+                        .map(|(key, document_type)| (key, document_type.schema_owned()))
+                        .collect(),
+                    schema_defs,
+                }
+            }
+            DataContract::V1(v1) => {
+                let DataContractV1 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    schema_defs,
+                    document_types,
+                    ..
+                } = v1;
+
+                let config = config.config_valid_for_platform_version(platform_version);
 
                 DataContractInSerializationFormatV0 {
                     id,

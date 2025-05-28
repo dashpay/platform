@@ -1,3 +1,21 @@
+## [2.0.0-rc.13](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.13) (2025-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** load data contracts in their respective versions (#2644)
+
+### Features
+
+* **platform:** add token contract info and query ([#2641](https://github.com/dashpay/platform/issues/2641))
+
+
+### Bug Fixes
+
+* **dpp:** unclear error message for missing document types if no tokens defined ([#2639](https://github.com/dashpay/platform/issues/2639))
+* **drive:** proved identity update was giving error ([#2642](https://github.com/dashpay/platform/issues/2642))
+* **platform:** load data contracts in their respective versions ([#2644](https://github.com/dashpay/platform/issues/2644))
+
 ## [2.0.0-rc.12](https://github.com/dashpay/platform/compare/v2.0.0-rc.11...v2.0.0-rc.12) (2025-05-26)
 
 
