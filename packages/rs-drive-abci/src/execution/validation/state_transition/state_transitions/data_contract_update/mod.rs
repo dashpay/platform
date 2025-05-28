@@ -718,7 +718,6 @@ mod tests {
 
             let (identity_2, _, _) = setup_identity(&mut platform, 123, dash_to_credits!(1.0));
 
-
             let platform_state = platform.state.load();
             let platform_version = platform_state
                 .current_platform_version()
