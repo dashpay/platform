@@ -73,6 +73,7 @@ where
     {
         tracing::trace!(
             method = "run_block_proposal_v0",
+            protocol_version = platform_version.protocol_version,
             ?block_proposal,
             ?epoch_info,
             "Running a block proposal for height: {}, round: {}",
