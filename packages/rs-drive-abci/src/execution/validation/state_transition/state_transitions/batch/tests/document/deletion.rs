@@ -1113,7 +1113,7 @@ mod deletion_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let (_other_identity, other_signer, other_key) =
+        let (other_identity, other_signer, other_key) =
             setup_identity(&mut platform, 495, dash_to_credits!(0.1));
 
         let dpns = platform.drive.cache.system_data_contracts.load_dpns();
@@ -1141,6 +1141,8 @@ mod deletion_tests {
         let mut altered_document = document.clone();
 
         altered_document.set_revision(Some(1));
+
+        altered_document.set_owner_id(other_identity.id());
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
@@ -1224,17 +1226,14 @@ mod deletion_tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
-
-        assert_eq!(processing_result.invalid_unpaid_count(), 1);
-        assert_eq!(processing_result.invalid_paid_count(), 0);
-        assert_eq!(processing_result.valid_count(), 0);
-
-        // Check the error message
+        
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [UnpaidConsensusError(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError(_)
-            ))]
+            [PaidConsensusError(ConsensusError::StateError(
+                StateError::DocumentOwnerIdMismatchError(_)
+            ),
+                    _
+                )]
         );
     }
 }
