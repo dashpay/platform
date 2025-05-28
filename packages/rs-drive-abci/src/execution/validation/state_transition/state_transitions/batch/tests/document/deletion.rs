@@ -3,10 +3,8 @@ use super::*;
 mod deletion_tests {
     use super::*;
     use crate::execution::validation::state_transition::tests::create_card_game_internal_token_contract_with_owner_identity_burn_tokens;
-    use dpp::consensus::signature::SignatureError;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
 
     #[test]
     fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
