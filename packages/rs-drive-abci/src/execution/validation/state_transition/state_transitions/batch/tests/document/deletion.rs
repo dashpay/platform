@@ -1226,14 +1226,13 @@ mod deletion_tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
-        
+
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(ConsensusError::StateError(
-                StateError::DocumentOwnerIdMismatchError(_)
-            ),
-                    _
-                )]
+            [PaidConsensusError(
+                ConsensusError::StateError(StateError::DocumentOwnerIdMismatchError(_)),
+                _
+            )]
         );
     }
 }
