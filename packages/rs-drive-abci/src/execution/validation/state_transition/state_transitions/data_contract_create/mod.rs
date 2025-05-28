@@ -3174,6 +3174,118 @@ mod tests {
         }
 
         #[test]
+        fn test_data_contract_creation_with_group_with_single_member_should_error() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let mut data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/basic-token/basic-token.json",
+                None,
+                None,
+                false, //no need to validate the data contracts in tests for drive
+                platform_version,
+            )
+            .expect("expected to get json based contract");
+
+            let identity_id = identity.id();
+
+            let base_supply_start_amount = 0;
+
+            {
+                let groups = data_contract.groups_mut().expect("expected tokens");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+                let token_config = data_contract
+                    .tokens_mut()
+                    .expect("expected tokens")
+                    .get_mut(&0)
+                    .expect("expected first token");
+                token_config.set_main_control_group(Some(0));
+                token_config.set_base_supply(base_supply_start_amount);
+                token_config.set_manual_minting_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }
+
+            let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+            let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::GroupHasTooFewMembersError(_)),
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id,
+                    identity_id.to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+            assert_eq!(token_balance, None);
+        }
+
+        #[test]
         fn test_data_contract_creation_with_group_with_member_with_too_big_power_should_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()

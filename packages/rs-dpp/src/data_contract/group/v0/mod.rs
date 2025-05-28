@@ -1,11 +1,12 @@
 use crate::consensus::basic::data_contract::{
-    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupRequiredPowerIsInvalidError,
-    GroupTotalPowerLessThanRequiredError,
+    GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
+    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
 };
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
+use crate::data_contract::GroupContractPosition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -86,6 +87,7 @@ impl GroupMethodsV0 for GroupV0 {
     /// - `Err(ProtocolError)` if validation fails due to an invalid group configuration.
     fn validate(
         &self,
+        group_contract_position: Option<GroupContractPosition>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let max_group_members = platform_version.system_limits.max_contract_group_size as u32;
@@ -95,6 +97,12 @@ impl GroupMethodsV0 for GroupV0 {
         if self.members.len() as u32 > max_group_members {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 GroupExceedsMaxMembersError::new(max_group_members).into(),
+            ));
+        }
+
+        if self.members.len() < 2 {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                GroupHasTooFewMembersError::new(group_contract_position).into(),
             ));
         }
 
@@ -183,7 +191,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
 
             let result = group
-                .validate(platform_version)
+                .validate(None, platform_version)
                 .expect("group should be valid");
 
             assert!(result.is_valid());

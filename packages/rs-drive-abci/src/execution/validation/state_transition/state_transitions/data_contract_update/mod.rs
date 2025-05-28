@@ -716,6 +716,9 @@ mod tests {
 
             let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
+            let (identity_2, _, _) = setup_identity(&mut platform, 123, dash_to_credits!(1.0));
+
+
             let platform_state = platform.state.load();
             let platform_version = platform_state
                 .current_platform_version()
@@ -734,14 +737,14 @@ mod tests {
                 groups.insert(
                     0,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
                 groups.insert(
                     1,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
@@ -839,6 +842,8 @@ mod tests {
 
             let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
+            let (identity_2, _, _) = setup_identity(&mut platform, 123, dash_to_credits!(1.0));
+
             let platform_state = platform.state.load();
             let platform_version = platform_state
                 .current_platform_version()
@@ -857,14 +862,14 @@ mod tests {
                 groups.insert(
                     0,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
                 groups.insert(
                     1,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
@@ -887,12 +892,12 @@ mod tests {
             updated_data_contract.set_version(2);
 
             {
-                // Remove a group from the updated contract
+                // Add a group to the updated contract
                 let groups = updated_data_contract.groups_mut().expect("expected groups");
                 groups.insert(
                     1,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 2)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 2,
                     }),
                 );

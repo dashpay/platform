@@ -9,12 +9,13 @@ use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
     DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
-    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError,
-    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
-    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
-    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
+    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -567,6 +568,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
+
+    #[error(transparent)]
+    GroupHasTooFewMembersError(GroupHasTooFewMembersError),
 }
 
 impl From<BasicError> for ConsensusError {

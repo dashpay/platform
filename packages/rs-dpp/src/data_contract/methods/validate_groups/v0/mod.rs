@@ -26,8 +26,8 @@ impl DataContract {
         }
 
         // Validate each group individually
-        for group in groups.values() {
-            let validation_result = group.validate(platform_version)?;
+        for (pos, group) in groups.iter() {
+            let validation_result = group.validate(Some(*pos), platform_version)?;
             if !validation_result.is_valid() {
                 return Ok(validation_result);
             }
