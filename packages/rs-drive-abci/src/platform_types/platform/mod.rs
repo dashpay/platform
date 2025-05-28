@@ -131,6 +131,15 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) =
             Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
+        if let Some(initial_protocol_version) = initial_protocol_version {
+            if initial_protocol_version > 1 {
+                drive
+                    .cache
+                    .system_data_contracts
+                    .reload_system_contracts(PlatformVersion::get(initial_protocol_version)?)?;
+            }
+        }
+
         if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
@@ -139,6 +148,12 @@ impl<C> Platform<C> {
                     "execution state should be stored as well as protocol version".to_string(),
                 )));
             };
+            if platform_version.protocol_version > 1 {
+                drive
+                    .cache
+                    .system_data_contracts
+                    .reload_system_contracts(platform_version)?;
+            }
 
             return Platform::open_with_client_saved_state::<P>(
                 drive,
