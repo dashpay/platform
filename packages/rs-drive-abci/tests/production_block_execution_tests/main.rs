@@ -25,10 +25,16 @@ mod tests {
 
         tracing_subscriber::fmt::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(
-                "error,drive::util::grove_operations=trace",
+                "error,drive::util::grove_operations=trace,drive_grovedb_operations=trace",
             ))
             .json()
+            .pretty()
+            .with_file(false)
+            .with_line_number(false)
             .with_ansi(false)
+            .without_time()
+            .with_level(false)
+            .with_target(false)
             .with_writer(writer)
             .try_init()
             .ok();

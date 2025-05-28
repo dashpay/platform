@@ -134,7 +134,7 @@ impl CoreRPCLike for MainnetForTestsCoreRpcLike {
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
         match height {
-            (Some(2128896)) => {
+            Some(2128896) => {
                 let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/production_block_execution_tests/mainnet_genesis_test_data/quorum_list_extended_2128896.json");
                 let file = std::fs::File::open(path.clone()).map_err(|e| {
@@ -155,7 +155,7 @@ impl CoreRPCLike for MainnetForTestsCoreRpcLike {
 
                 Ok(quorum_list_result)
             }
-            (Some(2132092)) => {
+            Some(2132092) => {
                 let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/production_block_execution_tests/mainnet_genesis_test_data/quorum_list_extended_2132092.json");
                 let file = std::fs::File::open(path.clone()).map_err(|e| {
