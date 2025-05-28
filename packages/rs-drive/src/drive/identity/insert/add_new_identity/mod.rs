@@ -190,7 +190,7 @@ mod tests {
         platform_version: &PlatformVersion,
         expected_fee_result: FeeResult,
     ) {
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
 
         let transaction = drive.grove.start_transaction();
 

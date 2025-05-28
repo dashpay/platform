@@ -1,4 +1,5 @@
 use crate::data_contract::config;
+use crate::data_contract::config::v1::DataContractConfigV1;
 use crate::data_contract::config::{
     DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
     DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
@@ -190,5 +191,23 @@ impl DataContractConfigV0 {
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
         })
+    }
+}
+
+impl From<DataContractConfigV1> for DataContractConfigV0 {
+    fn from(value: DataContractConfigV1) -> Self {
+        DataContractConfigV0 {
+            can_be_deleted: value.can_be_deleted,
+            readonly: value.readonly,
+            keeps_history: value.keeps_history,
+            documents_keep_history_contract_default: value.documents_keep_history_contract_default,
+            documents_mutable_contract_default: value.documents_mutable_contract_default,
+            documents_can_be_deleted_contract_default: value
+                .documents_can_be_deleted_contract_default,
+            requires_identity_encryption_bounded_key: value
+                .requires_identity_encryption_bounded_key,
+            requires_identity_decryption_bounded_key: value
+                .requires_identity_decryption_bounded_key,
+        }
     }
 }

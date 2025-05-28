@@ -36,14 +36,10 @@ impl Default for SetupFeePoolsOptions {
 
 #[cfg(feature = "full")]
 /// Sets up Drive using a temporary directory and the optionally given Drive configuration settings.
-pub fn setup_drive(
-    drive_config: Option<DriveConfig>,
-    specific_platform_version: Option<&PlatformVersion>,
-) -> Drive {
+pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
     let tmp_dir = TempDir::new().unwrap();
 
-    let (drive, _) = Drive::open(tmp_dir, drive_config, specific_platform_version)
-        .expect("should open Drive successfully");
+    let (drive, _) = Drive::open(tmp_dir, drive_config).expect("should open Drive successfully");
 
     drive
 }
@@ -53,13 +49,10 @@ pub fn setup_drive(
 pub fn setup_drive_with_initial_state_structure(
     specific_platform_version: Option<&PlatformVersion>,
 ) -> Drive {
-    let drive = setup_drive(
-        Some(DriveConfig {
-            batching_consistency_verification: true,
-            ..Default::default()
-        }),
-        specific_platform_version,
-    );
+    let drive = setup_drive(Some(DriveConfig {
+        batching_consistency_verification: true,
+        ..Default::default()
+    }));
 
     let platform_version = specific_platform_version.unwrap_or(PlatformVersion::latest());
     drive

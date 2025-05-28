@@ -2,23 +2,69 @@ use crate::error::Error;
 use arc_swap::{ArcSwap, Guard};
 use dpp::data_contract::DataContract;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use platform_version::version::PlatformVersion;
+use platform_version::version::{PlatformVersion, ProtocolVersion};
 use std::sync::Arc;
+
+/// A wrapper around a system [`DataContract`] that tracks its activation version
+/// and allows atomic replacement.
+///
+/// This is used for system data contracts that may be updated over time while
+/// tracking the protocol version from which they are considered active.
+pub struct ActiveSystemDataContract {
+    /// The current active version of the data contract.
+    pub contract: ArcSwap<DataContract>,
+
+    /// The protocol version since which this contract is considered active.
+    #[allow(unused)]
+    pub active_since_protocol_version: ProtocolVersion,
+}
+
+impl ActiveSystemDataContract {
+    /// Atomically replaces the current data contract with a new one.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract` - The new [`DataContract`] to store.
+    pub fn store(&self, contract: DataContract) {
+        self.contract.store(Arc::new(contract));
+    }
+
+    /// Loads the current data contract.
+    ///
+    /// Returns a guard that provides shared access to the current [`DataContract`].
+    /// The guard keeps the contract alive for the duration of the borrow.
+    pub fn load(&self) -> Guard<Arc<DataContract>> {
+        self.contract.load()
+    }
+
+    /// Creates a new [`ActiveSystemDataContract`] with the given contract and activation version.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract` - The initial [`DataContract`] to store.
+    /// * `active_since_protocol_version` - The protocol version from which this contract is considered active.
+    pub fn new(contract: DataContract, active_since_protocol_version: ProtocolVersion) -> Self {
+        ActiveSystemDataContract {
+            contract: ArcSwap::from_pointee(contract),
+            active_since_protocol_version,
+        }
+    }
+}
 
 /// System contracts
 pub struct SystemDataContracts {
     /// Withdrawal contract
-    withdrawals: ArcSwap<DataContract>,
+    withdrawals: ActiveSystemDataContract,
     /// DPNS contract
-    dpns: ArcSwap<DataContract>,
+    dpns: ActiveSystemDataContract,
     /// Dashpay contract
-    dashpay: ArcSwap<DataContract>,
+    dashpay: ActiveSystemDataContract,
     /// Masternode reward shares contract
-    masternode_reward_shares: ArcSwap<DataContract>,
+    masternode_reward_shares: ActiveSystemDataContract,
     /// Token history contract
-    token_history: ArcSwap<DataContract>,
+    token_history: ActiveSystemDataContract,
     /// Search contract
-    keyword_search: ArcSwap<DataContract>,
+    keyword_search: ActiveSystemDataContract,
 }
 
 impl SystemDataContracts {
@@ -43,46 +89,57 @@ impl SystemDataContracts {
         let keyword_search = load_system_data_contract(KeywordSearch, platform_version)?;
 
         // 2. Swap the cached Arcs — each swap is lock-free & O(1).
-        self.withdrawals.store(Arc::new(withdrawals));
-        self.dpns.store(Arc::new(dpns));
-        self.dashpay.store(Arc::new(dashpay));
+        self.withdrawals.store(withdrawals);
+        self.dpns.store(dpns);
+        self.dashpay.store(dashpay);
         self.masternode_reward_shares
-            .store(Arc::new(masternode_reward_shares));
-        self.token_history.store(Arc::new(token_history));
-        self.keyword_search.store(Arc::new(keyword_search));
+            .store(masternode_reward_shares);
+        self.token_history.store(token_history);
+        self.keyword_search.store(keyword_search);
 
         Ok(())
     }
 
     /// load genesis system contracts
-    pub fn load_genesis_system_contracts(
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    pub fn load_genesis_system_contracts() -> Result<Self, Error> {
+        // We should use the version where the contract became active for each data contract
         Ok(Self {
-            withdrawals: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::Withdrawals,
-                platform_version,
-            )?),
-            dpns: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::DPNS,
-                platform_version,
-            )?),
-            dashpay: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::Dashpay,
-                platform_version,
-            )?),
-            masternode_reward_shares: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::MasternodeRewards,
-                platform_version,
-            )?),
-            token_history: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::TokenHistory,
-                platform_version,
-            )?),
-            keyword_search: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::KeywordSearch,
-                platform_version,
-            )?),
+            withdrawals: ActiveSystemDataContract::new(
+                load_system_data_contract(
+                    SystemDataContract::Withdrawals,
+                    PlatformVersion::first(),
+                )?,
+                1,
+            ),
+            dpns: ActiveSystemDataContract::new(
+                load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::first())?,
+                1,
+            ),
+            dashpay: ActiveSystemDataContract::new(
+                load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::first())?,
+                1,
+            ),
+            masternode_reward_shares: ActiveSystemDataContract::new(
+                load_system_data_contract(
+                    SystemDataContract::MasternodeRewards,
+                    PlatformVersion::first(),
+                )?,
+                1,
+            ),
+            token_history: ActiveSystemDataContract::new(
+                load_system_data_contract(
+                    SystemDataContract::TokenHistory,
+                    PlatformVersion::first(),
+                )?,
+                9,
+            ),
+            keyword_search: ActiveSystemDataContract::new(
+                load_system_data_contract(
+                    SystemDataContract::KeywordSearch,
+                    PlatformVersion::first(),
+                )?,
+                9,
+            ),
         })
     }
 

@@ -177,7 +177,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
 
     fn setup_base_test() -> (Drive, Identity) {
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
