@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "2.0.0-rc.13"
+version = "2.0.0-rc.14"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
