@@ -212,7 +212,13 @@ impl DataContractInSerializationFormat {
                     Some(DataContractMismatch::Groups)
                 } else if v1_self.tokens != v1_other.tokens {
                     Some(DataContractMismatch::Tokens)
-                } else if v1_self.keywords != v1_other.keywords {
+                } else if v1_self.keywords.len() != v1_other.keywords.len()
+                    || v1_self
+                        .keywords
+                        .iter()
+                        .zip(v1_other.keywords.iter())
+                        .any(|(a, b)| a.to_lowercase() != b.to_lowercase())
+                {
                     Some(DataContractMismatch::Keywords)
                 } else if v1_self.description != v1_other.description {
                     Some(DataContractMismatch::Description)
