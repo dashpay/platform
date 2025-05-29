@@ -1,3 +1,36 @@
+## [2.0.0-rc.14](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.14) (2025-05-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** set minimum intervals for perpetual distribution (#2622)
+* **platform:** load data contracts in their respective versions (#2644)
+
+### Features
+
+* add checks for authorized action takers in data contract create and update validations ([#2647](https://github.com/dashpay/platform/issues/2647))
+* **dpp:** add validation for minimum group member count ([#2646](https://github.com/dashpay/platform/issues/2646))
+* **dpp:** set minimum intervals for perpetual distribution ([#2622](https://github.com/dashpay/platform/issues/2622))
+* **platform:** add token contract info and query ([#2641](https://github.com/dashpay/platform/issues/2641))
+* **sdk:** add DataContractMismatch enum for detailed contract comparison ([#2648](https://github.com/dashpay/platform/issues/2648))
+
+
+### Bug Fixes
+
+* **dpp:** unclear error message for missing document types if no tokens defined ([#2639](https://github.com/dashpay/platform/issues/2639))
+* **drive:** proved identity update was giving error ([#2642](https://github.com/dashpay/platform/issues/2642))
+* **platform:** load data contracts in their respective versions ([#2644](https://github.com/dashpay/platform/issues/2644))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.13 ([#2645](https://github.com/dashpay/platform/issues/2645))
+
+
+### Tests
+
+* **drive:** add test for invalid owner on document delete ([#2643](https://github.com/dashpay/platform/issues/2643))
+
 ## [2.0.0-rc.13](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.13) (2025-05-28)
 
 
