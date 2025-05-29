@@ -11,6 +11,7 @@ use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
+use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -119,6 +120,16 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 && !token_configuration
                     .distribution_rules()
                     .minting_allow_choosing_destination()
+                && !(token_configuration
+                    .distribution_rules()
+                    .minting_allow_choosing_destination_rules()
+                    .authorized_to_make_change_action_takers()
+                    == &AuthorizedActionTakers::NoOne
+                    && token_configuration
+                        .distribution_rules()
+                        .minting_allow_choosing_destination_rules()
+                        .admin_action_takers()
+                        == &AuthorizedActionTakers::NoOne)
             {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     NewTokensDestinationIdentityOptionRequiredError::new(
