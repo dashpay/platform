@@ -4,6 +4,7 @@ mod nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -59,6 +60,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
 impl StateTransitionBasicStructureValidationV0 for IdentityUpdateTransition {
     fn validate_basic_structure(
         &self,
+        _network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

@@ -4,6 +4,7 @@ mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 
@@ -28,6 +29,7 @@ use crate::rpc::core::CoreRPCLike;
 impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
     fn validate_basic_structure(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -37,7 +39,7 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
             .contract_update_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],

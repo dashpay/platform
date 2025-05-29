@@ -1,5 +1,6 @@
 mod v0;
 
+use dashcore::Network;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -14,6 +15,7 @@ impl RewardDistributionType {
     /// - For `EpochBasedDistribution`, no specific validation is enforced at this time.
     pub fn validate_structure_interval(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -22,7 +24,7 @@ impl RewardDistributionType {
             .token_versions
             .validate_structure_interval
         {
-            0 => Ok(self.validate_structure_interval_v0()),
+            0 => Ok(self.validate_structure_interval_v0(network_type)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "RewardDistributionType::validate_structure_interval".to_string(),
                 known_versions: vec![0],

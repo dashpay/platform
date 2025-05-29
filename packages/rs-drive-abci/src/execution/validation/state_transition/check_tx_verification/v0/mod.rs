@@ -66,7 +66,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // Only Data contract update does not have basic structure validation
             if state_transition.has_basic_structure_validation(platform_version) {
                 // First we validate the basic structure
-                let result = state_transition.validate_basic_structure(platform_version)?;
+                let result = state_transition
+                    .validate_basic_structure(platform.config.network, platform_version)?;
 
                 if !result.is_valid() {
                     return Ok(

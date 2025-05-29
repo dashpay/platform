@@ -83,6 +83,7 @@ impl StateTransitionActionTransformerV0 for BatchTransition {
 impl StateTransitionBasicStructureValidationV0 for BatchTransition {
     fn validate_basic_structure(
         &self,
+        _network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

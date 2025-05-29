@@ -1,6 +1,8 @@
 pub(crate) mod identity_retrieval;
 mod structure;
 mod transform_into_action;
+
+use dpp::dashcore::Network;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -73,6 +75,7 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
 impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
     fn validate_basic_structure(
         &self,
+        _network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
