@@ -108,7 +108,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     if state_transition.has_basic_structure_validation(platform_version) {
         // We validate basic structure validation after verifying the identity,
         // this is structure validation that does not require state and is already checked on check_tx
-        let consensus_result = state_transition.validate_basic_structure(platform_version)?;
+        let consensus_result =
+            state_transition.validate_basic_structure(platform.config.network, platform_version)?;
 
         if !consensus_result.is_valid() {
             // Basic structure validation is extremely cheap to process, because of this attacks are
@@ -124,7 +125,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
+    // For identity credit withdrawal and identity credit transfers we have a balance pre-check that includes a
     // processing amount and the transfer amount.
     // For other state transitions we only check a min balance for an amount set per version.
     // This is not done for identity create and identity top up who don't have this check here
@@ -320,7 +321,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
     ///
     /// # Arguments
     ///
-    /// * `platform` - A reference to the platform state ref.
+    /// * `network_type` - The network we are on, mainnet/testnet/a devnet/a regtest.
     /// * `platform_version` - The platform version.
     ///
     /// # Returns
@@ -328,6 +329,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_basic_structure(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
@@ -513,6 +515,7 @@ pub(crate) trait StateTransitionStateValidationV0:
 impl StateTransitionBasicStructureValidationV0 for StateTransition {
     fn validate_basic_structure(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
@@ -520,15 +523,23 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 // no basic structure validation
                 Ok(SimpleConsensusValidationResult::new())
             }
-            StateTransition::IdentityCreate(st) => st.validate_basic_structure(platform_version),
-            StateTransition::IdentityUpdate(st) => st.validate_basic_structure(platform_version),
-            StateTransition::IdentityTopUp(st) => st.validate_basic_structure(platform_version),
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_basic_structure(platform_version)
+            StateTransition::IdentityCreate(st) => {
+                st.validate_basic_structure(network_type, platform_version)
             }
-            StateTransition::Batch(st) => st.validate_basic_structure(platform_version),
+            StateTransition::IdentityUpdate(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::IdentityTopUp(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::Batch(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_basic_structure(platform_version)
+                st.validate_basic_structure(network_type, platform_version)
             }
             StateTransition::DataContractCreate(st) => {
                 if platform_version
@@ -539,7 +550,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                     .is_some()
                 {
-                    st.validate_basic_structure(platform_version)
+                    st.validate_basic_structure(network_type, platform_version)
                 } else {
                     Ok(SimpleConsensusValidationResult::new())
                 }
@@ -553,7 +564,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                     .is_some()
                 {
-                    st.validate_basic_structure(platform_version)
+                    st.validate_basic_structure(network_type, platform_version)
                 } else {
                     Ok(SimpleConsensusValidationResult::new())
                 }

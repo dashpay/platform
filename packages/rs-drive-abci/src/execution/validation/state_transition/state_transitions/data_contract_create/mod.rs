@@ -6,6 +6,7 @@ mod state;
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -80,6 +81,7 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
 impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
     fn validate_basic_structure(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -89,7 +91,7 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
             .contract_create_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
@@ -1270,7 +1272,7 @@ mod tests {
                         .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                             TokenPerpetualDistributionV0 {
                                 distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                    interval: 10,
+                                    interval: 100,
                                     function: DistributionFunction::Exponential {
                                         a: 1,
                                         d: 1,
@@ -2719,7 +2721,7 @@ mod tests {
                         .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                             TokenPerpetualDistributionV0 {
                                 distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                    interval: 10,
+                                    interval: 100,
                                     function: DistributionFunction::Exponential {
                                         a: 0,
                                         d: 0,
@@ -2837,7 +2839,7 @@ mod tests {
                         .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                             TokenPerpetualDistributionV0 {
                                 distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                    interval: 10,
+                                    interval: 100,
                                     function: DistributionFunction::Random { min: 0, max: 10 },
                                 },
                                 // we give to identity 2

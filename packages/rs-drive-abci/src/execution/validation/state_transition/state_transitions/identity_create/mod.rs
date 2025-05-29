@@ -4,6 +4,7 @@ pub(crate) mod identity_and_signatures;
 mod state;
 
 use crate::error::Error;
+use dpp::dashcore::Network;
 
 use crate::error::execution::ExecutionError;
 
@@ -78,6 +79,7 @@ impl StateTransitionActionTransformerForIdentityCreateTransitionV0 for IdentityC
 impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
     fn validate_basic_structure(
         &self,
+        _network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

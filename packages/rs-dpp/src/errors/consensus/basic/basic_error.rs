@@ -88,8 +88,10 @@ use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
-    InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError,
-    InvalidTokenPositionError, MissingDefaultLocalizationError,
+    InvalidTokenConfigUpdateNoChangeError, InvalidTokenDistributionBlockIntervalTooShortError,
+    InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
+    InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
     TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
@@ -566,6 +568,20 @@ pub enum BasicError {
     #[error(transparent)]
     TokenNoteOnlyAllowedWhenProposerError(TokenNoteOnlyAllowedWhenProposerError),
 
+    #[error(transparent)]
+    InvalidTokenDistributionBlockIntervalTooShortError(
+        InvalidTokenDistributionBlockIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionTimeIntervalTooShortError(
+        InvalidTokenDistributionTimeIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(
+        InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    ),
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
 
