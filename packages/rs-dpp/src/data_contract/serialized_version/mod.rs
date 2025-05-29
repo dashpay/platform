@@ -63,6 +63,8 @@ pub enum DataContractMismatch {
     Description,
     /// The two variants are of different serialization formats (e.g., V0 vs V1).
     FormatVersionMismatch,
+    /// The two variants are different in V0.
+    V0Mismatch,
 }
 
 impl fmt::Display for DataContractMismatch {
@@ -82,6 +84,7 @@ impl fmt::Display for DataContractMismatch {
             DataContractMismatch::FormatVersionMismatch => {
                 "Serialization format versions differ (e.g., V0 vs V1)"
             }
+            DataContractMismatch::V0Mismatch => "V0 versions differ",
         };
         write!(f, "{}", description)
     }
@@ -184,7 +187,7 @@ impl DataContractInSerializationFormat {
                 DataContractInSerializationFormat::V0(v0_other),
             ) => {
                 if v0_self != v0_other {
-                    Some(DataContractMismatch::FormatVersionMismatch)
+                    Some(DataContractMismatch::V0Mismatch)
                 } else {
                     None
                 }
