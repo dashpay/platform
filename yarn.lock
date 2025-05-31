@@ -1836,6 +1836,7 @@ __metadata:
   dependencies:
     "@iarna/toml": "npm:^2.2.5"
     add-stream: "npm:^1.0.0"
+    check-disk-space: "npm:^3.4.0"
     conventional-changelog: "npm:^3.1.24"
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
     node-gyp: "npm:^10.0.1"
@@ -5495,6 +5496,13 @@ __metadata:
   version: 0.7.0
   resolution: "chardet@npm:0.7.0"
   checksum: b0ec668fba5eeec575ed2559a0917ba41a6481f49063c8445400e476754e0957ee09e44dc032310f526182b8f1bf25e9d4ed371f74050af7be1383e06bc44952
+  languageName: node
+  linkType: hard
+
+"check-disk-space@npm:^3.4.0":
+  version: 3.4.0
+  resolution: "check-disk-space@npm:3.4.0"
+  checksum: 73130c32e26aaa1eda359706d9cbcde21785285dd829ec2b850c59e88ce99d8ebf830d6849315b2d4bc7eed9082aaea7c5f065f1ace591f49d3851f0c21157f9
   languageName: node
   linkType: hard
 

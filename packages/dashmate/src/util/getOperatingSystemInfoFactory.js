@@ -1,5 +1,5 @@
 import si from 'systeminformation';
-import * as diskusage from 'diskusage';
+import checkDiskSpace from 'check-disk-space';
 import os from 'os';
 import obfuscateObjectRecursive from './obfuscateObjectRecursive.js';
 import hideString from './hideString.js';
@@ -153,7 +153,7 @@ export default function getOperatingSystemInfoFactory(
     // Get disk usage info
     if (result.dockerSystemInfo) {
       try {
-        result.diskSpace = await diskusage.check(result.dockerSystemInfo.DockerRootDir);
+        result.diskSpace = await checkDiskSpace(result.dockerSystemInfo.DockerRootDir);
       } catch (e) {
         if (process.env.DEBUG) {
           // eslint-disable-next-line no-console
@@ -164,7 +164,7 @@ export default function getOperatingSystemInfoFactory(
 
     if (!result.diskSpace) {
       try {
-        result.diskSpace = await diskusage.check(os.platform() === 'win32' ? 'c:' : '/');
+        result.diskSpace = await checkDiskSpace(os.platform() === 'win32' ? 'c:' : '/');
       } catch (e) {
         if (process.env.DEBUG) {
           // eslint-disable-next-line no-console

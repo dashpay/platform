@@ -109,7 +109,7 @@ for required network services and avoid Proof-of-Service bans`,
 
     // Get disk usage info
     if (diskSpace) {
-      const availableDiskSpace = diskSpace.available / (1024 ** 3); // Convert to GB
+      const availableDiskSpace = diskSpace.free / (1024 ** 3); // Convert to GB
 
       if (availableDiskSpace < MINIMUM_DISK_SPACE) {
         const problem = new Problem(

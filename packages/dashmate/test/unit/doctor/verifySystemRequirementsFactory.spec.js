@@ -121,7 +121,7 @@ describe('verifySystemRequirementsFactory', () => {
   describe('Disk space', () => {
     it('should return a problem if disk space is less than minimum', () => {
       const systemInfo = {
-        diskSpace: { available: 50 * 1024 ** 3 },
+        diskSpace: { free: 50 * 1024 ** 3 },
       };
 
       const problems = verifySystemRequirements(systemInfo, false);
@@ -137,7 +137,7 @@ describe('verifySystemRequirementsFactory', () => {
       dockerSystemInfo: { NCPU: 4, MemTotal: 8 * 1024 ** 3 },
       cpu: { cores: 4, speed: 3.0 },
       memory: { total: 8 * 1024 ** 3, swaptotal: 2 * 1024 ** 3 },
-      diskSpace: { available: 500 * 1024 ** 3 },
+      diskSpace: { free: 500 * 1024 ** 3 },
     };
 
     const problems = verifySystemRequirements(systemInfo, false);

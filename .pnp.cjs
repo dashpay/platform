@@ -123,6 +123,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@iarna/toml", "npm:2.2.5"],\
           ["add-stream", "npm:1.0.0"],\
+          ["check-disk-space", "npm:3.4.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
           ["node-gyp", "npm:10.0.1"],\
@@ -2797,6 +2798,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/platform", "workspace:."],\
           ["@iarna/toml", "npm:2.2.5"],\
           ["add-stream", "npm:1.0.0"],\
+          ["check-disk-space", "npm:3.4.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
           ["node-gyp", "npm:10.0.1"],\
@@ -7401,6 +7403,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/chardet-npm-0.7.0-27933dd6c7-b0ec668fba.zip/node_modules/chardet/",\
         "packageDependencies": [\
           ["chardet", "npm:0.7.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["check-disk-space", [\
+      ["npm:3.4.0", {\
+        "packageLocation": "./.yarn/cache/check-disk-space-npm-3.4.0-78a4169ea3-73130c32e2.zip/node_modules/check-disk-space/",\
+        "packageDependencies": [\
+          ["check-disk-space", "npm:3.4.0"]\
         ],\
         "linkType": "HARD"\
       }]\
