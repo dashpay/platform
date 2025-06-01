@@ -8,6 +8,7 @@ use crate::data_contract::associated_token::token_configuration::v0::{
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
@@ -185,6 +186,10 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
                 "distribution_rules.change_direct_purchase_pricing_rules",
                 self.distribution_rules
                     .change_direct_purchase_pricing_rules(),
+            ),
+            (
+                "trade_mode_change_rules",
+                &self.marketplace_rules.trade_mode_change_rules(),
             ),
             ("manual_minting_rules", &self.manual_minting_rules),
             ("manual_burning_rules", &self.manual_burning_rules),
