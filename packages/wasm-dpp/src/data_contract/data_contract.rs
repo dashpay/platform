@@ -415,12 +415,11 @@ impl DataContractWasm {
         self.clone()
     }
 
-    pub(crate) fn try_from_serialization_format(
+    pub(crate) fn try_from_serialization_format_with_platform_version(
         value: DataContractInSerializationFormat,
         full_validation: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, JsValue> {
-        let platform_version = PlatformVersion::first();
-
         DataContract::try_from_platform_versioned(
             value,
             full_validation,

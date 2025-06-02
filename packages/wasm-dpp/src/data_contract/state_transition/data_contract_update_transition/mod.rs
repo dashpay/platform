@@ -56,9 +56,22 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
-    pub fn get_data_contract(&self) -> DataContractWasm {
-        DataContractWasm::try_from_serialization_format(self.0.data_contract().clone(), false)
-            .expect("should create data contract from serialized format")
+    pub fn get_data_contract(
+        &self,
+        protocol_version: Option<u32>,
+    ) -> Result<DataContractWasm, JsValue> {
+        // Use provided protocol version or latest if not specified
+        let platform_version = if let Some(version) = protocol_version {
+            PlatformVersion::get(version).with_js_error()?
+        } else {
+            PlatformVersion::latest()
+        };
+
+        DataContractWasm::try_from_serialization_format_with_platform_version(
+            self.0.data_contract().clone(),
+            false,
+            platform_version,
+        )
     }
 
     // #[wasm_bindgen(js_name=setDataContractConfig)]
