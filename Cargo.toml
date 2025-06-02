@@ -30,7 +30,8 @@ members = [
     "packages/check-features",
     "packages/wallet-utils-contract",
     "packages/token-history-contract",
-    "packages/keyword-search-contract"
+    "packages/keyword-search-contract",
+    "packages/ios-sdk-ffi"
 ]
 
 exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
