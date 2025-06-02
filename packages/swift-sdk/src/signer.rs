@@ -13,15 +13,11 @@ pub extern "C" fn swift_dash_signer_create_test() -> *mut ios_sdk_ffi::SignerHan
         // Return a dummy signature for testing
         let dummy_signature = vec![0u8; 64]; // Typical signature size
         *result_len = dummy_signature.len();
-        
+
         // Allocate memory that can be freed by ios_sdk_bytes_free
         let ptr = libc::malloc(dummy_signature.len()) as *mut u8;
         if !ptr.is_null() {
-            std::ptr::copy_nonoverlapping(
-                dummy_signature.as_ptr(),
-                ptr,
-                dummy_signature.len(),
-            );
+            std::ptr::copy_nonoverlapping(dummy_signature.as_ptr(), ptr, dummy_signature.len());
         }
         ptr
     }
@@ -33,9 +29,7 @@ pub extern "C" fn swift_dash_signer_create_test() -> *mut ios_sdk_ffi::SignerHan
         true // Can always sign in test mode
     }
 
-    unsafe {
-        ios_sdk_ffi::ios_sdk_signer_create(test_sign_callback, test_can_sign_callback)
-    }
+    unsafe { ios_sdk_ffi::ios_sdk_signer_create(test_sign_callback, test_can_sign_callback) }
 }
 
 /// Destroy a signer

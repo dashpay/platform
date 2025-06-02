@@ -688,18 +688,9 @@ pub unsafe extern "C" fn ios_sdk_identity_transfer_credits(
         use dash_sdk::platform::transition::transfer::TransferToIdentity;
 
         let (sender_balance, receiver_balance) = from_identity
-            .transfer_credits(
-                &wrapper.sdk,
-                to_id,
-                amount,
-                signing_key,
-                *signer,
-                settings,
-            )
+            .transfer_credits(&wrapper.sdk, to_id, amount, signing_key, *signer, settings)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to transfer credits: {}", e))
-            })?;
+            .map_err(|e| FFIError::InternalError(format!("Failed to transfer credits: {}", e)))?;
 
         Ok(IOSSDKTransferCreditsResult {
             sender_balance,
@@ -718,7 +709,9 @@ pub unsafe extern "C" fn ios_sdk_identity_transfer_credits(
 
 /// Free a transfer credits result structure
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_transfer_credits_result_free(result: *mut IOSSDKTransferCreditsResult) {
+pub unsafe extern "C" fn ios_sdk_transfer_credits_result_free(
+    result: *mut IOSSDKTransferCreditsResult,
+) {
     if !result.is_null() {
         let _ = Box::from_raw(result);
     }

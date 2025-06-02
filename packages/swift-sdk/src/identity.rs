@@ -40,7 +40,7 @@ pub extern "C" fn swift_dash_identity_fetch(
 
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_identity_fetch(sdk_handle, identity_id);
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -61,7 +61,7 @@ pub extern "C" fn swift_dash_identity_get_info(
 
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_identity_get_info(identity_handle);
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -73,7 +73,7 @@ pub extern "C" fn swift_dash_identity_get_info(
 
         let ffi_info_ptr = result.data as *mut ios_sdk_ffi::IOSSDKIdentityInfo;
         let ffi_info = *Box::from_raw(ffi_info_ptr);
-        
+
         // Convert to Swift-friendly structure
         let swift_info = Box::new(SwiftDashIdentityInfo {
             id: ffi_info.id, // Transfer ownership
@@ -117,12 +117,12 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -138,7 +138,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
 
         let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
-        
+
         // Convert to Swift-friendly structure
         let swift_binary = Box::new(SwiftDashBinaryData {
             data: ffi_binary.data, // Transfer ownership
@@ -180,12 +180,12 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock_and_wait
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -230,12 +230,12 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -251,7 +251,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
 
         let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
-        
+
         // Convert to Swift-friendly structure
         let swift_binary = Box::new(SwiftDashBinaryData {
             data: ffi_binary.data, // Transfer ownership
@@ -293,12 +293,12 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock_and_wait(
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -323,7 +323,11 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashTransferCreditsResult {
-    if sdk_handle.is_null() || identity_handle.is_null() || recipient_id.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || recipient_id.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 
@@ -347,12 +351,12 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -364,7 +368,7 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
 
         let ffi_transfer_ptr = result.data as *mut ios_sdk_ffi::IOSSDKTransferCreditsResult;
         let ffi_transfer = *Box::from_raw(ffi_transfer_ptr);
-        
+
         // Convert to Swift-friendly structure
         let swift_transfer = Box::new(SwiftDashTransferCreditsResult {
             amount: ffi_transfer.amount,
@@ -406,7 +410,9 @@ pub unsafe extern "C" fn swift_dash_binary_data_free(binary_data: *mut SwiftDash
 
 /// Free a Swift transfer credits result structure
 #[no_mangle]
-pub unsafe extern "C" fn swift_dash_transfer_credits_result_free(result: *mut SwiftDashTransferCreditsResult) {
+pub unsafe extern "C" fn swift_dash_transfer_credits_result_free(
+    result: *mut SwiftDashTransferCreditsResult,
+) {
     if result.is_null() {
         return;
     }
@@ -416,6 +422,10 @@ pub unsafe extern "C" fn swift_dash_transfer_credits_result_free(result: *mut Sw
         let _ = CString::from_raw(result.recipient_id);
     }
     if !result.transaction_data.is_null() && result.transaction_data_len > 0 {
-        let _ = Vec::from_raw_parts(result.transaction_data, result.transaction_data_len, result.transaction_data_len);
+        let _ = Vec::from_raw_parts(
+            result.transaction_data,
+            result.transaction_data_len,
+            result.transaction_data_len,
+        );
     }
 }

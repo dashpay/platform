@@ -1,8 +1,8 @@
 //! Tests for data contract operations
 
-use swift_sdk::*;
 use std::ffi::CString;
 use std::ptr;
+use swift_sdk::*;
 
 #[test]
 fn test_data_contract_fetch_null_safety() {
@@ -10,7 +10,7 @@ fn test_data_contract_fetch_null_safety() {
     let contract_id = CString::new("test_contract_id").unwrap();
     let result = unsafe { swift_dash_data_contract_fetch(ptr::null_mut(), contract_id.as_ptr()) };
     assert!(result.is_null());
-    
+
     // Test null contract ID
     let result = unsafe { swift_dash_data_contract_fetch(ptr::null_mut(), ptr::null()) };
     assert!(result.is_null());
@@ -20,35 +20,22 @@ fn test_data_contract_fetch_null_safety() {
 fn test_data_contract_create_null_safety() {
     let owner_id = CString::new("owner_identity_id").unwrap();
     let schema_json = CString::new(r#"{"properties": {}}"#).unwrap();
-    
+
     // Test with null SDK handle
     let result = unsafe {
-        swift_dash_data_contract_create(
-            ptr::null_mut(),
-            owner_id.as_ptr(),
-            schema_json.as_ptr(),
-        )
+        swift_dash_data_contract_create(ptr::null_mut(), owner_id.as_ptr(), schema_json.as_ptr())
     };
     assert!(result.is_null());
-    
+
     // Test with null owner ID
     let result = unsafe {
-        swift_dash_data_contract_create(
-            ptr::null_mut(),
-            ptr::null(),
-            schema_json.as_ptr(),
-        )
+        swift_dash_data_contract_create(ptr::null_mut(), ptr::null(), schema_json.as_ptr())
     };
     assert!(result.is_null());
-    
+
     // Test with null schema
-    let result = unsafe {
-        swift_dash_data_contract_create(
-            ptr::null_mut(),
-            owner_id.as_ptr(),
-            ptr::null(),
-        )
-    };
+    let result =
+        unsafe { swift_dash_data_contract_create(ptr::null_mut(), owner_id.as_ptr(), ptr::null()) };
     assert!(result.is_null());
 }
 
@@ -62,24 +49,21 @@ fn test_data_contract_get_info_null_safety() {
 #[test]
 fn test_data_contract_get_schema_null_safety() {
     let document_type = CString::new("testDocument").unwrap();
-    
+
     // Test with null contract handle
-    let result = unsafe {
-        swift_dash_data_contract_get_schema(ptr::null_mut(), document_type.as_ptr())
-    };
+    let result =
+        unsafe { swift_dash_data_contract_get_schema(ptr::null_mut(), document_type.as_ptr()) };
     assert!(result.is_null());
-    
+
     // Test with null document type
-    let result = unsafe {
-        swift_dash_data_contract_get_schema(ptr::null_mut(), ptr::null())
-    };
+    let result = unsafe { swift_dash_data_contract_get_schema(ptr::null_mut(), ptr::null()) };
     assert!(result.is_null());
 }
 
 #[test]
 fn test_data_contract_put_operations_null_safety() {
     let settings = swift_dash_put_settings_default();
-    
+
     unsafe {
         // Test put to platform - all null
         let result = swift_dash_data_contract_put_to_platform(
@@ -90,7 +74,7 @@ fn test_data_contract_put_operations_null_safety() {
             &settings,
         );
         assert!(result.is_null());
-        
+
         // Test put to platform and wait - all null
         let result = swift_dash_data_contract_put_to_platform_and_wait(
             ptr::null_mut(),
@@ -153,10 +137,10 @@ fn test_data_contract_schema_json_example() {
             }
         }
     }"#;
-    
+
     // Verify it's valid JSON
     let schema_cstring = CString::new(schema_json).unwrap();
     assert!(!schema_cstring.as_ptr().is_null());
-    
+
     // In a real test, you would use this with swift_dash_data_contract_create
 }

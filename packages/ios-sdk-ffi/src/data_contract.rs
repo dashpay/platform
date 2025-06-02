@@ -11,7 +11,9 @@ use dpp::prelude::{DataContract, Identifier, Identity};
 use platform_value::string_encoding::Encoding;
 
 use crate::sdk::SDKWrapper;
-use crate::types::{DataContractHandle, IdentityHandle, IOSSDKResultDataType, SDKHandle, SignerHandle};
+use crate::types::{
+    DataContractHandle, IOSSDKResultDataType, IdentityHandle, SDKHandle, SignerHandle,
+};
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 
 /// Data contract information

@@ -1,5 +1,5 @@
-use crate::sdk::SwiftDashPutSettings;
 use crate::identity::SwiftDashBinaryData;
+use crate::sdk::SwiftDashPutSettings;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
@@ -16,7 +16,7 @@ pub extern "C" fn swift_dash_data_contract_fetch(
 
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_data_contract_fetch(sdk_handle, contract_id);
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -38,12 +38,9 @@ pub extern "C" fn swift_dash_data_contract_create(
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_data_contract_create(
-            sdk_handle,
-            owner_identity_id,
-            schema_json,
-        );
-        
+        let result =
+            ios_sdk_ffi::ios_sdk_data_contract_create(sdk_handle, owner_identity_id, schema_json);
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -64,7 +61,7 @@ pub extern "C" fn swift_dash_data_contract_get_info(
 
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_data_contract_get_info(contract_handle);
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -90,7 +87,7 @@ pub extern "C" fn swift_dash_data_contract_get_schema(
 
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_data_contract_get_schema(contract_handle, document_type);
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -135,12 +132,12 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform(
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -156,7 +153,7 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform(
 
         let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
-        
+
         // Convert to Swift-friendly structure
         let swift_binary = Box::new(SwiftDashBinaryData {
             data: ffi_binary.data, // Transfer ownership
@@ -198,12 +195,12 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform_and_wait(
             signer_handle,
             ffi_settings,
         );
-        
+
         // Clean up settings if we allocated them
         if !ffi_settings.is_null() {
             let _ = Box::from_raw(ffi_settings);
         }
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();

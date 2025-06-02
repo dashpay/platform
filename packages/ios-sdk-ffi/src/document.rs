@@ -2,7 +2,8 @@
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IOSSDKResultDataType, IdentityHandle, SDKHandle, SignerHandle,
+    DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IOSSDKResultDataType, IdentityHandle,
+    SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 use dash_sdk::platform::{DocumentQuery, Fetch};
@@ -570,9 +571,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
                 None, // settings (use defaults)
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to purchase document: {}", e))
-            })?;
+            .map_err(|e| FFIError::InternalError(format!("Failed to purchase document: {}", e)))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -665,10 +664,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
             )
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!(
-                    "Failed to purchase document and wait: {}",
-                    e
-                ))
+                FFIError::InternalError(format!("Failed to purchase document and wait: {}", e))
             })?;
 
         Ok(purchased_document)

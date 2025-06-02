@@ -3,11 +3,11 @@
 //! This crate provides an idiomatic Swift-compatible C FFI interface
 //! over the ios-sdk-ffi crate, making it easier to use from Swift.
 
-mod error;
-mod sdk;
-mod identity;
 mod data_contract;
 mod document;
+mod error;
+mod identity;
+mod sdk;
 mod signer;
 
 #[cfg(test)]
@@ -15,11 +15,11 @@ mod tests;
 
 // The ios_sdk_ffi crate is available through Cargo.toml
 
-pub use error::*;
-pub use sdk::*;
-pub use identity::*;
 pub use data_contract::*;
 pub use document::*;
+pub use error::*;
+pub use identity::*;
+pub use sdk::*;
 pub use signer::*;
 
 use std::panic;

@@ -78,10 +78,10 @@ impl From<SwiftDashPutSettings> for ios_sdk_ffi::IOSSDKPutSettings {
 #[no_mangle]
 pub extern "C" fn swift_dash_sdk_create(config: SwiftDashSDKConfig) -> *mut ios_sdk_ffi::SDKHandle {
     let ffi_config = config.into();
-    
+
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_create(&ffi_config);
-        
+
         if !result.error.is_null() {
             // Clean up error and return null
             ios_sdk_ffi::ios_sdk_error_free(result.error);
@@ -102,10 +102,12 @@ pub unsafe extern "C" fn swift_dash_sdk_destroy(handle: *mut ios_sdk_ffi::SDKHan
 
 /// Get the network the SDK is configured for
 #[no_mangle]
-pub extern "C" fn swift_dash_sdk_get_network(handle: *mut ios_sdk_ffi::SDKHandle) -> SwiftDashNetwork {
+pub extern "C" fn swift_dash_sdk_get_network(
+    handle: *mut ios_sdk_ffi::SDKHandle,
+) -> SwiftDashNetwork {
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_get_network(handle);
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return SwiftDashNetwork::Testnet; // Default fallback
@@ -127,7 +129,7 @@ pub extern "C" fn swift_dash_sdk_get_network(handle: *mut ios_sdk_ffi::SDKHandle
 pub extern "C" fn swift_dash_sdk_get_version() -> *mut c_char {
     unsafe {
         let result = ios_sdk_ffi::ios_sdk_version();
-        
+
         if !result.error.is_null() {
             ios_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
@@ -140,10 +142,10 @@ pub extern "C" fn swift_dash_sdk_get_version() -> *mut c_char {
         // Make a copy of the version string that the caller can free
         let version_cstr = CStr::from_ptr(result.data as *const c_char);
         let version_string = CString::new(version_cstr.to_string_lossy().as_ref()).unwrap();
-        
+
         // Free the original string
         ios_sdk_ffi::ios_sdk_string_free(result.data as *mut c_char);
-        
+
         version_string.into_raw()
     }
 }

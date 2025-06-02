@@ -60,23 +60,38 @@ impl SwiftDashError {
     }
 
     pub fn invalid_parameter(message: &str) -> Self {
-        Self::new(SwiftDashErrorCode::InvalidParameter, format!("Invalid parameter: {}", message))
+        Self::new(
+            SwiftDashErrorCode::InvalidParameter,
+            format!("Invalid parameter: {}", message),
+        )
     }
 
     pub fn invalid_state(message: &str) -> Self {
-        Self::new(SwiftDashErrorCode::InvalidState, format!("Invalid state: {}", message))
+        Self::new(
+            SwiftDashErrorCode::InvalidState,
+            format!("Invalid state: {}", message),
+        )
     }
 
     pub fn network_error(message: &str) -> Self {
-        Self::new(SwiftDashErrorCode::NetworkError, format!("Network error: {}", message))
+        Self::new(
+            SwiftDashErrorCode::NetworkError,
+            format!("Network error: {}", message),
+        )
     }
 
     pub fn not_found(message: &str) -> Self {
-        Self::new(SwiftDashErrorCode::NotFound, format!("Not found: {}", message))
+        Self::new(
+            SwiftDashErrorCode::NotFound,
+            format!("Not found: {}", message),
+        )
     }
 
     pub fn internal_error(message: &str) -> Self {
-        Self::new(SwiftDashErrorCode::InternalError, format!("Internal error: {}", message))
+        Self::new(
+            SwiftDashErrorCode::InternalError,
+            format!("Internal error: {}", message),
+        )
     }
 }
 
@@ -97,7 +112,9 @@ impl From<ios_sdk_ffi::IOSSDKError> for SwiftDashError {
             ios_sdk_ffi::IOSSDKErrorCode::InvalidParameter => SwiftDashErrorCode::InvalidParameter,
             ios_sdk_ffi::IOSSDKErrorCode::InvalidState => SwiftDashErrorCode::InvalidState,
             ios_sdk_ffi::IOSSDKErrorCode::NetworkError => SwiftDashErrorCode::NetworkError,
-            ios_sdk_ffi::IOSSDKErrorCode::SerializationError => SwiftDashErrorCode::SerializationError,
+            ios_sdk_ffi::IOSSDKErrorCode::SerializationError => {
+                SwiftDashErrorCode::SerializationError
+            }
             ios_sdk_ffi::IOSSDKErrorCode::ProtocolError => SwiftDashErrorCode::ProtocolError,
             ios_sdk_ffi::IOSSDKErrorCode::CryptoError => SwiftDashErrorCode::CryptoError,
             ios_sdk_ffi::IOSSDKErrorCode::NotFound => SwiftDashErrorCode::NotFound,
