@@ -2,7 +2,7 @@
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IdentityHandle, SDKHandle, SignerHandle,
+    DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IOSSDKResultDataType, IdentityHandle, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 use dash_sdk::platform::{DocumentQuery, Fetch};
@@ -371,7 +371,7 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
         Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
     };
 
-    let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Get document type from data contract
         let document_type = data_contract
             .document_type_for_name(document_type_name_str)
@@ -382,7 +382,7 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
         // Put document to platform using the PutDocument trait
         use dash_sdk::platform::transition::put_document::PutDocument;
 
-        let _state_transition = document
+        let state_transition = document
             .put_to_platform(
                 &wrapper.sdk,
                 document_type_owned,
@@ -397,21 +397,15 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
                 FFIError::InternalError(format!("Failed to put document to platform: {}", e))
             })?;
 
-        // For now, just return success. In a full implementation, you would return the state transition ID
-        Ok("success".to_string())
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
     });
 
     match result {
-        Ok(id_string) => match CString::new(id_string) {
-            Ok(c_string) => {
-                let ptr = c_string.into_raw();
-                IOSSDKResult::success(ptr as *mut std::os::raw::c_void)
-            }
-            Err(e) => IOSSDKResult::error(IOSSDKError::new(
-                IOSSDKErrorCode::InternalError,
-                format!("Failed to create C string: {}", e),
-            )),
-        },
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
         Err(e) => IOSSDKResult::error(e.into()),
     }
 }
@@ -490,7 +484,10 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     match result {
         Ok(confirmed_document) => {
             let handle = Box::into_raw(Box::new(confirmed_document)) as *mut DocumentHandle;
-            IOSSDKResult::success(handle as *mut std::os::raw::c_void)
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::DocumentHandle,
+            )
         }
         Err(e) => IOSSDKResult::error(e.into()),
     }

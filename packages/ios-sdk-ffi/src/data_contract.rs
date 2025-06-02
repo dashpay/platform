@@ -11,7 +11,7 @@ use dpp::prelude::{DataContract, Identifier, Identity};
 use platform_value::string_encoding::Encoding;
 
 use crate::sdk::SDKWrapper;
-use crate::types::{DataContractHandle, IdentityHandle, SDKHandle};
+use crate::types::{DataContractHandle, IdentityHandle, IOSSDKResultDataType, SDKHandle, SignerHandle};
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 
 /// Data contract information
@@ -243,6 +243,121 @@ pub unsafe extern "C" fn ios_sdk_data_contract_info_free(info: *mut IOSSDKDataCo
     let info = Box::from_raw(info);
     ios_sdk_string_free(info.id);
     ios_sdk_string_free(info.owner_id);
+}
+
+/// Put data contract to platform (broadcast state transition)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_data_contract_put_to_platform(
+    sdk_handle: *mut SDKHandle,
+    data_contract_handle: *const DataContractHandle,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || data_contract_handle.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Put data contract to platform using the PutContract trait
+        use dash_sdk::platform::transition::put_contract::PutContract;
+
+        let state_transition = data_contract
+            .put_to_platform(
+                &wrapper.sdk,
+                identity_public_key.clone(),
+                signer,
+                None, // settings (use defaults)
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to put data contract to platform: {}", e))
+            })?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Put data contract to platform and wait for confirmation (broadcast state transition and wait for response)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_data_contract_put_to_platform_and_wait(
+    sdk_handle: *mut SDKHandle,
+    data_contract_handle: *const DataContractHandle,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || data_contract_handle.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let result: Result<DataContract, FFIError> = wrapper.runtime.block_on(async {
+        // Put data contract to platform and wait for response
+        use dash_sdk::platform::transition::put_contract::PutContract;
+
+        let confirmed_contract = data_contract
+            .put_to_platform_and_wait_for_response(
+                &wrapper.sdk,
+                identity_public_key.clone(),
+                signer,
+                None, // settings (use defaults)
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!(
+                    "Failed to put data contract to platform and wait: {}",
+                    e
+                ))
+            })?;
+
+        Ok(confirmed_contract)
+    });
+
+    match result {
+        Ok(confirmed_contract) => {
+            let handle = Box::into_raw(Box::new(confirmed_contract)) as *mut DataContractHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::DataContractHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
 }
 
 // Helper function for freeing strings
