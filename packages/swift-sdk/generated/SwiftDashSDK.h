@@ -57,22 +57,11 @@ typedef struct SwiftDashSDKHandle SwiftDashSDKHandle;
 // Opaque handle to a Signer
 typedef struct SwiftDashSignerHandle SwiftDashSignerHandle;
 
-// Error structure for Swift interop
-typedef struct SwiftDashSwiftDashError {
-  // Error code
-  enum SwiftDashSwiftDashErrorCode code;
-  // Human-readable error message (null-terminated C string)
-  // Caller must free this with swift_dash_error_free
-  char *message;
-} SwiftDashSwiftDashError;
-
-// Configuration for the Swift Dash Platform SDK
-typedef struct SwiftDashSwiftDashSDKConfig {
-  enum SwiftDashSwiftDashNetwork network;
-  bool skip_asset_lock_proof_verification;
-  uint32_t request_retry_count;
-  uint64_t request_timeout_ms;
-} SwiftDashSwiftDashSDKConfig;
+// Binary data container for results
+typedef struct SwiftDashSwiftDashBinaryData {
+  uint8_t *data;
+  size_t len;
+} SwiftDashSwiftDashBinaryData;
 
 // Settings for put operations
 typedef struct SwiftDashSwiftDashPutSettings {
@@ -87,28 +76,6 @@ typedef struct SwiftDashSwiftDashPutSettings {
   uint64_t wait_timeout_ms;
 } SwiftDashSwiftDashPutSettings;
 
-// Information about an identity
-typedef struct SwiftDashSwiftDashIdentityInfo {
-  char *id;
-  uint64_t balance;
-  uint64_t revision;
-  uint32_t public_keys_count;
-} SwiftDashSwiftDashIdentityInfo;
-
-// Binary data container for results
-typedef struct SwiftDashSwiftDashBinaryData {
-  uint8_t *data;
-  size_t len;
-} SwiftDashSwiftDashBinaryData;
-
-// Result of a credit transfer operation
-typedef struct SwiftDashSwiftDashTransferCreditsResult {
-  uint64_t amount;
-  char *recipient_id;
-  uint8_t *transaction_data;
-  size_t transaction_data_len;
-} SwiftDashSwiftDashTransferCreditsResult;
-
 // Information about a document
 typedef struct SwiftDashSwiftDashDocumentInfo {
   char *id;
@@ -120,92 +87,45 @@ typedef struct SwiftDashSwiftDashDocumentInfo {
   int64_t updated_at;
 } SwiftDashSwiftDashDocumentInfo;
 
+// Error structure for Swift interop
+typedef struct SwiftDashSwiftDashError {
+  // Error code
+  enum SwiftDashSwiftDashErrorCode code;
+  // Human-readable error message (null-terminated C string)
+  // Caller must free this with swift_dash_error_free
+  char *message;
+} SwiftDashSwiftDashError;
+
+// Information about an identity
+typedef struct SwiftDashSwiftDashIdentityInfo {
+  char *id;
+  uint64_t balance;
+  uint64_t revision;
+  uint32_t public_keys_count;
+} SwiftDashSwiftDashIdentityInfo;
+
+// Result of a credit transfer operation
+typedef struct SwiftDashSwiftDashTransferCreditsResult {
+  uint64_t amount;
+  char *recipient_id;
+  uint8_t *transaction_data;
+  size_t transaction_data_len;
+} SwiftDashSwiftDashTransferCreditsResult;
+
+// Configuration for the Swift Dash Platform SDK
+typedef struct SwiftDashSwiftDashSDKConfig {
+  enum SwiftDashSwiftDashNetwork network;
+  bool skip_asset_lock_proof_verification;
+  uint32_t request_retry_count;
+  uint64_t request_timeout_ms;
+} SwiftDashSwiftDashSDKConfig;
+
 // Initialize the Swift SDK library.
 // This should be called once at app startup before using any other functions.
 void swift_dash_sdk_init(void);
 
 // Get the version of the Swift Dash SDK library
 const char *swift_dash_sdk_version(void);
-
-// Free an error message
-void swift_dash_error_free(struct SwiftDashSwiftDashError *error);
-
-// Create a new SDK instance
-struct SwiftDashSDKHandle *swift_dash_sdk_create(struct SwiftDashSwiftDashSDKConfig config);
-
-// Destroy an SDK instance
-void swift_dash_sdk_destroy(struct SwiftDashSDKHandle *handle);
-
-// Get the network the SDK is configured for
-enum SwiftDashSwiftDashNetwork swift_dash_sdk_get_network(struct SwiftDashSDKHandle *handle);
-
-// Get SDK version
-char *swift_dash_sdk_get_version(void);
-
-// Create default settings for put operations
-struct SwiftDashSwiftDashPutSettings swift_dash_put_settings_default(void);
-
-// Create default config for mainnet
-struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_mainnet(void);
-
-// Create default config for testnet
-struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_testnet(void);
-
-// Create default config for local development
-struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_local(void);
-
-// Fetch an identity by ID
-struct SwiftDashIdentityHandle *swift_dash_identity_fetch(struct SwiftDashSDKHandle *sdk_handle,
-                                                          const char *identity_id);
-
-// Get identity information
-struct SwiftDashSwiftDashIdentityInfo *swift_dash_identity_get_info(struct SwiftDashIdentityHandle *identity_handle);
-
-// Put identity to platform with instant lock and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_put_to_platform_with_instant_lock(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                           struct SwiftDashIdentityHandle *identity_handle,
-                                                                                           uint32_t public_key_id,
-                                                                                           struct SwiftDashSignerHandle *signer_handle,
-                                                                                           const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Put identity to platform with instant lock and wait for confirmation
-struct SwiftDashIdentityHandle *swift_dash_identity_put_to_platform_with_instant_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                               struct SwiftDashIdentityHandle *identity_handle,
-                                                                                               uint32_t public_key_id,
-                                                                                               struct SwiftDashSignerHandle *signer_handle,
-                                                                                               const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Put identity to platform with chain lock and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_put_to_platform_with_chain_lock(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                         struct SwiftDashIdentityHandle *identity_handle,
-                                                                                         uint32_t public_key_id,
-                                                                                         struct SwiftDashSignerHandle *signer_handle,
-                                                                                         const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Put identity to platform with chain lock and wait for confirmation
-struct SwiftDashIdentityHandle *swift_dash_identity_put_to_platform_with_chain_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                             struct SwiftDashIdentityHandle *identity_handle,
-                                                                                             uint32_t public_key_id,
-                                                                                             struct SwiftDashSignerHandle *signer_handle,
-                                                                                             const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Transfer credits to another identity
-struct SwiftDashSwiftDashTransferCreditsResult *swift_dash_identity_transfer_credits(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                     struct SwiftDashIdentityHandle *identity_handle,
-                                                                                     const char *recipient_id,
-                                                                                     uint64_t amount,
-                                                                                     uint32_t public_key_id,
-                                                                                     struct SwiftDashSignerHandle *signer_handle,
-                                                                                     const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Free a Swift identity info structure
-void swift_dash_identity_info_free(struct SwiftDashSwiftDashIdentityInfo *info);
-
-// Free a Swift binary data structure
-void swift_dash_binary_data_free(struct SwiftDashSwiftDashBinaryData *binary_data);
-
-// Free a Swift transfer credits result structure
-void swift_dash_transfer_credits_result_free(struct SwiftDashSwiftDashTransferCreditsResult *result);
 
 // Fetch a data contract by ID
 struct SwiftDashDataContractHandle *swift_dash_data_contract_fetch(struct SwiftDashSDKHandle *sdk_handle,
@@ -283,6 +203,86 @@ struct SwiftDashDocumentHandle *swift_dash_document_purchase_to_platform_and_wai
 
 // Free a Swift document info structure
 void swift_dash_document_info_free(struct SwiftDashSwiftDashDocumentInfo *info);
+
+// Free an error message
+void swift_dash_error_free(struct SwiftDashSwiftDashError *error);
+
+// Fetch an identity by ID
+struct SwiftDashIdentityHandle *swift_dash_identity_fetch(struct SwiftDashSDKHandle *sdk_handle,
+                                                          const char *identity_id);
+
+// Get identity information
+struct SwiftDashSwiftDashIdentityInfo *swift_dash_identity_get_info(struct SwiftDashIdentityHandle *identity_handle);
+
+// Put identity to platform with instant lock and return serialized state transition
+struct SwiftDashSwiftDashBinaryData *swift_dash_identity_put_to_platform_with_instant_lock(struct SwiftDashSDKHandle *sdk_handle,
+                                                                                           struct SwiftDashIdentityHandle *identity_handle,
+                                                                                           uint32_t public_key_id,
+                                                                                           struct SwiftDashSignerHandle *signer_handle,
+                                                                                           const struct SwiftDashSwiftDashPutSettings *settings);
+
+// Put identity to platform with instant lock and wait for confirmation
+struct SwiftDashIdentityHandle *swift_dash_identity_put_to_platform_with_instant_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
+                                                                                               struct SwiftDashIdentityHandle *identity_handle,
+                                                                                               uint32_t public_key_id,
+                                                                                               struct SwiftDashSignerHandle *signer_handle,
+                                                                                               const struct SwiftDashSwiftDashPutSettings *settings);
+
+// Put identity to platform with chain lock and return serialized state transition
+struct SwiftDashSwiftDashBinaryData *swift_dash_identity_put_to_platform_with_chain_lock(struct SwiftDashSDKHandle *sdk_handle,
+                                                                                         struct SwiftDashIdentityHandle *identity_handle,
+                                                                                         uint32_t public_key_id,
+                                                                                         struct SwiftDashSignerHandle *signer_handle,
+                                                                                         const struct SwiftDashSwiftDashPutSettings *settings);
+
+// Put identity to platform with chain lock and wait for confirmation
+struct SwiftDashIdentityHandle *swift_dash_identity_put_to_platform_with_chain_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
+                                                                                             struct SwiftDashIdentityHandle *identity_handle,
+                                                                                             uint32_t public_key_id,
+                                                                                             struct SwiftDashSignerHandle *signer_handle,
+                                                                                             const struct SwiftDashSwiftDashPutSettings *settings);
+
+// Transfer credits to another identity
+struct SwiftDashSwiftDashTransferCreditsResult *swift_dash_identity_transfer_credits(struct SwiftDashSDKHandle *sdk_handle,
+                                                                                     struct SwiftDashIdentityHandle *identity_handle,
+                                                                                     const char *recipient_id,
+                                                                                     uint64_t amount,
+                                                                                     uint32_t public_key_id,
+                                                                                     struct SwiftDashSignerHandle *signer_handle,
+                                                                                     const struct SwiftDashSwiftDashPutSettings *settings);
+
+// Free a Swift identity info structure
+void swift_dash_identity_info_free(struct SwiftDashSwiftDashIdentityInfo *info);
+
+// Free a Swift binary data structure
+void swift_dash_binary_data_free(struct SwiftDashSwiftDashBinaryData *binary_data);
+
+// Free a Swift transfer credits result structure
+void swift_dash_transfer_credits_result_free(struct SwiftDashSwiftDashTransferCreditsResult *result);
+
+// Create a new SDK instance
+struct SwiftDashSDKHandle *swift_dash_sdk_create(struct SwiftDashSwiftDashSDKConfig config);
+
+// Destroy an SDK instance
+void swift_dash_sdk_destroy(struct SwiftDashSDKHandle *handle);
+
+// Get the network the SDK is configured for
+enum SwiftDashSwiftDashNetwork swift_dash_sdk_get_network(struct SwiftDashSDKHandle *handle);
+
+// Get SDK version
+char *swift_dash_sdk_get_version(void);
+
+// Create default settings for put operations
+struct SwiftDashSwiftDashPutSettings swift_dash_put_settings_default(void);
+
+// Create default config for mainnet
+struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_mainnet(void);
+
+// Create default config for testnet
+struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_testnet(void);
+
+// Create default config for local development
+struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_local(void);
 
 // Create a test signer for development/testing purposes
 struct SwiftDashSignerHandle *swift_dash_signer_create_test(void);

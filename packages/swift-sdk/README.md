@@ -323,24 +323,20 @@ guard let identity = swift_dash_identity_fetch(sdk, identityId) else {
 
 ## Testing
 
-Run the test suite:
+The Swift SDK uses compilation verification and Swift integration testing:
 
 ```bash
-cd SwiftTests
-./run_tests.sh
+# Verify compilation
+cargo build -p swift-sdk
+
+# Run unit tests
+cargo test -p swift-sdk --lib
+
+# Check symbol exports
+nm -g target/debug/libswift_sdk.a | grep swift_dash_
 ```
 
-Run with coverage:
-
-```bash
-./run_tests.sh --coverage
-```
-
-Run specific tests:
-
-```bash
-./run_tests.sh --filter IdentityTests
-```
+For comprehensive testing, integrate the compiled library into an iOS project with XCTest suites.
 
 ## Example App
 
