@@ -47,27 +47,30 @@ pub struct IOSSDKError {
 pub enum FFIError {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
-    
+
     #[error("SDK error: {0}")]
     SDKError(#[from] dash_sdk::Error),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
-    
+
     #[error("Invalid UTF-8 string")]
     Utf8Error(#[from] std::str::Utf8Error),
-    
+
     #[error("Null pointer")]
     NullPointer,
-    
+
     #[error("Internal error: {0}")]
     InternalError(String),
-    
+
     #[error("Not implemented: {0}")]
     NotImplemented(String),
-    
+
     #[error("Invalid state: {0}")]
     InvalidState(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
 }
 
 impl IOSSDKError {
@@ -75,13 +78,13 @@ impl IOSSDKError {
     pub fn new(code: IOSSDKErrorCode, message: String) -> Self {
         let c_message = CString::new(message)
             .unwrap_or_else(|_| CString::new("Error message contains null byte").unwrap());
-        
+
         IOSSDKError {
             code,
             message: c_message.into_raw(),
         }
     }
-    
+
     /// Create a success result
     pub fn success() -> Self {
         IOSSDKError {
@@ -96,14 +99,20 @@ impl From<FFIError> for IOSSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (IOSSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKError(_) => (IOSSDKErrorCode::ProtocolError, err.to_string()),
-            FFIError::SerializationError(_) => (IOSSDKErrorCode::SerializationError, err.to_string()),
+            FFIError::SerializationError(_) => {
+                (IOSSDKErrorCode::SerializationError, err.to_string())
+            }
             FFIError::Utf8Error(_) => (IOSSDKErrorCode::InvalidParameter, err.to_string()),
-            FFIError::NullPointer => (IOSSDKErrorCode::InvalidParameter, "Null pointer".to_string()),
+            FFIError::NullPointer => (
+                IOSSDKErrorCode::InvalidParameter,
+                "Null pointer".to_string(),
+            ),
             FFIError::InternalError(_) => (IOSSDKErrorCode::InternalError, err.to_string()),
             FFIError::NotImplemented(_) => (IOSSDKErrorCode::NotImplemented, err.to_string()),
             FFIError::InvalidState(_) => (IOSSDKErrorCode::InvalidState, err.to_string()),
+            FFIError::NotFound(_) => (IOSSDKErrorCode::NotFound, err.to_string()),
         };
-        
+
         IOSSDKError::new(code, message)
     }
 }
@@ -114,7 +123,7 @@ pub unsafe extern "C" fn ios_sdk_error_free(error: *mut IOSSDKError) {
     if error.is_null() {
         return;
     }
-    
+
     let error = Box::from_raw(error);
     if !error.message.is_null() {
         let _ = CString::from_raw(error.message);

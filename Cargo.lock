@@ -2878,6 +2878,7 @@ dependencies = [
  "dpp",
  "drive",
  "hex",
+ "libc",
  "platform-value",
  "platform-version",
  "serde",

@@ -32,6 +32,9 @@ anyhow = "1.0"
 # Logging
 tracing = "0.1"
 
+# System APIs
+libc = "0.2"
+
 [build-dependencies]
 cbindgen = "0.27"
 

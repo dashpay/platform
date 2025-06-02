@@ -22,6 +22,11 @@ pub struct DataContractHandle {
     _private: [u8; 0],
 }
 
+/// Opaque handle to a Signer
+pub struct SignerHandle {
+    _private: [u8; 0],
+}
+
 /// Network type for SDK configuration
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,10 +46,6 @@ pub enum IOSSDKNetwork {
 pub struct IOSSDKConfig {
     /// Network to connect to
     pub network: IOSSDKNetwork,
-    /// Wallet mnemonic (null-terminated C string, optional)
-    pub wallet_mnemonic: *const c_char,
-    /// Wallet passphrase (null-terminated C string, optional)
-    pub wallet_passphrase: *const c_char,
     /// Skip asset lock proof verification (for testing)
     pub skip_asset_lock_proof_verification: bool,
     /// Number of retries for failed requests
@@ -70,7 +71,7 @@ impl IOSSDKResult {
             error: std::ptr::null_mut(),
         }
     }
-    
+
     /// Create an error result
     pub fn error(error: super::IOSSDKError) -> Self {
         IOSSDKResult {
@@ -126,7 +127,7 @@ pub unsafe extern "C" fn ios_sdk_identity_info_free(info: *mut IOSSDKIdentityInf
     if info.is_null() {
         return;
     }
-    
+
     let info = Box::from_raw(info);
     ios_sdk_string_free(info.id);
 }
@@ -137,7 +138,7 @@ pub unsafe extern "C" fn ios_sdk_document_info_free(info: *mut IOSSDKDocumentInf
     if info.is_null() {
         return;
     }
-    
+
     let info = Box::from_raw(info);
     ios_sdk_string_free(info.id);
     ios_sdk_string_free(info.owner_id);

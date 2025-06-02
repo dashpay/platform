@@ -1,22 +1,24 @@
 //! iOS SDK FFI bindings for Dash Platform SDK
-//! 
+//!
 //! This crate provides C-compatible FFI bindings for the Dash Platform SDK,
 //! enabling iOS applications to interact with Dash Platform through Swift.
 
-mod error;
-mod types;
-mod sdk;
-mod identity;
-mod document;
 mod data_contract;
+mod document;
+mod error;
+mod identity;
+mod sdk;
+mod signer;
+mod types;
 mod utils;
 
-pub use error::*;
-pub use types::*;
-pub use sdk::*;
-pub use identity::*;
-pub use document::*;
 pub use data_contract::*;
+pub use document::*;
+pub use error::*;
+pub use identity::*;
+pub use sdk::*;
+pub use signer::*;
+pub use types::*;
 pub use utils::*;
 
 use std::panic;
@@ -34,16 +36,16 @@ pub extern "C" fn ios_sdk_init() {
         } else {
             "Unknown panic"
         };
-        
+
         let location = if let Some(location) = panic_info.location() {
             format!(" at {}:{}", location.file(), location.line())
         } else {
             String::new()
         };
-        
+
         eprintln!("iOS SDK FFI panic: {}{}", msg, location);
     }));
-    
+
     // Initialize any other subsystems if needed
 }
 

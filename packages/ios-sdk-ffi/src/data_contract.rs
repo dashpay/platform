@@ -3,15 +3,16 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use dpp::prelude::{DataContract, Identifier, Identity};
-use dpp::data_contract::{DataContractFactory, accessors::v0::DataContractV0Getters};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use platform_value::string_encoding::Encoding;
 use dash_sdk::platform::Fetch;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::{accessors::v0::DataContractV0Getters, DataContractFactory};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::prelude::{DataContract, Identifier, Identity};
+use platform_value::string_encoding::Encoding;
 
-use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
-use crate::types::{SDKHandle, DataContractHandle, IdentityHandle};
 use crate::sdk::SDKWrapper;
+use crate::types::{DataContractHandle, IdentityHandle, SDKHandle};
+use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 
 /// Data contract information
 #[repr(C)]
@@ -40,39 +41,39 @@ pub unsafe extern "C" fn ios_sdk_data_contract_fetch(
             "SDK handle or contract ID is null".to_string(),
         ));
     }
-    
+
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    
+
     let id_str = match CStr::from_ptr(contract_id).to_str() {
         Ok(s) => s,
         Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
     };
-    
+
     let id = match Identifier::from_string(id_str, Encoding::Base58) {
         Ok(id) => id,
-        Err(e) => return IOSSDKResult::error(IOSSDKError::new(
-            IOSSDKErrorCode::InvalidParameter,
-            format!("Invalid contract ID: {}", e),
-        )),
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid contract ID: {}", e),
+            ))
+        }
     };
-    
+
     let result = wrapper.runtime.block_on(async {
         DataContract::fetch(&wrapper.sdk, id)
             .await
             .map_err(FFIError::from)
     });
-    
+
     match result {
         Ok(Some(contract)) => {
             let handle = Box::into_raw(Box::new(contract)) as *mut DataContractHandle;
             IOSSDKResult::success(handle as *mut std::os::raw::c_void)
         }
-        Ok(None) => {
-            IOSSDKResult::error(IOSSDKError::new(
-                IOSSDKErrorCode::NotFound,
-                "Data contract not found".to_string(),
-            ))
-        }
+        Ok(None) => IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::NotFound,
+            "Data contract not found".to_string(),
+        )),
         Err(e) => IOSSDKResult::error(e.into()),
     }
 }
@@ -90,58 +91,64 @@ pub unsafe extern "C" fn ios_sdk_data_contract_create(
             "Invalid parameters".to_string(),
         ));
     }
-    
+
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(owner_identity_handle as *const Identity);
-    
+
     let schema_str = match CStr::from_ptr(documents_schema_json).to_str() {
         Ok(s) => s,
         Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
     };
-    
+
     // Parse the JSON schema
     let schema_value: serde_json::Value = match serde_json::from_str(schema_str) {
         Ok(v) => v,
-        Err(e) => return IOSSDKResult::error(IOSSDKError::new(
-            IOSSDKErrorCode::InvalidParameter,
-            format!("Invalid schema JSON: {}", e),
-        )),
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid schema JSON: {}", e),
+            ))
+        }
     };
-    
+
     // Convert to platform Value
-    let documents_value = match platform_value::from_json_value(schema_value) {
+    let documents_value = match platform_value::from_value(schema_value) {
         Ok(v) => v,
-        Err(e) => return IOSSDKResult::error(IOSSDKError::new(
-            IOSSDKErrorCode::InvalidParameter,
-            format!("Failed to convert schema: {}", e),
-        )),
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Failed to convert schema: {}", e),
+            ))
+        }
     };
-    
+
     let result = wrapper.runtime.block_on(async {
         // Get protocol version from SDK
         let platform_version = wrapper.sdk.version();
-        
+
         // Create data contract factory
         let factory = DataContractFactory::new(platform_version.protocol_version)
             .map_err(|e| FFIError::InternalError(format!("Failed to create factory: {}", e)))?;
-        
+
         // Get identity nonce
         let identity_nonce = identity.revision() as u64;
-        
+
         // Create the data contract
-        let contract = factory.create(
-            identity.id(),
-            identity_nonce,
-            documents_value,
-            None, // config
-            None, // definitions
-        ).map_err(|e| FFIError::InternalError(format!("Failed to create contract: {}", e)))?;
-        
+        let contract = factory
+            .create(
+                identity.id(),
+                identity_nonce,
+                documents_value,
+                None, // config
+                None, // definitions
+            )
+            .map_err(|e| FFIError::InternalError(format!("Failed to create contract: {}", e)))?;
+
         // Note: Actually publishing the contract would require signing and broadcasting
         // For now, we just return the created contract
         Ok(contract)
     });
-    
+
     match result {
         Ok(contract) => {
             let handle = Box::into_raw(Box::new(contract)) as *mut DataContractHandle;
@@ -159,14 +166,14 @@ pub unsafe extern "C" fn ios_sdk_data_contract_get_info(
     if contract_handle.is_null() {
         return std::ptr::null_mut();
     }
-    
+
     let contract = &*(contract_handle as *const DataContract);
-    
+
     let id_str = match CString::new(contract.id().to_string(Encoding::Base58)) {
         Ok(s) => s.into_raw(),
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     let owner_id_str = match CString::new(contract.owner_id().to_string(Encoding::Base58)) {
         Ok(s) => s.into_raw(),
         Err(_) => {
@@ -174,15 +181,15 @@ pub unsafe extern "C" fn ios_sdk_data_contract_get_info(
             return std::ptr::null_mut();
         }
     };
-    
+
     let info = IOSSDKDataContractInfo {
         id: id_str,
         owner_id: owner_id_str,
         version: contract.version(),
-        schema_version: contract.schema_version() as u32,
+        schema_version: contract.version() as u32, // Use version as schema version for now
         document_types_count: contract.document_types().len() as u32,
     };
-    
+
     Box::into_raw(Box::new(info))
 }
 
@@ -195,24 +202,22 @@ pub unsafe extern "C" fn ios_sdk_data_contract_get_schema(
     if contract_handle.is_null() || document_type.is_null() {
         return std::ptr::null_mut();
     }
-    
+
     let contract = &*(contract_handle as *const DataContract);
-    
+
     let document_type_str = match CStr::from_ptr(document_type).to_str() {
         Ok(s) => s,
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     match contract.document_type_for_name(document_type_str) {
         Ok(doc_type) => {
             // Convert schema to JSON string
             match serde_json::to_string(doc_type.schema()) {
-                Ok(json_str) => {
-                    match CString::new(json_str) {
-                        Ok(s) => s.into_raw(),
-                        Err(_) => std::ptr::null_mut(),
-                    }
-                }
+                Ok(json_str) => match CString::new(json_str) {
+                    Ok(s) => s.into_raw(),
+                    Err(_) => std::ptr::null_mut(),
+                },
                 Err(_) => std::ptr::null_mut(),
             }
         }
@@ -234,7 +239,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_info_free(info: *mut IOSSDKDataCo
     if info.is_null() {
         return;
     }
-    
+
     let info = Box::from_raw(info);
     ios_sdk_string_free(info.id);
     ios_sdk_string_free(info.owner_id);
