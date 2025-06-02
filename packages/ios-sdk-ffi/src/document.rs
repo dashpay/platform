@@ -1,17 +1,15 @@
 //! Document operations
 
 use crate::sdk::SDKWrapper;
-use crate::signer::IOSSigner;
 use crate::types::{
     DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IdentityHandle, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
-use bincode::Options;
-use dash_sdk::platform::{DocumentQuery, Fetch, FetchMany};
-use dpp::data_contract::document_type::{accessors::DocumentTypeV0Getters, DocumentType};
+use dash_sdk::platform::{DocumentQuery, Fetch};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{document_factory::DocumentFactory, Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::{DataContract, Identifier, Identity, IdentityPublicKey};
+use dpp::prelude::{DataContract, Identifier, Identity};
 use platform_value::{string_encoding::Encoding, Value};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -108,7 +106,7 @@ pub unsafe extern "C" fn ios_sdk_document_create(
         }
     };
 
-    let result = wrapper.runtime.block_on(async {
+    let result: Result<dpp::document::Document, FFIError> = wrapper.runtime.block_on(async {
         // Get platform version
         let platform_version = wrapper.sdk.version();
 
@@ -235,94 +233,17 @@ pub unsafe extern "C" fn ios_sdk_document_fetch(
 /// Search for documents
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_document_search(
-    sdk_handle: *const SDKHandle,
-    params: *const IOSSDKDocumentSearchParams,
+    _sdk_handle: *const SDKHandle,
+    _params: *const IOSSDKDocumentSearchParams,
 ) -> IOSSDKResult {
-    if sdk_handle.is_null() || params.is_null() {
-        return IOSSDKResult::error(IOSSDKError::new(
-            IOSSDKErrorCode::InvalidParameter,
-            "Invalid parameters".to_string(),
-        ));
-    }
-
-    let params = &*params;
-    if params.data_contract_handle.is_null() || params.document_type.is_null() {
-        return IOSSDKResult::error(IOSSDKError::new(
-            IOSSDKErrorCode::InvalidParameter,
-            "Required parameter is null".to_string(),
-        ));
-    }
-
-    let wrapper = &*(sdk_handle as *const SDKWrapper);
-    let data_contract = &*(params.data_contract_handle as *const DataContract);
-
-    let document_type_str = match CStr::from_ptr(params.document_type).to_str() {
-        Ok(s) => s,
-        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
-    };
-
-    let result = wrapper.runtime.block_on(async {
-        let mut query = DocumentQuery::new(data_contract.clone(), document_type_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to create query: {}", e)))?;
-
-        // Apply where clauses if provided
-        if !params.where_json.is_null() {
-            let where_str = CStr::from_ptr(params.where_json)
-                .to_str()
-                .map_err(|e| FFIError::from(e))?;
-
-            if !where_str.is_empty() {
-                // TODO: Parse and apply where clauses
-                // This would require implementing JSON parsing for WhereClause structures
-            }
-        }
-
-        // Apply order by if provided
-        if !params.order_by_json.is_null() {
-            let order_str = CStr::from_ptr(params.order_by_json)
-                .to_str()
-                .map_err(|e| FFIError::from(e))?;
-
-            if !order_str.is_empty() {
-                // TODO: Parse and apply order by clauses
-                // This would require implementing JSON parsing for OrderClause structures
-            }
-        }
-
-        // Apply limit
-        if params.limit > 0 {
-            query = query.with_limit(params.limit);
-        }
-
-        // Apply start at for pagination
-        if params.start_at > 0 {
-            // TODO: Implement start_at pagination
-        }
-
-        let documents = Document::fetch_many(&wrapper.sdk, query)
-            .await
-            .map_err(FFIError::from)?;
-
-        Ok(documents)
-    });
-
-    match result {
-        Ok(documents) => {
-            // Convert Vec<Document> to a handle
-            // For now, we'll just return the first document if any
-            // In a real implementation, you'd want to return an array handle
-            if let Some(document) = documents.into_iter().next() {
-                let handle = Box::into_raw(Box::new(document)) as *mut DocumentHandle;
-                IOSSDKResult::success(handle as *mut std::os::raw::c_void)
-            } else {
-                IOSSDKResult::error(IOSSDKError::new(
-                    IOSSDKErrorCode::NotFound,
-                    "No documents found".to_string(),
-                ))
-            }
-        }
-        Err(e) => IOSSDKResult::error(e.into()),
-    }
+    // TODO: Implement document search
+    // This requires handling DocumentQuery with proper trait bounds for Options
+    IOSSDKResult::error(IOSSDKError::new(
+        IOSSDKErrorCode::NotImplemented,
+        "Document search not yet implemented. \
+         DocumentQuery trait bounds need to be resolved."
+            .to_string(),
+    ))
 }
 
 /// Destroy a document
@@ -411,21 +332,168 @@ pub unsafe extern "C" fn ios_sdk_document_handle_destroy(handle: *mut DocumentHa
     }
 }
 
-/// Put document to platform (broadcast state transition) - TODO: Implement
+/// Put document to platform (broadcast state transition)
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
-    _sdk_handle: *mut SDKHandle,
-    _document_handle: *const DocumentHandle,
-    _document_type_name: *const c_char,
-    _entropy: *const [u8; 32],
-    _identity_public_key_bytes: *const u8,
-    _identity_public_key_len: usize,
-    _signer_handle: *const SignerHandle,
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    entropy: *const [u8; 32],
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
 ) -> IOSSDKResult {
-    IOSSDKResult::error(IOSSDKError::new(
-        IOSSDKErrorCode::NotImplemented,
-        "put_to_platform not yet implemented".to_string(),
-    ))
+    // Validate parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || entropy.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+    let entropy_bytes = *entropy;
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
+        // Get document type from data contract
+        let document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let document_type_owned = document_type.to_owned_document_type();
+
+        // Put document to platform using the PutDocument trait
+        use dash_sdk::platform::transition::put_document::PutDocument;
+
+        let _state_transition = document
+            .put_to_platform(
+                &wrapper.sdk,
+                document_type_owned,
+                entropy_bytes,
+                identity_public_key.clone(),
+                None, // token_payment_info
+                signer,
+                None, // settings (use defaults)
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to put document to platform: {}", e))
+            })?;
+
+        // For now, just return success. In a full implementation, you would return the state transition ID
+        Ok("success".to_string())
+    });
+
+    match result {
+        Ok(id_string) => match CString::new(id_string) {
+            Ok(c_string) => {
+                let ptr = c_string.into_raw();
+                IOSSDKResult::success(ptr as *mut std::os::raw::c_void)
+            }
+            Err(e) => IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InternalError,
+                format!("Failed to create C string: {}", e),
+            )),
+        },
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Put document to platform and wait for confirmation (broadcast state transition and wait for response)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    entropy: *const [u8; 32],
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || entropy.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+    let entropy_bytes = *entropy;
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Get document type from data contract
+        let document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let document_type_owned = document_type.to_owned_document_type();
+
+        // Put document to platform and wait for response
+        use dash_sdk::platform::transition::put_document::PutDocument;
+
+        let confirmed_document = document
+            .put_to_platform_and_wait_for_response(
+                &wrapper.sdk,
+                document_type_owned,
+                entropy_bytes,
+                identity_public_key.clone(),
+                None, // token_payment_info
+                signer,
+                None, // settings (use defaults)
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!(
+                    "Failed to put document to platform and wait: {}",
+                    e
+                ))
+            })?;
+
+        Ok(confirmed_document)
+    });
+
+    match result {
+        Ok(confirmed_document) => {
+            let handle = Box::into_raw(Box::new(confirmed_document)) as *mut DocumentHandle;
+            IOSSDKResult::success(handle as *mut std::os::raw::c_void)
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
 }
 
 // Helper function for freeing strings

@@ -112,7 +112,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_create(
     };
 
     // Convert to platform Value
-    let documents_value = match platform_value::from_value(schema_value) {
+    let documents_value = match serde_json::from_value::<platform_value::Value>(schema_value) {
         Ok(v) => v,
         Err(e) => {
             return IOSSDKResult::error(IOSSDKError::new(
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_create(
         }
     };
 
-    let result = wrapper.runtime.block_on(async {
+    let result: Result<dpp::prelude::DataContract, FFIError> = wrapper.runtime.block_on(async {
         // Get protocol version from SDK
         let platform_version = wrapper.sdk.version();
 
@@ -134,7 +134,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_create(
         let identity_nonce = identity.revision() as u64;
 
         // Create the data contract
-        let contract = factory
+        let created_contract = factory
             .create(
                 identity.id(),
                 identity_nonce,
@@ -145,8 +145,8 @@ pub unsafe extern "C" fn ios_sdk_data_contract_create(
             .map_err(|e| FFIError::InternalError(format!("Failed to create contract: {}", e)))?;
 
         // Note: Actually publishing the contract would require signing and broadcasting
-        // For now, we just return the created contract
-        Ok(contract)
+        // For now, we just return the created contract's data contract part
+        Ok(created_contract.data_contract().clone())
     });
 
     match result {

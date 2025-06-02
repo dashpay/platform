@@ -27,6 +27,11 @@ pub struct SignerHandle {
     _private: [u8; 0],
 }
 
+/// Opaque handle to an IdentityPublicKey
+pub struct IdentityPublicKeyHandle {
+    _private: [u8; 0],
+}
+
 /// Network type for SDK configuration
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,11 +1,8 @@
 //! SDK initialization and configuration
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-use dash_sdk::platform::{Fetch, FetchMany};
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::dashcore::Network;
 
