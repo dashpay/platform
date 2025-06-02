@@ -121,6 +121,15 @@ unsafe fn create_instant_asset_lock_proof(
     Ok(AssetLockProof::Instant(instant_proof))
 }
 
+/// Result structure for credit transfer operations
+#[repr(C)]
+pub struct IOSSDKTransferCreditsResult {
+    /// Sender's final balance after transfer
+    pub sender_balance: u64,
+    /// Receiver's final balance after transfer
+    pub receiver_balance: u64,
+}
+
 /// Helper function to create chain asset lock proof from components
 unsafe fn create_chain_asset_lock_proof(
     core_chain_locked_height: u32,
@@ -608,5 +617,109 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_chain_lock_and_wa
             )
         }
         Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Transfer credits from one identity to another
+///
+/// # Parameters
+/// - `from_identity_handle`: Identity to transfer credits from
+/// - `to_identity_id`: Base58-encoded ID of the identity to transfer credits to
+/// - `amount`: Amount of credits to transfer
+/// - `identity_public_key_handle`: Public key for signing (optional, pass null to auto-select)
+/// - `signer_handle`: Cryptographic signer
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+///
+/// # Returns
+/// IOSSDKTransferCreditsResult with sender and receiver final balances on success
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_transfer_credits(
+    sdk_handle: *mut SDKHandle,
+    from_identity_handle: *const IdentityHandle,
+    to_identity_id: *const c_char,
+    amount: u64,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || from_identity_handle.is_null()
+        || to_identity_id.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let from_identity = &*(from_identity_handle as *const Identity);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let to_identity_id_str = match CStr::from_ptr(to_identity_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let to_id = match Identifier::from_string(to_identity_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid to_identity_id: {}", e),
+            ))
+        }
+    };
+
+    // Optional public key for signing
+    let signing_key = if identity_public_key_handle.is_null() {
+        None
+    } else {
+        Some(&*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey))
+    };
+
+    let result: Result<IOSSDKTransferCreditsResult, FFIError> = wrapper.runtime.block_on(async {
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
+
+        // Use TransferToIdentity trait to transfer credits
+        use dash_sdk::platform::transition::transfer::TransferToIdentity;
+
+        let (sender_balance, receiver_balance) = from_identity
+            .transfer_credits(
+                &wrapper.sdk,
+                to_id,
+                amount,
+                signing_key,
+                *signer,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to transfer credits: {}", e))
+            })?;
+
+        Ok(IOSSDKTransferCreditsResult {
+            sender_balance,
+            receiver_balance,
+        })
+    });
+
+    match result {
+        Ok(transfer_result) => {
+            let result_ptr = Box::into_raw(Box::new(transfer_result));
+            IOSSDKResult::success(result_ptr as *mut std::os::raw::c_void)
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Free a transfer credits result structure
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_transfer_credits_result_free(result: *mut IOSSDKTransferCreditsResult) {
+    if !result.is_null() {
+        let _ = Box::from_raw(result);
     }
 }

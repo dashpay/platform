@@ -493,5 +493,198 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     }
 }
 
+/// Purchase document (broadcast state transition)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    price: u64,
+    purchaser_id: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || purchaser_id.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let purchaser_id_str = match CStr::from_ptr(purchaser_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let purchaser_id = match Identifier::from_string(purchaser_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid purchaser ID: {}", e),
+            ))
+        }
+    };
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Get document type from data contract
+        let document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let document_type_owned = document_type.to_owned_document_type();
+
+        // Purchase document using the PurchaseDocument trait
+        use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
+
+        let state_transition = document
+            .purchase_document(
+                price,
+                &wrapper.sdk,
+                document_type_owned,
+                purchaser_id,
+                identity_public_key.clone(),
+                None, // token_payment_info
+                signer,
+                None, // settings (use defaults)
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to purchase document: {}", e))
+            })?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Purchase document and wait for confirmation (broadcast state transition and wait for response)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    price: u64,
+    purchaser_id: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || purchaser_id.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let purchaser_id_str = match CStr::from_ptr(purchaser_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let purchaser_id = match Identifier::from_string(purchaser_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid purchaser ID: {}", e),
+            ))
+        }
+    };
+
+    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Get document type from data contract
+        let document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let document_type_owned = document_type.to_owned_document_type();
+
+        // Purchase document and wait for response
+        use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
+
+        let purchased_document = document
+            .purchase_document_and_wait_for_response(
+                price,
+                &wrapper.sdk,
+                document_type_owned,
+                purchaser_id,
+                identity_public_key.clone(),
+                None, // token_payment_info
+                signer,
+                None, // settings (use defaults)
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!(
+                    "Failed to purchase document and wait: {}",
+                    e
+                ))
+            })?;
+
+        Ok(purchased_document)
+    });
+
+    match result {
+        Ok(purchased_document) => {
+            let handle = Box::into_raw(Box::new(purchased_document)) as *mut DocumentHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::DocumentHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
 // Helper function for freeing strings
 use crate::types::ios_sdk_string_free;

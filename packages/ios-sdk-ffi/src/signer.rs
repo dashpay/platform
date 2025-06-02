@@ -24,7 +24,7 @@ pub type IOSCanSignCallback = unsafe extern "C" fn(
 ) -> bool;
 
 /// iOS FFI Signer that bridges to iOS signing callbacks
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct IOSSigner {
     sign_callback: IOSSignCallback,
     can_sign_callback: IOSCanSignCallback,
