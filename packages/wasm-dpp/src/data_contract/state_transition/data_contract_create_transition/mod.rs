@@ -61,7 +61,9 @@ impl DataContractCreateTransitionWasm {
     ) -> Result<DataContractWasm, JsValue> {
         // Use provided protocol version or latest if not specified
         let platform_version = if let Some(version) = protocol_version {
-            PlatformVersion::get(version).with_js_error()?
+            PlatformVersion::get(version)
+                .map_err(ProtocolError::PlatformVersionError)
+                .with_js_error()?
         } else {
             PlatformVersion::latest()
         };
