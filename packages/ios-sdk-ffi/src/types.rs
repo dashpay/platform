@@ -59,9 +59,38 @@ pub struct IOSSDKConfig {
     pub request_timeout_ms: u64,
 }
 
+/// Result data type indicator for iOS
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IOSSDKResultDataType {
+    /// No data (void/null)
+    None = 0,
+    /// C string (char*)
+    String = 1,
+    /// Binary data with length
+    BinaryData = 2,
+    /// Identity handle
+    IdentityHandle = 3,
+    /// Document handle
+    DocumentHandle = 4,
+    /// Data contract handle
+    DataContractHandle = 5,
+}
+
+/// Binary data container for results
+#[repr(C)]
+pub struct IOSSDKBinaryData {
+    /// Pointer to the data
+    pub data: *mut u8,
+    /// Length of the data
+    pub len: usize,
+}
+
 /// Result type for FFI functions that return data
 #[repr(C)]
 pub struct IOSSDKResult {
+    /// Type of data being returned
+    pub data_type: IOSSDKResultDataType,
     /// Pointer to the result data (null on error)
     pub data: *mut c_void,
     /// Error information (null on success)
@@ -69,10 +98,47 @@ pub struct IOSSDKResult {
 }
 
 impl IOSSDKResult {
-    /// Create a success result
+    /// Create a success result (backward compatibility - assumes no data type)
     pub fn success(data: *mut c_void) -> Self {
         IOSSDKResult {
+            data_type: IOSSDKResultDataType::None,
             data,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with string data
+    pub fn success_string(data: *mut c_char) -> Self {
+        IOSSDKResult {
+            data_type: IOSSDKResultDataType::String,
+            data: data as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with binary data
+    pub fn success_binary(data: Vec<u8>) -> Self {
+        let len = data.len();
+        let data_ptr = data.as_ptr() as *mut u8;
+        std::mem::forget(data); // Prevent deallocation
+
+        let binary_data = Box::new(IOSSDKBinaryData {
+            data: data_ptr,
+            len,
+        });
+
+        IOSSDKResult {
+            data_type: IOSSDKResultDataType::BinaryData,
+            data: Box::into_raw(binary_data) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with a handle
+    pub fn success_handle(handle: *mut c_void, handle_type: IOSSDKResultDataType) -> Self {
+        IOSSDKResult {
+            data_type: handle_type,
+            data: handle,
             error: std::ptr::null_mut(),
         }
     }
@@ -80,6 +146,7 @@ impl IOSSDKResult {
     /// Create an error result
     pub fn error(error: super::IOSSDKError) -> Self {
         IOSSDKResult {
+            data_type: IOSSDKResultDataType::None,
             data: std::ptr::null_mut(),
             error: Box::into_raw(Box::new(error)),
         }
@@ -118,11 +185,48 @@ pub struct IOSSDKDocumentInfo {
     pub updated_at: i64,
 }
 
+/// Put settings for platform operations
+#[repr(C)]
+pub struct IOSSDKPutSettings {
+    /// Timeout for establishing a connection (milliseconds), 0 means use default
+    pub connect_timeout_ms: u64,
+    /// Timeout for single request (milliseconds), 0 means use default
+    pub timeout_ms: u64,
+    /// Number of retries in case of failed requests, 0 means use default
+    pub retries: u32,
+    /// Ban DAPI address if node not responded or responded with error
+    pub ban_failed_address: bool,
+    /// Identity nonce stale time in seconds, 0 means use default
+    pub identity_nonce_stale_time_s: u64,
+    /// User fee increase (additional percentage of processing fee), 0 means no increase
+    pub user_fee_increase: u16,
+    /// Enable signing with any security level (for debugging)
+    pub allow_signing_with_any_security_level: bool,
+    /// Enable signing with any purpose (for debugging)
+    pub allow_signing_with_any_purpose: bool,
+    /// Wait timeout in milliseconds, 0 means use default
+    pub wait_timeout_ms: u64,
+}
+
 /// Free a string allocated by the FFI
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_string_free(s: *mut c_char) {
     if !s.is_null() {
         let _ = std::ffi::CString::from_raw(s);
+    }
+}
+
+/// Free binary data allocated by the FFI
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_binary_data_free(binary_data: *mut IOSSDKBinaryData) {
+    if binary_data.is_null() {
+        return;
+    }
+
+    let data = Box::from_raw(binary_data);
+    if !data.data.is_null() && data.len > 0 {
+        // Reconstruct the Vec to properly deallocate
+        let _ = Vec::from_raw_parts(data.data, data.len, data.len);
     }
 }
 

@@ -2,17 +2,139 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::time::Duration;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::Fetch;
+use dash_sdk::RequestSettings;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::{AssetLockProof, Identifier, Identity};
+use dpp::prelude::{AssetLockProof, Identifier, Identity, UserFeeIncrease};
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dpp::state_transition::StateTransitionSigningOptions;
 use platform_value::string_encoding::Encoding;
 
 use crate::sdk::SDKWrapper;
-use crate::types::{IOSSDKIdentityInfo, IdentityHandle, SDKHandle};
+use crate::types::{
+    IOSSDKIdentityInfo, IOSSDKPutSettings, IOSSDKResultDataType, IdentityHandle, SDKHandle,
+};
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
+
+/// Helper function to convert IOSSDKPutSettings to PutSettings
+unsafe fn convert_put_settings(put_settings: *const IOSSDKPutSettings) -> Option<PutSettings> {
+    if put_settings.is_null() {
+        None
+    } else {
+        let ios_settings = &*put_settings;
+
+        // Convert request settings
+        let mut request_settings = RequestSettings::default();
+        if ios_settings.connect_timeout_ms > 0 {
+            request_settings.connect_timeout =
+                Some(Duration::from_millis(ios_settings.connect_timeout_ms));
+        }
+        if ios_settings.timeout_ms > 0 {
+            request_settings.timeout = Some(Duration::from_millis(ios_settings.timeout_ms));
+        }
+        if ios_settings.retries > 0 {
+            request_settings.retries = Some(ios_settings.retries as usize);
+        }
+        request_settings.ban_failed_address = Some(ios_settings.ban_failed_address);
+
+        // Convert other settings
+        let identity_nonce_stale_time_s = if ios_settings.identity_nonce_stale_time_s > 0 {
+            Some(ios_settings.identity_nonce_stale_time_s)
+        } else {
+            None
+        };
+
+        let user_fee_increase = if ios_settings.user_fee_increase > 0 {
+            Some(ios_settings.user_fee_increase as UserFeeIncrease)
+        } else {
+            None
+        };
+
+        let signing_options = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: ios_settings
+                .allow_signing_with_any_security_level,
+            allow_signing_with_any_purpose: ios_settings.allow_signing_with_any_purpose,
+        };
+
+        let state_transition_creation_options = Some(StateTransitionCreationOptions {
+            signing_options,
+            batch_feature_version: None,
+            method_feature_version: None,
+            base_feature_version: None,
+        });
+
+        let wait_timeout = if ios_settings.wait_timeout_ms > 0 {
+            Some(Duration::from_millis(ios_settings.wait_timeout_ms))
+        } else {
+            None
+        };
+
+        Some(PutSettings {
+            request_settings,
+            identity_nonce_stale_time_s,
+            user_fee_increase,
+            state_transition_creation_options,
+            wait_timeout,
+        })
+    }
+}
+
+/// Helper function to parse private key
+unsafe fn parse_private_key(private_key_bytes: *const [u8; 32]) -> Result<PrivateKey, FFIError> {
+    let key_bytes = *private_key_bytes;
+    let secret_key = dpp::dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
+        .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
+    Ok(PrivateKey::new(secret_key, Network::Dash))
+}
+
+/// Helper function to create instant asset lock proof from components
+unsafe fn create_instant_asset_lock_proof(
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+) -> Result<AssetLockProof, FFIError> {
+    use dpp::dashcore::consensus::deserialize;
+    use dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;
+
+    // Deserialize instant lock
+    let instant_lock_data = std::slice::from_raw_parts(instant_lock_bytes, instant_lock_len);
+    let instant_lock = deserialize(instant_lock_data).map_err(|e| {
+        FFIError::InternalError(format!("Failed to deserialize instant lock: {}", e))
+    })?;
+
+    // Deserialize transaction
+    let transaction_data = std::slice::from_raw_parts(transaction_bytes, transaction_len);
+    let transaction = deserialize(transaction_data).map_err(|e| {
+        FFIError::InternalError(format!("Failed to deserialize transaction: {}", e))
+    })?;
+
+    // Create instant asset lock proof
+    let instant_proof = InstantAssetLockProof::new(instant_lock, transaction, output_index);
+
+    Ok(AssetLockProof::Instant(instant_proof))
+}
+
+/// Helper function to create chain asset lock proof from components
+unsafe fn create_chain_asset_lock_proof(
+    core_chain_locked_height: u32,
+    out_point_bytes: *const [u8; 36],
+) -> Result<AssetLockProof, FFIError> {
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+    let out_point = *out_point_bytes;
+
+    // Create chain asset lock proof
+    let chain_proof = ChainAssetLockProof::new(core_chain_locked_height, out_point);
+
+    Ok(AssetLockProof::Chain(chain_proof))
+}
 
 /// Fetch an identity by ID
 #[no_mangle]
@@ -62,7 +184,10 @@ pub unsafe extern "C" fn ios_sdk_identity_fetch(
     match result {
         Ok(Some(identity)) => {
             let handle = Box::into_raw(Box::new(identity)) as *mut IdentityHandle;
-            IOSSDKResult::success(handle as *mut std::os::raw::c_void)
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::IdentityHandle,
+            )
         }
         Ok(None) => IOSSDKResult::error(IOSSDKError::new(
             IOSSDKErrorCode::NotFound,
@@ -164,22 +289,33 @@ pub unsafe extern "C" fn ios_sdk_identity_resolve_name(
     ))
 }
 
-/// Put identity to platform (broadcast state transition)
+/// Put identity to platform with instant lock proof
+///
+/// # Parameters
+/// - `instant_lock_bytes`: Serialized InstantLock data
+/// - `transaction_bytes`: Serialized Transaction data
+/// - `output_index`: Index of the output in the transaction payload
+/// - `private_key`: 32-byte private key associated with the asset lock
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_identity_put_to_platform(
+pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_instant_lock(
     sdk_handle: *mut SDKHandle,
     identity_handle: *const IdentityHandle,
-    asset_lock_proof_type: u8, // 0 = instant, 1 = chain
-    asset_lock_proof_data: *const u8,
-    asset_lock_proof_data_len: usize,
-    asset_lock_proof_private_key: *const [u8; 32], // Private key as bytes
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+    private_key: *const [u8; 32],
     signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
         || identity_handle.is_null()
-        || asset_lock_proof_data.is_null()
-        || asset_lock_proof_private_key.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
         || signer_handle.is_null()
     {
         return IOSSDKResult::error(IOSSDKError::new(
@@ -191,85 +327,80 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
-    let private_key_bytes = *asset_lock_proof_private_key;
 
-    let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        // Convert private key bytes to PrivateKey
-        let secp = dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key =
-            dpp::dashcore::secp256k1::SecretKey::from_byte_array(&private_key_bytes)
-                .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
-        let private_key = PrivateKey::new(secret_key, Network::Dash);
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Create instant asset lock proof
+        let asset_lock_proof = create_instant_asset_lock_proof(
+            instant_lock_bytes,
+            instant_lock_len,
+            transaction_bytes,
+            transaction_len,
+            output_index,
+        )?;
 
-        // Parse asset lock proof data
-        let proof_data =
-            std::slice::from_raw_parts(asset_lock_proof_data, asset_lock_proof_data_len);
+        // Parse private key
+        let private_key = parse_private_key(private_key)?;
 
-        // For now, create a simple instant asset lock proof as a placeholder
-        // In a real implementation, you would parse the proof_data based on asset_lock_proof_type
-        let asset_lock_proof = if asset_lock_proof_type == 0 {
-            // Instant asset lock proof
-            // This is a placeholder - real implementation would deserialize from proof_data
-            return Err(FFIError::InternalError(
-                "Instant asset lock proof parsing not implemented".to_string(),
-            ));
-        } else {
-            // Chain asset lock proof
-            // This is a placeholder - real implementation would deserialize from proof_data
-            return Err(FFIError::InternalError(
-                "Chain asset lock proof parsing not implemented".to_string(),
-            ));
-        };
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform
-        let _state_transition = identity
+        let state_transition = identity
             .put_to_platform(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
                 signer,
-                None, // settings (use defaults)
+                settings,
             )
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
             })?;
 
-        // For now, just return success. In a full implementation, you would return the state transition ID
-        Ok("success".to_string())
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
     });
 
     match result {
-        Ok(id_string) => match CString::new(id_string) {
-            Ok(c_string) => {
-                let ptr = c_string.into_raw();
-                IOSSDKResult::success(ptr as *mut std::os::raw::c_void)
-            }
-            Err(e) => IOSSDKResult::error(IOSSDKError::new(
-                IOSSDKErrorCode::InternalError,
-                format!("Failed to create C string: {}", e),
-            )),
-        },
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
         Err(e) => IOSSDKResult::error(e.into()),
     }
 }
 
-/// Put identity to platform and wait for confirmation
+/// Put identity to platform with instant lock proof and wait for confirmation
+///
+/// # Parameters
+/// - `instant_lock_bytes`: Serialized InstantLock data
+/// - `transaction_bytes`: Serialized Transaction data
+/// - `output_index`: Index of the output in the transaction payload
+/// - `private_key`: 32-byte private key associated with the asset lock
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+///
+/// # Returns
+/// Handle to the confirmed identity on success
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_and_wait(
+pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_instant_lock_and_wait(
     sdk_handle: *mut SDKHandle,
     identity_handle: *const IdentityHandle,
-    asset_lock_proof_type: u8, // 0 = instant, 1 = chain
-    asset_lock_proof_data: *const u8,
-    asset_lock_proof_data_len: usize,
-    asset_lock_proof_private_key: *const [u8; 32], // Private key as bytes
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+    private_key: *const [u8; 32],
     signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
         || identity_handle.is_null()
-        || asset_lock_proof_data.is_null()
-        || asset_lock_proof_private_key.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
         || signer_handle.is_null()
     {
         return IOSSDKResult::error(IOSSDKError::new(
@@ -281,35 +412,22 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_and_wait(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
-    let private_key_bytes = *asset_lock_proof_private_key;
 
     let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
-        // Convert private key bytes to PrivateKey
-        let secp = dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key =
-            dpp::dashcore::secp256k1::SecretKey::from_byte_array(&private_key_bytes)
-                .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
-        let private_key = PrivateKey::new(secret_key, Network::Dash);
+        // Create instant asset lock proof
+        let asset_lock_proof = create_instant_asset_lock_proof(
+            instant_lock_bytes,
+            instant_lock_len,
+            transaction_bytes,
+            transaction_len,
+            output_index,
+        )?;
 
-        // Parse asset lock proof data
-        let proof_data =
-            std::slice::from_raw_parts(asset_lock_proof_data, asset_lock_proof_data_len);
+        // Parse private key
+        let private_key = parse_private_key(private_key)?;
 
-        // For now, create a simple instant asset lock proof as a placeholder
-        // In a real implementation, you would parse the proof_data based on asset_lock_proof_type
-        let asset_lock_proof = if asset_lock_proof_type == 0 {
-            // Instant asset lock proof
-            // This is a placeholder - real implementation would deserialize from proof_data
-            return Err(FFIError::InternalError(
-                "Instant asset lock proof parsing not implemented".to_string(),
-            ));
-        } else {
-            // Chain asset lock proof
-            // This is a placeholder - real implementation would deserialize from proof_data
-            return Err(FFIError::InternalError(
-                "Chain asset lock proof parsing not implemented".to_string(),
-            ));
-        };
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform and wait for response
         let confirmed_identity = identity
@@ -318,7 +436,7 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_and_wait(
                 asset_lock_proof,
                 &private_key,
                 signer,
-                None, // settings (use defaults)
+                settings,
             )
             .await
             .map_err(|e| {
@@ -334,7 +452,160 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_and_wait(
     match result {
         Ok(confirmed_identity) => {
             let handle = Box::into_raw(Box::new(confirmed_identity)) as *mut IdentityHandle;
-            IOSSDKResult::success(handle as *mut std::os::raw::c_void)
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::IdentityHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Put identity to platform with chain lock proof
+///
+/// # Parameters
+/// - `core_chain_locked_height`: Core height at which the transaction was chain locked
+/// - `out_point`: 36-byte OutPoint (32-byte txid + 4-byte vout)
+/// - `private_key`: 32-byte private key associated with the asset lock
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_chain_lock(
+    sdk_handle: *mut SDKHandle,
+    identity_handle: *const IdentityHandle,
+    core_chain_locked_height: u32,
+    out_point: *const [u8; 36],
+    private_key: *const [u8; 32],
+    signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || out_point.is_null()
+        || private_key.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let identity = &*(identity_handle as *const Identity);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Create chain asset lock proof
+        let asset_lock_proof = create_chain_asset_lock_proof(core_chain_locked_height, out_point)?;
+
+        // Parse private key
+        let private_key = parse_private_key(private_key)?;
+
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
+
+        // Use PutIdentity trait to put identity to platform
+        let state_transition = identity
+            .put_to_platform(
+                &wrapper.sdk,
+                asset_lock_proof,
+                &private_key,
+                signer,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
+            })?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Put identity to platform with chain lock proof and wait for confirmation
+///
+/// # Parameters
+/// - `core_chain_locked_height`: Core height at which the transaction was chain locked
+/// - `out_point`: 36-byte OutPoint (32-byte txid + 4-byte vout)
+/// - `private_key`: 32-byte private key associated with the asset lock
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+///
+/// # Returns
+/// Handle to the confirmed identity on success
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_chain_lock_and_wait(
+    sdk_handle: *mut SDKHandle,
+    identity_handle: *const IdentityHandle,
+    core_chain_locked_height: u32,
+    out_point: *const [u8; 36],
+    private_key: *const [u8; 32],
+    signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || out_point.is_null()
+        || private_key.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let identity = &*(identity_handle as *const Identity);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
+        // Create chain asset lock proof
+        let asset_lock_proof = create_chain_asset_lock_proof(core_chain_locked_height, out_point)?;
+
+        // Parse private key
+        let private_key = parse_private_key(private_key)?;
+
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
+
+        // Use PutIdentity trait to put identity to platform and wait for response
+        let confirmed_identity = identity
+            .put_to_platform_and_wait_for_response(
+                &wrapper.sdk,
+                asset_lock_proof,
+                &private_key,
+                signer,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!(
+                    "Failed to put identity to platform and wait: {}",
+                    e
+                ))
+            })?;
+
+        Ok(confirmed_identity)
+    });
+
+    match result {
+        Ok(confirmed_identity) => {
+            let handle = Box::into_raw(Box::new(confirmed_identity)) as *mut IdentityHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::IdentityHandle,
+            )
         }
         Err(e) => IOSSDKResult::error(e.into()),
     }
