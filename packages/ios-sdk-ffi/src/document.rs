@@ -682,5 +682,231 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
     }
 }
 
+/// Transfer document to another identity
+///
+/// # Parameters
+/// - `document_handle`: Handle to the document to transfer
+/// - `recipient_id`: Base58-encoded ID of the recipient identity
+/// - `data_contract_handle`: Handle to the data contract
+/// - `document_type_name`: Name of the document type
+/// - `identity_public_key_handle`: Public key for signing
+/// - `signer_handle`: Cryptographic signer
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+///
+/// # Returns
+/// Serialized state transition on success
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    recipient_id: *const c_char,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || recipient_id.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let recipient_id_str = match CStr::from_ptr(recipient_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let recipient_identifier = match Identifier::from_string(recipient_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid recipient ID: {}", e),
+            ))
+        }
+    };
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Get document type from the contract
+        let document_type = data_contract
+            .document_types()
+            .get(document_type_name_str)
+            .ok_or_else(|| {
+                FFIError::InternalError(format!(
+                    "Document type '{}' not found",
+                    document_type_name_str
+                ))
+            })?
+            .clone();
+
+        // Convert settings
+        let settings = crate::identity::convert_put_settings(put_settings);
+
+        // Use TransferDocument trait to transfer document
+        use dash_sdk::platform::transition::transfer_document::TransferDocument;
+
+        let state_transition = document
+            .transfer_document_to_identity(
+                recipient_identifier,
+                &wrapper.sdk,
+                document_type,
+                identity_public_key.clone(),
+                None, // token_payment_info
+                signer,
+                settings,
+            )
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to transfer document: {}", e)))?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Transfer document to another identity and wait for confirmation
+///
+/// # Parameters
+/// - `document_handle`: Handle to the document to transfer
+/// - `recipient_id`: Base58-encoded ID of the recipient identity
+/// - `data_contract_handle`: Handle to the data contract
+/// - `document_type_name`: Name of the document type
+/// - `identity_public_key_handle`: Public key for signing
+/// - `signer_handle`: Cryptographic signer
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+///
+/// # Returns
+/// Handle to the transferred document on success
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    recipient_id: *const c_char,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    put_settings: *const crate::types::IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || recipient_id.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let recipient_id_str = match CStr::from_ptr(recipient_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let recipient_identifier = match Identifier::from_string(recipient_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid recipient ID: {}", e),
+            ))
+        }
+    };
+
+    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Get document type from the contract
+        let document_type = data_contract
+            .document_types()
+            .get(document_type_name_str)
+            .ok_or_else(|| {
+                FFIError::InternalError(format!(
+                    "Document type '{}' not found",
+                    document_type_name_str
+                ))
+            })?
+            .clone();
+
+        // Convert settings
+        let settings = crate::identity::convert_put_settings(put_settings);
+
+        // Use TransferDocument trait to transfer document and wait
+        use dash_sdk::platform::transition::transfer_document::TransferDocument;
+
+        let transferred_document = document
+            .transfer_document_to_identity_and_wait_for_response(
+                recipient_identifier,
+                &wrapper.sdk,
+                document_type,
+                identity_public_key.clone(),
+                None, // token_payment_info
+                signer,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to transfer document and wait: {}", e))
+            })?;
+
+        Ok(transferred_document)
+    });
+
+    match result {
+        Ok(transferred_document) => {
+            let handle = Box::into_raw(Box::new(transferred_document)) as *mut DocumentHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::DocumentHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
 // Helper function for freeing strings
 use crate::types::ios_sdk_string_free;

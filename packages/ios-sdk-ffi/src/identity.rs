@@ -7,6 +7,7 @@ use std::time::Duration;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityBalance;
 use dash_sdk::RequestSettings;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -22,7 +23,7 @@ use crate::types::{
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 
 /// Helper function to convert IOSSDKPutSettings to PutSettings
-unsafe fn convert_put_settings(put_settings: *const IOSSDKPutSettings) -> Option<PutSettings> {
+pub unsafe fn convert_put_settings(put_settings: *const IOSSDKPutSettings) -> Option<PutSettings> {
     if put_settings.is_null() {
         None
     } else {
@@ -223,18 +224,162 @@ pub unsafe extern "C" fn ios_sdk_identity_create(sdk_handle: *mut SDKHandle) -> 
     ))
 }
 
-/// Top up an identity with credits
+/// Top up an identity with credits using instant lock proof
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_identity_topup(
-    _sdk_handle: *mut SDKHandle,
-    _identity_handle: *const IdentityHandle,
-    _amount: u64,
-) -> *mut IOSSDKError {
-    // TODO: Implement identity top-up once the SDK API is available
-    Box::into_raw(Box::new(IOSSDKError::new(
-        IOSSDKErrorCode::NotImplemented,
-        "Identity top-up not yet implemented".to_string(),
-    )))
+pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock(
+    sdk_handle: *mut SDKHandle,
+    identity_handle: *const IdentityHandle,
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+    private_key: *const [u8; 32],
+    signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let identity = &*(identity_handle as *const Identity);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Create instant asset lock proof
+        let asset_lock_proof = create_instant_asset_lock_proof(
+            instant_lock_bytes,
+            instant_lock_len,
+            transaction_bytes,
+            transaction_len,
+            output_index,
+        )?;
+
+        // Parse private key
+        let private_key = parse_private_key(private_key)?;
+
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
+
+        // Use TopUp trait to top up identity
+        use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+
+        let new_balance = identity
+            .top_up_identity(
+                &wrapper.sdk,
+                asset_lock_proof,
+                &private_key,
+                settings.and_then(|s| s.user_fee_increase),
+                settings,
+            )
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to top up identity: {}", e)))?;
+
+        // Return the new balance as a string since we don't have the state transition anymore
+        Ok(new_balance.to_string().into_bytes())
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Top up an identity with credits using instant lock proof and wait for confirmation
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock_and_wait(
+    sdk_handle: *mut SDKHandle,
+    identity_handle: *const IdentityHandle,
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+    private_key: *const [u8; 32],
+    signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let identity = &*(identity_handle as *const Identity);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
+        // Create instant asset lock proof
+        let asset_lock_proof = create_instant_asset_lock_proof(
+            instant_lock_bytes,
+            instant_lock_len,
+            transaction_bytes,
+            transaction_len,
+            output_index,
+        )?;
+
+        // Parse private key
+        let private_key = parse_private_key(private_key)?;
+
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
+
+        // Use TopUp trait to top up identity and wait for response
+        use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+
+        let _new_balance = identity
+            .top_up_identity(
+                &wrapper.sdk,
+                asset_lock_proof,
+                &private_key,
+                settings.and_then(|s| s.user_fee_increase),
+                settings,
+            )
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to top up identity: {}", e)))?;
+
+        // Fetch the updated identity after top up
+        use dash_sdk::platform::Fetch;
+        let updated_identity = Identity::fetch(&wrapper.sdk, identity.id())
+            .await
+            .map_err(FFIError::from)?
+            .ok_or_else(|| {
+                FFIError::InternalError("Failed to fetch updated identity".to_string())
+            })?;
+
+        Ok(updated_identity)
+    });
+
+    match result {
+        Ok(topped_up_identity) => {
+            let handle = Box::into_raw(Box::new(topped_up_identity)) as *mut IdentityHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::IdentityHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
 }
 
 /// Get identity information
@@ -317,7 +462,7 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_instant_lock(
     output_index: u32,
     private_key: *const [u8; 32],
     signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -402,7 +547,7 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_instant_lock_and_
     output_index: u32,
     private_key: *const [u8; 32],
     signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -485,7 +630,7 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_chain_lock(
     out_point: *const [u8; 36],
     private_key: *const [u8; 32],
     signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -559,7 +704,7 @@ pub unsafe extern "C" fn ios_sdk_identity_put_to_platform_with_chain_lock_and_wa
     out_point: *const [u8; 36],
     private_key: *const [u8; 32],
     signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -640,7 +785,7 @@ pub unsafe extern "C" fn ios_sdk_identity_transfer_credits(
     amount: u64,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -714,5 +859,248 @@ pub unsafe extern "C" fn ios_sdk_transfer_credits_result_free(
 ) {
     if !result.is_null() {
         let _ = Box::from_raw(result);
+    }
+}
+
+/// Withdraw credits from identity to a Dash address
+///
+/// # Parameters
+/// - `identity_handle`: Identity to withdraw credits from
+/// - `address`: Base58-encoded Dash address to withdraw to
+/// - `amount`: Amount of credits to withdraw
+/// - `core_fee_per_byte`: Core fee per byte (optional, pass 0 for default)
+/// - `identity_public_key_handle`: Public key for signing (optional, pass null to auto-select)
+/// - `signer_handle`: Cryptographic signer
+/// - `put_settings`: Optional settings for the operation (can be null for defaults)
+///
+/// # Returns
+/// The new balance of the identity after withdrawal
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_withdraw(
+    sdk_handle: *mut SDKHandle,
+    identity_handle: *const IdentityHandle,
+    address: *const c_char,
+    amount: u64,
+    core_fee_per_byte: u32,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const crate::types::SignerHandle,
+    put_settings: *const IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate parameters
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || address.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let identity = &*(identity_handle as *const Identity);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let address_str = match CStr::from_ptr(address).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    // Parse the address
+    use dpp::dashcore::Address;
+    use std::str::FromStr;
+    let withdraw_address =
+        match Address::<dpp::dashcore::address::NetworkUnchecked>::from_str(address_str) {
+            Ok(addr) => addr.assume_checked(),
+            Err(e) => {
+                return IOSSDKResult::error(IOSSDKError::new(
+                    IOSSDKErrorCode::InvalidParameter,
+                    format!("Invalid Dash address: {}", e),
+                ))
+            }
+        };
+
+    // Optional public key for signing
+    let signing_key = if identity_public_key_handle.is_null() {
+        None
+    } else {
+        Some(&*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey))
+    };
+
+    // Optional core fee per byte
+    let core_fee = if core_fee_per_byte > 0 {
+        Some(core_fee_per_byte)
+    } else {
+        None
+    };
+
+    let result: Result<u64, FFIError> = wrapper.runtime.block_on(async {
+        // Convert settings
+        let settings = convert_put_settings(put_settings);
+
+        // Use Withdraw trait to withdraw credits
+        use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+
+        let new_balance = identity
+            .withdraw(
+                &wrapper.sdk,
+                Some(withdraw_address),
+                amount,
+                core_fee,
+                signing_key,
+                *signer,
+                settings,
+            )
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to withdraw credits: {}", e)))?;
+
+        Ok(new_balance)
+    });
+
+    match result {
+        Ok(new_balance) => {
+            // Return the new balance as a string
+            let balance_str = match CString::new(new_balance.to_string()) {
+                Ok(s) => s,
+                Err(e) => {
+                    return IOSSDKResult::error(
+                        FFIError::InternalError(format!("Failed to create CString: {}", e)).into(),
+                    )
+                }
+            };
+            IOSSDKResult::success_string(balance_str.into_raw())
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Fetch identity balance
+///
+/// # Parameters
+/// - `sdk_handle`: SDK handle
+/// - `identity_id`: Base58-encoded identity ID
+///
+/// # Returns
+/// The balance of the identity as a string
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_fetch_balance(
+    sdk_handle: *const SDKHandle,
+    identity_id: *const c_char,
+) -> IOSSDKResult {
+    if sdk_handle.is_null() || identity_id.is_null() {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "SDK handle or identity ID is null".to_string(),
+        ));
+    }
+
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+
+    let id_str = match CStr::from_ptr(identity_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let id = match Identifier::from_string(id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid identity ID: {}", e),
+            ))
+        }
+    };
+
+    let result: Result<IdentityBalance, FFIError> = wrapper.runtime.block_on(async {
+        // Fetch identity balance using FetchUnproved trait
+        let balance = IdentityBalance::fetch(&wrapper.sdk, id)
+            .await
+            .map_err(FFIError::from)?
+            .ok_or_else(|| FFIError::InternalError("Identity balance not found".to_string()))?;
+
+        Ok(balance)
+    });
+
+    match result {
+        Ok(balance) => {
+            let balance_str = match CString::new(balance.to_string()) {
+                Ok(s) => s,
+                Err(e) => {
+                    return IOSSDKResult::error(
+                        FFIError::InternalError(format!("Failed to create CString: {}", e)).into(),
+                    )
+                }
+            };
+            IOSSDKResult::success_string(balance_str.into_raw())
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Fetch identity public keys
+///
+/// # Parameters
+/// - `sdk_handle`: SDK handle
+/// - `identity_id`: Base58-encoded identity ID
+///
+/// # Returns
+/// A JSON string containing the identity's public keys
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_identity_fetch_public_keys(
+    sdk_handle: *const SDKHandle,
+    identity_id: *const c_char,
+) -> IOSSDKResult {
+    if sdk_handle.is_null() || identity_id.is_null() {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "SDK handle or identity ID is null".to_string(),
+        ));
+    }
+
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+
+    let id_str = match CStr::from_ptr(identity_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let id = match Identifier::from_string(id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid identity ID: {}", e),
+            ))
+        }
+    };
+
+    let result = wrapper.runtime.block_on(async {
+        use dash_sdk::platform::FetchMany;
+        use dpp::identity::IdentityPublicKey;
+
+        // Fetch identity public keys using FetchMany trait
+        let public_keys = IdentityPublicKey::fetch_many(&wrapper.sdk, id)
+            .await
+            .map_err(FFIError::from)?;
+
+        // Serialize to JSON
+        serde_json::to_string(&public_keys)
+            .map_err(|e| FFIError::InternalError(format!("Failed to serialize keys: {}", e)))
+    });
+
+    match result {
+        Ok(json_str) => {
+            let c_str = match CString::new(json_str) {
+                Ok(s) => s,
+                Err(e) => {
+                    return IOSSDKResult::error(
+                        FFIError::InternalError(format!("Failed to create CString: {}", e)).into(),
+                    )
+                }
+            };
+            IOSSDKResult::success_string(c_str.into_raw())
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
     }
 }

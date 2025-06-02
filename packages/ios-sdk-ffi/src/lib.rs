@@ -9,6 +9,7 @@ mod error;
 mod identity;
 mod sdk;
 mod signer;
+mod token;
 mod types;
 mod utils;
 
@@ -18,6 +19,7 @@ pub use error::*;
 pub use identity::*;
 pub use sdk::*;
 pub use signer::*;
+pub use token::*;
 pub use types::*;
 pub use utils::*;
 

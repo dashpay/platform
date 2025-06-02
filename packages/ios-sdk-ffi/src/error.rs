@@ -1,6 +1,6 @@
 //! Error handling for FFI layer
 
-use std::ffi::CString;
+use std::ffi::{CString, NulError};
 use std::os::raw::c_char;
 use thiserror::Error;
 
@@ -71,6 +71,9 @@ pub enum FFIError {
 
     #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("String contains null byte")]
+    NulError(#[from] NulError),
 }
 
 impl IOSSDKError {
@@ -111,6 +114,7 @@ impl From<FFIError> for IOSSDKError {
             FFIError::NotImplemented(_) => (IOSSDKErrorCode::NotImplemented, err.to_string()),
             FFIError::InvalidState(_) => (IOSSDKErrorCode::InvalidState, err.to_string()),
             FFIError::NotFound(_) => (IOSSDKErrorCode::NotFound, err.to_string()),
+            FFIError::NulError(_) => (IOSSDKErrorCode::InvalidParameter, err.to_string()),
         };
 
         IOSSDKError::new(code, message)
