@@ -5047,6 +5047,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "swift-sdk"
+version = "2.0.0-rc.14"
+dependencies = [
+ "cbindgen",
+ "ios-sdk-ffi",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"

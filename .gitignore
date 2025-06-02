@@ -34,3 +34,15 @@ node_modules
 # Rust build artifacts
 /target
 .gitaipconfig
+
+# Swift build artifacts and IDE files
+.build/
+.swiftpm/
+.index-build/
+DerivedData/
+*.xcworkspace
+xcuserdata/
+*.dSYM/
+*.o
+*.swiftdeps
+*.d
