@@ -46,6 +46,7 @@ impl From<SwiftDashSDKConfig> for ios_sdk_ffi::IOSSDKConfig {
 
 /// Settings for put operations
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct SwiftDashPutSettings {
     pub connect_timeout_ms: u64,
     pub timeout_ms: u64,

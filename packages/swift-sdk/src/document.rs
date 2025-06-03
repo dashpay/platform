@@ -127,11 +127,21 @@ pub extern "C" fn swift_dash_document_get_info(
 pub extern "C" fn swift_dash_document_put_to_platform(
     sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
-    public_key_id: u32,
+    data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    document_type_name: *const c_char,
+    entropy: *const [u8; 32],
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || document_handle.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 
@@ -146,10 +156,37 @@ pub extern "C" fn swift_dash_document_put_to_platform(
     };
 
     unsafe {
-        // This function doesn't exist with these parameters in ios_sdk_ffi
-        // We need different parameters according to the actual API
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_put_to_platform(
+            sdk_handle,
+            document_handle,
+            data_contract_handle,
+            document_type_name,
+            entropy,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        if result.data.is_null() {
+            return ptr::null_mut();
+        }
+
+        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary = *Box::from_raw(ffi_binary_ptr);
+
+        // Convert to Swift-friendly structure
+        let swift_binary = Box::new(SwiftDashBinaryData {
+            data: ffi_binary.data, // Transfer ownership
+            len: ffi_binary.len,
+        });
+
+        Box::into_raw(swift_binary)
     }
 }
 
@@ -158,11 +195,21 @@ pub extern "C" fn swift_dash_document_put_to_platform(
 pub extern "C" fn swift_dash_document_put_to_platform_and_wait(
     sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
-    public_key_id: u32,
+    data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    document_type_name: *const c_char,
+    entropy: *const [u8; 32],
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut ios_sdk_ffi::DocumentHandle {
-    if sdk_handle.is_null() || document_handle.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 
@@ -177,10 +224,24 @@ pub extern "C" fn swift_dash_document_put_to_platform_and_wait(
     };
 
     unsafe {
-        // This function doesn't exist with these parameters in ios_sdk_ffi
-        // We need different parameters according to the actual API
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_put_to_platform_and_wait(
+            sdk_handle,
+            document_handle,
+            data_contract_handle,
+            document_type_name,
+            entropy,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut ios_sdk_ffi::DocumentHandle
     }
 }
 
@@ -189,19 +250,69 @@ pub extern "C" fn swift_dash_document_put_to_platform_and_wait(
 pub extern "C" fn swift_dash_document_purchase_to_platform(
     sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
-    public_key_id: u32,
+    data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    document_type_name: *const c_char,
+    price: u64,
+    purchaser_id: *const c_char,
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || document_handle.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || purchaser_id.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 
+    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+        ptr::null()
+    } else {
+        unsafe {
+            let swift_settings = *settings;
+            let ffi_settings = Box::new(swift_settings.into());
+            Box::into_raw(ffi_settings)
+        }
+    };
+
     unsafe {
-        // This function doesn't exist with these parameters in ios_sdk_ffi
-        // We need different parameters according to the actual API
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_purchase_to_platform(
+            sdk_handle,
+            document_handle,
+            data_contract_handle,
+            document_type_name,
+            price,
+            purchaser_id,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        if result.data.is_null() {
+            return ptr::null_mut();
+        }
+
+        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary = *Box::from_raw(ffi_binary_ptr);
+
+        // Convert to Swift-friendly structure
+        let swift_binary = Box::new(SwiftDashBinaryData {
+            data: ffi_binary.data, // Transfer ownership
+            len: ffi_binary.len,
+        });
+
+        Box::into_raw(swift_binary)
     }
 }
 
@@ -210,19 +321,56 @@ pub extern "C" fn swift_dash_document_purchase_to_platform(
 pub extern "C" fn swift_dash_document_purchase_to_platform_and_wait(
     sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
-    public_key_id: u32,
+    data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    document_type_name: *const c_char,
+    price: u64,
+    purchaser_id: *const c_char,
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut ios_sdk_ffi::DocumentHandle {
-    if sdk_handle.is_null() || document_handle.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || purchaser_id.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 
+    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+        ptr::null()
+    } else {
+        unsafe {
+            let swift_settings = *settings;
+            let ffi_settings = Box::new(swift_settings.into());
+            Box::into_raw(ffi_settings)
+        }
+    };
+
     unsafe {
-        // This function doesn't exist with these parameters in ios_sdk_ffi
-        // We need different parameters according to the actual API
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_purchase_to_platform_and_wait(
+            sdk_handle,
+            document_handle,
+            data_contract_handle,
+            document_type_name,
+            price,
+            purchaser_id,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut ios_sdk_ffi::DocumentHandle
     }
 }
 
@@ -324,14 +472,7 @@ pub extern "C" fn swift_dash_document_search(
 pub extern "C" fn swift_dash_document_destroy(
     sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
-    public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
-    settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || document_handle.is_null() || signer_handle.is_null() {
-        return ptr::null_mut();
-    }
-
     unsafe {
         let error = ios_sdk_ffi::ios_sdk_document_destroy(sdk_handle, document_handle);
 
@@ -349,106 +490,248 @@ pub extern "C" fn swift_dash_document_destroy(
 /// Transfer document to another identity
 #[no_mangle]
 pub extern "C" fn swift_dash_document_transfer_to_identity(
+    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
     recipient_id: *const c_char,
     data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
     document_type_name: *const c_char,
-    public_key_id: u32,
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if document_handle.is_null()
+    if sdk_handle.is_null()
+        || document_handle.is_null()
         || recipient_id.is_null()
         || data_contract_handle.is_null()
         || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
         || signer_handle.is_null()
     {
         return ptr::null_mut();
     }
 
+    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+        ptr::null()
+    } else {
+        unsafe {
+            let swift_settings = *settings;
+            let ffi_settings = Box::new(swift_settings.into());
+            Box::into_raw(ffi_settings)
+        }
+    };
+
     unsafe {
-        // The ios_sdk_ffi function has different parameters than what we have here
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_transfer_to_identity(
+            sdk_handle,
+            document_handle,
+            recipient_id,
+            data_contract_handle,
+            document_type_name,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        if result.data.is_null() {
+            return ptr::null_mut();
+        }
+
+        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary = *Box::from_raw(ffi_binary_ptr);
+
+        // Convert to Swift-friendly structure
+        let swift_binary = Box::new(SwiftDashBinaryData {
+            data: ffi_binary.data, // Transfer ownership
+            len: ffi_binary.len,
+        });
+
+        Box::into_raw(swift_binary)
     }
 }
 
 /// Transfer document to another identity and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_document_transfer_to_identity_and_wait(
+    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
     recipient_id: *const c_char,
     data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
     document_type_name: *const c_char,
-    public_key_id: u32,
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut ios_sdk_ffi::DocumentHandle {
-    if document_handle.is_null()
+    if sdk_handle.is_null()
+        || document_handle.is_null()
         || recipient_id.is_null()
         || data_contract_handle.is_null()
         || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
         || signer_handle.is_null()
     {
         return ptr::null_mut();
     }
 
+    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+        ptr::null()
+    } else {
+        unsafe {
+            let swift_settings = *settings;
+            let ffi_settings = Box::new(swift_settings.into());
+            Box::into_raw(ffi_settings)
+        }
+    };
+
     unsafe {
-        // The ios_sdk_ffi function has different parameters than what we have here
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_transfer_to_identity_and_wait(
+            sdk_handle,
+            document_handle,
+            recipient_id,
+            data_contract_handle,
+            document_type_name,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut ios_sdk_ffi::DocumentHandle
     }
 }
 
 /// Update the price of a document
 #[no_mangle]
 pub extern "C" fn swift_dash_document_update_price(
+    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
     data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
     document_type_name: *const c_char,
     price: u64,
-    public_key_id: u32,
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if document_handle.is_null()
+    if sdk_handle.is_null()
+        || document_handle.is_null()
         || data_contract_handle.is_null()
         || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
         || signer_handle.is_null()
     {
         return ptr::null_mut();
     }
 
+    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+        ptr::null()
+    } else {
+        unsafe {
+            let swift_settings = *settings;
+            let ffi_settings = Box::new(swift_settings.into());
+            Box::into_raw(ffi_settings)
+        }
+    };
+
     unsafe {
-        // The ios_sdk_ffi function has different parameters than what we have here
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_update_price_of_document(
+            sdk_handle,
+            document_handle,
+            data_contract_handle,
+            document_type_name,
+            price,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        if result.data.is_null() {
+            return ptr::null_mut();
+        }
+
+        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary = *Box::from_raw(ffi_binary_ptr);
+
+        // Convert to Swift-friendly structure
+        let swift_binary = Box::new(SwiftDashBinaryData {
+            data: ffi_binary.data, // Transfer ownership
+            len: ffi_binary.len,
+        });
+
+        Box::into_raw(swift_binary)
     }
 }
 
 /// Update the price of a document and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_document_update_price_and_wait(
+    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
     document_handle: *mut ios_sdk_ffi::DocumentHandle,
     data_contract_handle: *mut ios_sdk_ffi::DataContractHandle,
     document_type_name: *const c_char,
     price: u64,
-    public_key_id: u32,
+    identity_public_key_handle: *mut ios_sdk_ffi::IdentityPublicKeyHandle,
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    token_payment_info: *const ios_sdk_ffi::IOSSDKTokenPaymentInfo,
     settings: *const SwiftDashPutSettings,
 ) -> *mut ios_sdk_ffi::DocumentHandle {
-    if document_handle.is_null()
+    if sdk_handle.is_null()
+        || document_handle.is_null()
         || data_contract_handle.is_null()
         || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
         || signer_handle.is_null()
     {
         return ptr::null_mut();
     }
 
+    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+        ptr::null()
+    } else {
+        unsafe {
+            let swift_settings = *settings;
+            let ffi_settings = Box::new(swift_settings.into());
+            Box::into_raw(ffi_settings)
+        }
+    };
+
     unsafe {
-        // The ios_sdk_ffi function has different parameters than what we have here
-        // For now, return null to prevent compilation errors
-        ptr::null_mut()
+        let result = ios_sdk_ffi::ios_sdk_document_update_price_of_document_and_wait(
+            sdk_handle,
+            document_handle,
+            data_contract_handle,
+            document_type_name,
+            price,
+            identity_public_key_handle as *const ios_sdk_ffi::IdentityPublicKeyHandle,
+            signer_handle as *const ios_sdk_ffi::SignerHandle,
+            token_payment_info,
+            ffi_settings,
+        );
+
+        if !result.error.is_null() {
+            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut ios_sdk_ffi::DocumentHandle
     }
 }
 
