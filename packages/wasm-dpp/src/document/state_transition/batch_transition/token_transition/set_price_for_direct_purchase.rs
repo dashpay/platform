@@ -31,7 +31,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
         match self.0.price() {
             Some(price) => match price {
                 TokenPricingSchedule::SinglePrice(credits) => Some(credits.clone()),
-                TokenPricingSchedule::SetPrices(carprices) => None,
+                TokenPricingSchedule::SetPrices(prices) => None,
             },
             None => None,
         }
