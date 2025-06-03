@@ -46,6 +46,12 @@ describe('DataContractCreateTransition', () => {
 
       expect(result.toObject()).to.deep.equal(dataContract.toObject());
     });
+
+    it('should return Data Contract with specific protocol version', () => {
+      const result = stateTransition.getDataContract(1);
+
+      expect(result.toObject()).to.deep.equal(dataContract.toObject());
+    });
   });
 
   describe.skip('#toJSON', () => {
