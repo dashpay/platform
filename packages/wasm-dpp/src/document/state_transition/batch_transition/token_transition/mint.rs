@@ -28,4 +28,27 @@ impl TokenMintTransitionWasm {
             .with_js_error()
             .map(Into::into)
     }
+
+    #[wasm_bindgen(js_name=getIssuedToIdentityId)]
+    pub fn issued_to_identity_id(
+        &self,
+    ) -> Option<IdentifierWrapper> {
+        match self.0.issued_to_identity_id() {
+            Some(id) => Some(id.into()),
+            None => None
+        }
+    }
+
+    #[wasm_bindgen(js_name=getPublicNote)]
+    pub fn public_note(&self) -> Option<String> {
+        match self.0.public_note() {
+            Some(note) => Some(note.clone()),
+            None => None,
+        }
+    }
+
+    #[wasm_bindgen(js_name=getAmount)]
+    pub fn amount(&self) -> u64 {
+        self.0.amount()
+    }
 }

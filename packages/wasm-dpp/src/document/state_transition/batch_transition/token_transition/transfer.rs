@@ -19,4 +19,17 @@ impl TokenTransferTransitionWasm {
     pub fn recipient_id(&self) -> IdentifierWrapper {
         self.0.recipient_id().into()
     }
+
+    #[wasm_bindgen(js_name=getPublicNote)]
+    pub fn public_note(&self) -> Option<String> {
+        match self.0.public_note() {
+            Some(note) => Some(note.clone()),
+            None => None,
+        }
+    }
+
+    #[wasm_bindgen(js_name=getAmount)]
+    pub fn amount(&self) -> u64 {
+        self.0.amount()
+    }
 }
