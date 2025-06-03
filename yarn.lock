@@ -4809,7 +4809,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"base-x@npm:^3.0.11":
+"base-x@npm:^3.0.2, base-x@npm:^3.0.6":
   version: 3.0.11
   resolution: "base-x@npm:3.0.11"
   dependencies:
