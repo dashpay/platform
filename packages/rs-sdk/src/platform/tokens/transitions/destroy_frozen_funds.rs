@@ -13,9 +13,9 @@ pub enum DestroyFrozenFundsResult {
 }
 
 impl Sdk {
-    pub async fn token_destroy_frozen_funds<'a, S: Signer>(
+    pub async fn token_destroy_frozen_funds<S: Signer>(
         &self,
-        destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder<'a>,
+        destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DestroyFrozenFundsResult, Error> {

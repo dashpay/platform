@@ -8,9 +8,9 @@ use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
 impl Sdk {
-    pub async fn token_purchase<'a, S: Signer>(
+    pub async fn token_purchase<S: Signer>(
         &self,
-        purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder<'a>,
+        purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DirectPurchaseResult, Error> {

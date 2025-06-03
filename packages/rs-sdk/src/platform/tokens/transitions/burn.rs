@@ -18,9 +18,9 @@ pub enum BurnResult {
 }
 
 impl Sdk {
-    pub async fn token_burn<'a, S: Signer>(
+    pub async fn token_burn<S: Signer>(
         &self,
-        burn_tokens_transition_builder: TokenBurnTransitionBuilder<'a>,
+        burn_tokens_transition_builder: TokenBurnTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<BurnResult, Error> {

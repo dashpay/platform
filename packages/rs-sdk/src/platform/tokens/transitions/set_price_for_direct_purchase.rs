@@ -22,9 +22,9 @@ pub enum SetPriceResult {
 }
 
 impl Sdk {
-    pub async fn token_set_price_for_direct_purchase<'a, S: Signer>(
+    pub async fn token_set_price_for_direct_purchase<S: Signer>(
         &self,
-        set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder<'a>,
+        set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<SetPriceResult, Error> {

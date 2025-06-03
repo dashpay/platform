@@ -18,9 +18,9 @@ pub enum MintResult {
 }
 
 impl Sdk {
-    pub async fn token_mint<'a, S: Signer>(
+    pub async fn token_mint<S: Signer>(
         &self,
-        mint_tokens_transition_builder: TokenMintTransitionBuilder<'a>,
+        mint_tokens_transition_builder: TokenMintTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<MintResult, Error> {

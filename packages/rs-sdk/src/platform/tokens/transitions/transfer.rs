@@ -17,9 +17,9 @@ pub enum TransferResult {
 }
 
 impl Sdk {
-    pub async fn token_transfer<'a, S: Signer>(
+    pub async fn token_transfer<S: Signer>(
         &self,
-        transfer_tokens_transition_builder: TokenTransferTransitionBuilder<'a>,
+        transfer_tokens_transition_builder: TokenTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<TransferResult, Error> {

@@ -17,9 +17,9 @@ pub enum FreezeResult {
 }
 
 impl Sdk {
-    pub async fn token_freeze<'a, S: Signer>(
+    pub async fn token_freeze<S: Signer>(
         &self,
-        freeze_tokens_transition_builder: TokenFreezeTransitionBuilder<'a>,
+        freeze_tokens_transition_builder: TokenFreezeTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<FreezeResult, Error> {

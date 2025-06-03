@@ -8,9 +8,9 @@ use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
 impl Sdk {
-    pub async fn token_emergency_action<'a, S: Signer>(
+    pub async fn token_emergency_action<S: Signer>(
         &self,
-        emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder<'a>,
+        emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<EmergencyActionResult, Error> {

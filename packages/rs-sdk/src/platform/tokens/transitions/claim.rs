@@ -13,9 +13,9 @@ pub enum ClaimResult {
 }
 
 impl Sdk {
-    pub async fn token_claim<'a, S: Signer>(
+    pub async fn token_claim<S: Signer>(
         &self,
-        claim_tokens_transition_builder: TokenClaimTransitionBuilder<'a>,
+        claim_tokens_transition_builder: TokenClaimTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ClaimResult, Error> {

@@ -13,9 +13,9 @@ pub enum ConfigUpdateResult {
 }
 
 impl Sdk {
-    pub async fn token_update_contract_token_configuration<'a, S: Signer>(
+    pub async fn token_update_contract_token_configuration<S: Signer>(
         &self,
-        config_update_transition_builder: TokenConfigUpdateTransitionBuilder<'a>,
+        config_update_transition_builder: TokenConfigUpdateTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ConfigUpdateResult, Error> {
