@@ -1,3 +1,8 @@
+//! Token frozen funds destruction operations for the Dash Platform SDK.
+//!
+//! This module provides functionality to permanently destroy frozen tokens,
+//! removing them from circulation entirely.
+
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::fungible_tokens::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 use crate::{Error, Sdk};
@@ -7,12 +12,40 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
+/// Result types returned from destroying frozen funds operations.
+///
+/// This enum represents the different possible outcomes when destroying frozen funds,
+/// always including historical tracking.
 pub enum DestroyFrozenFundsResult {
+    /// Destruction result with historical tracking via document storage.
     HistoricalDocument(Document),
+    /// Group-based destruction action with optional document for history.
     GroupActionWithDocument(GroupSumPower, Option<Document>),
 }
 
 impl Sdk {
+    /// Destroys frozen tokens permanently.
+    ///
+    /// This method broadcasts a destroy frozen funds transition to permanently
+    /// remove frozen tokens from circulation. This operation always maintains
+    /// a historical record of the destruction.
+    ///
+    /// # Arguments
+    ///
+    /// * `destroy_frozen_funds_transition_builder` - Builder containing destruction parameters
+    /// * `signing_key` - The identity public key for signing the transition
+    /// * `signer` - Implementation of the Signer trait for cryptographic signing
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `DestroyFrozenFundsResult` on success, or an `Error` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The transition signing fails
+    /// - Broadcasting the transition fails
+    /// - The proof verification returns an unexpected result type
     pub async fn token_destroy_frozen_funds<S: Signer>(
         &self,
         destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder<'_>,

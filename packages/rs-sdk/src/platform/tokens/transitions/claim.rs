@@ -1,3 +1,8 @@
+//! Token claiming operations for the Dash Platform SDK.
+//!
+//! This module provides functionality to claim ownership of tokens that have
+//! been allocated or made available for claiming.
+
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::fungible_tokens::claim::TokenClaimTransitionBuilder;
 use crate::{Error, Sdk};
@@ -7,12 +12,41 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
+/// Result types returned from claiming token operations.
+///
+/// This enum represents the different possible outcomes when claiming tokens,
+/// depending on whether it's a standard claim or a group action.
 pub enum ClaimResult {
+    /// Standard claim result containing the claim document.
     Document(Document),
+    /// Group-based claim action with document and group power information.
     GroupActionWithDocument(GroupSumPower, Document),
 }
 
 impl Sdk {
+    /// Claims tokens for a specific identity.
+    ///
+    /// This method broadcasts a claim transition to acquire ownership of tokens
+    /// that have been allocated or made available for claiming. The result
+    /// includes a document that records the claim details.
+    ///
+    /// # Arguments
+    ///
+    /// * `claim_tokens_transition_builder` - Builder containing claim parameters
+    /// * `signing_key` - The identity public key for signing the transition
+    /// * `signer` - Implementation of the Signer trait for cryptographic signing
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `ClaimResult` on success, or an `Error` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The transition signing fails
+    /// - Broadcasting the transition fails
+    /// - The proof verification returns an unexpected result type
+    /// - A group action result is missing the expected document
     pub async fn token_claim<S: Signer>(
         &self,
         claim_tokens_transition_builder: TokenClaimTransitionBuilder<'_>,

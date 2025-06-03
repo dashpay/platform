@@ -1,3 +1,8 @@
+//! Token burning operations for the Dash Platform SDK.
+//!
+//! This module provides functionality to permanently remove tokens from
+//! circulation by burning them.
+
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::fungible_tokens::burn::TokenBurnTransitionBuilder;
 use crate::{Error, Sdk};
@@ -10,14 +15,47 @@ use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
+/// Result types returned from burning token operations.
+///
+/// This enum represents the different possible outcomes when burning tokens,
+/// depending on the token configuration and whether it's a group action.
 pub enum BurnResult {
+    /// Standard burn result containing owner ID and remaining balance.
     TokenBalance(Identifier, TokenAmount),
+    /// Burn result with historical tracking via document storage.
     HistoricalDocument(Document),
+    /// Group-based burn action with optional document for history.
     GroupActionWithDocument(GroupSumPower, Option<Document>),
+    /// Group-based burn action with balance and status information.
     GroupActionWithBalance(GroupSumPower, GroupActionStatus, Option<TokenAmount>),
 }
 
 impl Sdk {
+    /// Burns tokens to permanently remove them from circulation.
+    ///
+    /// This method broadcasts a burn transition to destroy a specified amount
+    /// of tokens. The result varies based on token configuration:
+    /// - Standard tokens return the owner's remaining balance
+    /// - Tokens with history tracking return documents
+    /// - Group-managed tokens include group power and action status
+    ///
+    /// # Arguments
+    ///
+    /// * `burn_tokens_transition_builder` - Builder containing burn parameters including amount
+    /// * `signing_key` - The identity public key for signing the transition
+    /// * `signer` - Implementation of the Signer trait for cryptographic signing
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `BurnResult` on success, or an `Error` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The transition signing fails
+    /// - Broadcasting the transition fails
+    /// - The proof verification returns an unexpected result type
+    /// - Insufficient token balance for burning
     pub async fn token_burn<S: Signer>(
         &self,
         burn_tokens_transition_builder: TokenBurnTransitionBuilder<'_>,
