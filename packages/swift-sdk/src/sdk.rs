@@ -1,7 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
-use ios_sdk_ffi;
 
 /// Network types for Dash Platform
 #[repr(C)]

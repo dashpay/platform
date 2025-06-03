@@ -1,20 +1,20 @@
 //! Identity operations
 
+use dash_sdk::dpp::dashcore;
+use dash_sdk::dpp::dashcore::{Network, PrivateKey};
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{AssetLockProof, Identifier, Identity, UserFeeIncrease};
+use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dash_sdk::dpp::state_transition::StateTransitionSigningOptions;
+use dash_sdk::platform::transition::put_identity::PutIdentity;
+use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::platform::{Fetch, IdentityPublicKey};
+use dash_sdk::query_types::IdentityBalance;
+use dash_sdk::RequestSettings;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::time::Duration;
-
-use dash_sdk::platform::transition::put_identity::PutIdentity;
-use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::Fetch;
-use dash_sdk::query_types::IdentityBalance;
-use dash_sdk::RequestSettings;
-use dpp::dashcore::{Network, PrivateKey};
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::{AssetLockProof, Identifier, Identity, UserFeeIncrease};
-use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
-use dpp::state_transition::StateTransitionSigningOptions;
-use platform_value::string_encoding::Encoding;
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -88,7 +88,7 @@ pub unsafe fn convert_put_settings(put_settings: *const IOSSDKPutSettings) -> Op
 /// Helper function to parse private key
 unsafe fn parse_private_key(private_key_bytes: *const [u8; 32]) -> Result<PrivateKey, FFIError> {
     let key_bytes = *private_key_bytes;
-    let secret_key = dpp::dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
+    let secret_key = dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
         .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
     Ok(PrivateKey::new(secret_key, Network::Dash))
 }
@@ -101,8 +101,8 @@ unsafe fn create_instant_asset_lock_proof(
     transaction_len: usize,
     output_index: u32,
 ) -> Result<AssetLockProof, FFIError> {
-    use dpp::dashcore::consensus::deserialize;
-    use dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;
+    use dash_sdk::dpp::dashcore::consensus::deserialize;
+    use dash_sdk::dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;
 
     // Deserialize instant lock
     let instant_lock_data = std::slice::from_raw_parts(instant_lock_bytes, instant_lock_len);
@@ -136,7 +136,7 @@ unsafe fn create_chain_asset_lock_proof(
     core_chain_locked_height: u32,
     out_point_bytes: *const [u8; 36],
 ) -> Result<AssetLockProof, FFIError> {
-    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use dash_sdk::dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
     let out_point = *out_point_bytes;
 
@@ -816,7 +816,7 @@ pub unsafe extern "C" fn ios_sdk_identity_transfer_credits(
     let signing_key = if identity_public_key_handle.is_null() {
         None
     } else {
-        Some(&*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey))
+        Some(&*(identity_public_key_handle as *const IdentityPublicKey))
     };
 
     let result: Result<IOSSDKTransferCreditsResult, FFIError> = wrapper.runtime.block_on(async {
@@ -902,10 +902,10 @@ pub unsafe extern "C" fn ios_sdk_identity_withdraw(
     };
 
     // Parse the address
-    use dpp::dashcore::Address;
+    use dash_sdk::dpp::dashcore::Address;
     use std::str::FromStr;
     let withdraw_address =
-        match Address::<dpp::dashcore::address::NetworkUnchecked>::from_str(address_str) {
+        match Address::<dashcore::address::NetworkUnchecked>::from_str(address_str) {
             Ok(addr) => addr.assume_checked(),
             Err(e) => {
                 return IOSSDKResult::error(IOSSDKError::new(
@@ -919,7 +919,7 @@ pub unsafe extern "C" fn ios_sdk_identity_withdraw(
     let signing_key = if identity_public_key_handle.is_null() {
         None
     } else {
-        Some(&*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey))
+        Some(&*(identity_public_key_handle as *const IdentityPublicKey))
     };
 
     // Optional core fee per byte
@@ -1071,7 +1071,6 @@ pub unsafe extern "C" fn ios_sdk_identity_fetch_public_keys(
 
     let result = wrapper.runtime.block_on(async {
         use dash_sdk::platform::FetchMany;
-        use dpp::identity::IdentityPublicKey;
 
         // Fetch identity public keys using FetchMany trait
         let public_keys = IdentityPublicKey::fetch_many(&wrapper.sdk, id)

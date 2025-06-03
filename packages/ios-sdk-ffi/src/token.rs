@@ -1,15 +1,18 @@
 //! Token operations
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
-
 use crate::sdk::SDKWrapper;
 use crate::types::{IOSSDKPutSettings, IdentityHandle, SDKHandle, SignerHandle};
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
+use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use dash_sdk::dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
 
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::{Identifier, Identity};
-use platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{Identifier, Identity};
+use dash_sdk::dpp::tokens::emergency_action::TokenEmergencyAction;
+use dash_sdk::platform::IdentityPublicKey;
 
 /// Token transfer parameters
 #[repr(C)]
@@ -318,8 +321,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let sender_identity = &*(sender_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -399,7 +401,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
 
         // Get the data contract either by fetching or deserializing
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         let data_contract = if has_contract_id {
             // Parse and fetch the contract ID
@@ -427,7 +429,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
                 params.serialized_contract_len
             );
 
-            use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
             DataContract::versioned_deserialize(
                 contract_slice,
@@ -530,8 +532,7 @@ pub unsafe extern "C" fn ios_sdk_token_mint(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let minter_identity = &*(minter_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -590,7 +591,7 @@ pub unsafe extern "C" fn ios_sdk_token_mint(
 
         // Get the data contract either by fetching or deserializing
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         let data_contract = if has_contract_id {
 // Parse and fetch the contract ID
@@ -618,7 +619,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -716,8 +717,7 @@ pub unsafe extern "C" fn ios_sdk_token_burn(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let owner_identity = &*(owner_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -755,7 +755,7 @@ pub unsafe extern "C" fn ios_sdk_token_burn(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -784,7 +784,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -877,8 +877,7 @@ pub unsafe extern "C" fn ios_sdk_token_claim(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let owner_identity = &*(owner_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -913,12 +912,8 @@ pub unsafe extern "C" fn ios_sdk_token_claim(
 
     // Convert distribution type
     let distribution_type = match params.distribution_type {
-        IOSSDKTokenDistributionType::PreProgrammed => {
-dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType::PreProgrammed
-        }
-        IOSSDKTokenDistributionType::Perpetual => {
-dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType::Perpetual
-        }
+        IOSSDKTokenDistributionType::PreProgrammed => TokenDistributionType::PreProgrammed,
+        IOSSDKTokenDistributionType::Perpetual => TokenDistributionType::Perpetual,
     };
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
@@ -926,7 +921,7 @@ dpp::data_contract::associated_token::token_distribution_key::TokenDistributionT
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -955,7 +950,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -1048,8 +1043,7 @@ pub unsafe extern "C" fn ios_sdk_token_config_update(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let owner_identity = &*(owner_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -1087,8 +1081,8 @@ pub unsafe extern "C" fn ios_sdk_token_config_update(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
-        use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+        use dash_sdk::dpp::prelude::DataContract;
+        use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -1117,7 +1111,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -1239,12 +1233,7 @@ FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
 unsafe fn convert_authorized_action_takers(
     action_takers: IOSSDKAuthorizedActionTakers,
     params: &IOSSDKTokenConfigUpdateParams,
-) -> Result<
-    dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers,
-    FFIError,
-> {
-    use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
-
+) -> Result<AuthorizedActionTakers, FFIError> {
     match action_takers {
         IOSSDKAuthorizedActionTakers::NoOne => Ok(AuthorizedActionTakers::NoOne),
         IOSSDKAuthorizedActionTakers::ContractOwner => Ok(AuthorizedActionTakers::ContractOwner),
@@ -1311,8 +1300,7 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let actor_identity = &*(actor_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -1347,12 +1335,8 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
 
     // Convert emergency action type
     let action = match params.action {
-        IOSSDKTokenEmergencyAction::Pause => {
-            dpp::tokens::emergency_action::TokenEmergencyAction::Pause
-        }
-        IOSSDKTokenEmergencyAction::Resume => {
-            dpp::tokens::emergency_action::TokenEmergencyAction::Resume
-        }
+        IOSSDKTokenEmergencyAction::Pause => TokenEmergencyAction::Pause,
+        IOSSDKTokenEmergencyAction::Resume => TokenEmergencyAction::Resume,
     };
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
@@ -1360,7 +1344,7 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -1389,7 +1373,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -1403,14 +1387,14 @@ DataContract::versioned_deserialize(
         use dash_sdk::platform::transition::fungible_tokens::emergency_action::TokenEmergencyActionTransitionBuilder;
 
         let mut builder = match action {
-dpp::tokens::emergency_action::TokenEmergencyAction::Pause => {
+TokenEmergencyAction::Pause => {
     TokenEmergencyActionTransitionBuilder::pause(
         &data_contract,
         params.token_position,
         actor_identity.id(),
     )
 }
-dpp::tokens::emergency_action::TokenEmergencyAction::Resume => {
+TokenEmergencyAction::Resume => {
     TokenEmergencyActionTransitionBuilder::resume(
         &data_contract,
         params.token_position,
@@ -1492,8 +1476,7 @@ pub unsafe extern "C" fn ios_sdk_token_destroy_frozen_funds(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let actor_identity = &*(actor_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -1555,7 +1538,7 @@ pub unsafe extern "C" fn ios_sdk_token_destroy_frozen_funds(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -1584,7 +1567,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -1677,8 +1660,7 @@ pub unsafe extern "C" fn ios_sdk_token_freeze(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let actor_identity = &*(actor_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -1740,7 +1722,7 @@ pub unsafe extern "C" fn ios_sdk_token_freeze(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -1769,7 +1751,7 @@ pub unsafe extern "C" fn ios_sdk_token_freeze(
                 params.serialized_contract_len
             );
 
-            use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
             DataContract::versioned_deserialize(
                 contract_slice,
@@ -1862,8 +1844,7 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let actor_identity = &*(actor_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -1925,7 +1906,7 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -1954,7 +1935,7 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
                 params.serialized_contract_len
             );
 
-            use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
             DataContract::versioned_deserialize(
                 contract_slice,
@@ -2047,8 +2028,7 @@ pub unsafe extern "C" fn ios_sdk_token_purchase(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let purchaser_identity = &*(purchaser_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -2076,7 +2056,7 @@ pub unsafe extern "C" fn ios_sdk_token_purchase(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
+        use dash_sdk::dpp::prelude::DataContract;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -2105,7 +2085,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -2194,8 +2174,7 @@ pub unsafe extern "C" fn ios_sdk_token_set_price(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let issuer_identity = &*(issuer_identity_handle as *const Identity);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let params = &*params;
 
@@ -2233,8 +2212,8 @@ pub unsafe extern "C" fn ios_sdk_token_set_price(
         let settings = crate::identity::convert_put_settings(put_settings);
 
         use dash_sdk::platform::Fetch;
-        use dpp::prelude::DataContract;
-        use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+        use dash_sdk::dpp::prelude::DataContract;
+        use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
@@ -2263,7 +2242,7 @@ let contract_slice = std::slice::from_raw_parts(
     params.serialized_contract_len
 );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 DataContract::versioned_deserialize(
     contract_slice,
@@ -2433,11 +2412,11 @@ pub unsafe extern "C" fn ios_sdk_token_get_identity_balances(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         // Query token balances for the identity
+        use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::{
             IdentityTokenBalances, IdentityTokenBalancesQuery,
         };
         use dash_sdk::platform::FetchMany;
-        use dpp::balances::credits::TokenAmount;
 
         let query = IdentityTokenBalancesQuery {
             identity_id: identity_identifier,
@@ -2577,10 +2556,10 @@ pub unsafe extern "C" fn ios_sdk_token_get_identity_infos(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         // Query token information for the identity
+        use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use dash_sdk::platform::FetchMany;
         use dash_sdk::query_types::token_info::IdentityTokenInfos;
-        use dpp::tokens::info::IdentityTokenInfo;
 
         let query = IdentityTokenInfosQuery {
             identity_id: identity_identifier,
@@ -2698,9 +2677,9 @@ pub unsafe extern "C" fn ios_sdk_token_get_statuses(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         // Query token statuses
+        use dash_sdk::dpp::tokens::status::TokenStatus;
         use dash_sdk::platform::FetchMany;
         use dash_sdk::query_types::token_status::TokenStatuses;
-        use dpp::tokens::status::TokenStatus;
 
         // Fetch token statuses using Vec<Identifier> as the query
         let token_statuses: TokenStatuses =

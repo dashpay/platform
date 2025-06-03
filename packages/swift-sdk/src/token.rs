@@ -4,7 +4,6 @@
 //! available in the ios-sdk-ffi crate.
 
 use std::os::raw::c_char;
-use ios_sdk_ffi;
 
 use crate::error::SwiftDashResult;
 

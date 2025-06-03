@@ -1,5 +1,5 @@
 [package]
-name = "ios_sdk_ffi"
+name = "ios-sdk-ffi"
 version = "2.0.0-rc.14"
 authors = ["Dash Core Group <dev@dash.org>"]
 edition = "2021"
@@ -7,14 +7,10 @@ license = "MIT"
 description = "FFI bindings for Dash Platform SDK iOS integration"
 
 [lib]
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 dash-sdk = { path = "../rs-sdk", features = ["mocks"] }
-dpp = { path = "../rs-dpp" }
-drive = { path = "../rs-drive" }
-platform-value = { path = "../rs-platform-value" }
-platform-version = { path = "../rs-platform-version" }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -26,7 +22,6 @@ tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }
 
 # Error handling
 thiserror = "2.0"
-anyhow = "1.0"
 
 # Logging
 tracing = "0.1"

@@ -1,10 +1,10 @@
 //! Signer interface for iOS FFI
 
 use crate::types::SignerHandle;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::signer::Signer;
-use dpp::prelude::{IdentityPublicKey, ProtocolError};
-use platform_value::BinaryData;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::signer::Signer;
+use dash_sdk::dpp::platform_value::BinaryData;
+use dash_sdk::dpp::prelude::{IdentityPublicKey, ProtocolError};
 
 /// Function pointer type for iOS signing callback
 /// Returns pointer to allocated byte array (caller must free with ios_sdk_bytes_free)

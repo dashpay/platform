@@ -3,12 +3,13 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use dash_sdk::platform::Fetch;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::{accessors::v0::DataContractV0Getters, DataContractFactory};
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::{DataContract, Identifier, Identity};
-use platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dash_sdk::dpp::data_contract::{accessors::v0::DataContractV0Getters, DataContractFactory};
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::platform_value;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{DataContract, Identifier, Identity};
+use dash_sdk::platform::{Fetch, IdentityPublicKey};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -124,7 +125,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_create(
         }
     };
 
-    let result: Result<dpp::prelude::DataContract, FFIError> = wrapper.runtime.block_on(async {
+    let result: Result<DataContract, FFIError> = wrapper.runtime.block_on(async {
         // Get protocol version from SDK
         let platform_version = wrapper.sdk.version();
 
@@ -269,8 +270,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_put_to_platform(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
@@ -324,8 +324,7 @@ pub unsafe extern "C" fn ios_sdk_data_contract_put_to_platform_and_wait(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let result: Result<DataContract, FFIError> = wrapper.runtime.block_on(async {

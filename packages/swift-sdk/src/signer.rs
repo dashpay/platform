@@ -1,5 +1,3 @@
-use ios_sdk_ffi;
-
 /// Create a test signer for development/testing purposes
 #[no_mangle]
 pub extern "C" fn swift_dash_signer_create_test() -> *mut ios_sdk_ffi::SignerHandle {

@@ -6,17 +6,17 @@ use crate::types::{
     IOSSDKResultDataType, IOSSDKTokenPaymentInfo, IdentityHandle, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::document::{document_factory::DocumentFactory, Document, DocumentV0Getters};
+use dash_sdk::dpp::fee::Credits;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Value};
+use dash_sdk::dpp::prelude::{DataContract, Identifier, Identity};
+use dash_sdk::dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use dash_sdk::dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
-use dash_sdk::platform::{DocumentQuery, Fetch};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::{document_factory::DocumentFactory, Document, DocumentV0Getters};
-use dpp::fee::Credits;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::prelude::{DataContract, Identifier, Identity};
-use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
-use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
-use dpp::tokens::token_payment_info::TokenPaymentInfo;
-use platform_value::{string_encoding::Encoding, Value};
+use dash_sdk::platform::{DocumentQuery, Fetch, IdentityPublicKey};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn ios_sdk_document_create(
         }
     };
 
-    let result: Result<dpp::document::Document, FFIError> = wrapper.runtime.block_on(async {
+    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
         // Get platform version
         let platform_version = wrapper.sdk.version();
 
@@ -416,8 +416,7 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let entropy_bytes = *entropy;
 
@@ -500,8 +499,7 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
     let entropy_bytes = *entropy;
 
@@ -590,8 +588,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
@@ -688,8 +685,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
@@ -802,8 +798,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let recipient_id_str = match CStr::from_ptr(recipient_id).to_str() {
@@ -918,8 +913,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let recipient_id_str = match CStr::from_ptr(recipient_id).to_str() {
@@ -1024,8 +1018,7 @@ pub unsafe extern "C" fn ios_sdk_document_update_price_of_document(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
@@ -1104,8 +1097,7 @@ pub unsafe extern "C" fn ios_sdk_document_update_price_of_document_and_wait(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key =
-        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {

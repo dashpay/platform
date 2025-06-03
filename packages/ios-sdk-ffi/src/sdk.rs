@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
-use dpp::dashcore::Network;
 use std::ffi::CStr;
 use std::str::FromStr;
 

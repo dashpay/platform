@@ -2859,19 +2859,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "ios_sdk_ffi"
+name = "ios-sdk-ffi"
 version = "2.0.0-rc.14"
 dependencies = [
- "anyhow",
  "bincode",
  "cbindgen",
  "dash-sdk",
- "dpp",
- "drive",
  "hex",
  "libc",
- "platform-value",
- "platform-version",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -5051,7 +5046,7 @@ name = "swift-sdk"
 version = "2.0.0-rc.14"
 dependencies = [
  "cbindgen",
- "ios_sdk_ffi",
+ "ios-sdk-ffi",
  "libc",
  "serde",
  "serde_json",

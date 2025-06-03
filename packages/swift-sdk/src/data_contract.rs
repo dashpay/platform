@@ -1,6 +1,5 @@
 use crate::identity::SwiftDashBinaryData;
 use crate::sdk::SwiftDashPutSettings;
-use ios_sdk_ffi;
 use std::os::raw::c_char;
 use std::ptr;
 
