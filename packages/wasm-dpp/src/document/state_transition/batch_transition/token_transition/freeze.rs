@@ -22,9 +22,6 @@ impl TokenFreezeTransitionWasm {
 
     #[wasm_bindgen(js_name=getPublicNote)]
     pub fn public_note(&self) -> Option<String> {
-        match self.0.public_note() {
-            Some(note) => Some(note.clone()),
-            None => None,
-        }
+        self.0.public_note().cloned()
     }
 }

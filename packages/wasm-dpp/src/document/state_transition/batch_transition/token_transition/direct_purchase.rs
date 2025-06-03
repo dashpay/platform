@@ -2,7 +2,6 @@ use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::TokenDirectPurchaseTransition;
-use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenDirectPurchaseTransition)]

@@ -20,18 +20,15 @@ impl From<TokenSetPriceForDirectPurchaseTransition>
 impl TokenSetPriceForDirectPurchaseTransitionWasm {
     #[wasm_bindgen(js_name=getPublicNote)]
     pub fn public_note(&self) -> Option<String> {
-        match self.0.public_note() {
-            Some(note) => Some(note.clone()),
-            None => None,
-        }
+        self.0.public_note().cloned()
     }
 
     #[wasm_bindgen(js_name=getPrice)]
     pub fn price(&self) -> Option<Credits> {
         match self.0.price() {
-            Some(price) => match price {
-                TokenPricingSchedule::SinglePrice(credits) => Some(credits.clone()),
-                TokenPricingSchedule::SetPrices(prices) => None,
+            Some(token_pricing_schedule) => match token_pricing_schedule {
+                TokenPricingSchedule::SinglePrice(credits) => Some(*credits),
+                TokenPricingSchedule::SetPrices(_) => None,
             },
             None => None,
         }

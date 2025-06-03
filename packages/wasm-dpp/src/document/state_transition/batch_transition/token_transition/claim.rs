@@ -1,8 +1,6 @@
-use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::TokenClaimTransition;
-use dpp::tokens::emergency_action::TokenEmergencyAction;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenClaimTransition)]
@@ -19,10 +17,7 @@ impl From<TokenClaimTransition> for TokenClaimTransitionWasm {
 impl TokenClaimTransitionWasm {
     #[wasm_bindgen(js_name=getPublicNote)]
     pub fn public_note(&self) -> Option<String> {
-        match self.0.public_note() {
-            Some(note) => Some(note.clone()),
-            None => None,
-        }
+        self.0.public_note().cloned()
     }
 
     #[wasm_bindgen(js_name=getDistributionType)]
