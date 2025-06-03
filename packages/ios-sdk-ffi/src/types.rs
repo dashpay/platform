@@ -208,6 +208,33 @@ pub struct IOSSDKPutSettings {
     pub wait_timeout_ms: u64,
 }
 
+/// Gas fees payer option
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum IOSSDKGasFeesPaidBy {
+    /// The document owner pays the gas fees
+    DocumentOwner = 0,
+    /// The contract owner pays the gas fees
+    ContractOwner = 1,
+    /// Prefer contract owner but fallback to document owner if insufficient balance
+    PreferContractOwner = 2,
+}
+
+/// Token payment information for transactions
+#[repr(C)]
+pub struct IOSSDKTokenPaymentInfo {
+    /// Payment token contract ID (32 bytes), null for same contract
+    pub payment_token_contract_id: *const [u8; 32],
+    /// Token position within the contract (0-based index)
+    pub token_contract_position: u16,
+    /// Minimum token cost (0 means no minimum)
+    pub minimum_token_cost: u64,
+    /// Maximum token cost (0 means no maximum)
+    pub maximum_token_cost: u64,
+    /// Who pays the gas fees
+    pub gas_fees_paid_by: IOSSDKGasFeesPaidBy,
+}
+
 /// Free a string allocated by the FFI
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_string_free(s: *mut c_char) {

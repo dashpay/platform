@@ -235,7 +235,6 @@ pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock(
     transaction_len: usize,
     output_index: u32,
     private_key: *const [u8; 32],
-    signer_handle: *const crate::types::SignerHandle,
     put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
@@ -244,7 +243,6 @@ pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock(
         || instant_lock_bytes.is_null()
         || transaction_bytes.is_null()
         || private_key.is_null()
-        || signer_handle.is_null()
     {
         return IOSSDKResult::error(IOSSDKError::new(
             IOSSDKErrorCode::InvalidParameter,
@@ -254,7 +252,6 @@ pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Create instant asset lock proof
@@ -307,7 +304,6 @@ pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock_and_wait(
     transaction_len: usize,
     output_index: u32,
     private_key: *const [u8; 32],
-    signer_handle: *const crate::types::SignerHandle,
     put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
@@ -316,7 +312,6 @@ pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock_and_wait(
         || instant_lock_bytes.is_null()
         || transaction_bytes.is_null()
         || private_key.is_null()
-        || signer_handle.is_null()
     {
         return IOSSDKResult::error(IOSSDKError::new(
             IOSSDKErrorCode::InvalidParameter,
@@ -326,7 +321,6 @@ pub unsafe extern "C" fn ios_sdk_identity_topup_with_instant_lock_and_wait(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const super::signer::IOSSigner);
 
     let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
         // Create instant asset lock proof

@@ -2,19 +2,71 @@
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IOSSDKResultDataType, IdentityHandle,
-    SDKHandle, SignerHandle,
+    DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IOSSDKGasFeesPaidBy, IOSSDKPutSettings,
+    IOSSDKResultDataType, IOSSDKTokenPaymentInfo, IdentityHandle, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
+use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
 use dash_sdk::platform::{DocumentQuery, Fetch};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{document_factory::DocumentFactory, Document, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::{DataContract, Identifier, Identity};
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use platform_value::{string_encoding::Encoding, Value};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+
+/// Convert FFI GasFeesPaidBy to Rust enum
+unsafe fn convert_gas_fees_paid_by(ffi_value: IOSSDKGasFeesPaidBy) -> GasFeesPaidBy {
+    match ffi_value {
+        IOSSDKGasFeesPaidBy::DocumentOwner => GasFeesPaidBy::DocumentOwner,
+        IOSSDKGasFeesPaidBy::ContractOwner => GasFeesPaidBy::ContractOwner,
+        IOSSDKGasFeesPaidBy::PreferContractOwner => GasFeesPaidBy::PreferContractOwner,
+    }
+}
+
+/// Convert FFI TokenPaymentInfo to Rust TokenPaymentInfo
+unsafe fn convert_token_payment_info(
+    ffi_token_payment_info: *const IOSSDKTokenPaymentInfo,
+) -> Result<Option<TokenPaymentInfo>, FFIError> {
+    if ffi_token_payment_info.is_null() {
+        return Ok(None);
+    }
+
+    let token_info = &*ffi_token_payment_info;
+
+    let payment_token_contract_id = if token_info.payment_token_contract_id.is_null() {
+        None
+    } else {
+        let id_bytes = &*token_info.payment_token_contract_id;
+        Some(Identifier::from_bytes(id_bytes).map_err(|e| {
+            FFIError::InternalError(format!("Invalid payment token contract ID: {}", e))
+        })?)
+    };
+
+    let token_payment_info_v0 = TokenPaymentInfoV0 {
+        payment_token_contract_id,
+        token_contract_position: token_info.token_contract_position,
+        minimum_token_cost: if token_info.minimum_token_cost == 0 {
+            None
+        } else {
+            Some(token_info.minimum_token_cost)
+        },
+        maximum_token_cost: if token_info.maximum_token_cost == 0 {
+            None
+        } else {
+            Some(token_info.maximum_token_cost)
+        },
+        gas_fees_paid_by: convert_gas_fees_paid_by(token_info.gas_fees_paid_by),
+    };
+
+    Ok(Some(TokenPaymentInfo::V0(token_payment_info_v0)))
+}
 
 /// Document creation parameters
 #[repr(C)]
@@ -343,8 +395,10 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
     entropy: *const [u8; 32],
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
-    // Validate parameters
+    // Validate required parameters
     if sdk_handle.is_null()
         || document_handle.is_null()
         || data_contract_handle.is_null()
@@ -373,6 +427,10 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
     };
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+
         // Get document type from data contract
         let document_type = data_contract
             .document_type_for_name(document_type_name_str)
@@ -389,9 +447,9 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
                 document_type_owned,
                 entropy_bytes,
                 identity_public_key.clone(),
-                None, // token_payment_info
+                token_payment_info_converted,
                 signer,
-                None, // settings (use defaults)
+                settings,
             )
             .await
             .map_err(|e| {
@@ -421,8 +479,10 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     entropy: *const [u8; 32],
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
-    // Validate parameters
+    // Validate required parameters
     if sdk_handle.is_null()
         || document_handle.is_null()
         || data_contract_handle.is_null()
@@ -451,6 +511,10 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     };
 
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+
         // Get document type from data contract
         let document_type = data_contract
             .document_type_for_name(document_type_name_str)
@@ -467,9 +531,9 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
                 document_type_owned,
                 entropy_bytes,
                 identity_public_key.clone(),
-                None, // token_payment_info
+                token_payment_info_converted,
                 signer,
-                None, // settings (use defaults)
+                settings,
             )
             .await
             .map_err(|e| {
@@ -505,6 +569,8 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
     purchaser_id: *const c_char,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -549,6 +615,10 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
     };
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+
         // Get document type from data contract
         let document_type = data_contract
             .document_type_for_name(document_type_name_str)
@@ -566,9 +636,9 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
                 document_type_owned,
                 purchaser_id,
                 identity_public_key.clone(),
-                None, // token_payment_info
+                token_payment_info_converted,
                 signer,
-                None, // settings (use defaults)
+                settings,
             )
             .await
             .map_err(|e| FFIError::InternalError(format!("Failed to purchase document: {}", e)))?;
@@ -597,6 +667,8 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
     purchaser_id: *const c_char,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -641,6 +713,10 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
     };
 
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+
         // Get document type from data contract
         let document_type = data_contract
             .document_type_for_name(document_type_name_str)
@@ -658,9 +734,9 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
                 document_type_owned,
                 purchaser_id,
                 identity_public_key.clone(),
-                None, // token_payment_info
+                token_payment_info_converted,
                 signer,
-                None, // settings (use defaults)
+                settings,
             )
             .await
             .map_err(|e| {
@@ -691,6 +767,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
 /// - `document_type_name`: Name of the document type
 /// - `identity_public_key_handle`: Public key for signing
 /// - `signer_handle`: Cryptographic signer
+/// - `token_payment_info`: Optional token payment information (can be null for defaults)
 /// - `put_settings`: Optional settings for the operation (can be null for defaults)
 ///
 /// # Returns
@@ -704,6 +781,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
     document_type_name: *const c_char,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const crate::types::IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
@@ -749,6 +827,9 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
     };
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+
         // Get document type from the contract
         let document_type = data_contract
             .document_types()
@@ -773,7 +854,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
                 &wrapper.sdk,
                 document_type,
                 identity_public_key.clone(),
-                None, // token_payment_info
+                token_payment_info_converted,
                 signer,
                 settings,
             )
@@ -802,6 +883,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
 /// - `document_type_name`: Name of the document type
 /// - `identity_public_key_handle`: Public key for signing
 /// - `signer_handle`: Cryptographic signer
+/// - `token_payment_info`: Optional token payment information (can be null for defaults)
 /// - `put_settings`: Optional settings for the operation (can be null for defaults)
 ///
 /// # Returns
@@ -815,6 +897,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
     document_type_name: *const c_char,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const crate::types::IOSSDKPutSettings,
 ) -> IOSSDKResult {
     // Validate parameters
@@ -860,6 +943,9 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
     };
 
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+
         // Get document type from the contract
         let document_type = data_contract
             .document_types()
@@ -884,7 +970,7 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
                 &wrapper.sdk,
                 document_type,
                 identity_public_key.clone(),
-                None, // token_payment_info
+                token_payment_info_converted,
                 signer,
                 settings,
             )
@@ -899,6 +985,168 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
     match result {
         Ok(transferred_document) => {
             let handle = Box::into_raw(Box::new(transferred_document)) as *mut DocumentHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::DocumentHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Update document price (broadcast state transition)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_update_price_of_document(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    price: u64,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate required parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+
+        // Get document type from data contract
+        let document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let document_type_owned = document_type.to_owned_document_type();
+
+        // Update document price using the UpdatePriceOfDocument trait
+        let state_transition = document
+            .update_price_of_document(
+                price as Credits,
+                &wrapper.sdk,
+                document_type_owned,
+                identity_public_key.clone(),
+                token_payment_info_converted,
+                signer,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to update document price: {}", e))
+            })?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Update document price and wait for confirmation (broadcast state transition and wait for response)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_update_price_of_document_and_wait(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    price: u64,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
+) -> IOSSDKResult {
+    // Validate required parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key =
+        &*(identity_public_key_handle as *const dpp::identity::IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+
+        // Get document type from data contract
+        let document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let document_type_owned = document_type.to_owned_document_type();
+
+        // Update document price and wait for response
+        let updated_document = document
+            .update_price_of_document_and_wait_for_response(
+                price as Credits,
+                &wrapper.sdk,
+                document_type_owned,
+                identity_public_key.clone(),
+                token_payment_info_converted,
+                signer,
+                settings,
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to update document price and wait: {}", e))
+            })?;
+
+        Ok(updated_document)
+    });
+
+    match result {
+        Ok(updated_document) => {
+            let handle = Box::into_raw(Box::new(updated_document)) as *mut DocumentHandle;
             IOSSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
                 IOSSDKResultDataType::DocumentHandle,
