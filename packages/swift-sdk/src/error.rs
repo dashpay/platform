@@ -127,6 +127,49 @@ impl From<ios_sdk_ffi::IOSSDKError> for SwiftDashError {
     }
 }
 
+/// Swift result that wraps either success or error
+#[repr(C)]
+pub struct SwiftDashResult {
+    pub success: bool,
+    pub data: *mut std::os::raw::c_void,
+    pub error: *mut SwiftDashError,
+}
+
+impl SwiftDashResult {
+    pub fn success_with_data(data: *mut std::os::raw::c_void) -> Self {
+        SwiftDashResult {
+            success: true,
+            data,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn success() -> Self {
+        SwiftDashResult {
+            success: true,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn error(error: SwiftDashError) -> Self {
+        SwiftDashResult {
+            success: false,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(error)),
+        }
+    }
+
+    pub fn from_ffi_result(ffi_result: ios_sdk_ffi::IOSSDKResult) -> Self {
+        if ffi_result.error.is_null() {
+            SwiftDashResult::success_with_data(ffi_result.data)
+        } else {
+            let error = unsafe { *Box::from_raw(ffi_result.error) };
+            SwiftDashResult::error(SwiftDashError::from(error))
+        }
+    }
+}
+
 /// Free an error message
 #[no_mangle]
 pub unsafe extern "C" fn swift_dash_error_free(error: *mut SwiftDashError) {
@@ -138,4 +181,22 @@ pub unsafe extern "C" fn swift_dash_error_free(error: *mut SwiftDashError) {
     if !error.message.is_null() {
         let _ = CString::from_raw(error.message);
     }
+}
+
+/// Free a C string allocated by Swift SDK
+#[no_mangle]
+pub unsafe extern "C" fn swift_dash_string_free(s: *mut c_char) {
+    if s.is_null() {
+        return;
+    }
+    let _ = CString::from_raw(s);
+}
+
+/// Free bytes allocated by callback functions
+#[no_mangle]
+pub unsafe extern "C" fn swift_dash_bytes_free(bytes: *mut u8, len: usize) {
+    if bytes.is_null() || len == 0 {
+        return;
+    }
+    let _ = Vec::from_raw_parts(bytes, len, len);
 }

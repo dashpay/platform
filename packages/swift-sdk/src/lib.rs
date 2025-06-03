@@ -3,12 +3,14 @@
 //! This crate provides an idiomatic Swift-compatible C FFI interface
 //! over the ios-sdk-ffi crate, making it easier to use from Swift.
 
+
 mod data_contract;
 mod document;
 mod error;
 mod identity;
 mod sdk;
 mod signer;
+mod token;
 
 #[cfg(test)]
 mod tests;
@@ -21,6 +23,7 @@ pub use error::*;
 pub use identity::*;
 pub use sdk::*;
 pub use signer::*;
+pub use token::*;
 
 use std::panic;
 
