@@ -1,7 +1,7 @@
-use dpp::state_transition::batch_transition::TokenEmergencyActionTransition;
-use wasm_bindgen::prelude::wasm_bindgen;
 use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
+use dpp::state_transition::batch_transition::TokenEmergencyActionTransition;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenEmergencyActionTransition)]
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ impl TokenEmergencyActionTransitionWasm {
     pub fn emergency_action(&self) -> u8 {
         match self.0.emergency_action() {
             TokenEmergencyAction::Pause => 0,
-            TokenEmergencyAction::Resume => 1
+            TokenEmergencyAction::Resume => 1,
         }
     }
 }

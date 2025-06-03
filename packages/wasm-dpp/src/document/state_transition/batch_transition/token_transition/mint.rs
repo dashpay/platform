@@ -30,12 +30,10 @@ impl TokenMintTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getIssuedToIdentityId)]
-    pub fn issued_to_identity_id(
-        &self,
-    ) -> Option<IdentifierWrapper> {
+    pub fn issued_to_identity_id(&self) -> Option<IdentifierWrapper> {
         match self.0.issued_to_identity_id() {
             Some(id) => Some(id.into()),
-            None => None
+            None => None,
         }
     }
 

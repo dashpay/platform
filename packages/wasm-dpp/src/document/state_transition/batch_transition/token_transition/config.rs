@@ -1,6 +1,6 @@
+use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::TokenConfigUpdateTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 
 #[wasm_bindgen(js_name=TokenConfigUpdateTransition)]
 #[derive(Debug, Clone)]

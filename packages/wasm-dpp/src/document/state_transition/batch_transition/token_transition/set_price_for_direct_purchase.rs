@@ -29,13 +29,11 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     #[wasm_bindgen(js_name=getPrice)]
     pub fn price(&self) -> Option<Credits> {
         match self.0.price() {
-            Some(price) => {
-                match price {
-                    TokenPricingSchedule::SinglePrice(credits) => Some(credits.clone()),
-                    TokenPricingSchedule::SetPrices(prices) => None
-                }
+            Some(price) => match price {
+                TokenPricingSchedule::SinglePrice(credits) => Some(credits.clone()),
+                TokenPricingSchedule::SetPrices(carprices) => None,
             },
-            None => None
+            None => None,
         }
     }
 }

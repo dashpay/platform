@@ -1,6 +1,6 @@
+use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use dpp::state_transition::batch_transition::TokenBurnTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 
 #[wasm_bindgen(js_name=TokenBurnTransition)]
 #[derive(Debug, Clone)]
