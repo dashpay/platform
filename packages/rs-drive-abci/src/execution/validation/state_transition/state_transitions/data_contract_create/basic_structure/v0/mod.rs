@@ -7,9 +7,11 @@ use dpp::consensus::basic::data_contract::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
+use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -22,6 +24,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 {
     fn validate_basic_structure_v0(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
@@ -29,6 +32,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
     fn validate_basic_structure_v0(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         if self.data_contract().version() != INITIAL_DATA_CONTRACT_VERSION {
@@ -88,6 +92,16 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 .distribution_rules()
                 .perpetual_distribution()
             {
+                // we validate the interval (that it's more than one hour or over 100 blocks)
+                // also that if it is time based we are using minute intervals
+                let validation_result = perpetual_distribution
+                    .distribution_type()
+                    .validate_structure_interval(network_type, platform_version)?;
+
+                if !validation_result.is_valid() {
+                    return Ok(validation_result);
+                }
+
                 // We use 0 as the start moment to show that we are starting now with no offset
                 let validation_result = perpetual_distribution
                     .distribution_type()
@@ -106,6 +120,16 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 && !token_configuration
                     .distribution_rules()
                     .minting_allow_choosing_destination()
+                && !(token_configuration
+                    .distribution_rules()
+                    .minting_allow_choosing_destination_rules()
+                    .authorized_to_make_change_action_takers()
+                    == &AuthorizedActionTakers::NoOne
+                    && token_configuration
+                        .distribution_rules()
+                        .minting_allow_choosing_destination_rules()
+                        .admin_action_takers()
+                        == &AuthorizedActionTakers::NoOne)
             {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     NewTokensDestinationIdentityOptionRequiredError::new(
@@ -229,7 +253,7 @@ mod tests {
             .into();
 
             let result = transition
-                .validate_basic_structure_v0(&platform_version)
+                .validate_basic_structure_v0(Network::Testnet, &platform_version)
                 .expect("failed to validate advanced structure");
 
             assert_matches!(

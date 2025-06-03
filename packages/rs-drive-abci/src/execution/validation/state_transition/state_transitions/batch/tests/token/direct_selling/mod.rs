@@ -151,7 +151,7 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, Some(699_868_051_500)); // 10.0 - 3.0 spent - fees =~ 7 dash left
+        assert_eq!(buyer_credit_balance, Some(699_868_130_120)); // 10.0 - 3.0 spent - fees =~ 7 dash left
     }
 
     #[test]

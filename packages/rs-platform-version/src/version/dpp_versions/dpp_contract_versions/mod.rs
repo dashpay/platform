@@ -13,9 +13,10 @@ pub struct DPPContractVersions {
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
-    pub config: FeatureVersion,
+    pub config: FeatureVersionBounds,
     pub methods: DataContractMethodVersions,
     pub document_type_versions: DocumentTypeVersions,
+    pub token_versions: TokenVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,6 +48,11 @@ pub struct DocumentTypeVersions {
     pub structure_version: FeatureVersion,
     pub schema: DocumentTypeSchemaVersions,
     pub methods: DocumentTypeMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TokenVersions {
+    pub validate_structure_interval: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

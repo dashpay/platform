@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn test_batch_delete_items_in_path_query_success() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn test_batch_delete_items_in_path_query_range_query() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn test_batch_delete_items_in_path_query_no_elements() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn test_batch_delete_items_in_path_query_intermediate_path_missing() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn test_batch_delete_items_in_path_query_stateless_delete() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None, None);
+        let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 

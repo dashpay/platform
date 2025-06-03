@@ -40,11 +40,11 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
-    GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
-    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
-    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
-    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
-    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetTokenContractInfoRequest, GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
+    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
+    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
@@ -762,6 +762,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_token_direct_purchase_prices,
             "get_token_direct_purchase_prices",
+        )
+        .await
+    }
+
+    async fn get_token_contract_info(
+        &self,
+        request: Request<GetTokenContractInfoRequest>,
+    ) -> Result<Response<GetTokenContractInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_contract_info,
+            "get_token_contract_info",
         )
         .await
     }

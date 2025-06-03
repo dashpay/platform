@@ -81,10 +81,10 @@ impl Drive {
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
 
-                if !contract_for_serialization
-                    .eq_without_auto_fields(data_contract_create.data_contract())
+                if let Some(mismatch) =
+                    contract_for_serialization.first_mismatch(data_contract_create.data_contract())
                 {
-                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after create with id {}", data_contract_create.data_contract().id()))));
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after create with id {}: {}", data_contract_create.data_contract().id(), mismatch))));
                 }
 
                 Ok((root_hash, VerifiedDataContract(contract)))
@@ -103,10 +103,10 @@ impl Drive {
                 let contract_for_serialization: DataContractInSerializationFormat = contract
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
-                if !contract_for_serialization
-                    .eq_without_auto_fields(data_contract_update.data_contract())
+                if let Some(mismatch) =
+                    contract_for_serialization.first_mismatch(data_contract_update.data_contract())
                 {
-                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}", data_contract_update.data_contract().id()))));
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", data_contract_update.data_contract().id(), mismatch))));
                 }
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
@@ -862,7 +862,7 @@ impl Drive {
                         None,
                     ),
                     true,
-                    true,
+                    false,
                     false,
                     platform_version,
                 )?;

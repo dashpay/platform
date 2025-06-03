@@ -116,7 +116,10 @@ impl ErrorWithCode for BasicError {
             Self::InvalidKeywordCharacterError(_) => 10269,
             Self::InvalidKeywordLengthError(_) => 10270,
             Self::DecimalsOverLimitError(_) => 10271,
-            Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10272,
+            Self::InvalidTokenDistributionBlockIntervalTooShortError(_) => 10272,
+            Self::InvalidTokenDistributionTimeIntervalTooShortError(_) => 10273,
+            Self::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(_) => 10274,
+            Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -128,6 +131,7 @@ impl ErrorWithCode for BasicError {
             Self::GroupMemberHasPowerOverLimitError(_) => 10356,
             Self::MainGroupIsNotDefinedError(_) => 10357,
             Self::GroupRequiredPowerIsInvalidError(_) => 10358,
+            Self::GroupHasTooFewMembersError(_) => 10359,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,

@@ -4,6 +4,7 @@ mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 
@@ -28,6 +29,7 @@ use crate::rpc::core::CoreRPCLike;
 impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
     fn validate_basic_structure(
         &self,
+        network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -37,7 +39,7 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
             .contract_update_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
@@ -716,6 +718,8 @@ mod tests {
 
             let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
+            let (identity_2, _, _) = setup_identity(&mut platform, 123, dash_to_credits!(1.0));
+
             let platform_state = platform.state.load();
             let platform_version = platform_state
                 .current_platform_version()
@@ -734,14 +738,14 @@ mod tests {
                 groups.insert(
                     0,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
                 groups.insert(
                     1,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
@@ -839,6 +843,8 @@ mod tests {
 
             let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
 
+            let (identity_2, _, _) = setup_identity(&mut platform, 123, dash_to_credits!(1.0));
+
             let platform_state = platform.state.load();
             let platform_version = platform_state
                 .current_platform_version()
@@ -857,14 +863,14 @@ mod tests {
                 groups.insert(
                     0,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
                 groups.insert(
                     1,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 1,
                     }),
                 );
@@ -887,12 +893,12 @@ mod tests {
             updated_data_contract.set_version(2);
 
             {
-                // Remove a group from the updated contract
+                // Add a group to the updated contract
                 let groups = updated_data_contract.groups_mut().expect("expected groups");
                 groups.insert(
                     1,
                     Group::V0(GroupV0 {
-                        members: [(identity.id(), 2)].into(),
+                        members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
                         required_power: 2,
                     }),
                 );
@@ -1927,9 +1933,9 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::GroupPositionDoesNotExistError(_))
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::GroupPositionDoesNotExistError(_)
+                ))]
             );
         }
 
@@ -1969,7 +1975,7 @@ mod tests {
                 .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                     TokenPerpetualDistributionV0 {
                         distribution_type: RewardDistributionType::BlockBasedDistribution {
-                            interval: 10,
+                            interval: 100,
                             function: DistributionFunction::Exponential {
                                 a: 0,
                                 d: 0,
@@ -2027,11 +2033,9 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(
-                        BasicError::InvalidTokenDistributionFunctionDivideByZeroError(_)
-                    )
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::InvalidTokenDistributionFunctionDivideByZeroError(_)
+                ))]
             );
         }
 
@@ -2071,7 +2075,7 @@ mod tests {
                 .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                     TokenPerpetualDistributionV0 {
                         distribution_type: RewardDistributionType::BlockBasedDistribution {
-                            interval: 10,
+                            interval: 100,
                             function: DistributionFunction::Random { min: 0, max: 10 },
                         },
                         distribution_recipient: TokenDistributionRecipient::Identity(identity.id()),
@@ -2119,9 +2123,9 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::UnsupportedFeatureError(_)
+                ))]
             );
         }
 

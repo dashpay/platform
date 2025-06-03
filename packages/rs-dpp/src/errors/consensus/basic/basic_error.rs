@@ -9,12 +9,13 @@ use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
     DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
-    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError,
-    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
-    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
-    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
+    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -87,8 +88,10 @@ use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
-    InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError,
-    InvalidTokenPositionError, MissingDefaultLocalizationError,
+    InvalidTokenConfigUpdateNoChangeError, InvalidTokenDistributionBlockIntervalTooShortError,
+    InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
+    InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
     TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
@@ -566,7 +569,24 @@ pub enum BasicError {
     TokenNoteOnlyAllowedWhenProposerError(TokenNoteOnlyAllowedWhenProposerError),
 
     #[error(transparent)]
+    InvalidTokenDistributionBlockIntervalTooShortError(
+        InvalidTokenDistributionBlockIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionTimeIntervalTooShortError(
+        InvalidTokenDistributionTimeIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(
+        InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    ),
+    #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
+
+    #[error(transparent)]
+    GroupHasTooFewMembersError(GroupHasTooFewMembersError),
 }
 
 impl From<BasicError> for ConsensusError {

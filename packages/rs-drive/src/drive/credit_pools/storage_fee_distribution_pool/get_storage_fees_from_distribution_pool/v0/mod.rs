@@ -52,7 +52,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_is_not_initiated() {
-            let drive = setup_drive(None, None);
+            let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();

@@ -1,7 +1,7 @@
 use crate::version::dpp_versions::dpp_contract_versions::{
     DPPContractVersions, DataContractMethodVersions, DocumentTypeClassMethodVersions,
     DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
-    DocumentTypeVersions, RecursiveSchemaValidatorVersions,
+    DocumentTypeVersions, RecursiveSchemaValidatorVersions, TokenVersions,
 };
 use versioned_feature_core::FeatureVersionBounds;
 
@@ -14,7 +14,11 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
     },
     contract_structure_version: 1, //changed
     created_data_contract_structure: 0,
-    config: 1, // changed to enable sized integer types
+    config: FeatureVersionBounds {
+        min_version: 0,
+        max_version: 1,
+        default_current_version: 1,
+    }, // changed to enable sized integer types
     methods: DataContractMethodVersions {
         validate_document: 0,
         validate_update: 0,
@@ -53,5 +57,8 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
             serialize_value_for_key: 0,
             deserialize_value_for_key: 0,
         },
+    },
+    token_versions: TokenVersions {
+        validate_structure_interval: 0,
     },
 };
