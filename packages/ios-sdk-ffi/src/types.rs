@@ -51,6 +51,9 @@ pub enum IOSSDKNetwork {
 pub struct IOSSDKConfig {
     /// Network to connect to
     pub network: IOSSDKNetwork,
+    /// Comma-separated list of DAPI addresses (e.g., "http://127.0.0.1:3000,http://127.0.0.1:3001")
+    /// If null or empty, will use mock SDK
+    pub dapi_addresses: *const c_char,
     /// Skip asset lock proof verification (for testing)
     pub skip_asset_lock_proof_verification: bool,
     /// Number of retries for failed requests

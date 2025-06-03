@@ -402,55 +402,55 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
         use dpp::prelude::DataContract;
 
         let data_contract = if has_contract_id {
-// Parse and fetch the contract ID
-let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
-    Ok(s) => s,
-    Err(e) => return Err(FFIError::from(e)),
-};
+            // Parse and fetch the contract ID
+            let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
+                Ok(s) => s,
+                Err(e) => return Err(FFIError::from(e)),
+            };
 
-let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
-    Ok(id) => id,
-    Err(e) => {
-        return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
-    }
-};
+            let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
+                Ok(id) => id,
+                Err(e) => {
+                    return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
+                }
+            };
 
-// Fetch the data contract
-DataContract::fetch(&wrapper.sdk, token_contract_id)
-    .await
-    .map_err(FFIError::from)?
-    .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
+            // Fetch the data contract
+            DataContract::fetch(&wrapper.sdk, token_contract_id)
+                .await
+                .map_err(FFIError::from)?
+                .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
         } else {
-// Deserialize the provided contract
-let contract_slice = std::slice::from_raw_parts(
-    params.serialized_contract,
-    params.serialized_contract_len
-);
+            // Deserialize the provided contract
+            let contract_slice = std::slice::from_raw_parts(
+                params.serialized_contract,
+                params.serialized_contract_len
+            );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-DataContract::versioned_deserialize(
-    contract_slice,
-    false, // skip validation since it's already validated
-    wrapper.sdk.version(),
-)
-.map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
+            DataContract::versioned_deserialize(
+                contract_slice,
+                false, // skip validation since it's already validated
+                wrapper.sdk.version(),
+            )
+            .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
         // Create token transfer transition builder
         use dash_sdk::platform::transition::fungible_tokens::transfer::TokenTransferTransitionBuilder;
 
         let mut builder = TokenTransferTransitionBuilder::new(
-&data_contract,
-params.token_position,
-sender_identity.id(),
-recipient_id,
-params.amount,
+            &data_contract,
+            params.token_position,
+            sender_identity.id(),
+            recipient_id,
+            params.amount,
         );
 
         // Add optional notes
         if let Some(note) = public_note {
-builder = builder.with_public_note(note);
+            builder = builder.with_public_note(note);
         }
 
         // TODO: Implement encrypted notes with proper parameters
@@ -464,28 +464,28 @@ builder = builder.with_public_note(note);
 
         // Add settings and user fee increase
         if let Some(settings) = settings {
-if let Some(fee_increase) = settings.user_fee_increase {
-    builder = builder.with_user_fee_increase(fee_increase);
-}
-builder = builder.with_settings(settings);
+            if let Some(fee_increase) = settings.user_fee_increase {
+                builder = builder.with_user_fee_increase(fee_increase);
+            }
+            builder = builder.with_settings(settings);
         }
 
         // Sign the transition
         let state_transition = builder
-.sign(
-    &wrapper.sdk,
-    identity_public_key,
-    signer,
-    wrapper.sdk.version(),
-    settings.and_then(|s| s.state_transition_creation_options),
-)
-.await
-.map_err(|e| FFIError::InternalError(format!("Failed to sign transition: {}", e)))?;
+            .sign(
+                &wrapper.sdk,
+                identity_public_key,
+                signer,
+                wrapper.sdk.version(),
+                settings.and_then(|s| s.state_transition_creation_options),
+            )
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to sign transition: {}", e)))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
         bincode::encode_to_vec(&state_transition, config).map_err(|e| {
-FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
         })
     });
 
@@ -1598,23 +1598,23 @@ DataContract::versioned_deserialize(
         use dash_sdk::platform::transition::fungible_tokens::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
-&data_contract,
-params.token_position,
-actor_identity.id(),
-frozen_identity_id,
+            &data_contract,
+            params.token_position,
+            actor_identity.id(),
+            frozen_identity_id,
         );
 
         // Add optional public note
         if let Some(note) = public_note {
-builder = builder.with_public_note(note);
+            builder = builder.with_public_note(note);
         }
 
         // Add settings and user fee increase
         if let Some(settings) = settings {
-if let Some(fee_increase) = settings.user_fee_increase {
-    builder = builder.with_user_fee_increase(fee_increase);
-}
-builder = builder.with_settings(settings);
+            if let Some(fee_increase) = settings.user_fee_increase {
+                builder = builder.with_user_fee_increase(fee_increase);
+            }
+            builder = builder.with_settings(settings);
         }
 
         // Sign the transition
@@ -1744,62 +1744,62 @@ pub unsafe extern "C" fn ios_sdk_token_freeze(
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
-// Parse and fetch the contract ID
-let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
-    Ok(s) => s,
-    Err(e) => return Err(FFIError::from(e)),
-};
+            // Parse and fetch the contract ID
+            let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
+                Ok(s) => s,
+                Err(e) => return Err(FFIError::from(e)),
+            };
 
-let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
-    Ok(id) => id,
-    Err(e) => {
-        return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
-    }
-};
+            let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
+                Ok(id) => id,
+                Err(e) => {
+                    return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
+                }
+            };
 
-// Fetch the data contract
-DataContract::fetch(&wrapper.sdk, token_contract_id)
-    .await
-    .map_err(FFIError::from)?
-    .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
-        } else {
-// Deserialize the provided contract
-let contract_slice = std::slice::from_raw_parts(
-    params.serialized_contract,
-    params.serialized_contract_len
-);
+            // Fetch the data contract
+            DataContract::fetch(&wrapper.sdk, token_contract_id)
+                .await
+                .map_err(FFIError::from)?
+                .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
+                    } else {
+            // Deserialize the provided contract
+            let contract_slice = std::slice::from_raw_parts(
+                params.serialized_contract,
+                params.serialized_contract_len
+            );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-DataContract::versioned_deserialize(
-    contract_slice,
-    false, // skip validation since it's already validated
-    wrapper.sdk.version(),
-)
-.map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
+            DataContract::versioned_deserialize(
+                contract_slice,
+                false, // skip validation since it's already validated
+                wrapper.sdk.version(),
+            )
+            .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
         // Create token freeze transition builder
         use dash_sdk::platform::transition::fungible_tokens::freeze::TokenFreezeTransitionBuilder;
 
         let mut builder = TokenFreezeTransitionBuilder::new(
-&data_contract,
-params.token_position,
-actor_identity.id(),
-target_identity_id,
+            &data_contract,
+            params.token_position,
+            actor_identity.id(),
+            target_identity_id,
         );
 
         // Add optional public note
         if let Some(note) = public_note {
-builder = builder.with_public_note(note);
+            builder = builder.with_public_note(note);
         }
 
         // Add settings and user fee increase
         if let Some(settings) = settings {
-if let Some(fee_increase) = settings.user_fee_increase {
-    builder = builder.with_user_fee_increase(fee_increase);
-}
-builder = builder.with_settings(settings);
+            if let Some(fee_increase) = settings.user_fee_increase {
+                builder = builder.with_user_fee_increase(fee_increase);
+            }
+            builder = builder.with_settings(settings);
         }
 
         // Sign the transition
@@ -1929,80 +1929,80 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
 
         // Get the data contract either by fetching or deserializing
         let data_contract = if has_contract_id {
-// Parse and fetch the contract ID
-let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
-    Ok(s) => s,
-    Err(e) => return Err(FFIError::from(e)),
-};
+            // Parse and fetch the contract ID
+            let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
+                Ok(s) => s,
+                Err(e) => return Err(FFIError::from(e)),
+            };
 
-let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
-    Ok(id) => id,
-    Err(e) => {
-        return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
-    }
-};
+            let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
+                Ok(id) => id,
+                Err(e) => {
+                    return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
+                }
+            };
 
-// Fetch the data contract
-DataContract::fetch(&wrapper.sdk, token_contract_id)
-    .await
-    .map_err(FFIError::from)?
-    .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
-        } else {
-// Deserialize the provided contract
-let contract_slice = std::slice::from_raw_parts(
-    params.serialized_contract,
-    params.serialized_contract_len
-);
+            // Fetch the data contract
+            DataContract::fetch(&wrapper.sdk, token_contract_id)
+                .await
+                .map_err(FFIError::from)?
+                .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
+                    } else {
+            // Deserialize the provided contract
+            let contract_slice = std::slice::from_raw_parts(
+                params.serialized_contract,
+                params.serialized_contract_len
+            );
 
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-DataContract::versioned_deserialize(
-    contract_slice,
-    false, // skip validation since it's already validated
-    wrapper.sdk.version(),
-)
-.map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
+            DataContract::versioned_deserialize(
+                contract_slice,
+                false, // skip validation since it's already validated
+                wrapper.sdk.version(),
+            )
+            .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
         // Create token unfreeze transition builder
         use dash_sdk::platform::transition::fungible_tokens::unfreeze::TokenUnfreezeTransitionBuilder;
 
         let mut builder = TokenUnfreezeTransitionBuilder::new(
-&data_contract,
-params.token_position,
-actor_identity.id(),
-target_identity_id,
+            &data_contract,
+            params.token_position,
+            actor_identity.id(),
+            target_identity_id,
         );
 
         // Add optional public note
         if let Some(note) = public_note {
-builder = builder.with_public_note(note);
+            builder = builder.with_public_note(note);
         }
 
         // Add settings and user fee increase
         if let Some(settings) = settings {
-if let Some(fee_increase) = settings.user_fee_increase {
-    builder = builder.with_user_fee_increase(fee_increase);
-}
-builder = builder.with_settings(settings);
+            if let Some(fee_increase) = settings.user_fee_increase {
+                builder = builder.with_user_fee_increase(fee_increase);
+            }
+            builder = builder.with_settings(settings);
         }
 
         // Sign the transition
         let state_transition = builder
-.sign(
-    &wrapper.sdk,
-    identity_public_key,
-    signer,
-    wrapper.sdk.version(),
-    settings.and_then(|s| s.state_transition_creation_options),
-)
-.await
-.map_err(|e| FFIError::InternalError(format!("Failed to sign transition: {}", e)))?;
+            .sign(
+                &wrapper.sdk,
+                identity_public_key,
+                signer,
+                wrapper.sdk.version(),
+                settings.and_then(|s| s.state_transition_creation_options),
+            )
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to sign transition: {}", e)))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
         bincode::encode_to_vec(&state_transition, config).map_err(|e| {
-FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
         })
     });
 

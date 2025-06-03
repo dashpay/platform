@@ -3,8 +3,11 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::dashcore::Network;
+use std::ffi::CStr;
+use std::str::FromStr;
 
 use crate::types::{IOSSDKConfig, IOSSDKNetwork, SDKHandle};
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
@@ -55,14 +58,42 @@ pub unsafe extern "C" fn ios_sdk_create(config: *const IOSSDKConfig) -> IOSSDKRe
         }
     };
 
-    // Build SDK
-    let sdk_result = runtime.block_on(async {
-        // For simplicity, use mock SDK for now
-        // In production, you'd want to pass actual DAPI endpoints
-        let builder = SdkBuilder::new_mock().with_network(network);
+    // Parse DAPI addresses
+    let builder = if config.dapi_addresses.is_null() {
+        // Use mock SDK if no addresses provided
+        SdkBuilder::new_mock().with_network(network)
+    } else {
+        let addresses_str = match unsafe { CStr::from_ptr(config.dapi_addresses) }.to_str() {
+            Ok(s) => s,
+            Err(e) => {
+                return IOSSDKResult::error(IOSSDKError::new(
+                    IOSSDKErrorCode::InvalidParameter,
+                    format!("Invalid DAPI addresses string: {}", e),
+                ))
+            }
+        };
 
-        builder.build().map_err(FFIError::from)
-    });
+        if addresses_str.is_empty() {
+            // Use mock SDK if addresses string is empty
+            SdkBuilder::new_mock().with_network(network)
+        } else {
+            // Parse the address list
+            let address_list = match AddressList::from_str(addresses_str) {
+                Ok(list) => list,
+                Err(e) => {
+                    return IOSSDKResult::error(IOSSDKError::new(
+                        IOSSDKErrorCode::InvalidParameter,
+                        format!("Failed to parse DAPI addresses: {}", e),
+                    ))
+                }
+            };
+
+            SdkBuilder::new(address_list).with_network(network)
+        }
+    };
+
+    // Build SDK
+    let sdk_result = runtime.block_on(async { builder.build().map_err(FFIError::from) });
 
     match sdk_result {
         Ok(sdk) => {
