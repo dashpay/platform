@@ -19,14 +19,14 @@ pub enum UnfreezeResult {
 impl Sdk {
     pub async fn token_unfreeze_identity<S: Signer>(
         &self,
-        unfreeze_tokens_transition_builder: TokenUnfreezeTransitionBuilder,
+        unfreeze_tokens_transition_builder: TokenUnfreezeTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<UnfreezeResult, Error> {
         let platform_version = self.version();
 
         let state_transition = unfreeze_tokens_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

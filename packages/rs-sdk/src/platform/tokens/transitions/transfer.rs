@@ -19,14 +19,14 @@ pub enum TransferResult {
 impl Sdk {
     pub async fn token_transfer<S: Signer>(
         &self,
-        transfer_tokens_transition_builder: TokenTransferTransitionBuilder,
+        transfer_tokens_transition_builder: TokenTransferTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<TransferResult, Error> {
         let platform_version = self.version();
 
         let state_transition = transfer_tokens_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

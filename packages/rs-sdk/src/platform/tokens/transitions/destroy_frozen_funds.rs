@@ -15,14 +15,14 @@ pub enum DestroyFrozenFundsResult {
 impl Sdk {
     pub async fn token_destroy_frozen_funds<S: Signer>(
         &self,
-        destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder,
+        destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DestroyFrozenFundsResult, Error> {
         let platform_version = self.version();
 
         let state_transition = destroy_frozen_funds_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

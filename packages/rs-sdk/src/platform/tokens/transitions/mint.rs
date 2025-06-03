@@ -20,14 +20,14 @@ pub enum MintResult {
 impl Sdk {
     pub async fn token_mint<S: Signer>(
         &self,
-        mint_tokens_transition_builder: TokenMintTransitionBuilder,
+        mint_tokens_transition_builder: TokenMintTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<MintResult, Error> {
         let platform_version = self.version();
 
         let state_transition = mint_tokens_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

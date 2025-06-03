@@ -10,14 +10,14 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 impl Sdk {
     pub async fn token_purchase<S: Signer>(
         &self,
-        purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder,
+        purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DirectPurchaseResult, Error> {
         let platform_version = self.version();
 
         let state_transition = purchase_tokens_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

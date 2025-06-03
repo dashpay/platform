@@ -10,14 +10,14 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 impl Sdk {
     pub async fn token_emergency_action<S: Signer>(
         &self,
-        emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder,
+        emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<EmergencyActionResult, Error> {
         let platform_version = self.version();
 
         let state_transition = emergency_action_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

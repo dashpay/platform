@@ -24,14 +24,14 @@ pub enum SetPriceResult {
 impl Sdk {
     pub async fn token_set_price_for_direct_purchase<S: Signer>(
         &self,
-        set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder,
+        set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<SetPriceResult, Error> {
         let platform_version = self.version();
 
         let state_transition = set_price_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

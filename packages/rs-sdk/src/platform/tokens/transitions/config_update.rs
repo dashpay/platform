@@ -15,14 +15,14 @@ pub enum ConfigUpdateResult {
 impl Sdk {
     pub async fn token_update_contract_token_configuration<S: Signer>(
         &self,
-        config_update_transition_builder: TokenConfigUpdateTransitionBuilder,
+        config_update_transition_builder: TokenConfigUpdateTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ConfigUpdateResult, Error> {
         let platform_version = self.version();
 
         let state_transition = config_update_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition

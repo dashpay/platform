@@ -15,14 +15,14 @@ pub enum ClaimResult {
 impl Sdk {
     pub async fn token_claim<S: Signer>(
         &self,
-        claim_tokens_transition_builder: TokenClaimTransitionBuilder,
+        claim_tokens_transition_builder: TokenClaimTransitionBuilder<'_>,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ClaimResult, Error> {
         let platform_version = self.version();
 
         let state_transition = claim_tokens_transition_builder
-            .sign(self, signing_key, signer, &platform_version, None)
+            .sign(self, signing_key, signer, platform_version, None)
             .await?;
 
         let proof_result = state_transition
