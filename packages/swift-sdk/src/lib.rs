@@ -3,6 +3,7 @@
 //! This crate provides an idiomatic Swift-compatible C FFI interface
 //! over the ios-sdk-ffi crate, making it easier to use from Swift.
 
+extern crate ios_sdk_ffi;
 
 mod data_contract;
 mod document;

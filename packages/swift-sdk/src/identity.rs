@@ -443,8 +443,11 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
     private_key_len: usize,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || identity_handle.is_null() || instant_lock_bytes.is_null()
-        || transaction_bytes.is_null() || private_key.is_null()
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
     {
         return ptr::null_mut();
     }
@@ -514,8 +517,11 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock_and_wait(
     private_key_len: usize,
     settings: *const SwiftDashPutSettings,
 ) -> *mut ios_sdk_ffi::IdentityHandle {
-    if sdk_handle.is_null() || identity_handle.is_null() || instant_lock_bytes.is_null()
-        || transaction_bytes.is_null() || private_key.is_null()
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
     {
         return ptr::null_mut();
     }
@@ -570,7 +576,11 @@ pub extern "C" fn swift_dash_identity_withdraw(
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || identity_handle.is_null() || address.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || address.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 
@@ -678,7 +688,11 @@ pub extern "C" fn swift_dash_identity_register_name(
     signer_handle: *mut ios_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || identity_handle.is_null() || name.is_null() || signer_handle.is_null() {
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || name.is_null()
+        || signer_handle.is_null()
+    {
         return ptr::null_mut();
     }
 

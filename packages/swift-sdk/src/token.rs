@@ -282,8 +282,12 @@ pub extern "C" fn swift_dash_token_claim(
     put_settings: ios_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
     let ffi_distribution_type = match params.distribution_type {
-        SwiftDashTokenDistributionType::PreProgrammed => ios_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed,
-        SwiftDashTokenDistributionType::Perpetual => ios_sdk_ffi::IOSSDKTokenDistributionType::Perpetual,
+        SwiftDashTokenDistributionType::PreProgrammed => {
+            ios_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
+        }
+        SwiftDashTokenDistributionType::Perpetual => {
+            ios_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
+        }
     };
 
     let ffi_params = ios_sdk_ffi::IOSSDKTokenClaimParams {
@@ -320,8 +324,12 @@ pub extern "C" fn swift_dash_token_claim_and_wait(
     put_settings: ios_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
     let ffi_distribution_type = match params.distribution_type {
-        SwiftDashTokenDistributionType::PreProgrammed => ios_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed,
-        SwiftDashTokenDistributionType::Perpetual => ios_sdk_ffi::IOSSDKTokenDistributionType::Perpetual,
+        SwiftDashTokenDistributionType::PreProgrammed => {
+            ios_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
+        }
+        SwiftDashTokenDistributionType::Perpetual => {
+            ios_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
+        }
     };
 
     let ffi_params = ios_sdk_ffi::IOSSDKTokenClaimParams {
@@ -395,11 +403,7 @@ pub extern "C" fn swift_dash_token_get_statuses(
     token_position: u16,
 ) -> SwiftDashResult {
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_get_statuses(
-            sdk_handle,
-            token_contract_id,
-            token_position,
-        )
+        ios_sdk_ffi::ios_sdk_token_get_statuses(sdk_handle, token_contract_id, token_position)
     };
 
     SwiftDashResult::from_ffi_result(result)
