@@ -1,7 +1,8 @@
 use crate::sdk::SwiftDashPutSettings;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
+use ios_sdk_ffi;
 
 /// Information about an identity
 #[repr(C)]

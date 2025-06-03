@@ -1,5 +1,5 @@
 [package]
-name = "ios-sdk-ffi"
+name = "ios_sdk_ffi"
 version = "2.0.0-rc.14"
 authors = ["Dash Core Group <dev@dash.org>"]
 edition = "2021"

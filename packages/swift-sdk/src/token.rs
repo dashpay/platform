@@ -3,10 +3,10 @@
 //! This module provides Swift-friendly wrappers for token operations
 //! available in the ios-sdk-ffi crate.
 
-use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use ios_sdk_ffi;
 
-use crate::error::{SwiftDashError, SwiftDashResult};
+use crate::error::SwiftDashResult;
 
 /// Swift-friendly token transfer parameters
 #[repr(C)]

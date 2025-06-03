@@ -10,7 +10,7 @@ description = "Swift wrapper for idiomatic iOS SDK bindings over ios-sdk-ffi"
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-ios-sdk-ffi = { path = "../ios-sdk-ffi" }
+ios_sdk_ffi = { path = "../ios-sdk-ffi" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["rt", "macros"] }

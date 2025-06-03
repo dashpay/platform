@@ -1,5 +1,6 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
+use ios_sdk_ffi;
 
 /// Error codes for Swift Dash Platform operations
 #[repr(C)]

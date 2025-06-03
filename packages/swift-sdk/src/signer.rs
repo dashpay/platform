@@ -1,4 +1,4 @@
-use std::ptr;
+use ios_sdk_ffi;
 
 /// Create a test signer for development/testing purposes
 #[no_mangle]
@@ -7,7 +7,7 @@ pub extern "C" fn swift_dash_signer_create_test() -> *mut ios_sdk_ffi::SignerHan
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
         _data: *const u8,
-        data_len: usize,
+        _data_len: usize,
         result_len: *mut usize,
     ) -> *mut u8 {
         // Return a dummy signature for testing
