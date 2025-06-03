@@ -1,13 +1,13 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::unfreeze::TokenUnfreezeTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::data_contract::group::GroupSumPower;
+use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::tokens::info::IdentityTokenInfo;
-use dpp::document::Document;
-use dpp::data_contract::group::GroupSumPower;
-use crate::platform::transition::fungible_tokens::unfreeze::TokenUnfreezeTransitionBuilder;
 
 pub enum UnfreezeResult {
     IdentityInfo(Identifier, IdentityTokenInfo),
@@ -17,7 +17,7 @@ pub enum UnfreezeResult {
 }
 
 impl Sdk {
-    pub async fn unfreeze_tokens<'a, S: Signer>(
+    pub async fn token_unfreeze_identity<'a, S: Signer>(
         &self,
         unfreeze_tokens_transition_builder: TokenUnfreezeTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,

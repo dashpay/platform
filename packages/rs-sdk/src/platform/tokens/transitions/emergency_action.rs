@@ -1,14 +1,14 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::emergency_action::TokenEmergencyActionTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::data_contract::group::GroupSumPower;
-use crate::platform::transition::fungible_tokens::emergency_action::TokenEmergencyActionTransitionBuilder;
 
 impl Sdk {
-    pub async fn emergency_token_action<'a, S: Signer>(
+    pub async fn token_emergency_action<'a, S: Signer>(
         &self,
         emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,
@@ -25,15 +25,17 @@ impl Sdk {
             .await?;
 
         match proof_result {
-            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(group_power, document) => {
-                Ok(EmergencyActionResult::GroupActionWithDocument(
-                    group_power,
-                    document,
-                ))
-            }
+            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(
+                group_power,
+                document,
+            ) => Ok(EmergencyActionResult::GroupActionWithDocument(
+                group_power,
+                document,
+            )),
             _ => Err(Error::DriveProofError(
                 drive::error::proof::ProofError::UnexpectedResultProof(
-                    "Expected VerifiedTokenGroupActionWithDocument for emergency action transition".to_string(),
+                    "Expected VerifiedTokenGroupActionWithDocument for emergency action transition"
+                        .to_string(),
                 ),
                 vec![],
                 Default::default(),

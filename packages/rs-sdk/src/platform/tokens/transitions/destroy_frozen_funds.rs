@@ -1,11 +1,11 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::data_contract::group::GroupSumPower;
+use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::document::Document;
-use dpp::data_contract::group::GroupSumPower;
-use crate::platform::transition::fungible_tokens::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 
 pub enum DestroyFrozenFundsResult {
     HistoricalDocument(Document),
@@ -13,7 +13,7 @@ pub enum DestroyFrozenFundsResult {
 }
 
 impl Sdk {
-    pub async fn destroy_frozen_funds<'a, S: Signer>(
+    pub async fn token_destroy_frozen_funds<'a, S: Signer>(
         &self,
         destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,

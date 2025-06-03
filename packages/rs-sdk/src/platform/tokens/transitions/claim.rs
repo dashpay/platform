@@ -1,11 +1,11 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::claim::TokenClaimTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::data_contract::group::GroupSumPower;
-use crate::platform::transition::fungible_tokens::claim::TokenClaimTransitionBuilder;
 
 pub enum ClaimResult {
     Document(Document),
@@ -13,7 +13,7 @@ pub enum ClaimResult {
 }
 
 impl Sdk {
-    pub async fn claim_tokens<'a, S: Signer>(
+    pub async fn token_claim<'a, S: Signer>(
         &self,
         claim_tokens_transition_builder: TokenClaimTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,

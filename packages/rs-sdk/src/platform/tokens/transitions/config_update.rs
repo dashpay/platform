@@ -1,11 +1,11 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::config_update::TokenConfigUpdateTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::data_contract::group::GroupSumPower;
-use crate::platform::transition::fungible_tokens::config_update::TokenConfigUpdateTransitionBuilder;
 
 pub enum ConfigUpdateResult {
     Document(Document),
@@ -13,7 +13,7 @@ pub enum ConfigUpdateResult {
 }
 
 impl Sdk {
-    pub async fn update_token_config<'a, S: Signer>(
+    pub async fn token_update_contract_token_configuration<'a, S: Signer>(
         &self,
         config_update_transition_builder: TokenConfigUpdateTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,

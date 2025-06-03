@@ -1,14 +1,14 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::purchase::TokenDirectPurchaseTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::balances::credits::TokenAmount;
-use crate::platform::transition::fungible_tokens::purchase::TokenDirectPurchaseTransitionBuilder;
 
 impl Sdk {
-    pub async fn purchase_tokens<'a, S: Signer>(
+    pub async fn token_purchase<'a, S: Signer>(
         &self,
         purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,
@@ -48,5 +48,8 @@ impl Sdk {
 pub enum DirectPurchaseResult {
     TokenBalance(Identifier, TokenAmount),
     HistoricalDocument(dpp::document::Document),
-    GroupActionWithDocument(dpp::data_contract::group::GroupSumPower, Option<dpp::document::Document>),
+    GroupActionWithDocument(
+        dpp::data_contract::group::GroupSumPower,
+        Option<dpp::document::Document>,
+    ),
 }

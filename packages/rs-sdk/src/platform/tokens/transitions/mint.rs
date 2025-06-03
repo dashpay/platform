@@ -1,14 +1,14 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::mint::TokenMintTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::group::GroupSumPower;
+use dpp::document::Document;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::balances::credits::TokenAmount;
-use dpp::document::Document;
-use dpp::data_contract::group::GroupSumPower;
-use dpp::group::group_action_status::GroupActionStatus;
-use crate::platform::transition::fungible_tokens::mint::TokenMintTransitionBuilder;
 
 pub enum MintResult {
     TokenBalance(Identifier, TokenAmount),
@@ -18,7 +18,7 @@ pub enum MintResult {
 }
 
 impl Sdk {
-    pub async fn mint_tokens<'a, S: Signer>(
+    pub async fn token_mint<'a, S: Signer>(
         &self,
         mint_tokens_transition_builder: TokenMintTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,

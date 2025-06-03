@@ -1,14 +1,14 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::fungible_tokens::transfer::TokenTransferTransitionBuilder;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::group::GroupSumPower;
+use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use std::collections::BTreeMap;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::balances::credits::TokenAmount;
 use dpp::platform_value::Identifier;
-use dpp::document::Document;
-use dpp::data_contract::group::GroupSumPower;
-use crate::platform::transition::fungible_tokens::transfer::TokenTransferTransitionBuilder;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
+use std::collections::BTreeMap;
 
 pub enum TransferResult {
     IdentitiesBalances(BTreeMap<Identifier, TokenAmount>),
@@ -17,7 +17,7 @@ pub enum TransferResult {
 }
 
 impl Sdk {
-    pub async fn transfer_tokens<'a, S: Signer>(
+    pub async fn token_transfer<'a, S: Signer>(
         &self,
         transfer_tokens_transition_builder: TokenTransferTransitionBuilder<'a>,
         signing_key: &IdentityPublicKey,
