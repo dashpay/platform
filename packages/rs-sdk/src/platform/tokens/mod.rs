@@ -6,3 +6,5 @@ pub mod token_info;
 pub mod token_status;
 /// Token total supply query
 pub mod token_total_supply;
+/// Token state transitions
+pub mod transitions;
