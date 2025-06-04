@@ -187,17 +187,8 @@ mod tests {
 
     // Helper function to create a mock SDK handle
     fn create_mock_sdk_handle() -> *mut SDKHandle {
-        let config = DashSDKConfig {
-            network: crate::types::DashSDKNetwork::Local,
-            dapi_addresses: ptr::null(), // Use mock SDK
-            skip_asset_lock_proof_verification: false,
-            request_retry_count: 3,
-            request_timeout_ms: 5000,
-        };
-
-        let result = unsafe { crate::sdk::dash_sdk_create(&config) };
-        assert!(result.error.is_null());
-        result.data as *mut SDKHandle
+        let wrapper = Box::new(crate::sdk::SDKWrapper::new_mock());
+        Box::into_raw(wrapper) as *mut SDKHandle
     }
 
     // Helper function to destroy mock SDK handle
@@ -495,22 +486,64 @@ mod tests {
 
     #[test]
     fn test_burn_with_invalid_transition_owner_id() {
-        // Test with invalid ID that's too short
-        let invalid_id = vec![1u8; 31]; // 31 bytes instead of 32
+        // Instead of testing invalid ID bytes, test with invalid contract ID
+        // which will fail during parameter validation
+        let transition_owner_id = create_valid_transition_owner_id();
         let sdk_handle = create_mock_sdk_handle();
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
-        let params = create_valid_burn_params();
+        // Create params with invalid contract ID
+        let invalid_contract_id = CString::new("invalid-base58-string!@#$").unwrap();
+        let params = DashSDKTokenBurnParams {
+            token_contract_id: invalid_contract_id.into_raw(),
+            serialized_contract: ptr::null(),
+            serialized_contract_len: 0,
+            token_position: 0,
+            amount: 1000,
+            public_note: ptr::null(),
+        };
+
         let identity_public_key_handle =
             Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
-        // This would actually cause undefined behavior since we're reading past the buffer
-        // In a real test environment, we'd need to mock the SDK wrapper to test this safely
-        // So we'll skip the actual call here
+        let result = unsafe {
+            dash_sdk_token_burn(
+                sdk_handle,
+                transition_owner_id.as_ptr(),
+                &params,
+                identity_public_key_handle,
+                signer_handle,
+                &put_settings,
+                state_transition_options,
+            )
+        };
+
+        // Should return an error for invalid contract ID
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            // Could be either InternalError or ProtocolError for invalid base58
+            assert!(
+                error.code == DashSDKErrorCode::InternalError
+                    || error.code == DashSDKErrorCode::ProtocolError,
+                "Expected InternalError or ProtocolError, got {:?}",
+                error.code
+            );
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            // Check that the error is related to the invalid contract ID
+            assert!(
+                error_msg.contains("Invalid token contract ID")
+                    || error_msg.contains("base58")
+                    || error_msg.contains("decode")
+                    || error_msg.contains("Failed to deserialize contract"),
+                "Error message '{}' doesn't contain expected content",
+                error_msg
+            );
+        }
 
         // Clean up
         unsafe {

@@ -29,8 +29,10 @@ impl SDKWrapper {
     #[cfg(test)]
     pub fn new_mock() -> Self {
         let runtime = Runtime::new().expect("Failed to create runtime");
-        let builder = SdkBuilder::new(AddressList::default()).with_mock().build();
-        let sdk = builder.expect("Failed to create mock SDK");
+        // Create a mock SDK using the mock builder
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("Failed to create test SDK");
         SDKWrapper::new(sdk, runtime)
     }
 }
