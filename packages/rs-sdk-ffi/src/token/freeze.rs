@@ -341,7 +341,7 @@ mod tests {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
             // Check that the error message contains "null"
-            let error_msg = unsafe { CStr::from_ptr(error.message) }.to_str().unwrap();
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(error_msg.contains("null"));
         }
 

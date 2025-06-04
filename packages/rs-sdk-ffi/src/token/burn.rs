@@ -178,7 +178,7 @@ mod tests {
     use crate::types::{
         DashSDKConfig, DashSDKPutSettings, DashSDKStateTransitionCreationOptions, SDKHandle,
     };
-    use crate::{DashSDKError, DashSDKErrorCode};
+    use crate::DashSDKErrorCode;
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dash_sdk::dpp::platform_value::BinaryData;
@@ -321,7 +321,7 @@ mod tests {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
             // Check that the error message contains "null"
-            let error_msg = unsafe { CStr::from_ptr(error.message) }.to_str().unwrap();
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(error_msg.contains("null"));
         }
 
@@ -537,7 +537,7 @@ mod tests {
 
         // Verify the note can be read back
         unsafe {
-            let note_str = unsafe { CStr::from_ptr(params.public_note) };
+            let note_str = CStr::from_ptr(params.public_note);
             assert_eq!(note_str.to_str().unwrap(), "Test burn note");
         }
 

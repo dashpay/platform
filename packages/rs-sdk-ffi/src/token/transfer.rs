@@ -190,6 +190,7 @@ pub unsafe extern "C" fn dash_sdk_token_transfer(
 mod tests {
     use super::*;
     use crate::DashSDKError;
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dash_sdk::dpp::identity::{KeyID, KeyType, Purpose, SecurityLevel};
     use dash_sdk::dpp::platform_value::BinaryData;
     use dash_sdk::platform::IdentityPublicKey;
@@ -204,8 +205,8 @@ mod tests {
 
     // Helper function to create a mock identity public key
     fn create_mock_identity_public_key() -> Box<IdentityPublicKey> {
-        Box::new(IdentityPublicKey {
-            id: KeyID(1),
+        Box::new(IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::MEDIUM,
             contract_bounds: None,
@@ -213,7 +214,7 @@ mod tests {
             read_only: false,
             data: BinaryData::new(vec![0u8; 33]),
             disabled_at: None,
-        })
+        }))
     }
 
     // Mock callbacks for signer
@@ -334,7 +335,7 @@ mod tests {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
             // Check that the error message contains "null"
-            let error_msg = unsafe { CStr::from_ptr(error.message) }.to_str().unwrap();
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(error_msg.contains("null"));
         }
 
@@ -515,7 +516,7 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
-            let error_msg = unsafe { CStr::from_ptr(error.message) }.to_str().unwrap();
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(error_msg.contains("Recipient ID is required"));
         }
 
