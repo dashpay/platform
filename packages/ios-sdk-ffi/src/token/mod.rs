@@ -24,9 +24,7 @@ pub mod unfreeze;
 pub mod purchase;
 pub mod set_price;
 
-pub mod info;
 mod queries;
-
 
 // Re-export all public functions for backward compatibility
 pub use burn::*;
@@ -35,14 +33,14 @@ pub use config_update::*;
 pub use destroy_frozen_funds::*;
 pub use emergency_action::*;
 pub use freeze::*;
-pub use unfreeze::*;
-pub use info::*;
 pub use mint::*;
 pub use purchase::*;
 pub use queries::balances::*;
-pub use set_price::*;
+pub use queries::info::*;
 pub use queries::status::*;
+pub use set_price::*;
 pub use transfer::*;
+pub use unfreeze::*;
 
 // Re-export common types
 pub use types::*;

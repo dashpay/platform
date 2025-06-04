@@ -1,20 +1,25 @@
-use std::ffi::CStr;
-use std::sync::Arc;
+use crate::sdk::SDKWrapper;
+use crate::token::utils::{
+    convert_state_transition_creation_options, extract_user_fee_increase,
+    parse_identifier_from_bytes, parse_optional_note, validate_contract_params,
+};
+use crate::{
+    FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKPutSettings, IOSSDKResult,
+    IOSSDKStateTransitionCreationOptions, IOSSDKTokenFreezeParams, SDKHandle, SignerHandle,
+};
 use dash_sdk::dpp::data_contract::TokenContractPosition;
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::platform::{Identifier, Identity, IdentityPublicKey};
 use dash_sdk::platform::tokens::builders::unfreeze::TokenUnfreezeTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::UnfreezeResult;
-use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKPutSettings, IOSSDKResult, IOSSDKStateTransitionCreationOptions, IOSSDKTokenFreezeParams, IdentityHandle, SDKHandle, SignerHandle};
-use crate::sdk::SDKWrapper;
-use crate::token::utils::{convert_state_transition_creation_options, extract_user_fee_increase, parse_optional_note, validate_contract_params};
+use dash_sdk::platform::{Identifier, IdentityPublicKey};
+use std::ffi::CStr;
+use std::sync::Arc;
 
 /// Unfreeze a token for an identity and wait for confirmation
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_token_unfreeze(
     sdk_handle: *mut SDKHandle,
-    unfreezer_identity_handle: *const IdentityHandle,
+    transition_owner_id: *const u8,
     params: *const IOSSDKTokenFreezeParams,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
@@ -23,7 +28,7 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
-        || unfreezer_identity_handle.is_null()
+        || transition_owner_id.is_null()
         || params.is_null()
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
@@ -35,13 +40,27 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
     }
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
-    let unfreezer_identity = &*(unfreezer_identity_handle as *const Identity);
+
+    // Convert transition_owner_id from bytes to Identifier (32 bytes)
+    let transition_owner_id = {
+        let id_bytes = std::slice::from_raw_parts(transition_owner_id, 32);
+        match Identifier::from_bytes(id_bytes) {
+            Ok(id) => id,
+            Err(e) => {
+                return IOSSDKResult::error(IOSSDKError::new(
+                    IOSSDKErrorCode::InvalidParameter,
+                    format!("Invalid transition owner ID: {}", e),
+                ))
+            }
+        }
+    };
+
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::IOSSigner);
     let params = &*params;
 
     // Validate contract parameters
-    let (has_contract_id, has_serialized_contract) = match validate_contract_params(
+    let has_serialized_contract = match validate_contract_params(
         params.token_contract_id,
         params.serialized_contract,
         params.serialized_contract_len,
@@ -58,21 +77,9 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
         ));
     }
 
-    let target_identity_id = {
-        let target_identity_id_str = match CStr::from_ptr(params.target_identity_id).to_str() {
-            Ok(s) => s,
-            Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
-        };
-
-        match Identifier::from_string(target_identity_id_str, Encoding::Base58) {
-            Ok(id) => id,
-            Err(e) => {
-                return IOSSDKResult::error(IOSSDKError::new(
-                    IOSSDKErrorCode::InvalidParameter,
-                    format!("Invalid target identity ID: {}", e),
-                ))
-            }
-        }
+    let target_identity_id = match parse_identifier_from_bytes(params.target_identity_id) {
+        Ok(id) => id,
+        Err(e) => return IOSSDKResult::error(e.into()),
     };
 
     // Parse optional public note
@@ -91,7 +98,7 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
         use dash_sdk::platform::Fetch;
         use dash_sdk::dpp::prelude::DataContract;
 
-        let data_contract = if has_contract_id {
+        let data_contract = if !has_serialized_contract {
             // Parse and fetch the contract ID
             let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
                 Ok(s) => s,
@@ -131,7 +138,7 @@ pub unsafe extern "C" fn ios_sdk_token_unfreeze(
         let mut builder = TokenUnfreezeTransitionBuilder::new(
             Arc::new(data_contract),
             params.token_position as TokenContractPosition,
-            unfreezer_identity.id(),
+            transition_owner_id,
             target_identity_id,
         );
 

@@ -1,23 +1,20 @@
 //! Token configuration update operations
 
-use super::types::{
-    IOSSDKTokenConfigUpdateParams, IOSSDKTokenConfigUpdateType,
-};
+use super::types::{IOSSDKTokenConfigUpdateParams, IOSSDKTokenConfigUpdateType};
 use super::utils::{
-    convert_state_transition_creation_options, extract_user_fee_increase, parse_optional_note,
-    validate_contract_params,
+    convert_state_transition_creation_options, extract_user_fee_increase,
+    parse_identifier_from_bytes, parse_optional_note, validate_contract_params,
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    IOSSDKPutSettings, IOSSDKStateTransitionCreationOptions, IdentityHandle, SDKHandle,
-    SignerHandle,
+    IOSSDKPutSettings, IOSSDKStateTransitionCreationOptions, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 use dash_sdk::dpp::balances::credits::TokenAmount;
+use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity};
+use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::ConfigUpdateResult;
 use dash_sdk::platform::IdentityPublicKey;
@@ -28,7 +25,7 @@ use std::sync::Arc;
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
     sdk_handle: *mut SDKHandle,
-    updater_identity_handle: *const IdentityHandle,
+    transition_owner_id: *const u8,
     params: *const IOSSDKTokenConfigUpdateParams,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
@@ -37,7 +34,7 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
-        || updater_identity_handle.is_null()
+        || transition_owner_id.is_null()
         || params.is_null()
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
@@ -49,13 +46,27 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
     }
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
-    let updater_identity = &*(updater_identity_handle as *const Identity);
+
+    // Convert transition_owner_id from bytes to Identifier (32 bytes)
+    let transition_owner_id = {
+        let id_bytes = std::slice::from_raw_parts(transition_owner_id, 32);
+        match Identifier::from_bytes(id_bytes) {
+            Ok(id) => id,
+            Err(e) => {
+                return IOSSDKResult::error(IOSSDKError::new(
+                    IOSSDKErrorCode::InvalidParameter,
+                    format!("Invalid transition owner ID: {}", e),
+                ))
+            }
+        }
+    };
+
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::IOSSigner);
     let params = &*params;
 
     // Validate contract parameters
-    let (has_contract_id, has_serialized_contract) = match validate_contract_params(
+    let has_serialized_contract = match validate_contract_params(
         params.token_contract_id,
         params.serialized_contract,
         params.serialized_contract_len,
@@ -74,19 +85,9 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
     let identity_id = if params.identity_id.is_null() {
         None
     } else {
-        let identity_id_str = match CStr::from_ptr(params.identity_id).to_str() {
-            Ok(s) => s,
-            Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
-        };
-
-        match Identifier::from_string(identity_id_str, Encoding::Base58) {
+        match parse_identifier_from_bytes(params.identity_id) {
             Ok(id) => Some(id),
-            Err(e) => {
-                return IOSSDKResult::error(IOSSDKError::new(
-                    IOSSDKErrorCode::InvalidParameter,
-                    format!("Invalid identity ID: {}", e),
-                ))
-            }
+            Err(e) => return IOSSDKResult::error(e.into()),
         }
     };
 
@@ -100,7 +101,7 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
         use dash_sdk::platform::Fetch;
         use dash_sdk::dpp::prelude::DataContract;
 
-        let data_contract = if has_contract_id {
+        let data_contract = if !has_serialized_contract {
             // Parse and fetch the contract ID
             let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
                 Ok(s) => s,
@@ -136,28 +137,21 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
             .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
-        // Create token config update transition builder
-        let mut builder = TokenConfigUpdateTransitionBuilder::new(
-            Arc::new(data_contract),
-            params.token_position as TokenContractPosition,
-            updater_identity.id(),
-        );
-
-        // Configure the update based on the update type
-        match params.update_type {
+        // Create the appropriate token configuration change item based on the update type
+        let update_item = match params.update_type {
             IOSSDKTokenConfigUpdateType::MaxSupply => {
-                builder = builder.with_max_supply_update(if params.amount == 0 {
+                TokenConfigurationChangeItem::MaxSupply(if params.amount == 0 {
                     None // 0 means unlimited
                 } else {
                     Some(params.amount as TokenAmount)
-                });
+                })
             }
             IOSSDKTokenConfigUpdateType::MintingAllowChoosingDestination => {
-                builder = builder.with_minting_allow_choosing_destination(params.bool_value);
+                TokenConfigurationChangeItem::MintingAllowChoosingDestination(params.bool_value)
             }
             IOSSDKTokenConfigUpdateType::NewTokensDestinationIdentity => {
                 if let Some(id) = identity_id {
-                    builder = builder.with_new_tokens_destination_identity(id);
+                    TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(id))
                 } else {
                     return Err(FFIError::InternalError(
                         "Identity ID required for NewTokensDestinationIdentity update".to_string()
@@ -165,7 +159,6 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
                 }
             }
             IOSSDKTokenConfigUpdateType::ManualMinting => {
-                // Convert FFI action takers to Rust type
                 // Note: This would need proper implementation based on the actual SDK types
                 // For now, return an error indicating this needs implementation
                 return Err(FFIError::InternalError(
@@ -188,12 +181,20 @@ pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
                 ));
             }
             IOSSDKTokenConfigUpdateType::MainControlGroup => {
-                builder = builder.with_main_control_group(params.group_position);
+                TokenConfigurationChangeItem::MainControlGroup(Some(params.group_position))
             }
             IOSSDKTokenConfigUpdateType::NoChange => {
-                // No change - builder remains as is
+                TokenConfigurationChangeItem::TokenConfigurationNoChange
             }
-        }
+        };
+
+        // Create token config update transition builder
+        let mut builder = TokenConfigUpdateTransitionBuilder::new(
+            Arc::new(data_contract),
+            params.token_position as TokenContractPosition,
+            transition_owner_id,
+            update_item,
+        );
 
         // Add optional public note
         if let Some(note) = public_note {

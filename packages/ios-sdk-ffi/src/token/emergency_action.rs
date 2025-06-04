@@ -7,14 +7,12 @@ use super::utils::{
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    IOSSDKPutSettings, IOSSDKStateTransitionCreationOptions, IdentityHandle, SDKHandle,
-    SignerHandle,
+    IOSSDKPutSettings, IOSSDKStateTransitionCreationOptions, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity};
+use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::EmergencyActionResult;
 use dash_sdk::platform::IdentityPublicKey;
@@ -25,7 +23,7 @@ use std::sync::Arc;
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_token_emergency_action(
     sdk_handle: *mut SDKHandle,
-    action_identity_handle: *const IdentityHandle,
+    transition_owner_id: *const u8,
     params: *const IOSSDKTokenEmergencyActionParams,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
@@ -34,7 +32,7 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
-        || action_identity_handle.is_null()
+        || transition_owner_id.is_null()
         || params.is_null()
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
@@ -46,13 +44,27 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
     }
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
-    let action_identity = &*(action_identity_handle as *const Identity);
+
+    // Convert transition_owner_id from bytes to Identifier (32 bytes)
+    let transition_owner_id = {
+        let id_bytes = std::slice::from_raw_parts(transition_owner_id, 32);
+        match Identifier::from_bytes(id_bytes) {
+            Ok(id) => id,
+            Err(e) => {
+                return IOSSDKResult::error(IOSSDKError::new(
+                    IOSSDKErrorCode::InvalidParameter,
+                    format!("Invalid transition owner ID: {}", e),
+                ))
+            }
+        }
+    };
+
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::IOSSigner);
     let params = &*params;
 
     // Validate contract parameters
-    let (has_contract_id, has_serialized_contract) = match validate_contract_params(
+    let has_serialized_contract = match validate_contract_params(
         params.token_contract_id,
         params.serialized_contract,
         params.serialized_contract_len,
@@ -77,7 +89,7 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
         use dash_sdk::platform::Fetch;
         use dash_sdk::dpp::prelude::DataContract;
 
-        let data_contract = if has_contract_id {
+        let data_contract = if !has_serialized_contract {
             // Parse and fetch the contract ID
             let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
                 Ok(s) => s,
@@ -113,22 +125,23 @@ pub unsafe extern "C" fn ios_sdk_token_emergency_action(
             .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
-        // Create token emergency action transition builder
-        let mut builder = TokenEmergencyActionTransitionBuilder::new(
-            Arc::new(data_contract),
-            params.token_position as TokenContractPosition,
-            action_identity.id(),
-        );
-
-        // Set the emergency action type
-        match params.action {
+        // Create token emergency action transition builder based on action type
+        let mut builder = match params.action {
             IOSSDKTokenEmergencyAction::Pause => {
-                builder = builder.with_pause_action();
+                TokenEmergencyActionTransitionBuilder::pause(
+                    Arc::new(data_contract),
+                    params.token_position as TokenContractPosition,
+                    transition_owner_id,
+                )
             }
             IOSSDKTokenEmergencyAction::Resume => {
-                builder = builder.with_resume_action();
+                TokenEmergencyActionTransitionBuilder::resume(
+                    Arc::new(data_contract),
+                    params.token_position as TokenContractPosition,
+                    transition_owner_id,
+                )
             }
-        }
+        };
 
         // Add optional public note
         if let Some(note) = public_note {

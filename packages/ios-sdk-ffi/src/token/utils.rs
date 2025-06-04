@@ -111,7 +111,7 @@ pub unsafe fn validate_contract_params(
     token_contract_id: *const c_char,
     serialized_contract: *const u8,
     serialized_contract_len: usize,
-) -> Result<(bool, bool), FFIError> {
+) -> Result<bool, FFIError> {
     let has_contract_id = !token_contract_id.is_null();
     let has_serialized_contract = !serialized_contract.is_null() && serialized_contract_len > 0;
 
@@ -127,7 +127,7 @@ pub unsafe fn validate_contract_params(
         ));
     }
 
-    Ok((has_contract_id, has_serialized_contract))
+    Ok(has_serialized_contract)
 }
 
 /// Parse optional public note from C string
@@ -150,4 +150,17 @@ pub unsafe fn parse_recipient_id(recipient_id_ptr: *const c_char) -> Result<Iden
 
     Identifier::from_string(recipient_id_str, Encoding::Base58)
         .map_err(|e| FFIError::InternalError(format!("Invalid recipient ID: {}", e)))
+}
+
+/// Parse identifier from raw bytes (32 bytes)
+pub unsafe fn parse_identifier_from_bytes(id_bytes: *const u8) -> Result<Identifier, FFIError> {
+    if id_bytes.is_null() {
+        return Err(FFIError::InternalError(
+            "Identifier bytes cannot be null".to_string(),
+        ));
+    }
+
+    let id_slice = std::slice::from_raw_parts(id_bytes, 32);
+    Identifier::from_bytes(id_slice)
+        .map_err(|e| FFIError::InternalError(format!("Invalid identifier: {}", e)))
 }

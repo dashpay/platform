@@ -2,20 +2,18 @@
 
 use super::types::IOSSDKTokenTransferParams;
 use super::utils::{
-    convert_state_transition_creation_options, extract_user_fee_increase, parse_optional_note,
-    parse_recipient_id, validate_contract_params,
+    convert_state_transition_creation_options, extract_user_fee_increase,
+    parse_identifier_from_bytes, parse_optional_note, validate_contract_params,
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    IOSSDKPutSettings, IOSSDKStateTransitionCreationOptions, IdentityHandle, SDKHandle,
-    SignerHandle,
+    IOSSDKPutSettings, IOSSDKStateTransitionCreationOptions, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity};
+use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::tokens::builders::transfer::TokenTransferTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::TransferResult;
 use dash_sdk::platform::IdentityPublicKey;
@@ -26,7 +24,7 @@ use std::sync::Arc;
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_token_transfer(
     sdk_handle: *mut SDKHandle,
-    sender_identity_handle: *const IdentityHandle,
+    transition_owner_id: *const u8,
     params: *const IOSSDKTokenTransferParams,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
@@ -35,7 +33,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
-        || sender_identity_handle.is_null()
+        || transition_owner_id.is_null()
         || params.is_null()
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
@@ -47,13 +45,24 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
     }
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
-    let sender_identity = &*(sender_identity_handle as *const Identity);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::IOSSigner);
     let params = &*params;
 
+    // Convert transition owner ID from bytes
+    let transition_owner_id_slice = std::slice::from_raw_parts(transition_owner_id, 32);
+    let sender_id = match Identifier::from_bytes(transition_owner_id_slice) {
+        Ok(id) => id,
+        Err(e) => {
+            return IOSSDKResult::error(IOSSDKError::new(
+                IOSSDKErrorCode::InvalidParameter,
+                format!("Invalid transition owner ID: {}", e),
+            ))
+        }
+    };
+
     // Validate contract parameters
-    let (has_contract_id, has_serialized_contract) = match validate_contract_params(
+    let has_serialized_contract = match validate_contract_params(
         params.token_contract_id,
         params.serialized_contract,
         params.serialized_contract_len,
@@ -70,7 +79,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
         ));
     }
 
-    let recipient_id = match parse_recipient_id(params.recipient_id) {
+    let recipient_id = match parse_identifier_from_bytes(params.recipient_id) {
         Ok(id) => id,
         Err(e) => return IOSSDKResult::error(e.into()),
     };
@@ -91,7 +100,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
         use dash_sdk::platform::Fetch;
         use dash_sdk::dpp::prelude::DataContract;
 
-        let data_contract = if has_contract_id {
+        let data_contract = if !has_serialized_contract {
             // Parse and fetch the contract ID
             let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
                 Ok(s) => s,
@@ -131,7 +140,7 @@ pub unsafe extern "C" fn ios_sdk_token_transfer(
         let mut builder = TokenTransferTransitionBuilder::new(
             Arc::new(data_contract),
             params.token_position as TokenContractPosition,
-            sender_identity.id(),
+            sender_id,
             recipient_id,
             params.amount as TokenAmount,
         );

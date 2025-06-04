@@ -13,8 +13,8 @@ pub struct IOSSDKTokenTransferParams {
     pub serialized_contract_len: usize,
     /// Token position in the contract (defaults to 0 if not specified)
     pub token_position: u16,
-    /// Recipient identity ID (Base58 encoded)
-    pub recipient_id: *const c_char,
+    /// Recipient identity ID (32 bytes)
+    pub recipient_id: *const u8,
     /// Amount to transfer
     pub amount: u64,
     /// Optional public note
@@ -36,8 +36,8 @@ pub struct IOSSDKTokenMintParams {
     pub serialized_contract_len: usize,
     /// Token position in the contract (defaults to 0 if not specified)
     pub token_position: u16,
-    /// Recipient identity ID (Base58 encoded)
-    pub recipient_id: *const c_char,
+    /// Recipient identity ID (32 bytes) - optional
+    pub recipient_id: *const u8,
     /// Amount to mint
     pub amount: u64,
     /// Optional public note
@@ -145,8 +145,8 @@ pub struct IOSSDKTokenConfigUpdateParams {
     pub amount: u64,
     /// For boolean updates like MintingAllowChoosingDestination
     pub bool_value: bool,
-    /// For identity-based updates - Base58 encoded identity ID
-    pub identity_id: *const c_char,
+    /// For identity-based updates - identity ID (32 bytes)
+    pub identity_id: *const u8,
     /// For group-based updates - the group position
     pub group_position: u16,
     /// For permission updates - the authorized action takers
@@ -193,8 +193,8 @@ pub struct IOSSDKTokenDestroyFrozenFundsParams {
     pub serialized_contract_len: usize,
     /// Token position in the contract (defaults to 0 if not specified)
     pub token_position: u16,
-    /// The frozen identity whose funds to destroy (Base58 encoded)
-    pub frozen_identity_id: *const c_char,
+    /// The frozen identity whose funds to destroy (32 bytes)
+    pub frozen_identity_id: *const u8,
     /// Optional public note
     pub public_note: *const c_char,
 }
@@ -210,8 +210,8 @@ pub struct IOSSDKTokenFreezeParams {
     pub serialized_contract_len: usize,
     /// Token position in the contract (defaults to 0 if not specified)
     pub token_position: u16,
-    /// The identity to freeze/unfreeze (Base58 encoded)
-    pub target_identity_id: *const c_char,
+    /// The identity to freeze/unfreeze (32 bytes)
+    pub target_identity_id: *const u8,
     /// Optional public note
     pub public_note: *const c_char,
 }
