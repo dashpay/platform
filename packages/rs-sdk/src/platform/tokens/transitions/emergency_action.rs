@@ -3,8 +3,8 @@
 //! This module provides functionality for executing emergency actions on tokens,
 //! typically requiring group authorization for critical interventions.
 
+use crate::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::emergency_action::TokenEmergencyActionTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -48,7 +48,7 @@ impl Sdk {
     /// - The group authorization is insufficient
     pub async fn token_emergency_action<S: Signer>(
         &self,
-        emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder<'_>,
+        emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<EmergencyActionResult, Error> {

@@ -1,6 +1,7 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::group::GroupStateTransitionInfoStatus;
@@ -12,47 +13,49 @@ use dpp::state_transition::batch_transition::methods::StateTransitionCreationOpt
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
-use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token change direct purchase price transitions
-pub struct TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token mint transitions
+pub struct TokenMintTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
-    actor_id: Identifier,
-    token_pricing_schedule: Option<TokenPricingSchedule>,
+    issuer_id: Identifier,
+    amount: TokenAmount,
+    recipient_id: Option<Identifier>,
     public_note: Option<String>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
-    /// Start building a change direct purchase price tokens request for the provided DataContract.
+impl TokenMintTransitionBuilder {
+    /// Start building a mint tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `issuer_id` - The identifier of the issuer
-    /// * `amount` - The amount of tokens to change direct purchase price
+    /// * `amount` - The amount of tokens to mint
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         issuer_id: Identifier,
-        token_pricing_schedule: Option<TokenPricingSchedule>,
+        amount: TokenAmount,
     ) -> Self {
         // TODO: Validate token position
 
         Self {
             data_contract,
             token_position,
-            actor_id: issuer_id,
-            token_pricing_schedule,
+            issuer_id,
+            amount,
+            recipient_id: None,
             public_note: None,
             settings: None,
             user_fee_increase: None,
@@ -60,7 +63,24 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
         }
     }
 
-    /// Adds a public note to the token change direct purchase price transition
+    /// Sets the recipient identity ID for the minted tokens
+    ///
+    /// # Arguments
+    ///
+    /// * `issued_to_id` - The identifier of the recipient
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn issued_to_identity_id(mut self, issued_to_id: Identifier) -> Self {
+        self.recipient_id = Some(issued_to_id);
+
+        // TODO: Validate with minting_allow_choosing_destination
+
+        self
+    }
+
+    /// Adds a public note to the token mint transition
     ///
     /// # Arguments
     ///
@@ -74,7 +94,7 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token change direct purchase price transition
+    /// Adds a user fee increase to the token mint transition
     ///
     /// # Arguments
     ///
@@ -88,7 +108,7 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token change direct purchase price transition
+    /// Adds group information to the token mint transition
     ///
     /// # Arguments
     ///
@@ -105,7 +125,7 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
         self
     }
 
-    /// Adds settings to the token change direct purchase price transition
+    /// Adds settings to the token mint transition
     ///
     /// # Arguments
     ///
@@ -119,7 +139,7 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token change direct purchase price transition
+    /// Signs the token mint transition
     ///
     /// # Arguments
     ///
@@ -146,19 +166,20 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
-                self.actor_id,
+                self.issuer_id,
                 self.data_contract.id(),
                 true,
                 self.settings,
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_change_direct_purchase_price_transition(
+        let state_transition = BatchTransition::new_token_mint_transition(
             token_id,
-            self.actor_id,
+            self.issuer_id,
             self.data_contract.id(),
             self.token_position,
-            self.token_pricing_schedule.clone(),
+            self.amount,
+            self.recipient_id,
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,

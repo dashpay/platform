@@ -3,8 +3,8 @@
 //! This module provides functionality to unfreeze previously frozen tokens,
 //! restoring their transfer capabilities.
 
+use crate::platform::tokens::builders::unfreeze::TokenUnfreezeTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::unfreeze::TokenUnfreezeTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -56,7 +56,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     pub async fn token_unfreeze_identity<S: Signer>(
         &self,
-        unfreeze_tokens_transition_builder: TokenUnfreezeTransitionBuilder<'_>,
+        unfreeze_tokens_transition_builder: TokenUnfreezeTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<UnfreezeResult, Error> {

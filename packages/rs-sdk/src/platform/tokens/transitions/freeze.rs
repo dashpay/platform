@@ -3,8 +3,8 @@
 //! This module provides functionality to freeze tokens, temporarily preventing
 //! their transfer or use until they are unfrozen.
 
+use crate::platform::tokens::builders::freeze::TokenFreezeTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::freeze::TokenFreezeTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -57,7 +57,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     pub async fn token_freeze<S: Signer>(
         &self,
-        freeze_tokens_transition_builder: TokenFreezeTransitionBuilder<'_>,
+        freeze_tokens_transition_builder: TokenFreezeTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<FreezeResult, Error> {

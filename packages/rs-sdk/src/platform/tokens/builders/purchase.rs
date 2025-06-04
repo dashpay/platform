@@ -1,9 +1,10 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
-use dpp::group::GroupStateTransitionInfoStatus;
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -13,37 +14,38 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token freeze transitions
-pub struct TokenFreezeTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token purchase transitions
+pub struct TokenDirectPurchaseTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
     actor_id: Identifier,
-    freeze_identity_id: Identifier,
-    public_note: Option<String>,
+    amount: TokenAmount,
+    total_agreed_price: Credits,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenFreezeTransitionBuilder<'a> {
-    /// Start building a mint tokens request for the provided DataContract.
+impl TokenDirectPurchaseTransitionBuilder {
+    /// Start building a purchase tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `actor_id` - The identifier of the actor
-    /// * `freeze_identity_id` - The identifier of the frozen identity
+    /// * `issuer_id` - The identifier of the issuer
+    /// * `amount` - The amount of tokens to purchase
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         actor_id: Identifier,
-        freeze_identity_id: Identifier,
+        amount: TokenAmount,
+        total_agreed_price: Credits,
     ) -> Self {
         // TODO: Validate token position
 
@@ -51,29 +53,14 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
             data_contract,
             token_position,
             actor_id,
-            freeze_identity_id,
-            public_note: None,
+            amount,
+            total_agreed_price,
             settings: None,
             user_fee_increase: None,
-            using_group_info: None,
         }
     }
 
-    /// Adds a public note to the token freeze transition
-    ///
-    /// # Arguments
-    ///
-    /// * `note` - The public note to add
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The updated builder
-    pub fn with_public_note(mut self, note: String) -> Self {
-        self.public_note = Some(note);
-        self
-    }
-
-    /// Adds a user fee increase to the token freeze transition
+    /// Adds a user fee increase to the token purchase transition
     ///
     /// # Arguments
     ///
@@ -87,24 +74,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token freeze transition
-    ///
-    /// # Arguments
-    ///
-    /// * `group_info` - The group information to add
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The updated builder
-    pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
-        self.using_group_info = Some(group_info);
-
-        // TODO: Simplify group actions automatically find position if group action is required
-
-        self
-    }
-
-    /// Adds settings to the token freeze transition
+    /// Adds settings to the token purchase transition
     ///
     /// # Arguments
     ///
@@ -118,7 +88,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token freeze transition
+    /// Signs the token purchase transition
     ///
     /// # Arguments
     ///
@@ -152,14 +122,13 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_freeze_transition(
+        let state_transition = BatchTransition::new_token_direct_purchase_transition(
             token_id,
             self.actor_id,
             self.data_contract.id(),
             self.token_position,
-            self.freeze_identity_id,
-            self.public_note.clone(),
-            self.using_group_info,
+            self.amount,
+            self.total_agreed_price,
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),

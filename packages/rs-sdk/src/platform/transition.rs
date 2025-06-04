@@ -17,4 +17,3 @@ pub mod waitable;
 pub mod withdraw_from_identity;
 
 pub use txid::TxId;
-pub mod fungible_tokens;

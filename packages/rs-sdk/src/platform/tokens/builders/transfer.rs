@@ -1,9 +1,9 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
-use dpp::group::GroupStateTransitionInfoStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -11,55 +11,79 @@ use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransiti
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
-use dpp::tokens::calculate_token_id;
+use dpp::tokens::{calculate_token_id, PrivateEncryptedNote, SharedEncryptedNote};
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token destroy funds transitions
-pub struct TokenDestroyFrozenFundsTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token transfer transitions
+pub struct TokenTransferTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
-    actor_id: Identifier,
-    frozen_identity_id: Identifier,
+    issuer_id: Identifier,
+    amount: TokenAmount,
+    recipient_id: Identifier,
     public_note: Option<String>,
+    shared_encrypted_note: Option<SharedEncryptedNote>,
+    private_encrypted_note: Option<PrivateEncryptedNote>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
+impl TokenTransferTransitionBuilder {
     /// Start building a mint tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `actor_id` - The identifier of the actor
-    /// * `frozen_identity_id` - The identifier of the frozen identity
+    /// * `sender_id` - The identifier of the sender
+    /// * `recipient_id` - The identifier of the recipient
+    /// * `amount` - The amount of tokens to transfer
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
-        actor_id: Identifier,
-        frozen_identity_id: Identifier,
+        sender_id: Identifier,
+        recipient_id: Identifier,
+        amount: TokenAmount,
     ) -> Self {
         // TODO: Validate token position
 
         Self {
             data_contract,
             token_position,
-            actor_id,
-            frozen_identity_id,
+            issuer_id: sender_id,
+            amount,
+            recipient_id,
             public_note: None,
             settings: None,
             user_fee_increase: None,
-            using_group_info: None,
+            private_encrypted_note: None,
+            shared_encrypted_note: None,
         }
     }
 
-    /// Adds a public note to the token destroy transition
+    /// Adds a shared encrypted note to the token transfer transition
+    ///
+    /// # Arguments
+    ///
+    /// * `shared_encrypted_note` - The shared encrypted note to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_shared_encrypted_note(
+        mut self,
+        shared_encrypted_note: SharedEncryptedNote,
+    ) -> Self {
+        self.shared_encrypted_note = Some(shared_encrypted_note);
+        self
+    }
+
+    /// Adds a public note to the token transfer transition
     ///
     /// # Arguments
     ///
@@ -73,7 +97,25 @@ impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token destroy transition
+    /// Adds a private encrypted note to the token transfer transition
+    ///
+    /// # Arguments
+    ///
+    /// * `private_encrypted_note` - The private encrypted note to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_private_encrypted_note(
+        mut self,
+        private_encrypted_note: PrivateEncryptedNote,
+    ) -> Self {
+        self.private_encrypted_note = Some(private_encrypted_note);
+
+        self
+    }
+
+    /// Adds a user fee increase to the token transfer transition
     ///
     /// # Arguments
     ///
@@ -87,24 +129,7 @@ impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token destroy transition
-    ///
-    /// # Arguments
-    ///
-    /// * `group_info` - The group information to add
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The updated builder
-    pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
-        self.using_group_info = Some(group_info);
-
-        // TODO: Simplify group actions automatically find position if group action is required
-
-        self
-    }
-
-    /// Adds settings to the token destroy transition
+    /// Adds settings to the token transfer transition
     ///
     /// # Arguments
     ///
@@ -118,7 +143,7 @@ impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token destroy transition
+    /// Signs the token transfer transition
     ///
     /// # Arguments
     ///
@@ -145,21 +170,23 @@ impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
-                self.actor_id,
+                self.issuer_id,
                 self.data_contract.id(),
                 true,
                 self.settings,
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
+        let state_transition = BatchTransition::new_token_transfer_transition(
             token_id,
-            self.actor_id,
+            self.issuer_id,
             self.data_contract.id(),
             self.token_position,
-            self.frozen_identity_id,
+            self.amount,
+            self.recipient_id,
             self.public_note.clone(),
-            self.using_group_info,
+            self.shared_encrypted_note.clone(),
+            self.private_encrypted_note.clone(),
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),

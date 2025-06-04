@@ -2,8 +2,8 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use dpp::data_contract::{DataContract, TokenContractPosition};
-use dpp::group::GroupStateTransitionInfoStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -13,53 +13,52 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token unfreeze transitions
-pub struct TokenUnfreezeTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token claim transitions
+pub struct TokenClaimTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
-    actor_id: Identifier,
-    unfreeze_identity_id: Identifier,
+    owner_id: Identifier,
+    distribution_type: TokenDistributionType,
     public_note: Option<String>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenUnfreezeTransitionBuilder<'a> {
-    /// Start building a mint tokens request for the provided DataContract.
+impl TokenClaimTransitionBuilder {
+    /// Start building a claim tokens transition for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `actor_id` - The identifier of the actor
-    /// * `unfreeze_identity_id` - The identifier of the identity to unfreeze
+    /// * `owner_id` - The identifier of the state transition owner
+    /// * `distribution_type` - The token distribution type
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
-        actor_id: Identifier,
-        unfreeze_identity_id: Identifier,
+        owner_id: Identifier,
+        distribution_type: TokenDistributionType,
     ) -> Self {
         // TODO: Validate token position
 
         Self {
             data_contract,
             token_position,
-            actor_id,
-            unfreeze_identity_id,
+            owner_id,
+            distribution_type,
             public_note: None,
             settings: None,
             user_fee_increase: None,
-            using_group_info: None,
         }
     }
 
-    /// Adds a public note to the token unfreeze transition
+    /// Adds a public note to the token claim transition
     ///
     /// # Arguments
     ///
@@ -73,7 +72,7 @@ impl<'a> TokenUnfreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token unfreeze transition
+    /// Adds a user fee increase to the token claim transition
     ///
     /// # Arguments
     ///
@@ -87,24 +86,7 @@ impl<'a> TokenUnfreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token unfreeze transition
-    ///
-    /// # Arguments
-    ///
-    /// * `group_info` - The group information to add
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The updated builder
-    pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
-        self.using_group_info = Some(group_info);
-
-        // TODO: Simplify group actions automatically find position if group action is required
-
-        self
-    }
-
-    /// Adds settings to the token unfreeze transition
+    /// Adds settings to the token claim transition
     ///
     /// # Arguments
     ///
@@ -118,7 +100,7 @@ impl<'a> TokenUnfreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token unfreeze transition
+    /// Signs the token claim transition
     ///
     /// # Arguments
     ///
@@ -145,21 +127,20 @@ impl<'a> TokenUnfreezeTransitionBuilder<'a> {
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
-                self.actor_id,
+                self.owner_id,
                 self.data_contract.id(),
                 true,
                 self.settings,
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_unfreeze_transition(
+        let state_transition = BatchTransition::new_token_claim_transition(
             token_id,
-            self.actor_id,
+            self.owner_id,
             self.data_contract.id(),
             self.token_position,
-            self.unfreeze_identity_id,
+            self.distribution_type,
             self.public_note.clone(),
-            self.using_group_info,
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),

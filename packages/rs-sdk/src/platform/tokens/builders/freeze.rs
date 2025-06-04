@@ -12,37 +12,39 @@ use dpp::state_transition::batch_transition::methods::StateTransitionCreationOpt
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
-use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast emergency action transitions
-pub struct TokenEmergencyActionTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token freeze transitions
+pub struct TokenFreezeTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
     actor_id: Identifier,
-    action: TokenEmergencyAction,
+    freeze_identity_id: Identifier,
     public_note: Option<String>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
-    /// Start building a pause tokens request for the provided DataContract.
+impl TokenFreezeTransitionBuilder {
+    /// Start building a mint tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `actor_id` - The identifier of the actor
+    /// * `freeze_identity_id` - The identifier of the frozen identity
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
-    pub fn pause(
-        data_contract: &'a DataContract,
+    pub fn new(
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         actor_id: Identifier,
+        freeze_identity_id: Identifier,
     ) -> Self {
         // TODO: Validate token position
 
@@ -50,7 +52,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
             data_contract,
             token_position,
             actor_id,
-            action: TokenEmergencyAction::Pause,
+            freeze_identity_id,
             public_note: None,
             settings: None,
             user_fee_increase: None,
@@ -58,37 +60,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         }
     }
 
-    /// Start building a resume tokens request for the provided DataContract.
-    ///
-    /// # Arguments
-    ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `token_position` - The position of the token in the contract
-    /// * `actor_id` - The identifier of the actor
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The new builder instance
-    pub fn resume(
-        data_contract: &'a DataContract,
-        token_position: TokenContractPosition,
-        actor_id: Identifier,
-    ) -> Self {
-        // TODO: Validate token position
-
-        Self {
-            data_contract,
-            token_position,
-            actor_id,
-            action: TokenEmergencyAction::Resume,
-            public_note: None,
-            settings: None,
-            user_fee_increase: None,
-            using_group_info: None,
-        }
-    }
-
-    /// Adds a public note to the token emergency action transition
+    /// Adds a public note to the token freeze transition
     ///
     /// # Arguments
     ///
@@ -102,7 +74,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token emergency action transition
+    /// Adds a user fee increase to the token freeze transition
     ///
     /// # Arguments
     ///
@@ -116,7 +88,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token emergency action transition
+    /// Adds group information to the token freeze transition
     ///
     /// # Arguments
     ///
@@ -133,7 +105,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         self
     }
 
-    /// Adds settings to the token emergency action transition
+    /// Adds settings to the token freeze transition
     ///
     /// # Arguments
     ///
@@ -147,7 +119,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token emergency action transition
+    /// Signs the token freeze transition
     ///
     /// # Arguments
     ///
@@ -181,12 +153,12 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_emergency_action_transition(
+        let state_transition = BatchTransition::new_token_freeze_transition(
             token_id,
             self.actor_id,
             self.data_contract.id(),
             self.token_position,
-            self.action,
+            self.freeze_identity_id,
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,

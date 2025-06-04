@@ -3,8 +3,8 @@
 //! This module provides functionality to set or update pricing schedules
 //! for tokens that can be purchased directly.
 
+use crate::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -62,7 +62,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     pub async fn token_set_price_for_direct_purchase<S: Signer>(
         &self,
-        set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder<'_>,
+        set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<SetPriceResult, Error> {

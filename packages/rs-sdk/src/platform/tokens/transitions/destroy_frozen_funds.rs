@@ -3,8 +3,8 @@
 //! This module provides functionality to permanently destroy frozen tokens,
 //! removing them from circulation entirely.
 
+use crate::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -48,7 +48,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     pub async fn token_destroy_frozen_funds<S: Signer>(
         &self,
-        destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder<'_>,
+        destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DestroyFrozenFundsResult, Error> {

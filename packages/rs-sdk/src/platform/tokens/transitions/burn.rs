@@ -3,8 +3,8 @@
 //! This module provides functionality to permanently remove tokens from
 //! circulation by burning them.
 
+use crate::platform::tokens::builders::burn::TokenBurnTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::burn::TokenBurnTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::group::GroupSumPower;
@@ -58,7 +58,7 @@ impl Sdk {
     /// - Insufficient token balance for burning
     pub async fn token_burn<S: Signer>(
         &self,
-        burn_tokens_transition_builder: TokenBurnTransitionBuilder<'_>,
+        burn_tokens_transition_builder: TokenBurnTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<BurnResult, Error> {

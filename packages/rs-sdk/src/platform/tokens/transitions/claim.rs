@@ -3,8 +3,8 @@
 //! This module provides functionality to claim ownership of tokens that have
 //! been allocated or made available for claiming.
 
+use crate::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::claim::TokenClaimTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -49,7 +49,7 @@ impl Sdk {
     /// - A group action result is missing the expected document
     pub async fn token_claim<S: Signer>(
         &self,
-        claim_tokens_transition_builder: TokenClaimTransitionBuilder<'_>,
+        claim_tokens_transition_builder: TokenClaimTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ClaimResult, Error> {

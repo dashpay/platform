@@ -1,7 +1,6 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
-use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::group::GroupStateTransitionInfoStatus;
@@ -14,47 +13,46 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token mint transitions
-pub struct TokenMintTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token destroy funds transitions
+pub struct TokenDestroyFrozenFundsTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
-    issuer_id: Identifier,
-    amount: TokenAmount,
-    recipient_id: Option<Identifier>,
+    actor_id: Identifier,
+    frozen_identity_id: Identifier,
     public_note: Option<String>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenMintTransitionBuilder<'a> {
+impl TokenDestroyFrozenFundsTransitionBuilder {
     /// Start building a mint tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `issuer_id` - The identifier of the issuer
-    /// * `amount` - The amount of tokens to mint
+    /// * `actor_id` - The identifier of the actor
+    /// * `frozen_identity_id` - The identifier of the frozen identity
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
-        issuer_id: Identifier,
-        amount: TokenAmount,
+        actor_id: Identifier,
+        frozen_identity_id: Identifier,
     ) -> Self {
         // TODO: Validate token position
 
         Self {
             data_contract,
             token_position,
-            issuer_id,
-            amount,
-            recipient_id: None,
+            actor_id,
+            frozen_identity_id,
             public_note: None,
             settings: None,
             user_fee_increase: None,
@@ -62,24 +60,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         }
     }
 
-    /// Sets the recipient identity ID for the minted tokens
-    ///
-    /// # Arguments
-    ///
-    /// * `issued_to_id` - The identifier of the recipient
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The updated builder
-    pub fn issued_to_identity_id(mut self, issued_to_id: Identifier) -> Self {
-        self.recipient_id = Some(issued_to_id);
-
-        // TODO: Validate with minting_allow_choosing_destination
-
-        self
-    }
-
-    /// Adds a public note to the token mint transition
+    /// Adds a public note to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -93,7 +74,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token mint transition
+    /// Adds a user fee increase to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -107,7 +88,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token mint transition
+    /// Adds group information to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -124,7 +105,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Adds settings to the token mint transition
+    /// Adds settings to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -138,7 +119,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token mint transition
+    /// Signs the token destroy transition
     ///
     /// # Arguments
     ///
@@ -165,20 +146,19 @@ impl<'a> TokenMintTransitionBuilder<'a> {
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
-                self.issuer_id,
+                self.actor_id,
                 self.data_contract.id(),
                 true,
                 self.settings,
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_mint_transition(
+        let state_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
             token_id,
-            self.issuer_id,
+            self.actor_id,
             self.data_contract.id(),
             self.token_position,
-            self.amount,
-            self.recipient_id,
+            self.frozen_identity_id,
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,

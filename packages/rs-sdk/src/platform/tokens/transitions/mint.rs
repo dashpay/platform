@@ -3,8 +3,8 @@
 //! This module provides functionality to mint new tokens, increasing the
 //! total supply of a token according to its configured minting rules.
 
+use crate::platform::tokens::builders::mint::TokenMintTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::mint::TokenMintTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::group::GroupSumPower;
@@ -57,7 +57,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     pub async fn token_mint<S: Signer>(
         &self,
-        mint_tokens_transition_builder: TokenMintTransitionBuilder<'_>,
+        mint_tokens_transition_builder: TokenMintTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<MintResult, Error> {

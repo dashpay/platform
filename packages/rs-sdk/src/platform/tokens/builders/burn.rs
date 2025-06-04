@@ -1,9 +1,10 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use dpp::data_contract::{DataContract, TokenContractPosition};
+use dpp::group::GroupStateTransitionInfoStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -13,51 +14,48 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token claim transitions
-pub struct TokenClaimTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token burn transitions
+pub struct TokenBurnTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
     owner_id: Identifier,
-    distribution_type: TokenDistributionType,
+    amount: TokenAmount,
     public_note: Option<String>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
+    using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenClaimTransitionBuilder<'a> {
-    /// Start building a claim tokens transition for the provided DataContract.
+impl TokenBurnTransitionBuilder {
+    /// Creates a new `TokenBurnTransitionBuilder`
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `owner_id` - The identifier of the state transition owner
-    /// * `distribution_type` - The token distribution type
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The new builder instance
+    /// * `owner_id` - The identifier of the token owner
+    /// * `amount` - The amount of tokens to burn
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         owner_id: Identifier,
-        distribution_type: TokenDistributionType,
+        amount: TokenAmount,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
             owner_id,
-            distribution_type,
+            amount,
             public_note: None,
             settings: None,
             user_fee_increase: None,
+            using_group_info: None,
         }
     }
 
-    /// Adds a public note to the token claim transition
+    /// Adds a public note to the token burn transition
     ///
     /// # Arguments
     ///
@@ -71,7 +69,7 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token claim transition
+    /// Adds a user fee increase to the token burn transition
     ///
     /// # Arguments
     ///
@@ -85,7 +83,21 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         self
     }
 
-    /// Adds settings to the token claim transition
+    /// Adds group information to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `group_info` - The group information to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
+        self.using_group_info = Some(group_info);
+        self
+    }
+
+    /// Adds settings to the token burn transition
     ///
     /// # Arguments
     ///
@@ -99,7 +111,7 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token claim transition
+    /// Signs the token burn transition
     ///
     /// # Arguments
     ///
@@ -133,13 +145,14 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_claim_transition(
+        let state_transition = BatchTransition::new_token_burn_transition(
             token_id,
             self.owner_id,
             self.data_contract.id(),
             self.token_position,
-            self.distribution_type,
+            self.amount,
             self.public_note.clone(),
+            self.using_group_info,
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),

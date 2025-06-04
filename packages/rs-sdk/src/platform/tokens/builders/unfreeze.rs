@@ -1,7 +1,6 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
-use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::group::GroupStateTransitionInfoStatus;
@@ -14,39 +13,46 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token burn transitions
-pub struct TokenBurnTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
+/// A builder to configure and broadcast token unfreeze transitions
+pub struct TokenUnfreezeTransitionBuilder {
+    data_contract: Arc<DataContract>,
     token_position: TokenContractPosition,
-    owner_id: Identifier,
-    amount: TokenAmount,
+    actor_id: Identifier,
+    unfreeze_identity_id: Identifier,
     public_note: Option<String>,
     settings: Option<PutSettings>,
     user_fee_increase: Option<UserFeeIncrease>,
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenBurnTransitionBuilder<'a> {
-    /// Creates a new `TokenBurnTransitionBuilder`
+impl TokenUnfreezeTransitionBuilder {
+    /// Start building a mint tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `owner_id` - The identifier of the token owner
-    /// * `amount` - The amount of tokens to burn
+    /// * `actor_id` - The identifier of the actor
+    /// * `unfreeze_identity_id` - The identifier of the identity to unfreeze
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
-        owner_id: Identifier,
-        amount: TokenAmount,
+        actor_id: Identifier,
+        unfreeze_identity_id: Identifier,
     ) -> Self {
+        // TODO: Validate token position
+
         Self {
             data_contract,
             token_position,
-            owner_id,
-            amount,
+            actor_id,
+            unfreeze_identity_id,
             public_note: None,
             settings: None,
             user_fee_increase: None,
@@ -54,7 +60,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         }
     }
 
-    /// Adds a public note to the token burn transition
+    /// Adds a public note to the token unfreeze transition
     ///
     /// # Arguments
     ///
@@ -68,7 +74,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token burn transition
+    /// Adds a user fee increase to the token unfreeze transition
     ///
     /// # Arguments
     ///
@@ -82,7 +88,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token burn transition
+    /// Adds group information to the token unfreeze transition
     ///
     /// # Arguments
     ///
@@ -93,10 +99,13 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
     /// * `Self` - The updated builder
     pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
         self.using_group_info = Some(group_info);
+
+        // TODO: Simplify group actions automatically find position if group action is required
+
         self
     }
 
-    /// Adds settings to the token burn transition
+    /// Adds settings to the token unfreeze transition
     ///
     /// # Arguments
     ///
@@ -110,7 +119,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token burn transition
+    /// Signs the token unfreeze transition
     ///
     /// # Arguments
     ///
@@ -137,19 +146,19 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
-                self.owner_id,
+                self.actor_id,
                 self.data_contract.id(),
                 true,
                 self.settings,
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_burn_transition(
+        let state_transition = BatchTransition::new_token_unfreeze_transition(
             token_id,
-            self.owner_id,
+            self.actor_id,
             self.data_contract.id(),
             self.token_position,
-            self.amount,
+            self.unfreeze_identity_id,
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,

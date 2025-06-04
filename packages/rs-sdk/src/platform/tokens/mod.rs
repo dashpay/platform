@@ -1,3 +1,4 @@
+pub mod builders;
 /// Identity token balances queries
 pub mod identity_token_balances;
 /// Identity token balances queries

@@ -3,8 +3,8 @@
 //! This module provides functionality to update token contract configuration
 //! settings after initial deployment.
 
+use crate::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::config_update::TokenConfigUpdateTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
@@ -50,7 +50,7 @@ impl Sdk {
     /// - A group action result is missing the expected document
     pub async fn token_update_contract_token_configuration<S: Signer>(
         &self,
-        config_update_transition_builder: TokenConfigUpdateTransitionBuilder<'_>,
+        config_update_transition_builder: TokenConfigUpdateTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ConfigUpdateResult, Error> {

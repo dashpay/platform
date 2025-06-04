@@ -3,8 +3,8 @@
 //! This module provides functionality to purchase tokens directly at
 //! previously set prices.
 
+use crate::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::purchase::TokenDirectPurchaseTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
 use dpp::identity::signer::Signer;
@@ -57,7 +57,7 @@ impl Sdk {
     /// - Insufficient credits for the purchase
     pub async fn token_purchase<S: Signer>(
         &self,
-        purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder<'_>,
+        purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DirectPurchaseResult, Error> {

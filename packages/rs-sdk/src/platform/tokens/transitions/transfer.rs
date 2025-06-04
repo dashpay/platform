@@ -3,8 +3,8 @@
 //! This module provides functionality to transfer tokens between identities
 //! on the Dash Platform.
 
+use crate::platform::tokens::builders::transfer::TokenTransferTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::fungible_tokens::transfer::TokenTransferTransitionBuilder;
 use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::group::GroupSumPower;
@@ -55,7 +55,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     pub async fn token_transfer<S: Signer>(
         &self,
-        transfer_tokens_transition_builder: TokenTransferTransitionBuilder<'_>,
+        transfer_tokens_transition_builder: TokenTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<TransferResult, Error> {
