@@ -3,7 +3,6 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
@@ -17,11 +16,12 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast document set price transitions
-pub struct DocumentSetPriceTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    document_type: DocumentType,
+pub struct DocumentSetPriceTransitionBuilder {
+    data_contract: Arc<DataContract>,
+    document_type_name: String,
     document: Document,
     price: Credits,
     token_payment_info: Option<TokenPaymentInfo>,
@@ -29,13 +29,13 @@ pub struct DocumentSetPriceTransitionBuilder<'a> {
     user_fee_increase: Option<UserFeeIncrease>,
 }
 
-impl<'a> DocumentSetPriceTransitionBuilder<'a> {
+impl DocumentSetPriceTransitionBuilder {
     /// Start building a set price document request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type
     /// * `document` - The document to update price for
     /// * `price` - The new price in credits
     ///
@@ -43,14 +43,14 @@ impl<'a> DocumentSetPriceTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document: Document,
         price: Credits,
     ) -> Self {
         Self {
             data_contract,
-            document_type,
+            document_type_name,
             document,
             price,
             token_payment_info: None,
@@ -63,8 +63,8 @@ impl<'a> DocumentSetPriceTransitionBuilder<'a> {
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type
     /// * `document_id` - The ID of the document
     /// * `owner_id` - The owner ID of the document
     /// * `price` - The new price in credits
@@ -73,8 +73,8 @@ impl<'a> DocumentSetPriceTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn from_document_info(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document_id: Identifier,
         owner_id: Identifier,
         price: Credits,
@@ -97,7 +97,7 @@ impl<'a> DocumentSetPriceTransitionBuilder<'a> {
             transferred_at_core_block_height: None,
         });
 
-        Self::new(data_contract, document_type, document, price)
+        Self::new(data_contract, document_type_name, document, price)
     }
 
     /// Adds token payment info to the document set price transition
@@ -172,9 +172,14 @@ impl<'a> DocumentSetPriceTransitionBuilder<'a> {
             )
             .await?;
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
         let state_transition = BatchTransition::new_document_update_price_transition_from_document(
             self.document.clone(),
-            self.document_type.as_ref(),
+            document_type,
             self.price,
             identity_public_key,
             identity_contract_nonce,
@@ -223,7 +228,7 @@ impl Sdk {
     /// - Invalid price value
     pub async fn document_set_price<S: Signer>(
         &self,
-        set_price_document_transition_builder: DocumentSetPriceTransitionBuilder<'_>,
+        set_price_document_transition_builder: DocumentSetPriceTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentSetPriceResult, Error> {

@@ -2,7 +2,6 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
@@ -15,11 +14,12 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast document create transitions
-pub struct DocumentCreateTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    document_type: DocumentType,
+pub struct DocumentCreateTransitionBuilder {
+    data_contract: Arc<DataContract>,
+    document_type_name: String,
     document: Document,
     document_state_transition_entropy: [u8; 32],
     token_payment_info: Option<TokenPaymentInfo>,
@@ -27,13 +27,13 @@ pub struct DocumentCreateTransitionBuilder<'a> {
     user_fee_increase: Option<UserFeeIncrease>,
 }
 
-impl<'a> DocumentCreateTransitionBuilder<'a> {
+impl DocumentCreateTransitionBuilder {
     /// Start building a create document request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type to create
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type to create
     /// * `document` - The document to create
     /// * `document_state_transition_entropy` - Entropy for the state transition
     ///
@@ -41,14 +41,14 @@ impl<'a> DocumentCreateTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document: Document,
         document_state_transition_entropy: [u8; 32],
     ) -> Self {
         Self {
             data_contract,
-            document_type,
+            document_type_name,
             document,
             document_state_transition_entropy,
             token_payment_info: None,
@@ -129,9 +129,14 @@ impl<'a> DocumentCreateTransitionBuilder<'a> {
             )
             .await?;
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
             self.document.clone(),
-            self.document_type.as_ref(),
+            document_type,
             self.document_state_transition_entropy,
             identity_public_key,
             identity_contract_nonce,
@@ -178,7 +183,7 @@ impl Sdk {
     /// - Document validation fails
     pub async fn document_create<S: Signer>(
         &self,
-        create_document_transition_builder: DocumentCreateTransitionBuilder<'_>,
+        create_document_transition_builder: DocumentCreateTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentCreateResult, Error> {

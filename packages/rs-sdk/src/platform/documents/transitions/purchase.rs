@@ -3,7 +3,6 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::Credits;
@@ -17,11 +16,12 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast document purchase transitions
-pub struct DocumentPurchaseTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    document_type: DocumentType,
+pub struct DocumentPurchaseTransitionBuilder {
+    data_contract: Arc<DataContract>,
+    document_type_name: String,
     document: Document,
     purchaser_id: Identifier,
     price: Credits,
@@ -30,13 +30,13 @@ pub struct DocumentPurchaseTransitionBuilder<'a> {
     user_fee_increase: Option<UserFeeIncrease>,
 }
 
-impl<'a> DocumentPurchaseTransitionBuilder<'a> {
+impl DocumentPurchaseTransitionBuilder {
     /// Start building a purchase document request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type
     /// * `document` - The document to purchase
     /// * `purchaser_id` - The identifier of the purchaser
     /// * `price` - The price to pay for the document
@@ -45,15 +45,15 @@ impl<'a> DocumentPurchaseTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document: Document,
         purchaser_id: Identifier,
         price: Credits,
     ) -> Self {
         Self {
             data_contract,
-            document_type,
+            document_type_name,
             document,
             purchaser_id,
             price,
@@ -67,8 +67,8 @@ impl<'a> DocumentPurchaseTransitionBuilder<'a> {
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type
     /// * `document_id` - The ID of the document
     /// * `current_owner_id` - The current owner ID of the document
     /// * `purchaser_id` - The identifier of the purchaser
@@ -78,8 +78,8 @@ impl<'a> DocumentPurchaseTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn from_document_info(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document_id: Identifier,
         current_owner_id: Identifier,
         purchaser_id: Identifier,
@@ -103,7 +103,13 @@ impl<'a> DocumentPurchaseTransitionBuilder<'a> {
             transferred_at_core_block_height: None,
         });
 
-        Self::new(data_contract, document_type, document, purchaser_id, price)
+        Self::new(
+            data_contract,
+            document_type_name,
+            document,
+            purchaser_id,
+            price,
+        )
     }
 
     /// Adds token payment info to the document purchase transition
@@ -178,9 +184,14 @@ impl<'a> DocumentPurchaseTransitionBuilder<'a> {
             )
             .await?;
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
         let state_transition = BatchTransition::new_document_purchase_transition_from_document(
             self.document.clone(),
-            self.document_type.as_ref(),
+            document_type,
             self.purchaser_id,
             self.price,
             identity_public_key,
@@ -232,7 +243,7 @@ impl Sdk {
     /// - Invalid purchaser identity
     pub async fn document_purchase<S: Signer>(
         &self,
-        purchase_document_transition_builder: DocumentPurchaseTransitionBuilder<'_>,
+        purchase_document_transition_builder: DocumentPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentPurchaseResult, Error> {

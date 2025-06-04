@@ -3,7 +3,6 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
@@ -16,11 +15,12 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast document transfer transitions
-pub struct DocumentTransferTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    document_type: DocumentType,
+pub struct DocumentTransferTransitionBuilder {
+    data_contract: Arc<DataContract>,
+    document_type_name: String,
     document: Document,
     recipient_id: Identifier,
     token_payment_info: Option<TokenPaymentInfo>,
@@ -28,13 +28,13 @@ pub struct DocumentTransferTransitionBuilder<'a> {
     user_fee_increase: Option<UserFeeIncrease>,
 }
 
-impl<'a> DocumentTransferTransitionBuilder<'a> {
+impl DocumentTransferTransitionBuilder {
     /// Start building a transfer document request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type
     /// * `document` - The document to transfer
     /// * `recipient_id` - The identifier of the recipient
     ///
@@ -42,14 +42,14 @@ impl<'a> DocumentTransferTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document: Document,
         recipient_id: Identifier,
     ) -> Self {
         Self {
             data_contract,
-            document_type,
+            document_type_name,
             document,
             recipient_id,
             token_payment_info: None,
@@ -62,8 +62,8 @@ impl<'a> DocumentTransferTransitionBuilder<'a> {
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type
     /// * `document_id` - The ID of the document
     /// * `owner_id` - The current owner ID of the document
     /// * `recipient_id` - The identifier of the recipient
@@ -72,8 +72,8 @@ impl<'a> DocumentTransferTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn from_document_info(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document_id: Identifier,
         owner_id: Identifier,
         recipient_id: Identifier,
@@ -96,7 +96,7 @@ impl<'a> DocumentTransferTransitionBuilder<'a> {
             transferred_at_core_block_height: None,
         });
 
-        Self::new(data_contract, document_type, document, recipient_id)
+        Self::new(data_contract, document_type_name, document, recipient_id)
     }
 
     /// Adds token payment info to the document transfer transition
@@ -171,9 +171,14 @@ impl<'a> DocumentTransferTransitionBuilder<'a> {
             )
             .await?;
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
         let state_transition = BatchTransition::new_document_transfer_transition_from_document(
             self.document.clone(),
-            self.document_type.as_ref(),
+            document_type,
             self.recipient_id,
             identity_public_key,
             identity_contract_nonce,
@@ -222,7 +227,7 @@ impl Sdk {
     /// - Invalid recipient identity
     pub async fn document_transfer<S: Signer>(
         &self,
-        transfer_document_transition_builder: DocumentTransferTransitionBuilder<'_>,
+        transfer_document_transition_builder: DocumentTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentTransferResult, Error> {

@@ -3,9 +3,8 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -16,11 +15,12 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast document delete transitions
-pub struct DocumentDeleteTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    document_type: DocumentType,
+pub struct DocumentDeleteTransitionBuilder {
+    data_contract: Arc<DataContract>,
+    document_type_name: String,
     document_id: Identifier,
     owner_id: Identifier,
     token_payment_info: Option<TokenPaymentInfo>,
@@ -28,13 +28,13 @@ pub struct DocumentDeleteTransitionBuilder<'a> {
     user_fee_increase: Option<UserFeeIncrease>,
 }
 
-impl<'a> DocumentDeleteTransitionBuilder<'a> {
+impl DocumentDeleteTransitionBuilder {
     /// Start building a delete document request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type to delete
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type to delete
     /// * `document_id` - The ID of the document to delete
     /// * `owner_id` - The owner ID of the document
     ///
@@ -42,14 +42,14 @@ impl<'a> DocumentDeleteTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document_id: Identifier,
         owner_id: Identifier,
     ) -> Self {
         Self {
             data_contract,
-            document_type,
+            document_type_name,
             document_id,
             owner_id,
             token_payment_info: None,
@@ -62,22 +62,22 @@ impl<'a> DocumentDeleteTransitionBuilder<'a> {
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
-    /// * `document_type` - The document type to delete
+    /// * `data_contract` - The data contract
+    /// * `document_type_name` - The name of the document type to delete
     /// * `document` - The document to delete
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn from_document(
-        data_contract: &'a DataContract,
-        document_type: DocumentType,
+        data_contract: Arc<DataContract>,
+        document_type_name: String,
         document: &Document,
     ) -> Self {
         use dpp::document::DocumentV0Getters;
         Self::new(
             data_contract,
-            document_type,
+            document_type_name,
             document.id(),
             document.owner_id(),
         )
@@ -155,12 +155,17 @@ impl<'a> DocumentDeleteTransitionBuilder<'a> {
             )
             .await?;
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
         // Create a minimal document for deletion
         let document = Document::V0(dpp::document::DocumentV0 {
             id: self.document_id,
             owner_id: self.owner_id,
             properties: Default::default(),
-            revision: Some(1), // Will be updated during transition
+            revision: Some(INITIAL_REVISION),
             created_at: None,
             updated_at: None,
             transferred_at: None,
@@ -174,7 +179,7 @@ impl<'a> DocumentDeleteTransitionBuilder<'a> {
 
         let state_transition = BatchTransition::new_document_deletion_transition_from_document(
             document,
-            self.document_type.as_ref(),
+            document_type,
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),
@@ -221,7 +226,7 @@ impl Sdk {
     /// - Insufficient permissions to delete the document
     pub async fn document_delete<S: Signer>(
         &self,
-        delete_document_transition_builder: DocumentDeleteTransitionBuilder<'_>,
+        delete_document_transition_builder: DocumentDeleteTransitionBuilder,
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
