@@ -1,0 +1,36 @@
+[package]
+name = "rs-sdk-ffi"
+version = "2.0.0-rc.14"
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+license = "MIT"
+description = "FFI bindings for Dash Platform SDK - C-compatible interface for cross-platform integration"
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+dash-sdk = { path = "../rs-sdk", features = ["mocks"] }
+
+# FFI and serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+
+# Async runtime
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }
+
+# Error handling
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+
+# System APIs
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.27"
+
+[dev-dependencies]
+hex = "0.4"
