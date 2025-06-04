@@ -189,7 +189,7 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
             ),
             (
                 "trade_mode_change_rules",
-                &self.marketplace_rules.trade_mode_change_rules(),
+                self.marketplace_rules.trade_mode_change_rules(),
             ),
             ("manual_minting_rules", &self.manual_minting_rules),
             ("manual_burning_rules", &self.manual_burning_rules),

@@ -14,25 +14,27 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast token change direct purchase price transitions
-pub struct TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    token_position: TokenContractPosition,
-    actor_id: Identifier,
-    token_pricing_schedule: Option<TokenPricingSchedule>,
-    public_note: Option<String>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
+pub struct TokenChangeDirectPurchasePriceTransitionBuilder {
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub actor_id: Identifier,
+    pub token_pricing_schedule: Option<TokenPricingSchedule>,
+    pub public_note: Option<String>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
-impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
+impl TokenChangeDirectPurchasePriceTransitionBuilder {
     /// Start building a change direct purchase price tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `issuer_id` - The identifier of the issuer
     /// * `amount` - The amount of tokens to change direct purchase price
@@ -41,13 +43,11 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         issuer_id: Identifier,
         token_pricing_schedule: Option<TokenPricingSchedule>,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -57,6 +57,7 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
+            state_transition_creation_options: None,
         }
     }
 
@@ -119,6 +120,23 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
         self
     }
 
+    /// Adds state transition creation options to the token change direct purchase price transition
+    ///
+    /// # Arguments
+    ///
+    /// * `state_transition_creation_options` - The state transition creation options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_state_transition_creation_options(
+        mut self,
+        state_transition_creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(state_transition_creation_options);
+        self
+    }
+
     /// Signs the token change direct purchase price transition
     ///
     /// # Arguments
@@ -132,12 +150,11 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -166,7 +183,7 @@ impl<'a> TokenChangeDirectPurchasePriceTransitionBuilder<'a> {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)
