@@ -18,13 +18,14 @@ use std::sync::Arc;
 
 /// A builder to configure and broadcast document create transitions
 pub struct DocumentCreateTransitionBuilder {
-    data_contract: Arc<DataContract>,
-    document_type_name: String,
-    document: Document,
-    document_state_transition_entropy: [u8; 32],
-    token_payment_info: Option<TokenPaymentInfo>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
+    pub data_contract: Arc<DataContract>,
+    pub document_type_name: String,
+    pub document: Document,
+    pub document_state_transition_entropy: [u8; 32],
+    pub token_payment_info: Option<TokenPaymentInfo>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
 impl DocumentCreateTransitionBuilder {
@@ -54,6 +55,7 @@ impl DocumentCreateTransitionBuilder {
             token_payment_info: None,
             settings: None,
             user_fee_increase: None,
+            state_transition_creation_options: None,
         }
     }
 
@@ -99,6 +101,23 @@ impl DocumentCreateTransitionBuilder {
         self
     }
 
+    /// Adds creation_options to the document create transition
+    ///
+    /// # Arguments
+    ///
+    /// * `settings` - The settings to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_state_transition_creation_options(
+        mut self,
+        creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(creation_options);
+        self
+    }
+
     /// Signs the document create transition
     ///
     /// # Arguments
@@ -118,7 +137,6 @@ impl DocumentCreateTransitionBuilder {
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
@@ -144,7 +162,7 @@ impl DocumentCreateTransitionBuilder {
             self.token_payment_info,
             signer,
             platform_version,
-            options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)
@@ -189,12 +207,14 @@ impl Sdk {
     ) -> Result<DocumentCreateResult, Error> {
         let platform_version = self.version();
 
+        let put_settings = create_document_transition_builder.settings;
+
         let state_transition = create_document_transition_builder
-            .sign(self, signing_key, signer, platform_version, None)
+            .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, None)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {
