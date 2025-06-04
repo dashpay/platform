@@ -3,7 +3,8 @@
 use crate::sdk::SDKWrapper;
 use crate::types::{
     DataContractHandle, DocumentHandle, IOSSDKDocumentInfo, IOSSDKGasFeesPaidBy, IOSSDKPutSettings,
-    IOSSDKResultDataType, IOSSDKTokenPaymentInfo, IdentityHandle, SDKHandle, SignerHandle,
+    IOSSDKResultDataType, IOSSDKStateTransitionCreationOptions, IOSSDKTokenPaymentInfo,
+    IdentityHandle, SDKHandle, SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -11,15 +12,23 @@ use dash_sdk::dpp::document::{document_factory::DocumentFactory, Document, Docum
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Value};
-use dash_sdk::dpp::prelude::{DataContract, Identifier, Identity};
+use dash_sdk::dpp::prelude::{DataContract, Identifier, Identity, UserFeeIncrease};
+use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dash_sdk::dpp::state_transition::StateTransitionSigningOptions;
 use dash_sdk::dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dash_sdk::dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
-use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
 use dash_sdk::platform::{DocumentQuery, Fetch, IdentityPublicKey};
+// FeatureVersion type import will be resolved by the compiler
+use dash_sdk::platform::documents::transitions::{
+    DocumentCreateTransitionBuilder, DocumentDeleteTransitionBuilder,
+    DocumentPurchaseTransitionBuilder, DocumentReplaceTransitionBuilder,
+    DocumentSetPriceTransitionBuilder, DocumentTransferTransitionBuilder,
+};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::sync::Arc;
 
 /// Convert FFI GasFeesPaidBy to Rust enum
 unsafe fn convert_gas_fees_paid_by(ffi_value: IOSSDKGasFeesPaidBy) -> GasFeesPaidBy {
@@ -66,6 +75,41 @@ unsafe fn convert_token_payment_info(
     };
 
     Ok(Some(TokenPaymentInfo::V0(token_payment_info_v0)))
+}
+
+/// Convert FFI StateTransitionCreationOptions to Rust StateTransitionCreationOptions
+unsafe fn convert_state_transition_creation_options(
+    ffi_options: *const IOSSDKStateTransitionCreationOptions,
+) -> Option<StateTransitionCreationOptions> {
+    if ffi_options.is_null() {
+        return None;
+    }
+
+    let options = &*ffi_options;
+
+    let signing_options = StateTransitionSigningOptions {
+        allow_signing_with_any_security_level: options.allow_signing_with_any_security_level,
+        allow_signing_with_any_purpose: options.allow_signing_with_any_purpose,
+    };
+
+    Some(StateTransitionCreationOptions {
+        signing_options,
+        batch_feature_version: if options.batch_feature_version == 0 {
+            None
+        } else {
+            Some(options.batch_feature_version)
+        },
+        method_feature_version: if options.method_feature_version == 0 {
+            None
+        } else {
+            Some(options.method_feature_version)
+        },
+        base_feature_version: if options.base_feature_version == 0 {
+            None
+        } else {
+            Some(options.base_feature_version)
+        },
+    })
 }
 
 /// Document creation parameters
@@ -197,27 +241,6 @@ pub unsafe extern "C" fn ios_sdk_document_create(
     }
 }
 
-/// Update an existing document
-#[no_mangle]
-pub unsafe extern "C" fn ios_sdk_document_update(
-    sdk_handle: *mut SDKHandle,
-    document_handle: *mut DocumentHandle,
-    properties_json: *const c_char,
-) -> *mut IOSSDKError {
-    if sdk_handle.is_null() || document_handle.is_null() || properties_json.is_null() {
-        return Box::into_raw(Box::new(IOSSDKError::new(
-            IOSSDKErrorCode::InvalidParameter,
-            "Invalid parameters".to_string(),
-        )));
-    }
-
-    // TODO: Implement document update
-    Box::into_raw(Box::new(IOSSDKError::new(
-        IOSSDKErrorCode::NotImplemented,
-        "Document update not yet implemented".to_string(),
-    )))
-}
-
 /// Fetch a document by ID
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_document_fetch(
@@ -312,11 +335,25 @@ pub unsafe extern "C" fn ios_sdk_document_destroy(
         )));
     }
 
-    // TODO: Implement document deletion via state transition
-    Box::into_raw(Box::new(IOSSDKError::new(
-        IOSSDKErrorCode::NotImplemented,
-        "Document deletion not yet implemented".to_string(),
-    )))
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let _document = &*(document_handle as *const Document);
+
+    let result: Result<(), FFIError> = wrapper.runtime.block_on(async {
+        // Use DocumentDeleteTransitionBuilder to delete the document
+        // We need to get the data contract and document type information
+        // This is a simplified implementation - in practice you might need more context
+
+        // For now, return not implemented as we need more context about the data contract
+        Err(FFIError::InternalError(
+            "Document deletion requires data contract context - use specific delete function"
+                .to_string(),
+        ))
+    });
+
+    match result {
+        Ok(_) => std::ptr::null_mut(),
+        Err(e) => Box::into_raw(Box::new(e.into())),
+    }
 }
 
 /// Get document information
@@ -377,6 +414,202 @@ pub unsafe extern "C" fn ios_sdk_document_get_info(
     Box::into_raw(Box::new(info))
 }
 
+/// Delete a document from the platform
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_delete(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
+) -> IOSSDKResult {
+    // Validate required parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
+
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
+
+        // Use the new DocumentDeleteTransitionBuilder
+        let mut builder = DocumentDeleteTransitionBuilder::from_document(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document,
+        );
+
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let state_transition = builder
+            .sign(
+                &wrapper.sdk,
+                identity_public_key,
+                signer,
+                wrapper.sdk.version(),
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to create delete transition: {}", e))
+            })?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Delete a document from the platform and wait for confirmation
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_delete_and_wait(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
+) -> IOSSDKResult {
+    // Validate required parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Identifier, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
+
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
+
+        // Use the new DocumentDeleteTransitionBuilder with SDK method
+        let mut builder = DocumentDeleteTransitionBuilder::from_document(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document,
+        );
+
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let result = wrapper
+            .sdk
+            .document_delete(builder, identity_public_key, signer)
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to delete document and wait: {}", e))
+            })?;
+
+        let deleted_id = match result {
+            dash_sdk::platform::documents::transitions::DocumentDeleteResult::Deleted(id) => id,
+        };
+
+        Ok(deleted_id)
+    });
+
+    match result {
+        Ok(_deleted_id) => IOSSDKResult::success(std::ptr::null_mut()),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
 /// Destroy a document handle
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_document_handle_destroy(handle: *mut DocumentHandle) {
@@ -397,6 +630,7 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate required parameters
     if sdk_handle.is_null()
@@ -429,31 +663,86 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform(
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Get document type from data contract
-        let document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let document_type_owned = document_type.to_owned_document_type();
-
-        // Put document to platform using the PutDocument trait
-        use dash_sdk::platform::transition::put_document::PutDocument;
-
-        let state_transition = document
-            .put_to_platform(
-                &wrapper.sdk,
-                document_type_owned,
+        // Use the new DocumentCreateTransitionBuilder or DocumentReplaceTransitionBuilder
+        let state_transition = if document.revision().unwrap_or(0) == 1 {
+            // Create transition for new documents
+            let mut builder = DocumentCreateTransitionBuilder::new(
+                Arc::new(data_contract.clone()),
+                document_type_name_str.to_string(),
+                document.clone(),
                 entropy_bytes,
-                identity_public_key.clone(),
-                token_payment_info_converted,
-                signer,
-                settings,
-            )
-            .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to put document to platform: {}", e))
-            })?;
+            );
+
+            if let Some(token_info) = token_payment_info_converted {
+                builder = builder.with_token_payment_info(token_info);
+            }
+
+            if let Some(settings) = settings {
+                builder = builder.with_settings(settings);
+            }
+
+            if user_fee_increase > 0 {
+                builder = builder.with_user_fee_increase(user_fee_increase);
+            }
+
+            if let Some(options) = creation_options {
+                builder = builder.with_state_transition_creation_options(options);
+            }
+
+            builder
+                .sign(
+                    &wrapper.sdk,
+                    identity_public_key,
+                    signer,
+                    wrapper.sdk.version(),
+                )
+                .await
+        } else {
+            // Replace transition for existing documents
+            let mut builder = DocumentReplaceTransitionBuilder::new(
+                Arc::new(data_contract.clone()),
+                document_type_name_str.to_string(),
+                document.clone(),
+            );
+
+            if let Some(token_info) = token_payment_info_converted {
+                builder = builder.with_token_payment_info(token_info);
+            }
+
+            if let Some(settings) = settings {
+                builder = builder.with_settings(settings);
+            }
+
+            if user_fee_increase > 0 {
+                builder = builder.with_user_fee_increase(user_fee_increase);
+            }
+
+            if let Some(options) = creation_options {
+                builder = builder.with_state_transition_creation_options(options);
+            }
+
+            builder
+                .sign(
+                    &wrapper.sdk,
+                    identity_public_key,
+                    signer,
+                    wrapper.sdk.version(),
+                )
+                .await
+        }
+        .map_err(|e| {
+            FFIError::InternalError(format!("Failed to create document transition: {}", e))
+        })?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -480,6 +769,7 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate required parameters
     if sdk_handle.is_null()
@@ -512,34 +802,93 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Get document type from data contract
-        let document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let document_type_owned = document_type.to_owned_document_type();
-
-        // Put document to platform and wait for response
-        use dash_sdk::platform::transition::put_document::PutDocument;
-
-        let confirmed_document = document
-            .put_to_platform_and_wait_for_response(
-                &wrapper.sdk,
-                document_type_owned,
+        // Use the new builder pattern and SDK methods
+        let confirmed_document = if document.revision().unwrap_or(0) == 1 {
+            // Create transition for new documents
+            let mut builder = DocumentCreateTransitionBuilder::new(
+                Arc::new(data_contract.clone()),
+                document_type_name_str.to_string(),
+                document.clone(),
                 entropy_bytes,
-                identity_public_key.clone(),
-                token_payment_info_converted,
-                signer,
-                settings,
-            )
-            .await
-            .map_err(|e| {
-                FFIError::InternalError(format!(
-                    "Failed to put document to platform and wait: {}",
-                    e
-                ))
-            })?;
+            );
+
+            if let Some(token_info) = token_payment_info_converted {
+                builder = builder.with_token_payment_info(token_info);
+            }
+
+            if let Some(settings) = settings {
+                builder = builder.with_settings(settings);
+            }
+
+            if user_fee_increase > 0 {
+                builder = builder.with_user_fee_increase(user_fee_increase);
+            }
+
+            if let Some(options) = creation_options {
+                builder = builder.with_state_transition_creation_options(options);
+            }
+
+            let result = wrapper
+                .sdk
+                .document_create(builder, identity_public_key, signer)
+                .await
+                .map_err(|e| {
+                    FFIError::InternalError(format!("Failed to create document and wait: {}", e))
+                })?;
+
+            match result {
+                dash_sdk::platform::documents::transitions::DocumentCreateResult::Document(doc) => {
+                    doc
+                }
+            }
+        } else {
+            // Replace transition for existing documents
+            let mut builder = DocumentReplaceTransitionBuilder::new(
+                Arc::new(data_contract.clone()),
+                document_type_name_str.to_string(),
+                document.clone(),
+            );
+
+            if let Some(token_info) = token_payment_info_converted {
+                builder = builder.with_token_payment_info(token_info);
+            }
+
+            if let Some(settings) = settings {
+                builder = builder.with_settings(settings);
+            }
+
+            if user_fee_increase > 0 {
+                builder = builder.with_user_fee_increase(user_fee_increase);
+            }
+
+            if let Some(options) = creation_options {
+                builder = builder.with_state_transition_creation_options(options);
+            }
+
+            let result = wrapper
+                .sdk
+                .document_replace(builder, identity_public_key, signer)
+                .await
+                .map_err(|e| {
+                    FFIError::InternalError(format!("Failed to replace document and wait: {}", e))
+                })?;
+
+            match result {
+                dash_sdk::platform::documents::transitions::DocumentReplaceResult::Document(
+                    doc,
+                ) => doc,
+            }
+        };
 
         Ok(confirmed_document)
     });
@@ -556,9 +905,211 @@ pub unsafe extern "C" fn ios_sdk_document_put_to_platform_and_wait(
     }
 }
 
+/// Replace document on platform (broadcast state transition)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_replace_on_platform(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
+) -> IOSSDKResult {
+    // Validate required parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
+
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
+
+        // Use the new DocumentReplaceTransitionBuilder
+        let mut builder = DocumentReplaceTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+        );
+
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let state_transition = builder
+            .sign(
+                &wrapper.sdk,
+                identity_public_key,
+                signer,
+                wrapper.sdk.version(),
+            )
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to create replace transition: {}", e))
+            })?;
+
+        // Serialize the state transition with bincode
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })
+    });
+
+    match result {
+        Ok(serialized_data) => IOSSDKResult::success_binary(serialized_data),
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
+/// Replace document on platform and wait for confirmation (broadcast state transition and wait for response)
+#[no_mangle]
+pub unsafe extern "C" fn ios_sdk_document_replace_on_platform_and_wait(
+    sdk_handle: *mut SDKHandle,
+    document_handle: *const DocumentHandle,
+    data_contract_handle: *const DataContractHandle,
+    document_type_name: *const c_char,
+    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    signer_handle: *const SignerHandle,
+    token_payment_info: *const IOSSDKTokenPaymentInfo,
+    put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
+) -> IOSSDKResult {
+    // Validate required parameters
+    if sdk_handle.is_null()
+        || document_handle.is_null()
+        || data_contract_handle.is_null()
+        || document_type_name.is_null()
+        || identity_public_key_handle.is_null()
+        || signer_handle.is_null()
+    {
+        return IOSSDKResult::error(IOSSDKError::new(
+            IOSSDKErrorCode::InvalidParameter,
+            "One or more required parameters is null".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let document = &*(document_handle as *const Document);
+    let data_contract = &*(data_contract_handle as *const DataContract);
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
+    let signer = &*(signer_handle as *const super::signer::IOSSigner);
+
+    let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
+        Ok(s) => s,
+        Err(e) => return IOSSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Convert FFI types to Rust types
+        let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
+        let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
+
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
+
+        // Use the new DocumentReplaceTransitionBuilder with SDK method
+        let mut builder = DocumentReplaceTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+        );
+
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let result = wrapper
+            .sdk
+            .document_replace(builder, identity_public_key, signer)
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to replace document and wait: {}", e))
+            })?;
+
+        let replaced_document = match result {
+            dash_sdk::platform::documents::transitions::DocumentReplaceResult::Document(doc) => doc,
+        };
+
+        Ok(replaced_document)
+    });
+
+    match result {
+        Ok(replaced_document) => {
+            let handle = Box::into_raw(Box::new(replaced_document)) as *mut DocumentHandle;
+            IOSSDKResult::success_handle(
+                handle as *mut std::os::raw::c_void,
+                IOSSDKResultDataType::DocumentHandle,
+            )
+        }
+        Err(e) => IOSSDKResult::error(e.into()),
+    }
+}
+
 /// Purchase document (broadcast state transition)
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
+pub unsafe extern "C" fn ios_sdk_document_purchase(
     sdk_handle: *mut SDKHandle,
     document_handle: *const DocumentHandle,
     data_contract_handle: *const DataContractHandle,
@@ -569,6 +1120,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -615,30 +1167,52 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Get document type from data contract
-        let document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let document_type_owned = document_type.to_owned_document_type();
+        // Use the new DocumentPurchaseTransitionBuilder
+        let mut builder = DocumentPurchaseTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+            purchaser_id,
+            price,
+        );
 
-        // Purchase document using the PurchaseDocument trait
-        use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
 
-        let state_transition = document
-            .purchase_document(
-                price,
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let state_transition = builder
+            .sign(
                 &wrapper.sdk,
-                document_type_owned,
-                purchaser_id,
-                identity_public_key.clone(),
-                token_payment_info_converted,
+                identity_public_key,
                 signer,
-                settings,
+                wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to purchase document: {}", e)))?;
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to create purchase transition: {}", e))
+            })?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -655,7 +1229,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform(
 
 /// Purchase document and wait for confirmation (broadcast state transition and wait for response)
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
+pub unsafe extern "C" fn ios_sdk_document_purchase_and_wait(
     sdk_handle: *mut SDKHandle,
     document_handle: *const DocumentHandle,
     data_contract_handle: *const DataContractHandle,
@@ -666,6 +1240,7 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -712,32 +1287,54 @@ pub unsafe extern "C" fn ios_sdk_document_purchase_to_platform_and_wait(
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Get document type from data contract
-        let document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let document_type_owned = document_type.to_owned_document_type();
+        // Use the new DocumentPurchaseTransitionBuilder with SDK method
+        let mut builder = DocumentPurchaseTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+            purchaser_id,
+            price,
+        );
 
-        // Purchase document and wait for response
-        use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
 
-        let purchased_document = document
-            .purchase_document_and_wait_for_response(
-                price,
-                &wrapper.sdk,
-                document_type_owned,
-                purchaser_id,
-                identity_public_key.clone(),
-                token_payment_info_converted,
-                signer,
-                settings,
-            )
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let result = wrapper
+            .sdk
+            .document_purchase(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to purchase document and wait: {}", e))
             })?;
+
+        let purchased_document = match result {
+            dash_sdk::platform::documents::transitions::DocumentPurchaseResult::Document(doc) => {
+                doc
+            }
+        };
 
         Ok(purchased_document)
     });
@@ -778,7 +1375,8 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -824,37 +1422,59 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity(
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
-
-        // Get document type from the contract
-        let document_type = data_contract
-            .document_types()
-            .get(document_type_name_str)
-            .ok_or_else(|| {
-                FFIError::InternalError(format!(
-                    "Document type '{}' not found",
-                    document_type_name_str
-                ))
-            })?
-            .clone();
-
-        // Convert settings
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Use TransferDocument trait to transfer document
-        use dash_sdk::platform::transition::transfer_document::TransferDocument;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let state_transition = document
-            .transfer_document_to_identity(
-                recipient_identifier,
+        // Get document type from data contract
+        let _document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let _document_type_owned = _document_type.to_owned_document_type();
+
+        // Use the new DocumentTransferTransitionBuilder
+        let mut builder = DocumentTransferTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+            recipient_identifier,
+        );
+
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let state_transition = builder
+            .sign(
                 &wrapper.sdk,
-                document_type,
-                identity_public_key.clone(),
-                token_payment_info_converted,
+                identity_public_key,
                 signer,
-                settings,
+                wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to transfer document: {}", e)))?;
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to create transfer transition: {}", e))
+            })?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -893,7 +1513,8 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
-    put_settings: *const crate::types::IOSSDKPutSettings,
+    put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate parameters
     if sdk_handle.is_null()
@@ -939,39 +1560,61 @@ pub unsafe extern "C" fn ios_sdk_document_transfer_to_identity_and_wait(
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
-
-        // Get document type from the contract
-        let document_type = data_contract
-            .document_types()
-            .get(document_type_name_str)
-            .ok_or_else(|| {
-                FFIError::InternalError(format!(
-                    "Document type '{}' not found",
-                    document_type_name_str
-                ))
-            })?
-            .clone();
-
-        // Convert settings
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Use TransferDocument trait to transfer document and wait
-        use dash_sdk::platform::transition::transfer_document::TransferDocument;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let transferred_document = document
-            .transfer_document_to_identity_and_wait_for_response(
-                recipient_identifier,
-                &wrapper.sdk,
-                document_type,
-                identity_public_key.clone(),
-                token_payment_info_converted,
-                signer,
-                settings,
-            )
+        // Get document type from data contract
+        let _document_type = data_contract
+            .document_type_for_name(document_type_name_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+
+        let _document_type_owned = _document_type.to_owned_document_type();
+
+        // Use the new DocumentTransferTransitionBuilder with SDK method
+        let mut builder = DocumentTransferTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+            recipient_identifier,
+        );
+
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let result = wrapper
+            .sdk
+            .document_transfer(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to transfer document and wait: {}", e))
             })?;
+
+        let transferred_document = match result {
+            dash_sdk::platform::documents::transitions::DocumentTransferResult::Document(doc) => {
+                doc
+            }
+        };
 
         Ok(transferred_document)
     });
@@ -1000,6 +1643,7 @@ pub unsafe extern "C" fn ios_sdk_document_update_price_of_document(
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate required parameters
     if sdk_handle.is_null()
@@ -1030,28 +1674,50 @@ pub unsafe extern "C" fn ios_sdk_document_update_price_of_document(
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Get document type from data contract
-        let document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let document_type_owned = document_type.to_owned_document_type();
+        // Use the new DocumentSetPriceTransitionBuilder
+        let mut builder = DocumentSetPriceTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+            price as Credits,
+        );
 
-        // Update document price using the UpdatePriceOfDocument trait
-        let state_transition = document
-            .update_price_of_document(
-                price as Credits,
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let state_transition = builder
+            .sign(
                 &wrapper.sdk,
-                document_type_owned,
-                identity_public_key.clone(),
-                token_payment_info_converted,
+                identity_public_key,
                 signer,
-                settings,
+                wrapper.sdk.version(),
             )
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to update document price: {}", e))
+                FFIError::InternalError(format!("Failed to create set price transition: {}", e))
             })?;
 
         // Serialize the state transition with bincode
@@ -1079,6 +1745,7 @@ pub unsafe extern "C" fn ios_sdk_document_update_price_of_document_and_wait(
     signer_handle: *const SignerHandle,
     token_payment_info: *const IOSSDKTokenPaymentInfo,
     put_settings: *const IOSSDKPutSettings,
+    state_transition_creation_options: *const IOSSDKStateTransitionCreationOptions,
 ) -> IOSSDKResult {
     // Validate required parameters
     if sdk_handle.is_null()
@@ -1109,29 +1776,53 @@ pub unsafe extern "C" fn ios_sdk_document_update_price_of_document_and_wait(
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
+        let creation_options =
+            convert_state_transition_creation_options(state_transition_creation_options);
 
-        // Get document type from data contract
-        let document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
+        // Extract user fee increase from put_settings or use default
+        let user_fee_increase: UserFeeIncrease = if put_settings.is_null() {
+            0
+        } else {
+            (*put_settings).user_fee_increase
+        };
 
-        let document_type_owned = document_type.to_owned_document_type();
+        // Use the new DocumentSetPriceTransitionBuilder with SDK method
+        let mut builder = DocumentSetPriceTransitionBuilder::new(
+            Arc::new(data_contract.clone()),
+            document_type_name_str.to_string(),
+            document.clone(),
+            price as Credits,
+        );
 
-        // Update document price and wait for response
-        let updated_document = document
-            .update_price_of_document_and_wait_for_response(
-                price as Credits,
-                &wrapper.sdk,
-                document_type_owned,
-                identity_public_key.clone(),
-                token_payment_info_converted,
-                signer,
-                settings,
-            )
+        if let Some(token_info) = token_payment_info_converted {
+            builder = builder.with_token_payment_info(token_info);
+        }
+
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        if let Some(options) = creation_options {
+            builder = builder.with_state_transition_creation_options(options);
+        }
+
+        let result = wrapper
+            .sdk
+            .document_set_price(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to update document price and wait: {}", e))
             })?;
+
+        let updated_document = match result {
+            dash_sdk::platform::documents::transitions::DocumentSetPriceResult::Document(doc) => {
+                doc
+            }
+        };
 
         Ok(updated_document)
     });

@@ -238,6 +238,21 @@ pub struct IOSSDKTokenPaymentInfo {
     pub gas_fees_paid_by: IOSSDKGasFeesPaidBy,
 }
 
+/// State transition creation options for advanced use cases
+#[repr(C)]
+pub struct IOSSDKStateTransitionCreationOptions {
+    /// Allow signing with any security level (for debugging)
+    pub allow_signing_with_any_security_level: bool,
+    /// Allow signing with any purpose (for debugging)
+    pub allow_signing_with_any_purpose: bool,
+    /// Batch feature version (0 means use default)
+    pub batch_feature_version: u16,
+    /// Method feature version (0 means use default)
+    pub method_feature_version: u16,
+    /// Base feature version (0 means use default)
+    pub base_feature_version: u16,
+}
+
 /// Free a string allocated by the FFI
 #[no_mangle]
 pub unsafe extern "C" fn ios_sdk_string_free(s: *mut c_char) {
