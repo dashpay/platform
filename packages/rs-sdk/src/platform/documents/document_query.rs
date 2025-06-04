@@ -27,7 +27,7 @@ use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
-use super::fetch::Fetch;
+use crate::platform::Fetch;
 
 // TODO: remove DocumentQuery once ContextProvider that provides data contracts is merged.
 
