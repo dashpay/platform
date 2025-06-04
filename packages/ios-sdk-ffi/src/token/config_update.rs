@@ -1,7 +1,7 @@
 //! Token configuration update operations
 
 use super::types::{
-    IOSSDKAuthorizedActionTakers, IOSSDKTokenConfigUpdateParams, IOSSDKTokenConfigUpdateType,
+    IOSSDKTokenConfigUpdateParams, IOSSDKTokenConfigUpdateType,
 };
 use super::utils::{
     convert_state_transition_creation_options, extract_user_fee_increase, parse_optional_note,
@@ -17,17 +17,16 @@ use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::ConfigUpdateResult;
 use dash_sdk::platform::IdentityPublicKey;
 use std::ffi::CStr;
-use std::os::raw::c_char;
 use std::sync::Arc;
 
 /// Update token configuration and wait for confirmation
 #[no_mangle]
-pub unsafe extern "C" fn ios_sdk_token_config_update(
+pub unsafe extern "C" fn ios_sdk_token_update_contract_token_configuration(
     sdk_handle: *mut SDKHandle,
     updater_identity_handle: *const IdentityHandle,
     params: *const IOSSDKTokenConfigUpdateParams,
@@ -219,7 +218,7 @@ pub unsafe extern "C" fn ios_sdk_token_config_update(
         // Use SDK method to update config and wait
         let result = wrapper
             .sdk
-            .token_config_update(builder, identity_public_key, signer)
+            .token_update_contract_token_configuration(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to update token config and wait: {}", e))

@@ -11,16 +11,14 @@ use crate::types::{
     SignerHandle,
 };
 use crate::{FFIError, IOSSDKError, IOSSDKErrorCode, IOSSDKResult};
-use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::EmergencyActionResult;
 use dash_sdk::platform::IdentityPublicKey;
 use std::ffi::CStr;
-use std::os::raw::c_char;
 use std::sync::Arc;
 
 /// Perform emergency action on token and wait for confirmation

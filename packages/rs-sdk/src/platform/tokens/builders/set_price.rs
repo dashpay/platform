@@ -1,11 +1,13 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
+use dpp::balances::credits::Credits;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::group::GroupStateTransitionInfoStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::balances::credits::TokenAmount;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -14,6 +16,7 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// A builder to configure and broadcast token change direct purchase price transitions
@@ -37,7 +40,6 @@ impl TokenChangeDirectPurchasePriceTransitionBuilder {
     /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `issuer_id` - The identifier of the issuer
-    /// * `amount` - The amount of tokens to change direct purchase price
     ///
     /// # Returns
     ///
@@ -46,19 +48,61 @@ impl TokenChangeDirectPurchasePriceTransitionBuilder {
         data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         issuer_id: Identifier,
-        token_pricing_schedule: Option<TokenPricingSchedule>,
     ) -> Self {
         Self {
             data_contract,
             token_position,
             actor_id: issuer_id,
-            token_pricing_schedule,
+            token_pricing_schedule: None,
             public_note: None,
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
             state_transition_creation_options: None,
         }
+    }
+
+    /// Sets a single price for all token amounts
+    ///
+    /// # Arguments
+    ///
+    /// * `price` - The price in credits for any token amount
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_single_price(mut self, price: Credits) -> Self {
+        self.token_pricing_schedule = Some(TokenPricingSchedule::SinglePrice(price));
+        self
+    }
+
+    /// Sets tiered pricing based on token amounts
+    ///
+    /// # Arguments
+    ///
+    /// * `price_entries` - A vector of (token_amount, price_in_credits) tuples
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_price_entries(mut self, price_entries: Vec<(TokenAmount, Credits)>) -> Self {
+        let price_map: BTreeMap<TokenAmount, Credits> = price_entries.into_iter().collect();
+        self.token_pricing_schedule = Some(TokenPricingSchedule::SetPrices(price_map));
+        self
+    }
+
+    /// Sets the token pricing schedule directly
+    ///
+    /// # Arguments
+    ///
+    /// * `pricing_schedule` - The complete pricing schedule
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_token_pricing_schedule(mut self, pricing_schedule: TokenPricingSchedule) -> Self {
+        self.token_pricing_schedule = Some(pricing_schedule);
+        self
     }
 
     /// Adds a public note to the token change direct purchase price transition

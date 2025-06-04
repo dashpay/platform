@@ -1,6 +1,6 @@
 //! Token price setting operations
 
-use super::types::{IOSSDKTokenPriceEntry, IOSSDKTokenPricingType, IOSSDKTokenSetPriceParams};
+use super::types::{IOSSDKTokenPricingType, IOSSDKTokenSetPriceParams};
 use super::utils::{
     convert_state_transition_creation_options, extract_user_fee_increase, parse_optional_note,
     validate_contract_params,
@@ -15,12 +15,11 @@ use dash_sdk::dpp::balances::credits::{Credits, TokenAmount};
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity, UserFeeIncrease};
-use dash_sdk::platform::tokens::builders::set_price::TokenSetPriceTransitionBuilder;
+use dash_sdk::dpp::prelude::{Identifier, Identity};
+use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::SetPriceResult;
 use dash_sdk::platform::IdentityPublicKey;
 use std::ffi::CStr;
-use std::os::raw::c_char;
 use std::sync::Arc;
 
 /// Set token price for direct purchase and wait for confirmation
@@ -136,7 +135,7 @@ pub unsafe extern "C" fn ios_sdk_token_set_price(
         };
 
         // Create token set price transition builder
-        let mut builder = TokenSetPriceTransitionBuilder::new(
+        let mut builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
             Arc::new(data_contract),
             params.token_position as TokenContractPosition,
             setter_identity.id(),
@@ -193,7 +192,7 @@ pub unsafe extern "C" fn ios_sdk_token_set_price(
         // Use SDK method to set price and wait
         let result = wrapper
             .sdk
-            .token_set_price(builder, identity_public_key, signer)
+            .token_set_price_for_direct_purchase(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to set token price and wait: {}", e))

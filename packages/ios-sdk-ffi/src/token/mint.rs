@@ -15,12 +15,11 @@ use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::MintResult;
 use dash_sdk::platform::IdentityPublicKey;
 use std::ffi::CStr;
-use std::os::raw::c_char;
 use std::sync::Arc;
 
 /// Mint tokens to an identity and wait for confirmation
