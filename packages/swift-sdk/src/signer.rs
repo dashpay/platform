@@ -1,6 +1,6 @@
 /// Create a test signer for development/testing purposes
 #[no_mangle]
-pub extern "C" fn swift_dash_signer_create_test() -> *mut ios_sdk_ffi::SignerHandle {
+pub extern "C" fn swift_dash_signer_create_test() -> *mut rs_sdk_ffi::SignerHandle {
     unsafe extern "C" fn test_sign_callback(
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
@@ -27,13 +27,13 @@ pub extern "C" fn swift_dash_signer_create_test() -> *mut ios_sdk_ffi::SignerHan
         true // Can always sign in test mode
     }
 
-    unsafe { ios_sdk_ffi::ios_sdk_signer_create(test_sign_callback, test_can_sign_callback) }
+    unsafe { rs_sdk_ffi::ios_sdk_signer_create(test_sign_callback, test_can_sign_callback) }
 }
 
 /// Destroy a signer
 #[no_mangle]
-pub unsafe extern "C" fn swift_dash_signer_destroy(handle: *mut ios_sdk_ffi::SignerHandle) {
+pub unsafe extern "C" fn swift_dash_signer_destroy(handle: *mut rs_sdk_ffi::SignerHandle) {
     if !handle.is_null() {
-        ios_sdk_ffi::ios_sdk_signer_destroy(handle);
+        rs_sdk_ffi::ios_sdk_signer_destroy(handle);
     }
 }

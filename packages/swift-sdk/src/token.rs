@@ -1,7 +1,7 @@
 //! Token operations for Swift SDK
 //!
 //! This module provides Swift-friendly wrappers for token operations
-//! available in the ios-sdk-ffi crate.
+//! available in the rs-sdk-ffi crate.
 
 use std::os::raw::c_char;
 
@@ -67,14 +67,14 @@ pub struct SwiftDashTokenClaimParams {
 /// Transfer tokens between identities
 #[no_mangle]
 pub extern "C" fn swift_dash_token_transfer(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    sender_identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    sender_identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenTransferParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenTransferParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenTransferParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -87,7 +87,7 @@ pub extern "C" fn swift_dash_token_transfer(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_transfer(
+        rs_sdk_ffi::ios_sdk_token_transfer(
             sdk_handle,
             sender_identity_handle,
             ffi_params,
@@ -103,14 +103,14 @@ pub extern "C" fn swift_dash_token_transfer(
 /// Transfer tokens and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_token_transfer_and_wait(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    sender_identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    sender_identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenTransferParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenTransferParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenTransferParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -123,7 +123,7 @@ pub extern "C" fn swift_dash_token_transfer_and_wait(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_transfer_and_wait(
+        rs_sdk_ffi::ios_sdk_token_transfer_and_wait(
             sdk_handle,
             sender_identity_handle,
             ffi_params,
@@ -139,14 +139,14 @@ pub extern "C" fn swift_dash_token_transfer_and_wait(
 /// Mint new tokens
 #[no_mangle]
 pub extern "C" fn swift_dash_token_mint(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenMintParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenMintParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenMintParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -157,7 +157,7 @@ pub extern "C" fn swift_dash_token_mint(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_mint(
+        rs_sdk_ffi::ios_sdk_token_mint(
             sdk_handle,
             identity_handle,
             ffi_params,
@@ -173,14 +173,14 @@ pub extern "C" fn swift_dash_token_mint(
 /// Mint new tokens and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_token_mint_and_wait(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenMintParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenMintParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenMintParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -191,7 +191,7 @@ pub extern "C" fn swift_dash_token_mint_and_wait(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_mint_and_wait(
+        rs_sdk_ffi::ios_sdk_token_mint_and_wait(
             sdk_handle,
             identity_handle,
             ffi_params,
@@ -207,14 +207,14 @@ pub extern "C" fn swift_dash_token_mint_and_wait(
 /// Burn tokens
 #[no_mangle]
 pub extern "C" fn swift_dash_token_burn(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenBurnParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenBurnParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenBurnParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -224,7 +224,7 @@ pub extern "C" fn swift_dash_token_burn(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_burn(
+        rs_sdk_ffi::ios_sdk_token_burn(
             sdk_handle,
             identity_handle,
             ffi_params,
@@ -240,14 +240,14 @@ pub extern "C" fn swift_dash_token_burn(
 /// Burn tokens and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_token_burn_and_wait(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenBurnParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenBurnParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenBurnParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -257,7 +257,7 @@ pub extern "C" fn swift_dash_token_burn_and_wait(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_burn_and_wait(
+        rs_sdk_ffi::ios_sdk_token_burn_and_wait(
             sdk_handle,
             identity_handle,
             ffi_params,
@@ -273,23 +273,23 @@ pub extern "C" fn swift_dash_token_burn_and_wait(
 /// Claim tokens from distribution
 #[no_mangle]
 pub extern "C" fn swift_dash_token_claim(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenClaimParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
     let ffi_distribution_type = match params.distribution_type {
         SwiftDashTokenDistributionType::PreProgrammed => {
-            ios_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
+            rs_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
         }
         SwiftDashTokenDistributionType::Perpetual => {
-            ios_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
+            rs_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
         }
     };
 
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenClaimParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenClaimParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -299,7 +299,7 @@ pub extern "C" fn swift_dash_token_claim(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_claim(
+        rs_sdk_ffi::ios_sdk_token_claim(
             sdk_handle,
             identity_handle,
             ffi_params,
@@ -315,23 +315,23 @@ pub extern "C" fn swift_dash_token_claim(
 /// Claim tokens from distribution and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_token_claim_and_wait(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
-    identity_handle: ios_sdk_ffi::IdentityHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
+    identity_handle: rs_sdk_ffi::IdentityHandle,
     params: SwiftDashTokenClaimParams,
     public_key_id: u32,
-    signer_handle: ios_sdk_ffi::SignerHandle,
-    put_settings: ios_sdk_ffi::IOSSDKPutSettings,
+    signer_handle: rs_sdk_ffi::SignerHandle,
+    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
 ) -> SwiftDashResult {
     let ffi_distribution_type = match params.distribution_type {
         SwiftDashTokenDistributionType::PreProgrammed => {
-            ios_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
+            rs_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
         }
         SwiftDashTokenDistributionType::Perpetual => {
-            ios_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
+            rs_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
         }
     };
 
-    let ffi_params = ios_sdk_ffi::IOSSDKTokenClaimParams {
+    let ffi_params = rs_sdk_ffi::IOSSDKTokenClaimParams {
         token_contract_id: params.token_contract_id,
         serialized_contract: std::ptr::null(),
         serialized_contract_len: 0,
@@ -341,7 +341,7 @@ pub extern "C" fn swift_dash_token_claim_and_wait(
     };
 
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_claim_and_wait(
+        rs_sdk_ffi::ios_sdk_token_claim_and_wait(
             sdk_handle,
             identity_handle,
             ffi_params,
@@ -357,13 +357,13 @@ pub extern "C" fn swift_dash_token_claim_and_wait(
 /// Get token balance for an identity
 #[no_mangle]
 pub extern "C" fn swift_dash_token_get_identity_balance(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
     identity_id: *const c_char,
     token_contract_id: *const c_char,
     token_position: u16,
 ) -> SwiftDashResult {
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_get_identity_balances(
+        rs_sdk_ffi::ios_sdk_token_get_identity_balances(
             sdk_handle,
             identity_id,
             token_contract_id,
@@ -377,13 +377,13 @@ pub extern "C" fn swift_dash_token_get_identity_balance(
 /// Get token information for an identity
 #[no_mangle]
 pub extern "C" fn swift_dash_token_get_identity_info(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
     identity_id: *const c_char,
     token_contract_id: *const c_char,
     token_position: u16,
 ) -> SwiftDashResult {
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_get_identity_infos(
+        rs_sdk_ffi::ios_sdk_token_get_identity_infos(
             sdk_handle,
             identity_id,
             token_contract_id,
@@ -397,12 +397,12 @@ pub extern "C" fn swift_dash_token_get_identity_info(
 /// Get token statuses for a contract
 #[no_mangle]
 pub extern "C" fn swift_dash_token_get_statuses(
-    sdk_handle: ios_sdk_ffi::SDKHandle,
+    sdk_handle: rs_sdk_ffi::SDKHandle,
     token_contract_id: *const c_char,
     token_position: u16,
 ) -> SwiftDashResult {
     let result = unsafe {
-        ios_sdk_ffi::ios_sdk_token_get_statuses(sdk_handle, token_contract_id, token_position)
+        rs_sdk_ffi::ios_sdk_token_get_statuses(sdk_handle, token_contract_id, token_position)
     };
 
     SwiftDashResult::from_ffi_result(result)

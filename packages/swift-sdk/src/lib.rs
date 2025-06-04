@@ -1,7 +1,7 @@
 //! Swift-friendly SDK wrapper for Dash Platform
 //!
 //! This crate provides an idiomatic Swift-compatible C FFI interface
-//! over the ios-sdk-ffi crate, making it easier to use from Swift.
+//! over the rs-sdk-ffi crate, making it easier to use from Swift.
 
 mod data_contract;
 mod document;
@@ -14,7 +14,7 @@ mod token;
 #[cfg(test)]
 mod tests;
 
-// The ios_sdk_ffi crate is available through Cargo.toml
+// The rs_sdk_ffi crate is available through Cargo.toml
 
 pub use data_contract::*;
 pub use document::*;
@@ -51,7 +51,7 @@ pub extern "C" fn swift_dash_sdk_init() {
 
     // Initialize the underlying FFI
     unsafe {
-        ios_sdk_ffi::ios_sdk_init();
+        rs_sdk_ffi::ios_sdk_init();
     }
 }
 

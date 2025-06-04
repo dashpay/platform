@@ -1,6 +1,6 @@
 # Swift SDK for Dash Platform
 
-This Swift SDK provides iOS-friendly bindings for the Dash Platform, wrapping the `ios-sdk-ffi` crate with idiomatic Swift interfaces.
+This Swift SDK provides iOS-friendly bindings for the Dash Platform, wrapping the `rs-sdk-ffi` crate with idiomatic Swift interfaces.
 
 ## Features
 

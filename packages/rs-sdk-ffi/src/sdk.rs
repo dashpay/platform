@@ -25,6 +25,14 @@ impl SDKWrapper {
             runtime: Arc::new(runtime),
         }
     }
+
+    #[cfg(test)]
+    pub fn new_mock() -> Self {
+        let runtime = Runtime::new().expect("Failed to create runtime");
+        let builder = SdkBuilder::new(AddressList::default()).with_mock().build();
+        let sdk = builder.expect("Failed to create mock SDK");
+        SDKWrapper::new(sdk, runtime)
+    }
 }
 
 /// Create a new SDK instance

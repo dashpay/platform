@@ -31,39 +31,39 @@ pub struct SwiftDashBinaryData {
 /// Fetch an identity by ID
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_fetch(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
     identity_id: *const c_char,
-) -> *mut ios_sdk_ffi::IdentityHandle {
+) -> *mut rs_sdk_ffi::IdentityHandle {
     if sdk_handle.is_null() || identity_id.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_fetch(sdk_handle, identity_id);
+        let result = rs_sdk_ffi::ios_sdk_identity_fetch(sdk_handle, identity_id);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::IdentityHandle
+        result.data as *mut rs_sdk_ffi::IdentityHandle
     }
 }
 
 /// Get identity information
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_get_info(
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
 ) -> *mut SwiftDashIdentityInfo {
     if identity_handle.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_get_info(identity_handle);
+        let result = rs_sdk_ffi::ios_sdk_identity_get_info(identity_handle);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -71,7 +71,7 @@ pub extern "C" fn swift_dash_identity_get_info(
             return ptr::null_mut();
         }
 
-        let ffi_info_ptr = result.data as *mut ios_sdk_ffi::IOSSDKIdentityInfo;
+        let ffi_info_ptr = result.data as *mut rs_sdk_ffi::IOSSDKIdentityInfo;
         let ffi_info = *Box::from_raw(ffi_info_ptr);
 
         // Convert to Swift-friendly structure
@@ -89,17 +89,17 @@ pub extern "C" fn swift_dash_identity_get_info(
 /// Put identity to platform with instant lock and return serialized state transition
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
     if sdk_handle.is_null() || identity_handle.is_null() || signer_handle.is_null() {
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -110,7 +110,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_put_to_platform_with_instant_lock(
+        let result = rs_sdk_ffi::ios_sdk_identity_put_to_platform_with_instant_lock(
             sdk_handle,
             identity_handle,
             public_key_id,
@@ -124,11 +124,11 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::BinaryData {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::BinaryData {
             return ptr::null_mut();
         }
 
@@ -136,7 +136,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
             return ptr::null_mut();
         }
 
-        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
 
         // Convert to Swift-friendly structure
@@ -152,17 +152,17 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
 /// Put identity to platform with instant lock and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock_and_wait(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
-) -> *mut ios_sdk_ffi::IdentityHandle {
+) -> *mut rs_sdk_ffi::IdentityHandle {
     if sdk_handle.is_null() || identity_handle.is_null() || signer_handle.is_null() {
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -173,7 +173,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock_and_wait
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_put_to_platform_with_instant_lock_and_wait(
+        let result = rs_sdk_ffi::ios_sdk_identity_put_to_platform_with_instant_lock_and_wait(
             sdk_handle,
             identity_handle,
             public_key_id,
@@ -187,32 +187,32 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock_and_wait
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::IdentityHandle {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::IdentityHandle {
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::IdentityHandle
+        result.data as *mut rs_sdk_ffi::IdentityHandle
     }
 }
 
 /// Put identity to platform with chain lock and return serialized state transition
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
     if sdk_handle.is_null() || identity_handle.is_null() || signer_handle.is_null() {
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -223,7 +223,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_put_to_platform_with_chain_lock(
+        let result = rs_sdk_ffi::ios_sdk_identity_put_to_platform_with_chain_lock(
             sdk_handle,
             identity_handle,
             public_key_id,
@@ -237,11 +237,11 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::BinaryData {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::BinaryData {
             return ptr::null_mut();
         }
 
@@ -249,7 +249,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
             return ptr::null_mut();
         }
 
-        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
 
         // Convert to Swift-friendly structure
@@ -265,17 +265,17 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock(
 /// Put identity to platform with chain lock and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock_and_wait(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
-) -> *mut ios_sdk_ffi::IdentityHandle {
+) -> *mut rs_sdk_ffi::IdentityHandle {
     if sdk_handle.is_null() || identity_handle.is_null() || signer_handle.is_null() {
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -286,7 +286,7 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock_and_wait(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_put_to_platform_with_chain_lock_and_wait(
+        let result = rs_sdk_ffi::ios_sdk_identity_put_to_platform_with_chain_lock_and_wait(
             sdk_handle,
             identity_handle,
             public_key_id,
@@ -300,27 +300,27 @@ pub extern "C" fn swift_dash_identity_put_to_platform_with_chain_lock_and_wait(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::IdentityHandle {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::IdentityHandle {
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::IdentityHandle
+        result.data as *mut rs_sdk_ffi::IdentityHandle
     }
 }
 
 /// Transfer credits to another identity
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_transfer_credits(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     recipient_id: *const c_char,
     amount: u64,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashTransferCreditsResult {
     if sdk_handle.is_null()
@@ -331,7 +331,7 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -342,7 +342,7 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_transfer_credits(
+        let result = rs_sdk_ffi::ios_sdk_identity_transfer_credits(
             sdk_handle,
             identity_handle,
             recipient_id,
@@ -358,7 +358,7 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -366,7 +366,7 @@ pub extern "C" fn swift_dash_identity_transfer_credits(
             return ptr::null_mut();
         }
 
-        let ffi_transfer_ptr = result.data as *mut ios_sdk_ffi::IOSSDKTransferCreditsResult;
+        let ffi_transfer_ptr = result.data as *mut rs_sdk_ffi::IOSSDKTransferCreditsResult;
         let ffi_transfer = *Box::from_raw(ffi_transfer_ptr);
 
         // Convert to Swift-friendly structure
@@ -411,29 +411,29 @@ pub unsafe extern "C" fn swift_dash_binary_data_free(binary_data: *mut SwiftDash
 /// Create a new identity
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_create(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-) -> *mut ios_sdk_ffi::IdentityHandle {
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+) -> *mut rs_sdk_ffi::IdentityHandle {
     if sdk_handle.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_create(sdk_handle);
+        let result = rs_sdk_ffi::ios_sdk_identity_create(sdk_handle);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::IdentityHandle
+        result.data as *mut rs_sdk_ffi::IdentityHandle
     }
 }
 
 /// Top up identity with instant lock
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     instant_lock_bytes: *const u8,
     instant_lock_len: usize,
     transaction_bytes: *const u8,
@@ -452,7 +452,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -463,7 +463,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_topup_with_instant_lock(
+        let result = rs_sdk_ffi::ios_sdk_identity_topup_with_instant_lock(
             sdk_handle,
             identity_handle,
             instant_lock_bytes,
@@ -482,7 +482,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -490,7 +490,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
             return ptr::null_mut();
         }
 
-        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
 
         // Convert to Swift-friendly structure
@@ -506,8 +506,8 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock(
 /// Top up identity with instant lock and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_topup_with_instant_lock_and_wait(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     instant_lock_bytes: *const u8,
     instant_lock_len: usize,
     transaction_bytes: *const u8,
@@ -516,7 +516,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock_and_wait(
     private_key: *const u8,
     private_key_len: usize,
     settings: *const SwiftDashPutSettings,
-) -> *mut ios_sdk_ffi::IdentityHandle {
+) -> *mut rs_sdk_ffi::IdentityHandle {
     if sdk_handle.is_null()
         || identity_handle.is_null()
         || instant_lock_bytes.is_null()
@@ -526,7 +526,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock_and_wait(
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -537,7 +537,7 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock_and_wait(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_topup_with_instant_lock_and_wait(
+        let result = rs_sdk_ffi::ios_sdk_identity_topup_with_instant_lock_and_wait(
             sdk_handle,
             identity_handle,
             instant_lock_bytes,
@@ -556,24 +556,24 @@ pub extern "C" fn swift_dash_identity_topup_with_instant_lock_and_wait(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::IdentityHandle
+        result.data as *mut rs_sdk_ffi::IdentityHandle
     }
 }
 
 /// Withdraw credits from identity to Dash address
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_withdraw(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     address: *const c_char,
     amount: u64,
     core_fee_per_byte: u32,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
     if sdk_handle.is_null()
@@ -584,7 +584,7 @@ pub extern "C" fn swift_dash_identity_withdraw(
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -595,7 +595,7 @@ pub extern "C" fn swift_dash_identity_withdraw(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_withdraw(
+        let result = rs_sdk_ffi::ios_sdk_identity_withdraw(
             sdk_handle,
             identity_handle,
             address,
@@ -612,7 +612,7 @@ pub extern "C" fn swift_dash_identity_withdraw(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -620,7 +620,7 @@ pub extern "C" fn swift_dash_identity_withdraw(
             return ptr::null_mut();
         }
 
-        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
 
         // Convert to Swift-friendly structure
@@ -636,7 +636,7 @@ pub extern "C" fn swift_dash_identity_withdraw(
 /// Fetch identity balance only
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_fetch_balance(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
     identity_id: *const c_char,
 ) -> u64 {
     if sdk_handle.is_null() || identity_id.is_null() {
@@ -644,10 +644,10 @@ pub extern "C" fn swift_dash_identity_fetch_balance(
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_fetch_balance(sdk_handle, identity_id);
+        let result = rs_sdk_ffi::ios_sdk_identity_fetch_balance(sdk_handle, identity_id);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return 0;
         }
 
@@ -659,7 +659,7 @@ pub extern "C" fn swift_dash_identity_fetch_balance(
 /// Fetch identity public keys as JSON
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_fetch_public_keys(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
     identity_id: *const c_char,
 ) -> *mut c_char {
     if sdk_handle.is_null() || identity_id.is_null() {
@@ -667,10 +667,10 @@ pub extern "C" fn swift_dash_identity_fetch_public_keys(
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_fetch_public_keys(sdk_handle, identity_id);
+        let result = rs_sdk_ffi::ios_sdk_identity_fetch_public_keys(sdk_handle, identity_id);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -681,11 +681,11 @@ pub extern "C" fn swift_dash_identity_fetch_public_keys(
 /// Register a DPNS name for identity
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_register_name(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    identity_handle: *mut ios_sdk_ffi::IdentityHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    identity_handle: *mut rs_sdk_ffi::IdentityHandle,
     name: *const c_char,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
     if sdk_handle.is_null()
@@ -696,7 +696,7 @@ pub extern "C" fn swift_dash_identity_register_name(
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -707,7 +707,7 @@ pub extern "C" fn swift_dash_identity_register_name(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_register_name(
+        let result = rs_sdk_ffi::ios_sdk_identity_register_name(
             sdk_handle,
             identity_handle,
             name,
@@ -722,7 +722,7 @@ pub extern "C" fn swift_dash_identity_register_name(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -730,7 +730,7 @@ pub extern "C" fn swift_dash_identity_register_name(
             return ptr::null_mut();
         }
 
-        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
 
         // Convert to Swift-friendly structure
@@ -746,7 +746,7 @@ pub extern "C" fn swift_dash_identity_register_name(
 /// Resolve a DPNS name to identity ID
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_resolve_name(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
     name: *const c_char,
 ) -> *mut c_char {
     if sdk_handle.is_null() || name.is_null() {
@@ -754,10 +754,10 @@ pub extern "C" fn swift_dash_identity_resolve_name(
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_identity_resolve_name(sdk_handle, name);
+        let result = rs_sdk_ffi::ios_sdk_identity_resolve_name(sdk_handle, name);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 

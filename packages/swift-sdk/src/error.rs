@@ -95,8 +95,8 @@ impl SwiftDashError {
     }
 }
 
-impl From<ios_sdk_ffi::IOSSDKError> for SwiftDashError {
-    fn from(error: ios_sdk_ffi::IOSSDKError) -> Self {
+impl From<rs_sdk_ffi::IOSSDKError> for SwiftDashError {
+    fn from(error: rs_sdk_ffi::IOSSDKError) -> Self {
         let message = if error.message.is_null() {
             "Unknown error".to_string()
         } else {
@@ -108,19 +108,19 @@ impl From<ios_sdk_ffi::IOSSDKError> for SwiftDashError {
         };
 
         let code = match error.code {
-            ios_sdk_ffi::IOSSDKErrorCode::Success => SwiftDashErrorCode::Success,
-            ios_sdk_ffi::IOSSDKErrorCode::InvalidParameter => SwiftDashErrorCode::InvalidParameter,
-            ios_sdk_ffi::IOSSDKErrorCode::InvalidState => SwiftDashErrorCode::InvalidState,
-            ios_sdk_ffi::IOSSDKErrorCode::NetworkError => SwiftDashErrorCode::NetworkError,
-            ios_sdk_ffi::IOSSDKErrorCode::SerializationError => {
+            rs_sdk_ffi::IOSSDKErrorCode::Success => SwiftDashErrorCode::Success,
+            rs_sdk_ffi::IOSSDKErrorCode::InvalidParameter => SwiftDashErrorCode::InvalidParameter,
+            rs_sdk_ffi::IOSSDKErrorCode::InvalidState => SwiftDashErrorCode::InvalidState,
+            rs_sdk_ffi::IOSSDKErrorCode::NetworkError => SwiftDashErrorCode::NetworkError,
+            rs_sdk_ffi::IOSSDKErrorCode::SerializationError => {
                 SwiftDashErrorCode::SerializationError
             }
-            ios_sdk_ffi::IOSSDKErrorCode::ProtocolError => SwiftDashErrorCode::ProtocolError,
-            ios_sdk_ffi::IOSSDKErrorCode::CryptoError => SwiftDashErrorCode::CryptoError,
-            ios_sdk_ffi::IOSSDKErrorCode::NotFound => SwiftDashErrorCode::NotFound,
-            ios_sdk_ffi::IOSSDKErrorCode::Timeout => SwiftDashErrorCode::Timeout,
-            ios_sdk_ffi::IOSSDKErrorCode::NotImplemented => SwiftDashErrorCode::NotImplemented,
-            ios_sdk_ffi::IOSSDKErrorCode::InternalError => SwiftDashErrorCode::InternalError,
+            rs_sdk_ffi::IOSSDKErrorCode::ProtocolError => SwiftDashErrorCode::ProtocolError,
+            rs_sdk_ffi::IOSSDKErrorCode::CryptoError => SwiftDashErrorCode::CryptoError,
+            rs_sdk_ffi::IOSSDKErrorCode::NotFound => SwiftDashErrorCode::NotFound,
+            rs_sdk_ffi::IOSSDKErrorCode::Timeout => SwiftDashErrorCode::Timeout,
+            rs_sdk_ffi::IOSSDKErrorCode::NotImplemented => SwiftDashErrorCode::NotImplemented,
+            rs_sdk_ffi::IOSSDKErrorCode::InternalError => SwiftDashErrorCode::InternalError,
         };
 
         Self::new(code, message)
@@ -160,7 +160,7 @@ impl SwiftDashResult {
         }
     }
 
-    pub fn from_ffi_result(ffi_result: ios_sdk_ffi::IOSSDKResult) -> Self {
+    pub fn from_ffi_result(ffi_result: rs_sdk_ffi::IOSSDKResult) -> Self {
         if ffi_result.error.is_null() {
             SwiftDashResult::success_with_data(ffi_result.data)
         } else {

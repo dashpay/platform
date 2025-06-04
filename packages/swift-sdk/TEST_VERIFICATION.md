@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Swift SDK is a C FFI wrapper around ios-sdk-ffi, designed to be consumed by Swift/iOS applications. Due to the nature of FFI bindings and the dependency on ios-sdk-ffi (which itself depends on complex Rust crates), traditional Rust integration tests face compilation challenges.
+The Swift SDK is a C FFI wrapper around rs-sdk-ffi, designed to be consumed by Swift/iOS applications. Due to the nature of FFI bindings and the dependency on rs-sdk-ffi (which itself depends on complex Rust crates), traditional Rust integration tests face compilation challenges.
 
 ## Verification Approach
 
@@ -146,7 +146,7 @@ class SwiftDashSDKTests: XCTestCase {
 
 ## Known Limitations
 
-1. **Rust Integration Tests**: Due to ios-sdk-ffi's complex dependencies, Rust integration tests don't compile cleanly.
+1. **Rust Integration Tests**: Due to rs-sdk-ffi's complex dependencies, Rust integration tests don't compile cleanly.
 
 2. **Mock Testing**: Without a running Dash Platform instance, only null safety and memory management can be tested.
 

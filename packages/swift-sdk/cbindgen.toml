@@ -10,11 +10,11 @@ usize_is_size_t = true
 
 [parse]
 parse_deps = true
-include = ["ios-sdk-ffi"]
+include = ["rs-sdk-ffi"]
 
 [export]
 prefix = "SwiftDash"
-exclude = ["ios_sdk_ffi"]
+exclude = ["rs_sdk_ffi"]
 
 [defines]
 "target_os = ios" = "SWIFT_DASH_IOS"

@@ -66,7 +66,7 @@ pub unsafe fn get_data_contract(
 ) -> Result<DataContract, FFIError> {
     if !token_contract_id.is_null() {
         // Use contract ID to fetch from platform
-        let contract_id_str = CStr::from_ptr(token_contract_id)
+        let contract_id_str = unsafe { CStr::from_ptr(token_contract_id) }
             .to_str()
             .map_err(FFIError::from)?;
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
@@ -137,7 +137,7 @@ pub unsafe fn parse_optional_note(note_ptr: *const c_char) -> Result<Option<Stri
     if note_ptr.is_null() {
         Ok(None)
     } else {
-        match CStr::from_ptr(note_ptr).to_str() {
+        match unsafe { CStr::from_ptr(note_ptr) }.to_str() {
             Ok(s) => Ok(Some(s.to_string())),
             Err(e) => Err(FFIError::from(e)),
         }
@@ -146,7 +146,7 @@ pub unsafe fn parse_optional_note(note_ptr: *const c_char) -> Result<Option<Stri
 
 /// Parse recipient ID from C string
 pub unsafe fn parse_recipient_id(recipient_id_ptr: *const c_char) -> Result<Identifier, FFIError> {
-    let recipient_id_str = CStr::from_ptr(recipient_id_ptr)
+    let recipient_id_str = unsafe { CStr::from_ptr(recipient_id_ptr) }
         .to_str()
         .map_err(FFIError::from)?;
 

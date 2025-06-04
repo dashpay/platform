@@ -45,11 +45,12 @@ pub unsafe extern "C" fn dash_sdk_token_update_contract_token_configuration(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    // SAFETY: We've verified all pointers are non-null above
+    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
 
     // Convert transition_owner_id from bytes to Identifier (32 bytes)
     let transition_owner_id = {
-        let id_bytes = std::slice::from_raw_parts(transition_owner_id, 32);
+        let id_bytes = unsafe { std::slice::from_raw_parts(transition_owner_id, 32) };
         match Identifier::from_bytes(id_bytes) {
             Ok(id) => id,
             Err(e) => {
@@ -61,9 +62,9 @@ pub unsafe extern "C" fn dash_sdk_token_update_contract_token_configuration(
         }
     };
 
-    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
-    let params = &*params;
+    let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
+    let signer = unsafe { &*(signer_handle as *const crate::signer::IOSSigner) };
+    let params = unsafe { &*params };
 
     // Validate contract parameters
     let has_serialized_contract = match validate_contract_params(
@@ -103,7 +104,7 @@ pub unsafe extern "C" fn dash_sdk_token_update_contract_token_configuration(
 
         let data_contract = if !has_serialized_contract {
             // Parse and fetch the contract ID
-            let token_contract_id_str = match CStr::from_ptr(params.token_contract_id).to_str() {
+            let token_contract_id_str = match unsafe { CStr::from_ptr(params.token_contract_id) }.to_str() {
                 Ok(s) => s,
                 Err(e) => return Err(FFIError::from(e)),
             };
@@ -122,10 +123,12 @@ pub unsafe extern "C" fn dash_sdk_token_update_contract_token_configuration(
                 .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
         } else {
             // Deserialize the provided contract
-            let contract_slice = std::slice::from_raw_parts(
-                params.serialized_contract,
-                params.serialized_contract_len
-            );
+            let contract_slice = unsafe {
+                std::slice::from_raw_parts(
+                    params.serialized_contract,
+                    params.serialized_contract_len
+                )
+            };
 
             use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
@@ -231,5 +234,433 @@ pub unsafe extern "C" fn dash_sdk_token_update_contract_token_configuration(
     match result {
         Ok(_config_update_result) => DashSDKResult::success(std::ptr::null_mut()),
         Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token::types::{DashSDKAuthorizedActionTakers, DashSDKTokenConfigUpdateType};
+    use crate::types::{DashSDKPutSettings, DashSDKStateTransitionCreationOptions, SDKHandle};
+    use crate::{DashSDKError, DashSDKErrorCode};
+    use dash_sdk::dpp::identity::{KeyID, KeyType, Purpose, SecurityLevel};
+    use dash_sdk::dpp::platform_value::BinaryData;
+    use dash_sdk::platform::IdentityPublicKey;
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+
+    // Helper function to create a mock SDK handle
+    fn create_mock_sdk_handle() -> *mut SDKHandle {
+        let wrapper = Box::new(crate::sdk::SDKWrapper::new_mock());
+        Box::into_raw(wrapper) as *mut SDKHandle
+    }
+
+    // Helper function to create a mock identity public key
+    fn create_mock_identity_public_key() -> Box<IdentityPublicKey> {
+        Box::new(IdentityPublicKey {
+            id: KeyID(1),
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        })
+    }
+
+    // Mock callbacks for signer
+    unsafe extern "C" fn mock_sign_callback(
+        _identity_public_key_bytes: *const u8,
+        _identity_public_key_len: usize,
+        _data: *const u8,
+        _data_len: usize,
+        result_len: *mut usize,
+    ) -> *mut u8 {
+        // Return a mock signature (64 bytes for ECDSA)
+        let signature = vec![0u8; 64];
+        *result_len = signature.len();
+        let ptr = signature.as_ptr() as *mut u8;
+        std::mem::forget(signature); // Prevent deallocation
+        ptr
+    }
+
+    unsafe extern "C" fn mock_can_sign_callback(
+        _identity_public_key_bytes: *const u8,
+        _identity_public_key_len: usize,
+    ) -> bool {
+        true
+    }
+
+    // Helper function to create a mock signer
+    fn create_mock_signer() -> Box<crate::signer::IOSSigner> {
+        Box::new(crate::signer::IOSSigner::new(
+            mock_sign_callback,
+            mock_can_sign_callback,
+        ))
+    }
+
+    fn create_valid_transition_owner_id() -> [u8; 32] {
+        [1u8; 32]
+    }
+
+    fn create_valid_config_update_params() -> DashSDKTokenConfigUpdateParams {
+        DashSDKTokenConfigUpdateParams {
+            token_contract_id: CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec")
+                .unwrap()
+                .into_raw(),
+            serialized_contract: ptr::null(),
+            serialized_contract_len: 0,
+            token_position: 0,
+            update_type: DashSDKTokenConfigUpdateType::MaxSupply,
+            amount: 1000000,
+            bool_value: false,
+            identity_id: ptr::null(),
+            group_position: 0,
+            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            public_note: ptr::null(),
+        }
+    }
+
+    unsafe fn cleanup_config_update_params(params: &DashSDKTokenConfigUpdateParams) {
+        if !params.token_contract_id.is_null() {
+            let _ = CString::from_raw(params.token_contract_id as *mut std::os::raw::c_char);
+        }
+        if !params.public_note.is_null() {
+            let _ = CString::from_raw(params.public_note as *mut std::os::raw::c_char);
+        }
+    }
+
+    fn create_put_settings() -> DashSDKPutSettings {
+        DashSDKPutSettings {
+            connect_timeout_ms: 0,
+            timeout_ms: 0,
+            retries: 0,
+            ban_failed_address: false,
+            identity_nonce_stale_time_s: 0,
+            user_fee_increase: 0,
+            allow_signing_with_any_security_level: false,
+            allow_signing_with_any_purpose: false,
+            wait_timeout_ms: 0,
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_null_sdk_handle() {
+        let transition_owner_id = create_valid_transition_owner_id();
+        let params = create_valid_config_update_params();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+        let put_settings = create_put_settings();
+        let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
+
+        let result = unsafe {
+            dash_sdk_token_update_contract_token_configuration(
+                ptr::null_mut(),
+                transition_owner_id.as_ptr(),
+                &params,
+                identity_public_key_handle,
+                signer_handle,
+                &put_settings,
+                state_transition_options,
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = unsafe { CStr::from_ptr(error.message) }.to_str().unwrap();
+            assert!(error_msg.contains("null"));
+        }
+
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_null_transition_owner_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let params = create_valid_config_update_params();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+        let put_settings = create_put_settings();
+        let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
+
+        let result = unsafe {
+            dash_sdk_token_update_contract_token_configuration(
+                sdk_handle,
+                ptr::null(),
+                &params,
+                identity_public_key_handle,
+                signer_handle,
+                &put_settings,
+                state_transition_options,
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_null_params() {
+        let sdk_handle = create_mock_sdk_handle();
+        let transition_owner_id = create_valid_transition_owner_id();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+        let put_settings = create_put_settings();
+        let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
+
+        let result = unsafe {
+            dash_sdk_token_update_contract_token_configuration(
+                sdk_handle,
+                transition_owner_id.as_ptr(),
+                ptr::null(),
+                identity_public_key_handle,
+                signer_handle,
+                &put_settings,
+                state_transition_options,
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_null_identity_public_key() {
+        let sdk_handle = create_mock_sdk_handle();
+        let transition_owner_id = create_valid_transition_owner_id();
+        let params = create_valid_config_update_params();
+        let signer_handle = 1 as *const SignerHandle;
+        let put_settings = create_put_settings();
+        let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
+
+        let result = unsafe {
+            dash_sdk_token_update_contract_token_configuration(
+                sdk_handle,
+                transition_owner_id.as_ptr(),
+                &params,
+                ptr::null(),
+                signer_handle,
+                &put_settings,
+                state_transition_options,
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_null_signer() {
+        let sdk_handle = create_mock_sdk_handle();
+        let transition_owner_id = create_valid_transition_owner_id();
+        let params = create_valid_config_update_params();
+        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
+        let put_settings = create_put_settings();
+        let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
+
+        let result = unsafe {
+            dash_sdk_token_update_contract_token_configuration(
+                sdk_handle,
+                transition_owner_id.as_ptr(),
+                &params,
+                identity_public_key_handle,
+                ptr::null(),
+                &put_settings,
+                state_transition_options,
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_different_update_types() {
+        let mut params = create_valid_config_update_params();
+
+        // Test MaxSupply
+        params.update_type = DashSDKTokenConfigUpdateType::MaxSupply;
+        params.amount = 1000000;
+        assert_eq!(
+            params.update_type as u32,
+            DashSDKTokenConfigUpdateType::MaxSupply as u32
+        );
+
+        // Test MintingAllowChoosingDestination
+        params.update_type = DashSDKTokenConfigUpdateType::MintingAllowChoosingDestination;
+        params.bool_value = true;
+        assert_eq!(
+            params.update_type as u32,
+            DashSDKTokenConfigUpdateType::MintingAllowChoosingDestination as u32
+        );
+
+        // Test MainControlGroup
+        params.update_type = DashSDKTokenConfigUpdateType::MainControlGroup;
+        params.group_position = 1;
+        assert_eq!(
+            params.update_type as u32,
+            DashSDKTokenConfigUpdateType::MainControlGroup as u32
+        );
+
+        // Test NoChange
+        params.update_type = DashSDKTokenConfigUpdateType::NoChange;
+        assert_eq!(
+            params.update_type as u32,
+            DashSDKTokenConfigUpdateType::NoChange as u32
+        );
+
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_identity_id() {
+        let identity_id = [2u8; 32];
+        let params = DashSDKTokenConfigUpdateParams {
+            token_contract_id: CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec")
+                .unwrap()
+                .into_raw(),
+            serialized_contract: ptr::null(),
+            serialized_contract_len: 0,
+            token_position: 0,
+            update_type: DashSDKTokenConfigUpdateType::NewTokensDestinationIdentity,
+            amount: 0,
+            bool_value: false,
+            identity_id: identity_id.as_ptr(),
+            group_position: 0,
+            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            public_note: ptr::null(),
+        };
+
+        assert!(!params.identity_id.is_null());
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_public_note() {
+        let public_note = CString::new("Config update note").unwrap();
+        let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+
+        let params = DashSDKTokenConfigUpdateParams {
+            token_contract_id: contract_id.as_ptr(),
+            serialized_contract: ptr::null(),
+            serialized_contract_len: 0,
+            token_position: 0,
+            update_type: DashSDKTokenConfigUpdateType::MaxSupply,
+            amount: 500000,
+            bool_value: false,
+            identity_id: ptr::null(),
+            group_position: 0,
+            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            public_note: public_note.as_ptr(),
+        };
+
+        unsafe {
+            let note_str = unsafe { CStr::from_ptr(params.public_note) };
+            assert_eq!(note_str.to_str().unwrap(), "Config update note");
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_different_action_takers() {
+        let mut params = create_valid_config_update_params();
+
+        // Test different action takers
+        params.action_takers = DashSDKAuthorizedActionTakers::NoOne;
+        assert_eq!(
+            params.action_takers as u32,
+            DashSDKAuthorizedActionTakers::NoOne as u32
+        );
+
+        params.action_takers = DashSDKAuthorizedActionTakers::ContractOwner;
+        assert_eq!(
+            params.action_takers as u32,
+            DashSDKAuthorizedActionTakers::ContractOwner as u32
+        );
+
+        params.action_takers = DashSDKAuthorizedActionTakers::MainGroup;
+        assert_eq!(
+            params.action_takers as u32,
+            DashSDKAuthorizedActionTakers::MainGroup as u32
+        );
+
+        params.action_takers = DashSDKAuthorizedActionTakers::Identity;
+        assert_eq!(
+            params.action_takers as u32,
+            DashSDKAuthorizedActionTakers::Identity as u32
+        );
+
+        params.action_takers = DashSDKAuthorizedActionTakers::Group;
+        assert_eq!(
+            params.action_takers as u32,
+            DashSDKAuthorizedActionTakers::Group as u32
+        );
+
+        unsafe {
+            cleanup_config_update_params(&params);
+        }
+    }
+
+    #[test]
+    fn test_config_update_with_serialized_contract() {
+        let contract_data = vec![1u8, 2, 3, 4, 5];
+        let params = DashSDKTokenConfigUpdateParams {
+            token_contract_id: ptr::null(),
+            serialized_contract: contract_data.as_ptr(),
+            serialized_contract_len: contract_data.len(),
+            token_position: 0,
+            update_type: DashSDKTokenConfigUpdateType::MaxSupply,
+            amount: 100000,
+            bool_value: false,
+            identity_id: ptr::null(),
+            group_position: 0,
+            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            public_note: ptr::null(),
+        };
+
+        assert_eq!(params.serialized_contract_len, 5);
+        assert!(!params.serialized_contract.is_null());
+        assert!(params.token_contract_id.is_null());
     }
 }

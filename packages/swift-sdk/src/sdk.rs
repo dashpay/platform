@@ -12,13 +12,13 @@ pub enum SwiftDashNetwork {
     Local = 3,
 }
 
-impl From<SwiftDashNetwork> for ios_sdk_ffi::IOSSDKNetwork {
+impl From<SwiftDashNetwork> for rs_sdk_ffi::IOSSDKNetwork {
     fn from(network: SwiftDashNetwork) -> Self {
         match network {
-            SwiftDashNetwork::Mainnet => ios_sdk_ffi::IOSSDKNetwork::Mainnet,
-            SwiftDashNetwork::Testnet => ios_sdk_ffi::IOSSDKNetwork::Testnet,
-            SwiftDashNetwork::Devnet => ios_sdk_ffi::IOSSDKNetwork::Devnet,
-            SwiftDashNetwork::Local => ios_sdk_ffi::IOSSDKNetwork::Local,
+            SwiftDashNetwork::Mainnet => rs_sdk_ffi::IOSSDKNetwork::Mainnet,
+            SwiftDashNetwork::Testnet => rs_sdk_ffi::IOSSDKNetwork::Testnet,
+            SwiftDashNetwork::Devnet => rs_sdk_ffi::IOSSDKNetwork::Devnet,
+            SwiftDashNetwork::Local => rs_sdk_ffi::IOSSDKNetwork::Local,
         }
     }
 }
@@ -32,9 +32,9 @@ pub struct SwiftDashSDKConfig {
     pub request_timeout_ms: u64,
 }
 
-impl From<SwiftDashSDKConfig> for ios_sdk_ffi::IOSSDKConfig {
+impl From<SwiftDashSDKConfig> for rs_sdk_ffi::IOSSDKConfig {
     fn from(config: SwiftDashSDKConfig) -> Self {
-        ios_sdk_ffi::IOSSDKConfig {
+        rs_sdk_ffi::IOSSDKConfig {
             network: config.network.into(),
             skip_asset_lock_proof_verification: config.skip_asset_lock_proof_verification,
             request_retry_count: config.request_retry_count,
@@ -58,9 +58,9 @@ pub struct SwiftDashPutSettings {
     pub wait_timeout_ms: u64,
 }
 
-impl From<SwiftDashPutSettings> for ios_sdk_ffi::IOSSDKPutSettings {
+impl From<SwiftDashPutSettings> for rs_sdk_ffi::IOSSDKPutSettings {
     fn from(settings: SwiftDashPutSettings) -> Self {
-        ios_sdk_ffi::IOSSDKPutSettings {
+        rs_sdk_ffi::IOSSDKPutSettings {
             connect_timeout_ms: settings.connect_timeout_ms,
             timeout_ms: settings.timeout_ms,
             retries: settings.retries,
@@ -76,40 +76,40 @@ impl From<SwiftDashPutSettings> for ios_sdk_ffi::IOSSDKPutSettings {
 
 /// Create a new SDK instance
 #[no_mangle]
-pub extern "C" fn swift_dash_sdk_create(config: SwiftDashSDKConfig) -> *mut ios_sdk_ffi::SDKHandle {
+pub extern "C" fn swift_dash_sdk_create(config: SwiftDashSDKConfig) -> *mut rs_sdk_ffi::SDKHandle {
     let ffi_config = config.into();
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_create(&ffi_config);
+        let result = rs_sdk_ffi::ios_sdk_create(&ffi_config);
 
         if !result.error.is_null() {
             // Clean up error and return null
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::SDKHandle
+        result.data as *mut rs_sdk_ffi::SDKHandle
     }
 }
 
 /// Destroy an SDK instance
 #[no_mangle]
-pub unsafe extern "C" fn swift_dash_sdk_destroy(handle: *mut ios_sdk_ffi::SDKHandle) {
+pub unsafe extern "C" fn swift_dash_sdk_destroy(handle: *mut rs_sdk_ffi::SDKHandle) {
     if !handle.is_null() {
-        ios_sdk_ffi::ios_sdk_destroy(handle);
+        rs_sdk_ffi::ios_sdk_destroy(handle);
     }
 }
 
 /// Get the network the SDK is configured for
 #[no_mangle]
 pub extern "C" fn swift_dash_sdk_get_network(
-    handle: *mut ios_sdk_ffi::SDKHandle,
+    handle: *mut rs_sdk_ffi::SDKHandle,
 ) -> SwiftDashNetwork {
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_get_network(handle);
+        let result = rs_sdk_ffi::ios_sdk_get_network(handle);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return SwiftDashNetwork::Testnet; // Default fallback
         }
 
@@ -128,10 +128,10 @@ pub extern "C" fn swift_dash_sdk_get_network(
 #[no_mangle]
 pub extern "C" fn swift_dash_sdk_get_version() -> *mut c_char {
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_version();
+        let result = rs_sdk_ffi::ios_sdk_version();
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
@@ -144,7 +144,7 @@ pub extern "C" fn swift_dash_sdk_get_version() -> *mut c_char {
         let version_string = CString::new(version_cstr.to_string_lossy().as_ref()).unwrap();
 
         // Free the original string
-        ios_sdk_ffi::ios_sdk_string_free(result.data as *mut c_char);
+        rs_sdk_ffi::ios_sdk_string_free(result.data as *mut c_char);
 
         version_string.into_raw()
     }

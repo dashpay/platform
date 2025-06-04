@@ -6,67 +6,67 @@ use std::ptr;
 /// Fetch a data contract by ID
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_fetch(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
     contract_id: *const c_char,
-) -> *mut ios_sdk_ffi::DataContractHandle {
+) -> *mut rs_sdk_ffi::DataContractHandle {
     if sdk_handle.is_null() || contract_id.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_data_contract_fetch(sdk_handle, contract_id);
+        let result = rs_sdk_ffi::ios_sdk_data_contract_fetch(sdk_handle, contract_id);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::DataContractHandle
+        result.data as *mut rs_sdk_ffi::DataContractHandle
     }
 }
 
 /// Create a new data contract from JSON schema
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_create(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
     owner_identity_id: *const c_char,
     schema_json: *const c_char,
-) -> *mut ios_sdk_ffi::DataContractHandle {
+) -> *mut rs_sdk_ffi::DataContractHandle {
     if sdk_handle.is_null() || owner_identity_id.is_null() || schema_json.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
         let result =
-            ios_sdk_ffi::ios_sdk_data_contract_create(sdk_handle, owner_identity_id, schema_json);
+            rs_sdk_ffi::ios_sdk_data_contract_create(sdk_handle, owner_identity_id, schema_json);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::DataContractHandle
+        result.data as *mut rs_sdk_ffi::DataContractHandle
     }
 }
 
 /// Get data contract information as JSON string
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_get_info(
-    contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
 ) -> *mut c_char {
     if contract_handle.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_data_contract_get_info(contract_handle);
+        let result = rs_sdk_ffi::ios_sdk_data_contract_get_info(contract_handle);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::String {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::String {
             return ptr::null_mut();
         }
 
@@ -77,7 +77,7 @@ pub extern "C" fn swift_dash_data_contract_get_info(
 /// Get schema for a specific document type
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_get_schema(
-    contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
     document_type: *const c_char,
 ) -> *mut c_char {
     if contract_handle.is_null() || document_type.is_null() {
@@ -85,14 +85,14 @@ pub extern "C" fn swift_dash_data_contract_get_schema(
     }
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_data_contract_get_schema(contract_handle, document_type);
+        let result = rs_sdk_ffi::ios_sdk_data_contract_get_schema(contract_handle, document_type);
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::String {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::String {
             return ptr::null_mut();
         }
 
@@ -103,17 +103,17 @@ pub extern "C" fn swift_dash_data_contract_get_schema(
 /// Put data contract to platform and return serialized state transition
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_put_to_platform(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
 ) -> *mut SwiftDashBinaryData {
     if sdk_handle.is_null() || contract_handle.is_null() || signer_handle.is_null() {
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -124,7 +124,7 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_data_contract_put_to_platform(
+        let result = rs_sdk_ffi::ios_sdk_data_contract_put_to_platform(
             sdk_handle,
             contract_handle,
             public_key_id,
@@ -138,11 +138,11 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::BinaryData {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::BinaryData {
             return ptr::null_mut();
         }
 
@@ -150,7 +150,7 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform(
             return ptr::null_mut();
         }
 
-        let ffi_binary_ptr = result.data as *mut ios_sdk_ffi::IOSSDKBinaryData;
+        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
         let ffi_binary = *Box::from_raw(ffi_binary_ptr);
 
         // Convert to Swift-friendly structure
@@ -166,17 +166,17 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform(
 /// Put data contract to platform and wait for confirmation
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_put_to_platform_and_wait(
-    sdk_handle: *mut ios_sdk_ffi::SDKHandle,
-    contract_handle: *mut ios_sdk_ffi::DataContractHandle,
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
     public_key_id: u32,
-    signer_handle: *mut ios_sdk_ffi::SignerHandle,
+    signer_handle: *mut rs_sdk_ffi::SignerHandle,
     settings: *const SwiftDashPutSettings,
-) -> *mut ios_sdk_ffi::DataContractHandle {
+) -> *mut rs_sdk_ffi::DataContractHandle {
     if sdk_handle.is_null() || contract_handle.is_null() || signer_handle.is_null() {
         return ptr::null_mut();
     }
 
-    let ffi_settings: *const ios_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
+    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
         ptr::null()
     } else {
         unsafe {
@@ -187,7 +187,7 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform_and_wait(
     };
 
     unsafe {
-        let result = ios_sdk_ffi::ios_sdk_data_contract_put_to_platform_and_wait(
+        let result = rs_sdk_ffi::ios_sdk_data_contract_put_to_platform_and_wait(
             sdk_handle,
             contract_handle,
             public_key_id,
@@ -201,14 +201,14 @@ pub extern "C" fn swift_dash_data_contract_put_to_platform_and_wait(
         }
 
         if !result.error.is_null() {
-            ios_sdk_ffi::ios_sdk_error_free(result.error);
+            rs_sdk_ffi::ios_sdk_error_free(result.error);
             return ptr::null_mut();
         }
 
-        if result.data_type != ios_sdk_ffi::IOSSDKResultDataType::DataContractHandle {
+        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::DataContractHandle {
             return ptr::null_mut();
         }
 
-        result.data as *mut ios_sdk_ffi::DataContractHandle
+        result.data as *mut rs_sdk_ffi::DataContractHandle
     }
 }

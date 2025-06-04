@@ -2,7 +2,7 @@
 
 ## Test Structure
 
-The Swift SDK is designed as an FFI wrapper around ios-sdk-ffi for iOS applications. Due to the complexity of the underlying dependencies, testing is primarily focused on compilation verification and integration testing with actual iOS applications.
+The Swift SDK is designed as an FFI wrapper around rs-sdk-ffi for iOS applications. Due to the complexity of the underlying dependencies, testing is primarily focused on compilation verification and integration testing with actual iOS applications.
 
 ### 1. Unit Tests (`src/tests.rs`)
 - **SDK Initialization**: Tests that the SDK can be initialized properly
@@ -81,7 +81,7 @@ See `example/SwiftSDKExample.swift` for a complete example of how to use the SDK
 
 ## Known Limitations
 
-1. **Compilation Dependencies**: The swift-sdk depends on ios-sdk-ffi which has complex dependencies
+1. **Compilation Dependencies**: The swift-sdk depends on rs-sdk-ffi which has complex dependencies
 2. **Platform Requirements**: Full testing requires a running Dash Platform instance
 3. **Async Operations**: Wait variants require network connectivity
 
@@ -91,6 +91,6 @@ For comprehensive testing of the Swift SDK:
 
 1. **Swift Integration Tests**: Create XCTest suites that use the compiled library
 2. **iOS Application Testing**: Test in actual iOS applications with real network connectivity
-3. **Mock FFI Layer**: Create mocked versions of ios-sdk-ffi functions for unit testing
+3. **Mock FFI Layer**: Create mocked versions of rs-sdk-ffi functions for unit testing
 4. **Performance Tests**: Benchmark serialization/deserialization in Swift
 5. **Memory Leak Detection**: Use Xcode Instruments to verify proper memory management
