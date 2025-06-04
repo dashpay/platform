@@ -6,13 +6,8 @@
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
 use super::LimitQuery;
-use crate::{
-    error::Error,
-    mock::MockResponse,
-    platform::{document_query::DocumentQuery, query::Query},
-    sync::retry,
-    Sdk,
-};
+use crate::platform::documents::document_query::DocumentQuery;
+use crate::{error::Error, mock::MockResponse, platform::query::Query, sync::retry, Sdk};
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
@@ -315,7 +310,7 @@ where
 /// ## Supported query types
 ///
 /// * [DriveQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
-/// * [DocumentQuery](crate::platform::document_query::DocumentQuery)
+/// * [DocumentQuery](crate::platform::documents::document_query::DocumentQuery)
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Documents> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery

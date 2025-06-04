@@ -3,7 +3,8 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from Platform.
 use super::types::epoch::EpochQuery;
 use super::types::evonode::EvoNode;
-use crate::{error::Error, platform::document_query::DocumentQuery};
+use crate::error::Error;
+use crate::platform::documents::document_query::DocumentQuery;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
