@@ -13,53 +13,54 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token freeze transitions
-pub struct TokenFreezeTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    token_position: TokenContractPosition,
-    actor_id: Identifier,
-    freeze_identity_id: Identifier,
-    public_note: Option<String>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
+/// A builder to configure and broadcast token destroy funds transitions
+pub struct TokenDestroyFrozenFundsTransitionBuilder {
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub actor_id: Identifier,
+    pub frozen_identity_id: Identifier,
+    pub public_note: Option<String>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
-impl<'a> TokenFreezeTransitionBuilder<'a> {
+impl TokenDestroyFrozenFundsTransitionBuilder {
     /// Start building a mint tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `actor_id` - The identifier of the actor
-    /// * `freeze_identity_id` - The identifier of the frozen identity
+    /// * `frozen_identity_id` - The identifier of the frozen identity
     ///
     /// # Returns
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         actor_id: Identifier,
-        freeze_identity_id: Identifier,
+        frozen_identity_id: Identifier,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
             actor_id,
-            freeze_identity_id,
+            frozen_identity_id,
             public_note: None,
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
+            state_transition_creation_options: None,
         }
     }
 
-    /// Adds a public note to the token freeze transition
+    /// Adds a public note to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -73,7 +74,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token freeze transition
+    /// Adds a user fee increase to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -87,7 +88,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token freeze transition
+    /// Adds group information to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -104,7 +105,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Adds settings to the token freeze transition
+    /// Adds settings to the token destroy transition
     ///
     /// # Arguments
     ///
@@ -118,7 +119,24 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token freeze transition
+    /// Adds state transition creation options to the token destroy transition
+    ///
+    /// # Arguments
+    ///
+    /// * `state_transition_creation_options` - The state transition creation options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_state_transition_creation_options(
+        mut self,
+        state_transition_creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(state_transition_creation_options);
+        self
+    }
+
+    /// Signs the token destroy transition
     ///
     /// # Arguments
     ///
@@ -131,12 +149,11 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -152,12 +169,12 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_freeze_transition(
+        let state_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
             token_id,
             self.actor_id,
             self.data_contract.id(),
             self.token_position,
-            self.freeze_identity_id,
+            self.frozen_identity_id,
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,
@@ -165,7 +182,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)

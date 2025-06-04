@@ -14,24 +14,26 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
 /// A builder to configure and broadcast token purchase transitions
-pub struct TokenDirectPurchaseTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    token_position: TokenContractPosition,
-    actor_id: Identifier,
-    amount: TokenAmount,
-    total_agreed_price: Credits,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
+pub struct TokenDirectPurchaseTransitionBuilder {
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub actor_id: Identifier,
+    pub amount: TokenAmount,
+    pub total_agreed_price: Credits,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
-impl<'a> TokenDirectPurchaseTransitionBuilder<'a> {
+impl TokenDirectPurchaseTransitionBuilder {
     /// Start building a purchase tokens request for the provided DataContract.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `issuer_id` - The identifier of the issuer
     /// * `amount` - The amount of tokens to purchase
@@ -40,14 +42,12 @@ impl<'a> TokenDirectPurchaseTransitionBuilder<'a> {
     ///
     /// * `Self` - The new builder instance
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
         actor_id: Identifier,
         amount: TokenAmount,
         total_agreed_price: Credits,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -56,6 +56,7 @@ impl<'a> TokenDirectPurchaseTransitionBuilder<'a> {
             total_agreed_price,
             settings: None,
             user_fee_increase: None,
+            state_transition_creation_options: None,
         }
     }
 
@@ -87,6 +88,23 @@ impl<'a> TokenDirectPurchaseTransitionBuilder<'a> {
         self
     }
 
+    /// Adds state transition creation options to the token purchase transition
+    ///
+    /// # Arguments
+    ///
+    /// * `state_transition_creation_options` - The state transition creation options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_state_transition_creation_options(
+        mut self,
+        state_transition_creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(state_transition_creation_options);
+        self
+    }
+
     /// Signs the token purchase transition
     ///
     /// # Arguments
@@ -100,12 +118,11 @@ impl<'a> TokenDirectPurchaseTransitionBuilder<'a> {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -133,7 +150,7 @@ impl<'a> TokenDirectPurchaseTransitionBuilder<'a> {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)

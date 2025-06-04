@@ -14,72 +14,50 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 
-/// A builder to configure and broadcast token mint transitions
-pub struct TokenMintTransitionBuilder<'a> {
-    data_contract: &'a DataContract,
-    token_position: TokenContractPosition,
-    issuer_id: Identifier,
-    amount: TokenAmount,
-    recipient_id: Option<Identifier>,
-    public_note: Option<String>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
+/// A builder to configure and broadcast token burn transitions
+pub struct TokenBurnTransitionBuilder {
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub owner_id: Identifier,
+    pub amount: TokenAmount,
+    pub public_note: Option<String>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
-impl<'a> TokenMintTransitionBuilder<'a> {
-    /// Start building a mint tokens request for the provided DataContract.
+impl TokenBurnTransitionBuilder {
+    /// Creates a new `TokenBurnTransitionBuilder`
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the data contract
+    /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `issuer_id` - The identifier of the issuer
-    /// * `amount` - The amount of tokens to mint
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The new builder instance
+    /// * `owner_id` - The identifier of the token owner
+    /// * `amount` - The amount of tokens to burn
     pub fn new(
-        data_contract: &'a DataContract,
+        data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
-        issuer_id: Identifier,
+        owner_id: Identifier,
         amount: TokenAmount,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
-            issuer_id,
+            owner_id,
             amount,
-            recipient_id: None,
             public_note: None,
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
+            state_transition_creation_options: None,
         }
     }
 
-    /// Sets the recipient identity ID for the minted tokens
-    ///
-    /// # Arguments
-    ///
-    /// * `issued_to_id` - The identifier of the recipient
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The updated builder
-    pub fn issued_to_identity_id(mut self, issued_to_id: Identifier) -> Self {
-        self.recipient_id = Some(issued_to_id);
-
-        // TODO: Validate with minting_allow_choosing_destination
-
-        self
-    }
-
-    /// Adds a public note to the token mint transition
+    /// Adds a public note to the token burn transition
     ///
     /// # Arguments
     ///
@@ -93,7 +71,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token mint transition
+    /// Adds a user fee increase to the token burn transition
     ///
     /// # Arguments
     ///
@@ -107,7 +85,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Adds group information to the token mint transition
+    /// Adds group information to the token burn transition
     ///
     /// # Arguments
     ///
@@ -118,13 +96,10 @@ impl<'a> TokenMintTransitionBuilder<'a> {
     /// * `Self` - The updated builder
     pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
         self.using_group_info = Some(group_info);
-
-        // TODO: Simplify group actions automatically find position if group action is required
-
         self
     }
 
-    /// Adds settings to the token mint transition
+    /// Adds settings to the token burn transition
     ///
     /// # Arguments
     ///
@@ -138,7 +113,24 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token mint transition
+    /// Adds state transition creation options to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `state_transition_creation_options` - The signing options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_state_transition_creation_options(
+        mut self,
+        state_transition_creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(state_transition_creation_options);
+        self
+    }
+
+    /// Signs the token burn transition
     ///
     /// # Arguments
     ///
@@ -151,12 +143,11 @@ impl<'a> TokenMintTransitionBuilder<'a> {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -165,20 +156,19 @@ impl<'a> TokenMintTransitionBuilder<'a> {
 
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
-                self.issuer_id,
+                self.owner_id,
                 self.data_contract.id(),
                 true,
                 self.settings,
             )
             .await?;
 
-        let state_transition = BatchTransition::new_token_mint_transition(
+        let state_transition = BatchTransition::new_token_burn_transition(
             token_id,
-            self.issuer_id,
+            self.owner_id,
             self.data_contract.id(),
             self.token_position,
             self.amount,
-            self.recipient_id,
             self.public_note.clone(),
             self.using_group_info,
             identity_public_key,
@@ -186,7 +176,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)
