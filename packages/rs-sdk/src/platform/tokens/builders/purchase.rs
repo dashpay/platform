@@ -18,13 +18,14 @@ use std::sync::Arc;
 
 /// A builder to configure and broadcast token purchase transitions
 pub struct TokenDirectPurchaseTransitionBuilder {
-    data_contract: Arc<DataContract>,
-    token_position: TokenContractPosition,
-    actor_id: Identifier,
-    amount: TokenAmount,
-    total_agreed_price: Credits,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub actor_id: Identifier,
+    pub amount: TokenAmount,
+    pub total_agreed_price: Credits,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub signing_options: Option<StateTransitionCreationOptions>,
 }
 
 impl TokenDirectPurchaseTransitionBuilder {
@@ -47,8 +48,6 @@ impl TokenDirectPurchaseTransitionBuilder {
         amount: TokenAmount,
         total_agreed_price: Credits,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -57,6 +56,7 @@ impl TokenDirectPurchaseTransitionBuilder {
             total_agreed_price,
             settings: None,
             user_fee_increase: None,
+            signing_options: None,
         }
     }
 
@@ -88,6 +88,20 @@ impl TokenDirectPurchaseTransitionBuilder {
         self
     }
 
+    /// Adds signing options to the token purchase transition
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_options` - The signing options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_signing_options(mut self, signing_options: StateTransitionCreationOptions) -> Self {
+        self.signing_options = Some(signing_options);
+        self
+    }
+
     /// Signs the token purchase transition
     ///
     /// # Arguments
@@ -101,12 +115,11 @@ impl TokenDirectPurchaseTransitionBuilder {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -134,7 +147,7 @@ impl TokenDirectPurchaseTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.signing_options,
         )?;
 
         Ok(state_transition)

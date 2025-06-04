@@ -14,9 +14,11 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 
 /// Result type returned from emergency action operations.
 ///
-/// Emergency actions always require group authorization and may include
+/// Emergency actions may require group authorization and may include
 /// a document recording the action details.
 pub enum EmergencyActionResult {
+    /// Standard emergency action result containing the action document.
+    Document(Document),
     /// Emergency action result with group power and optional document for history.
     GroupActionWithDocument(GroupSumPower, Option<Document>),
 }
@@ -54,15 +56,20 @@ impl Sdk {
     ) -> Result<EmergencyActionResult, Error> {
         let platform_version = self.version();
 
+        let put_settings = emergency_action_transition_builder.settings;
+
         let state_transition = emergency_action_transition_builder
-            .sign(self, signing_key, signer, platform_version, None)
+            .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, None)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(document) => {
+                Ok(EmergencyActionResult::Document(document))
+            }
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(
                 group_power,
                 document,
@@ -72,7 +79,7 @@ impl Sdk {
             )),
             _ => Err(Error::DriveProofError(
                 drive::error::proof::ProofError::UnexpectedResultProof(
-                    "Expected VerifiedTokenGroupActionWithDocument for emergency action transition"
+                    "Expected VerifiedTokenActionWithDocument or VerifiedTokenGroupActionWithDocument for emergency action transition"
                         .to_string(),
                 ),
                 vec![],

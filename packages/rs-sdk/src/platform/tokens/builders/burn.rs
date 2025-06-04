@@ -18,14 +18,15 @@ use std::sync::Arc;
 
 /// A builder to configure and broadcast token burn transitions
 pub struct TokenBurnTransitionBuilder {
-    data_contract: Arc<DataContract>,
-    token_position: TokenContractPosition,
-    owner_id: Identifier,
-    amount: TokenAmount,
-    public_note: Option<String>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub owner_id: Identifier,
+    pub amount: TokenAmount,
+    pub public_note: Option<String>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub signing_options: Option<StateTransitionCreationOptions>,
 }
 
 impl TokenBurnTransitionBuilder {
@@ -52,6 +53,7 @@ impl TokenBurnTransitionBuilder {
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
+            signing_options: None,
         }
     }
 
@@ -111,6 +113,20 @@ impl TokenBurnTransitionBuilder {
         self
     }
 
+    /// Adds signing options to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_options` - The signing options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_signing_options(mut self, signing_options: StateTransitionCreationOptions) -> Self {
+        self.signing_options = Some(signing_options);
+        self
+    }
+
     /// Signs the token burn transition
     ///
     /// # Arguments
@@ -124,12 +140,11 @@ impl TokenBurnTransitionBuilder {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -158,7 +173,7 @@ impl TokenBurnTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.signing_options,
         )?;
 
         Ok(state_transition)

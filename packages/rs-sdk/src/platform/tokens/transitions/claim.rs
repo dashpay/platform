@@ -55,12 +55,14 @@ impl Sdk {
     ) -> Result<ClaimResult, Error> {
         let platform_version = self.version();
 
+        let put_settings = claim_tokens_transition_builder.settings;
+
         let state_transition = claim_tokens_transition_builder
-            .sign(self, signing_key, signer, platform_version, None)
+            .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, None)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {

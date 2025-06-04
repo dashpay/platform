@@ -18,14 +18,15 @@ use std::sync::Arc;
 
 /// A builder to configure and broadcast emergency action transitions
 pub struct TokenEmergencyActionTransitionBuilder {
-    data_contract: Arc<DataContract>,
-    token_position: TokenContractPosition,
-    actor_id: Identifier,
-    action: TokenEmergencyAction,
-    public_note: Option<String>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
-    using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub actor_id: Identifier,
+    pub action: TokenEmergencyAction,
+    pub public_note: Option<String>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub using_group_info: Option<GroupStateTransitionInfoStatus>,
+    pub signing_options: Option<StateTransitionCreationOptions>,
 }
 
 impl TokenEmergencyActionTransitionBuilder {
@@ -45,8 +46,6 @@ impl TokenEmergencyActionTransitionBuilder {
         token_position: TokenContractPosition,
         actor_id: Identifier,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -56,6 +55,7 @@ impl TokenEmergencyActionTransitionBuilder {
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
+            signing_options: None,
         }
     }
 
@@ -75,8 +75,6 @@ impl TokenEmergencyActionTransitionBuilder {
         token_position: TokenContractPosition,
         actor_id: Identifier,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -86,6 +84,7 @@ impl TokenEmergencyActionTransitionBuilder {
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
+            signing_options: None,
         }
     }
 
@@ -148,6 +147,20 @@ impl TokenEmergencyActionTransitionBuilder {
         self
     }
 
+    /// Adds signing options to the token emergency action transition
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_options` - The signing options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_signing_options(mut self, signing_options: StateTransitionCreationOptions) -> Self {
+        self.signing_options = Some(signing_options);
+        self
+    }
+
     /// Signs the token emergency action transition
     ///
     /// # Arguments
@@ -161,12 +174,11 @@ impl TokenEmergencyActionTransitionBuilder {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -195,7 +207,7 @@ impl TokenEmergencyActionTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.signing_options,
         )?;
 
         Ok(state_transition)

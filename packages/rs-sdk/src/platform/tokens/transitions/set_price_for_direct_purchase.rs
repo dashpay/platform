@@ -69,7 +69,7 @@ impl Sdk {
         let platform_version = self.version();
 
         let state_transition = set_price_transition_builder
-            .sign(self, signing_key, signer, platform_version, None)
+            .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition

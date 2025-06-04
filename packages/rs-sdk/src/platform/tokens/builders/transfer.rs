@@ -17,16 +17,17 @@ use std::sync::Arc;
 
 /// A builder to configure and broadcast token transfer transitions
 pub struct TokenTransferTransitionBuilder {
-    data_contract: Arc<DataContract>,
-    token_position: TokenContractPosition,
-    issuer_id: Identifier,
-    amount: TokenAmount,
-    recipient_id: Identifier,
-    public_note: Option<String>,
-    shared_encrypted_note: Option<SharedEncryptedNote>,
-    private_encrypted_note: Option<PrivateEncryptedNote>,
-    settings: Option<PutSettings>,
-    user_fee_increase: Option<UserFeeIncrease>,
+    pub data_contract: Arc<DataContract>,
+    pub token_position: TokenContractPosition,
+    pub issuer_id: Identifier,
+    pub amount: TokenAmount,
+    pub recipient_id: Identifier,
+    pub public_note: Option<String>,
+    pub shared_encrypted_note: Option<SharedEncryptedNote>,
+    pub private_encrypted_note: Option<PrivateEncryptedNote>,
+    pub settings: Option<PutSettings>,
+    pub user_fee_increase: Option<UserFeeIncrease>,
+    pub signing_options: Option<StateTransitionCreationOptions>,
 }
 
 impl TokenTransferTransitionBuilder {
@@ -50,8 +51,6 @@ impl TokenTransferTransitionBuilder {
         recipient_id: Identifier,
         amount: TokenAmount,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -63,6 +62,7 @@ impl TokenTransferTransitionBuilder {
             user_fee_increase: None,
             private_encrypted_note: None,
             shared_encrypted_note: None,
+            signing_options: None,
         }
     }
 
@@ -143,6 +143,20 @@ impl TokenTransferTransitionBuilder {
         self
     }
 
+    /// Adds signing options to the token transfer transition
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_options` - The signing options to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_signing_options(mut self, signing_options: StateTransitionCreationOptions) -> Self {
+        self.signing_options = Some(signing_options);
+        self
+    }
+
     /// Signs the token transfer transition
     ///
     /// # Arguments
@@ -156,12 +170,11 @@ impl TokenTransferTransitionBuilder {
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
-        &self,
+        self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
         signer: &impl Signer,
         platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
@@ -184,15 +197,15 @@ impl TokenTransferTransitionBuilder {
             self.token_position,
             self.amount,
             self.recipient_id,
-            self.public_note.clone(),
-            self.shared_encrypted_note.clone(),
-            self.private_encrypted_note.clone(),
+            self.public_note,
+            self.shared_encrypted_note,
+            self.private_encrypted_note,
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            options,
+            self.signing_options,
         )?;
 
         Ok(state_transition)
