@@ -24,7 +24,7 @@ pub struct TokenClaimTransitionBuilder {
     pub public_note: Option<String>,
     pub settings: Option<PutSettings>,
     pub user_fee_increase: Option<UserFeeIncrease>,
-    pub signing_options: Option<StateTransitionCreationOptions>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
 impl TokenClaimTransitionBuilder {
@@ -54,7 +54,7 @@ impl TokenClaimTransitionBuilder {
             public_note: None,
             settings: None,
             user_fee_increase: None,
-            signing_options: None,
+            state_transition_creation_options: None,
         }
     }
 
@@ -100,17 +100,20 @@ impl TokenClaimTransitionBuilder {
         self
     }
 
-    /// Adds signing options to the token claim transition
+    /// Adds state transition creation options to the token claim transition
     ///
     /// # Arguments
     ///
-    /// * `signing_options` - The signing options to add
+    /// * `state_transition_creation_options` - The state transition creation options to add
     ///
     /// # Returns
     ///
     /// * `Self` - The updated builder
-    pub fn with_signing_options(mut self, signing_options: StateTransitionCreationOptions) -> Self {
-        self.signing_options = Some(signing_options);
+    pub fn with_state_transition_creation_options(
+        mut self,
+        state_transition_creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(state_transition_creation_options);
         self
     }
 
@@ -159,7 +162,7 @@ impl TokenClaimTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            self.signing_options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)

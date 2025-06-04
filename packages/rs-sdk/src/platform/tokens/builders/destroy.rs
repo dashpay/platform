@@ -25,7 +25,7 @@ pub struct TokenDestroyFrozenFundsTransitionBuilder {
     pub settings: Option<PutSettings>,
     pub user_fee_increase: Option<UserFeeIncrease>,
     pub using_group_info: Option<GroupStateTransitionInfoStatus>,
-    pub signing_options: Option<StateTransitionCreationOptions>,
+    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
 }
 
 impl TokenDestroyFrozenFundsTransitionBuilder {
@@ -56,7 +56,7 @@ impl TokenDestroyFrozenFundsTransitionBuilder {
             settings: None,
             user_fee_increase: None,
             using_group_info: None,
-            signing_options: None,
+            state_transition_creation_options: None,
         }
     }
 
@@ -119,17 +119,20 @@ impl TokenDestroyFrozenFundsTransitionBuilder {
         self
     }
 
-    /// Adds signing options to the token destroy transition
+    /// Adds state transition creation options to the token destroy transition
     ///
     /// # Arguments
     ///
-    /// * `signing_options` - The signing options to add
+    /// * `state_transition_creation_options` - The state transition creation options to add
     ///
     /// # Returns
     ///
     /// * `Self` - The updated builder
-    pub fn with_signing_options(mut self, signing_options: StateTransitionCreationOptions) -> Self {
-        self.signing_options = Some(signing_options);
+    pub fn with_state_transition_creation_options(
+        mut self,
+        state_transition_creation_options: StateTransitionCreationOptions,
+    ) -> Self {
+        self.state_transition_creation_options = Some(state_transition_creation_options);
         self
     }
 
@@ -179,7 +182,7 @@ impl TokenDestroyFrozenFundsTransitionBuilder {
             self.user_fee_increase.unwrap_or_default(),
             signer,
             platform_version,
-            self.signing_options,
+            self.state_transition_creation_options,
         )?;
 
         Ok(state_transition)
