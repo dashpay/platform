@@ -34,3 +34,7 @@ node_modules
 # Rust build artifacts
 /target
 .gitaipconfig
+
+# wasm-drive-verify build artifacts
+packages/wasm-drive-verify/target/
+packages/wasm-drive-verify/wasm/

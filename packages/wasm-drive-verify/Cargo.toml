@@ -1,0 +1,41 @@
+[package]
+name = "wasm-drive-verify"
+version = "1.8.0"
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+rust-version = "1.74"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+drive = { path = "../rs-drive", features = ["verify"] }
+dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "extended-document", "random-public-keys", "random-identities", "random-documents", "system_contracts"] }
+platform-version = { path = "../rs-platform-version" }
+platform-value = { path = "../rs-platform-value" }
+
+wasm-bindgen = { version = "0.2.89" }
+serde = { version = "1.0.193", default-features = false, features = ["alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+serde-wasm-bindgen = { version = "0.6.0" }
+js-sys = { version = "0.3.64" }
+web-sys = { version = "0.3.64", features = ["console", "Window", "Performance"] }
+getrandom = { version = "0.2", features = ["js"] }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+ciborium = { version = "0.2.1" }
+hex = { version = "0.4.3" }
+base64 = { version = "0.22.0" }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.39"
+
+[features]
+default = ["console_error_panic_hook"]
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+lto = true
+
+[workspace]

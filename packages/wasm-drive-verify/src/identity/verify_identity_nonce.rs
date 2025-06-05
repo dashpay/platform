@@ -1,0 +1,55 @@
+use drive::drive::Drive;
+use drive::verify::RootHash;
+use dpp::version::PlatformVersion;
+use wasm_bindgen::prelude::*;
+use js_sys::Uint8Array;
+
+#[wasm_bindgen]
+pub struct VerifyIdentityNonceResult {
+    root_hash: Vec<u8>,
+    nonce: Option<u64>,
+}
+
+#[wasm_bindgen]
+impl VerifyIdentityNonceResult {
+    #[wasm_bindgen(getter)]
+    pub fn root_hash(&self) -> Vec<u8> {
+        self.root_hash.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn nonce(&self) -> Option<u64> {
+        self.nonce
+    }
+}
+
+#[wasm_bindgen(js_name = "verifyIdentityNonce")]
+pub fn verify_identity_nonce(
+    proof: &Uint8Array,
+    identity_id: &Uint8Array,
+    verify_subset_of_proof: bool,
+    platform_version_number: u32,
+) -> Result<VerifyIdentityNonceResult, JsValue> {
+    let proof_vec = proof.to_vec();
+    
+    let identity_id_bytes: [u8; 32] = identity_id
+        .to_vec()
+        .try_into()
+        .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
+
+    let platform_version = PlatformVersion::get(platform_version_number)
+        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
+
+    let (root_hash, nonce_option) = Drive::verify_identity_nonce(
+        &proof_vec,
+        identity_id_bytes,
+        verify_subset_of_proof,
+        platform_version,
+    )
+    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+
+    Ok(VerifyIdentityNonceResult {
+        root_hash: root_hash.to_vec(),
+        nonce: nonce_option,
+    })
+}
