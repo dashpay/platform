@@ -1,6 +1,7 @@
 //! Document query operations
 
 pub mod fetch;
+pub mod info;
 pub mod search;
 
 // Re-export all public functions for convenient access
