@@ -1,10 +1,8 @@
-use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::{Object, Reflect, Uint8Array};
-use serde_wasm_bindgen::to_value;
-use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
+use wasm_dpp::data_contract::DataContractWasm;
 
 #[wasm_bindgen]
 pub struct VerifyContractHistoryResult {
@@ -44,7 +42,7 @@ pub fn verify_contract_history(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, contract_history_option) = drive::verify::contract::verify_contract_history(
+    let (root_hash, contract_history_option) = Drive::verify_contract_history(
         &proof_vec,
         contract_id_bytes,
         start_at_date,
@@ -58,12 +56,8 @@ pub fn verify_contract_history(
         Some(history_map) => {
             let js_obj = Object::new();
             for (date, contract) in history_map {
-                let contract_json = serde_json::to_value(&contract).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to serialize contract: {:?}", e))
-                })?;
-                let contract_js = to_value(&contract_json).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to convert contract to JsValue: {:?}", e))
-                })?;
+                let contract_wasm = DataContractWasm::from(contract);
+                let contract_js = JsValue::from(contract_wasm);
 
                 Reflect::set(&js_obj, &JsValue::from_str(&date.to_string()), &contract_js)
                     .map_err(|_| JsValue::from_str("Failed to set contract in history object"))?;

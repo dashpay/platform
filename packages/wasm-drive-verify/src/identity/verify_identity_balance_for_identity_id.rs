@@ -1,6 +1,5 @@
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::verify::RootHash;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 

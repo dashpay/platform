@@ -1,11 +1,10 @@
 use dpp::data_contract::group::GroupMemberPower;
-use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Uint8Array};
-use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
@@ -53,8 +52,8 @@ pub fn verify_action_signers_vec(
 
     // Convert action_status from u8 to GroupActionStatus
     let action_status_enum = match action_status {
-        0 => GroupActionStatus::Active,
-        1 => GroupActionStatus::Closed,
+        0 => GroupActionStatus::ActionActive,
+        1 => GroupActionStatus::ActionClosed,
         _ => return Err(JsValue::from_str("Invalid action status value")),
     };
 
@@ -62,7 +61,7 @@ pub fn verify_action_signers_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, signers_vec): (RootHash, Vec<(Identifier, GroupMemberPower)>) =
-        drive::verify::group::verify_action_signers(
+        Drive::verify_action_signers(
             &proof_vec,
             Identifier::from(contract_id_bytes),
             group_contract_position,
@@ -77,7 +76,8 @@ pub fn verify_action_signers_vec(
     let js_array = Array::new();
     for (signer_id, power) in signers_vec {
         let pair_array = Array::new();
-        pair_array.push(&Uint8Array::from(signer_id.as_bytes()).into());
+        let signer_id_bytes = signer_id.as_bytes();
+        pair_array.push(&Uint8Array::from(&signer_id_bytes[..]).into());
         pair_array.push(&JsValue::from(power));
         js_array.push(&pair_array);
     }
@@ -113,8 +113,8 @@ pub fn verify_action_signers_map(
 
     // Convert action_status from u8 to GroupActionStatus
     let action_status_enum = match action_status {
-        0 => GroupActionStatus::Active,
-        1 => GroupActionStatus::Closed,
+        0 => GroupActionStatus::ActionActive,
+        1 => GroupActionStatus::ActionClosed,
         _ => return Err(JsValue::from_str("Invalid action status value")),
     };
 
@@ -122,7 +122,7 @@ pub fn verify_action_signers_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, signers_map): (RootHash, BTreeMap<Identifier, GroupMemberPower>) =
-        drive::verify::group::verify_action_signers(
+        Drive::verify_action_signers(
             &proof_vec,
             Identifier::from(contract_id_bytes),
             group_contract_position,
@@ -137,7 +137,8 @@ pub fn verify_action_signers_map(
     let js_object = Object::new();
     for (signer_id, power) in signers_map {
         // Use base64 encoded identifier as key
-        let id_base64 = base64::encode(signer_id.as_bytes());
+        use base64::{engine::general_purpose, Engine as _};
+        let id_base64 = general_purpose::STANDARD.encode(signer_id.as_bytes());
         js_sys::Reflect::set(
             &js_object,
             &JsValue::from_str(&id_base64),

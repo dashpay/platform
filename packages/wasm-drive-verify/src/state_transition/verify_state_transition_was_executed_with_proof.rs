@@ -6,10 +6,10 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::ContractLookupFn;
-use drive::verify::RootHash;
 use js_sys::{Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -58,8 +58,9 @@ pub fn verify_state_transition_was_executed_with_proof(
     let known_contracts = parse_known_contracts(known_contracts_js)?;
 
     // Create contract lookup function
-    let contract_lookup_fn: ContractLookupFn =
-        Box::new(move |identifier: &Identifier| known_contracts.get(identifier).cloned());
+    let contract_lookup_fn: Box<ContractLookupFn> = Box::new(move |identifier: &Identifier| {
+        Ok(known_contracts.get(identifier).cloned())
+    });
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
@@ -91,7 +92,7 @@ fn parse_state_transition(state_transition_js: &JsValue) -> Result<StateTransiti
 
 fn parse_known_contracts(
     known_contracts_js: &JsValue,
-) -> Result<HashMap<Identifier, DataContract>, JsValue> {
+) -> Result<HashMap<Identifier, Arc<DataContract>>, JsValue> {
     let mut contracts = HashMap::new();
 
     if known_contracts_js.is_null() || known_contracts_js.is_undefined() {
@@ -112,7 +113,8 @@ fn parse_known_contracts(
             .ok_or_else(|| JsValue::from_str("Contract ID must be a string"))?;
 
         // Parse identifier from hex string
-        let identifier = Identifier::from_string(&key_str, Default::default())
+        use platform_value::string_encoding::Encoding;
+        let identifier = Identifier::from_string(&key_str, Encoding::Hex)
             .map_err(|e| JsValue::from_str(&format!("Invalid contract ID: {:?}", e)))?;
 
         let contract_js =
@@ -121,7 +123,7 @@ fn parse_known_contracts(
         let contract: DataContract = from_value(contract_js)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse contract: {:?}", e)))?;
 
-        contracts.insert(identifier, contract);
+        contracts.insert(identifier, Arc::new(contract));
     }
 
     Ok(contracts)
@@ -135,80 +137,84 @@ fn convert_proof_result_to_js(
     let obj = Object::new();
 
     match proof_result {
-        StateTransitionProofResult::VerifiedBalanceTransition(balance_transition) => {
+        StateTransitionProofResult::VerifiedDataContract(_contract) => {
             Reflect::set(
                 &obj,
                 &JsValue::from_str("type"),
-                &JsValue::from_str("VerifiedBalanceTransition"),
+                &JsValue::from_str("VerifiedDataContract"),
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
+            // TODO: Add serialization of the data contract
             Reflect::set(
                 &obj,
-                &JsValue::from_str("feeResult"),
-                &JsValue::from_f64(balance_transition.fee_result as f64),
+                &JsValue::from_str("dataContract"),
+                &JsValue::from_str("Data contract serialization not yet implemented"),
             )
-            .map_err(|_| JsValue::from_str("Failed to set feeResult"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("feesUpdatedAfterBlock"),
-                &JsValue::from_bool(balance_transition.fees_updated_after_block),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set feesUpdatedAfterBlock"))?;
+            .map_err(|_| JsValue::from_str("Failed to set dataContract"))?;
         }
-        StateTransitionProofResult::VerifiedIdentityBalanceAndRevisionTransition(
-            identity_transition,
-        ) => {
+        StateTransitionProofResult::VerifiedIdentity(_identity) => {
             Reflect::set(
                 &obj,
                 &JsValue::from_str("type"),
-                &JsValue::from_str("VerifiedIdentityBalanceAndRevisionTransition"),
+                &JsValue::from_str("VerifiedIdentity"),
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
+            // TODO: Add serialization of the identity
             Reflect::set(
                 &obj,
-                &JsValue::from_str("feeResult"),
-                &JsValue::from_f64(identity_transition.fee_result as f64),
+                &JsValue::from_str("identity"),
+                &JsValue::from_str("Identity serialization not yet implemented"),
             )
-            .map_err(|_| JsValue::from_str("Failed to set feeResult"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("feesUpdatedAfterBlock"),
-                &JsValue::from_bool(identity_transition.fees_updated_after_block),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set feesUpdatedAfterBlock"))?;
-
-            if let Some(balance) = identity_transition.balance {
-                Reflect::set(
-                    &obj,
-                    &JsValue::from_str("balance"),
-                    &JsValue::from_f64(balance as f64),
-                )
-                .map_err(|_| JsValue::from_str("Failed to set balance"))?;
-            }
-
-            if let Some(revision) = identity_transition.revision {
-                Reflect::set(
-                    &obj,
-                    &JsValue::from_str("revision"),
-                    &JsValue::from_f64(revision as f64),
-                )
-                .map_err(|_| JsValue::from_str("Failed to set revision"))?;
-            }
+            .map_err(|_| JsValue::from_str("Failed to set identity"))?;
         }
-        StateTransitionProofResult::VerifiedPartialIdentityContractInfos(partial_info) => {
+        StateTransitionProofResult::VerifiedDocuments(_documents) => {
             Reflect::set(
                 &obj,
                 &JsValue::from_str("type"),
-                &JsValue::from_str("VerifiedPartialIdentityContractInfos"),
+                &JsValue::from_str("VerifiedDocuments"),
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
-            // Convert contract infos to JS
-            // This would need more detailed implementation based on the actual structure
+            // TODO: Add serialization of the documents
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("documents"),
+                &JsValue::from_str("Documents serialization not yet implemented"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set documents"))?;
+        }
+        StateTransitionProofResult::VerifiedPartialIdentity(_partial_identity) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("VerifiedPartialIdentity"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+
+            // TODO: Add serialization of the partial identity
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("partialIdentity"),
+                &JsValue::from_str("Partial identity serialization not yet implemented"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set partialIdentity"))?;
+        }
+        _ => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("Unknown"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("message"),
+                &JsValue::from_str("This proof result type is not yet implemented"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set message"))?;
         }
     }
 

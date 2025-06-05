@@ -1,6 +1,5 @@
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::verify::RootHash;
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -40,7 +39,7 @@ pub fn verify_token_total_supply_and_aggregated_identity_balance(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, supply_and_balance_option) =
+    let (root_hash, total_balance) =
         Drive::verify_token_total_supply_and_aggregated_identity_balance(
             &proof_vec,
             token_id_bytes,
@@ -49,28 +48,23 @@ pub fn verify_token_total_supply_and_aggregated_identity_balance(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    let result_js = match supply_and_balance_option {
-        Some((total_supply, aggregated_balance)) => {
-            let obj = Object::new();
+    let obj = Object::new();
 
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("totalSupply"),
-                &JsValue::from_f64(total_supply as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set totalSupply"))?;
+    Reflect::set(
+        &obj,
+        &JsValue::from_str("totalSupply"),
+        &JsValue::from_f64(total_balance.token_supply as f64),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set totalSupply"))?;
 
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("aggregatedIdentityBalance"),
-                &JsValue::from_f64(aggregated_balance as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set aggregatedIdentityBalance"))?;
+    Reflect::set(
+        &obj,
+        &JsValue::from_str("aggregatedIdentityBalance"),
+        &JsValue::from_f64(total_balance.aggregated_token_account_balances as f64),
+    )
+    .map_err(|_| JsValue::from_str("Failed to set aggregatedIdentityBalance"))?;
 
-            obj.into()
-        }
-        None => JsValue::NULL,
-    };
+    let result_js = obj.into();
 
     Ok(VerifyTokenTotalSupplyAndAggregatedIdentityBalanceResult {
         root_hash: root_hash.to_vec(),

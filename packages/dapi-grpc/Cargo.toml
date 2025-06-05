@@ -55,7 +55,7 @@ dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 platform-version = { path = "../rs-platform-version" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3", features = ["js"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tonic = { version = "0.13.0", features = [

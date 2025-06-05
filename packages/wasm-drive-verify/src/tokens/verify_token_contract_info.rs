@@ -1,6 +1,6 @@
+use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::verify::RootHash;
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -55,52 +55,17 @@ pub fn verify_token_contract_info(
             // Convert TokenContractInfo fields to JS object
             Reflect::set(
                 &obj,
-                &JsValue::from_str("tokenId"),
-                &Uint8Array::from(&info.token_id[..]),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("owner"),
-                &Uint8Array::from(&info.owner[..]),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set owner"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("maxSupply"),
-                &JsValue::from_f64(info.max_supply as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set maxSupply"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("burnAmount"),
-                &JsValue::from_f64(info.burn_amount as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set burnAmount"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("totalSupply"),
-                &JsValue::from_f64(info.total_supply as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set totalSupply"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("aggregatedIdentityBalance"),
-                &JsValue::from_f64(info.aggregated_identity_balance as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set aggregatedIdentityBalance"))?;
-
-            Reflect::set(
-                &obj,
                 &JsValue::from_str("contractId"),
-                &Uint8Array::from(&info.contract_id[..]),
+                &Uint8Array::from(info.contract_id().as_slice()),
             )
             .map_err(|_| JsValue::from_str("Failed to set contractId"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("tokenContractPosition"),
+                &JsValue::from_f64(info.token_contract_position() as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set tokenContractPosition"))?;
 
             obj.into()
         }

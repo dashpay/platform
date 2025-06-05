@@ -1,5 +1,6 @@
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
@@ -59,7 +60,7 @@ pub fn verify_identity_balances_for_identity_ids_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, balances_vec): (RootHash, Vec<([u8; 32], Option<Credits>)>) =
-        drive::verify::identity::verify_identity_balances_for_identity_ids(
+        Drive::verify_identity_balances_for_identity_ids(
             &proof_vec,
             is_proof_subset,
             &identity_ids_vec,
@@ -78,8 +79,12 @@ pub fn verify_identity_balances_for_identity_ids_vec(
 
         // Add balance
         match balance_option {
-            Some(credits) => tuple_array.push(&JsValue::from_f64(credits as f64)),
-            None => tuple_array.push(&JsValue::NULL),
+            Some(credits) => {
+                tuple_array.push(&JsValue::from_f64(credits as f64));
+            }
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);
@@ -126,7 +131,7 @@ pub fn verify_identity_balances_for_identity_ids_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, balances_map): (RootHash, BTreeMap<[u8; 32], Option<Credits>>) =
-        drive::verify::identity::verify_identity_balances_for_identity_ids(
+        Drive::verify_identity_balances_for_identity_ids(
             &proof_vec,
             is_proof_subset,
             &identity_ids_vec,

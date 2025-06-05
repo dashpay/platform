@@ -1,5 +1,6 @@
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -9,6 +10,62 @@ use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+
+fn deserialize_contested_resource_votes_query(
+    query_cbor: &Uint8Array,
+) -> Result<ContestedResourceVotesGivenByIdentityQuery, JsValue> {
+    // Deserialize the query components from CBOR
+    let query_value: serde_json::Value = ciborium::de::from_reader(&query_cbor.to_vec()[..])
+        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
+    
+    // Extract fields from the deserialized value
+    let query_obj = query_value.as_object()
+        .ok_or_else(|| JsValue::from_str("Query must be an object"))?;
+    
+    let identity_id_bytes: Vec<u8> = query_obj.get("identity_id")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.iter().map(|v| v.as_u64().map(|n| n as u8)).collect::<Option<Vec<_>>>())
+        .ok_or_else(|| JsValue::from_str("Invalid identity_id in query"))?;
+    
+    let identity_id = Identifier::from_bytes(&identity_id_bytes)
+        .map_err(|e| JsValue::from_str(&format!("Invalid identity_id: {:?}", e)))?;
+    
+    let offset = query_obj.get("offset")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u16);
+    
+    let limit = query_obj.get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u16);
+    
+    let start_at = query_obj.get("start_at")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            if arr.len() == 2 {
+                let bytes_arr = arr[0].as_array()?;
+                let bytes: Vec<u8> = bytes_arr.iter()
+                    .map(|v| v.as_u64().map(|n| n as u8))
+                    .collect::<Option<Vec<_>>>()?;
+                let bytes_32: [u8; 32] = bytes.try_into().ok()?;
+                let included = arr[1].as_bool()?;
+                Some((bytes_32, included))
+            } else {
+                None
+            }
+        });
+    
+    let order_ascending = query_obj.get("order_ascending")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    
+    Ok(ContestedResourceVotesGivenByIdentityQuery {
+        identity_id,
+        offset,
+        limit,
+        start_at,
+        order_ascending,
+    })
+}
 
 #[wasm_bindgen]
 pub struct VerifyIdentityVotesGivenProofResult {
@@ -39,19 +96,17 @@ pub fn verify_identity_votes_given_proof_vec(
 ) -> Result<VerifyIdentityVotesGivenProofResult, JsValue> {
     let proof_vec = proof.to_vec();
 
-    // Deserialize the query
-    let query: ContestedResourceVotesGivenByIdentityQuery =
-        ciborium::de::from_reader(&query_cbor.to_vec()[..])
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
-
-    // Create contract lookup function
-    let contract_lookup_fn: ContractLookupFn = create_contract_lookup_fn(contract_lookup)?;
-
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
+    // Deserialize the query
+    let query = deserialize_contested_resource_votes_query(query_cbor)?;
+
+    // Create contract lookup function
+    let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
+
     let (root_hash, votes_vec): (RootHash, Vec<(Identifier, ResourceVote)>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &contract_lookup_fn, platform_version)
+        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS array of tuples
@@ -60,11 +115,13 @@ pub fn verify_identity_votes_given_proof_vec(
         let tuple_array = Array::new();
 
         // Add identifier as Uint8Array
-        let id_uint8 = Uint8Array::from(identifier.as_bytes());
+        let id_bytes = identifier.as_bytes();
+        let id_uint8 = Uint8Array::from(&id_bytes[..]);
         tuple_array.push(&id_uint8);
 
         // Serialize resource vote to CBOR
-        let vote_bytes = ciborium::ser::into_vec(&resource_vote)
+        let mut vote_bytes = Vec::new();
+        ciborium::into_writer(&resource_vote, &mut vote_bytes)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))?;
         let vote_uint8 = Uint8Array::from(&vote_bytes[..]);
         tuple_array.push(&vote_uint8);
@@ -88,19 +145,17 @@ pub fn verify_identity_votes_given_proof_map(
 ) -> Result<VerifyIdentityVotesGivenProofResult, JsValue> {
     let proof_vec = proof.to_vec();
 
-    // Deserialize the query
-    let query: ContestedResourceVotesGivenByIdentityQuery =
-        ciborium::de::from_reader(&query_cbor.to_vec()[..])
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
-
-    // Create contract lookup function
-    let contract_lookup_fn: ContractLookupFn = create_contract_lookup_fn(contract_lookup)?;
-
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
+    // Deserialize the query
+    let query = deserialize_contested_resource_votes_query(query_cbor)?;
+
+    // Create contract lookup function
+    let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
+
     let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, ResourceVote>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &contract_lookup_fn, platform_version)
+        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS object with hex keys
@@ -109,7 +164,8 @@ pub fn verify_identity_votes_given_proof_map(
         let hex_key = hex::encode(identifier.as_bytes());
 
         // Serialize resource vote to CBOR
-        let vote_bytes = ciborium::ser::into_vec(&resource_vote)
+        let mut vote_bytes = Vec::new();
+        ciborium::into_writer(&resource_vote, &mut vote_bytes)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))?;
         let vote_uint8 = Uint8Array::from(&vote_bytes[..]);
 
@@ -124,7 +180,7 @@ pub fn verify_identity_votes_given_proof_map(
 }
 
 // Helper function to create contract lookup function from JS object
-fn create_contract_lookup_fn(contract_lookup: &JsValue) -> Result<ContractLookupFn, JsValue> {
+fn create_contract_lookup_fn<'a>(contract_lookup: &JsValue, platform_version: &PlatformVersion) -> Result<Box<ContractLookupFn<'a>>, JsValue> {
     if !contract_lookup.is_object() {
         return Err(JsValue::from_str("contract_lookup must be an object"));
     }
@@ -150,15 +206,16 @@ fn create_contract_lookup_fn(contract_lookup: &JsValue) -> Result<ContractLookup
         let contract_bytes = contract_uint8.to_vec();
 
         // Deserialize the contract
-        let contract: DataContract = ciborium::de::from_reader(&contract_bytes[..])
+        let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
             .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
 
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         let identifier = contract.id();
         contracts_map.insert(identifier, Arc::new(contract));
     }
 
-    let lookup_fn: ContractLookupFn =
-        Arc::new(move |id: &Identifier| contracts_map.get(id).cloned());
+    let lookup_fn: Box<ContractLookupFn<'a>> =
+        Box::new(move |id: &Identifier| Ok(contracts_map.get(id).cloned()));
 
     Ok(lookup_fn)
 }

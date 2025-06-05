@@ -1,10 +1,11 @@
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
-use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
+use wasm_dpp::identity::IdentityWasm;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentitiesByPublicKeyHashesResult {
@@ -59,7 +60,7 @@ pub fn verify_full_identities_by_public_key_hashes_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identities_vec): (RootHash, Vec<([u8; 20], Option<Identity>)>) =
-        drive::verify::identity::verify_full_identities_by_public_key_hashes(
+        Drive::verify_full_identities_by_public_key_hashes(
             &proof_vec,
             &public_key_hashes_vec,
             platform_version,
@@ -78,15 +79,13 @@ pub fn verify_full_identities_by_public_key_hashes_vec(
         // Add identity
         match identity_option {
             Some(identity) => {
-                let identity_json = serde_json::to_value(&identity).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
-                })?;
-                let identity_js = to_value(&identity_json).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
-                })?;
+                let identity_wasm: IdentityWasm = identity.into();
+                let identity_js = JsValue::from(identity_wasm);
                 tuple_array.push(&identity_js);
             }
-            None => tuple_array.push(&JsValue::NULL),
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);
@@ -132,7 +131,7 @@ pub fn verify_full_identities_by_public_key_hashes_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identities_map): (RootHash, BTreeMap<[u8; 20], Option<Identity>>) =
-        drive::verify::identity::verify_full_identities_by_public_key_hashes(
+        Drive::verify_full_identities_by_public_key_hashes(
             &proof_vec,
             &public_key_hashes_vec,
             platform_version,
@@ -146,12 +145,8 @@ pub fn verify_full_identities_by_public_key_hashes_map(
 
         let identity_js = match identity_option {
             Some(identity) => {
-                let identity_json = serde_json::to_value(&identity).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
-                })?;
-                to_value(&identity_json).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
-                })?
+                let identity_wasm: IdentityWasm = identity.into();
+                JsValue::from(identity_wasm)
             }
             None => JsValue::NULL,
         };

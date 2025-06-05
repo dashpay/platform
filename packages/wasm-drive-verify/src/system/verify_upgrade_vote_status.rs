@@ -1,8 +1,6 @@
-use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::{Object, Reflect, Uint8Array};
-use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -52,7 +50,7 @@ pub fn verify_upgrade_vote_status(
         None => None,
     };
 
-    let (root_hash, vote_status_map) = drive::verify::system::verify_upgrade_vote_status(
+    let (root_hash, vote_status_map) = Drive::verify_upgrade_vote_status(
         &proof_vec,
         start_protx_hash_array,
         count,

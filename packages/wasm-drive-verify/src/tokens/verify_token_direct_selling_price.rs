@@ -1,13 +1,13 @@
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::verify::RootHash;
-use js_sys::Uint8Array;
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyTokenDirectSellingPriceResult {
     root_hash: Vec<u8>,
-    price: Option<u64>,
+    price: JsValue,
 }
 
 #[wasm_bindgen]
@@ -18,8 +18,8 @@ impl VerifyTokenDirectSellingPriceResult {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn price(&self) -> Option<u64> {
-        self.price
+    pub fn price(&self) -> JsValue {
+        self.price.clone()
     }
 }
 
@@ -48,8 +48,41 @@ pub fn verify_token_direct_selling_price(
     )
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
+    let price_js = match price_option {
+        Some(pricing_schedule) => {
+            // Convert TokenPricingSchedule to JS value
+            match pricing_schedule {
+                TokenPricingSchedule::SinglePrice(credits) => {
+                    let price_obj = Object::new();
+                    Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("single"))
+                        .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                    Reflect::set(&price_obj, &JsValue::from_str("price"), &JsValue::from_f64(credits as f64))
+                        .map_err(|_| JsValue::from_str("Failed to set price"))?;
+                    price_obj.into()
+                }
+                TokenPricingSchedule::SetPrices(prices_map) => {
+                    let price_obj = Object::new();
+                    Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("set"))
+                        .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                    
+                    let prices_array = Array::new();
+                    for (amount, credits) in prices_map {
+                        let entry = Array::new();
+                        entry.push(&JsValue::from_f64(amount as f64));
+                        entry.push(&JsValue::from_f64(credits as f64));
+                        prices_array.push(&entry);
+                    }
+                    Reflect::set(&price_obj, &JsValue::from_str("prices"), &prices_array)
+                        .map_err(|_| JsValue::from_str("Failed to set prices"))?;
+                    price_obj.into()
+                }
+            }
+        }
+        None => JsValue::NULL,
+    };
+
     Ok(VerifyTokenDirectSellingPriceResult {
         root_hash: root_hash.to_vec(),
-        price: price_option,
+        price: price_js,
     })
 }

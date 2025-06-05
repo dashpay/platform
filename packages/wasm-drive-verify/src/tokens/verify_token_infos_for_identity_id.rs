@@ -2,6 +2,7 @@ use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
+use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
@@ -25,44 +26,15 @@ impl VerifyTokenInfosForIdentityIdResult {
 }
 
 fn convert_token_info_to_js(info: &IdentityTokenInfo) -> Result<JsValue, JsValue> {
-    let obj = Object::new();
-
-    Reflect::set(
-        &obj,
-        &JsValue::from_str("tokenId"),
-        &Uint8Array::from(&info.token_id[..]),
-    )
-    .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
-
-    Reflect::set(
-        &obj,
-        &JsValue::from_str("identityId"),
-        &Uint8Array::from(&info.identity_id[..]),
-    )
-    .map_err(|_| JsValue::from_str("Failed to set identityId"))?;
-
-    Reflect::set(
-        &obj,
-        &JsValue::from_str("balance"),
-        &JsValue::from_f64(info.balance as f64),
-    )
-    .map_err(|_| JsValue::from_str("Failed to set balance"))?;
-
-    Reflect::set(
-        &obj,
-        &JsValue::from_str("allowSell"),
-        &JsValue::from_bool(info.allow_sell),
-    )
-    .map_err(|_| JsValue::from_str("Failed to set allowSell"))?;
-
-    Reflect::set(
-        &obj,
-        &JsValue::from_str("price"),
-        &JsValue::from_f64(info.price as f64),
-    )
-    .map_err(|_| JsValue::from_str("Failed to set price"))?;
-
-    Ok(obj.into())
+    // IdentityTokenInfo only has a frozen field
+    let info_value = match info {
+        IdentityTokenInfo::V0(v0) => {
+            serde_json::json!({"frozen": v0.frozen})
+        }
+    };
+    to_value(&info_value).map_err(|e| {
+        JsValue::from_str(&format!("Failed to convert token info to JsValue: {:?}", e))
+    })
 }
 
 // Vec variant - returns array of tuples [tokenId, tokenInfo]
@@ -126,8 +98,12 @@ pub fn verify_token_infos_for_identity_id_vec(
 
         // Add token info
         match info_option {
-            Some(info) => tuple_array.push(&convert_token_info_to_js(&info)?),
-            None => tuple_array.push(&JsValue::NULL),
+            Some(info) => {
+                tuple_array.push(&convert_token_info_to_js(&info)?);
+            }
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);

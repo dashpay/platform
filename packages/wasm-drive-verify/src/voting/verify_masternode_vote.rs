@@ -1,8 +1,8 @@
 use dpp::data_contract::DataContract;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 use drive::drive::Drive;
-use drive::verify::RootHash;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 
@@ -36,6 +36,9 @@ pub fn verify_masternode_vote(
 ) -> Result<VerifyMasternodeVoteResult, JsValue> {
     let proof_vec = proof.to_vec();
 
+    let platform_version = PlatformVersion::get(platform_version_number)
+        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
+
     let masternode_pro_tx_hash_bytes: [u8; 32] =
         masternode_pro_tx_hash.to_vec().try_into().map_err(|_| {
             JsValue::from_str("Invalid masternode_pro_tx_hash length. Expected 32 bytes.")
@@ -46,13 +49,10 @@ pub fn verify_masternode_vote(
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize vote: {:?}", e)))?;
 
     // Deserialize the data contract
-    let data_contract: DataContract = ciborium::de::from_reader(&data_contract_cbor.to_vec()[..])
+    let data_contract = DataContract::versioned_deserialize(&data_contract_cbor.to_vec(), true, platform_version)
         .map_err(|e| {
         JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e))
     })?;
-
-    let platform_version = PlatformVersion::get(platform_version_number)
-        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, vote_option) = Drive::verify_masternode_vote(
         &proof_vec,
@@ -67,8 +67,10 @@ pub fn verify_masternode_vote(
     // Serialize the optional vote if it exists
     let vote_bytes = vote_option
         .map(|v| {
-            ciborium::ser::into_vec(&v)
-                .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&v, &mut bytes)
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))?;
+            Ok::<Vec<u8>, JsValue>(bytes)
         })
         .transpose()?;
 

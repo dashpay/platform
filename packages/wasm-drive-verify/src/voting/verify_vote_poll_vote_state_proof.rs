@@ -1,10 +1,12 @@
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::query::vote_poll_vote_state_query::{
-    ContestedDocumentVotePollDriveQueryExecutionResult, ResolvedContestedDocumentVotePollDriveQuery,
+    ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
-use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -42,124 +44,100 @@ pub fn verify_vote_poll_vote_state_proof(
     let proof_vec = proof.to_vec();
 
     // Deserialize the data contract
-    let contract: DataContract = ciborium::de::from_reader(&contract_cbor.to_vec()[..])
+    let contract_bytes = contract_cbor.to_vec();
+    let platform_version = PlatformVersion::get(platform_version_number)
+        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
+        
+    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
 
     // Parse the contested document resource vote poll identifier
-    let contested_document_resource_vote_poll: Identifier =
+    let _contested_document_resource_vote_poll: Identifier =
         Identifier::from_bytes(&contested_document_resource_vote_poll_bytes.to_vec())
             .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
 
-    // Create the resolved query
-    let query = ResolvedContestedDocumentVotePollDriveQuery {
-        contract: &contract_arc,
-        document_type_name,
-        index_name,
-        contested_document_resource_vote_poll,
-        result_type: if result_type == "documents" {
-            drive::query::vote_poll_vote_state_query::ResultType::Documents
-        } else {
-            drive::query::vote_poll_vote_state_query::ResultType::DocumentsAndVoteTally
+    // Create the query
+    let query = ContestedDocumentVotePollDriveQuery {
+        vote_poll: ContestedDocumentResourceVotePoll {
+            contract_id: contract_arc.id(),
+            document_type_name: document_type_name.to_string(),
+            index_name: index_name.to_string(),
+            index_values: vec![],
         },
-        allow_include_locked_and_abstaining_vote_tally,
-        start_at: None,
+        result_type: if result_type == "documents" {
+            ContestedDocumentVotePollDriveQueryResultType::Documents
+        } else {
+            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
+        },
+        offset: None,
         limit: None,
-        order_ascending: true,
+        start_at: None,
+        allow_include_locked_and_abstaining_vote_tally,
     };
 
-    let platform_version = PlatformVersion::get(platform_version_number)
-        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
+    let resolved_query = query
+        .resolve_with_provided_borrowed_contract(&contract_arc)
+        .map_err(|e| JsValue::from_str(&format!("Failed to resolve query: {:?}", e)))?;
 
-    let (root_hash, execution_result) = query
+    let (root_hash, execution_result) = resolved_query
         .verify_vote_poll_vote_state_proof(&proof_vec, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert execution result to JS object
-    let js_result = match execution_result {
-        ContestedDocumentVotePollDriveQueryExecutionResult::DocumentsAndVoteTally {
-            contenders,
-            additional,
-        } => {
-            let result_obj = Object::new();
+    let js_result = {
+        let result_obj = Object::new();
 
-            // Add contenders array
-            let contenders_array = Array::new();
-            for doc in contenders {
-                let doc_bytes = ciborium::ser::into_vec(&doc).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to serialize document: {:?}", e))
-                })?;
-                let doc_uint8 = Uint8Array::from(&doc_bytes[..]);
-                contenders_array.push(&doc_uint8);
-            }
+        // Add contenders array
+        let contenders_array = Array::new();
+        for contender in execution_result.contenders {
+            let doc_bytes = contender.serialized_document().as_ref().map(|doc| doc.to_vec()).unwrap_or_default();
+            let doc_uint8 = Uint8Array::from(&doc_bytes[..]);
+            contenders_array.push(&doc_uint8);
+        }
+        Reflect::set(
+            &result_obj,
+            &JsValue::from_str("contenders"),
+            &contenders_array,
+        )
+        .map_err(|_| JsValue::from_str("Failed to set contenders"))?;
+
+        // Add vote tallies if present
+        if let Some(abstaining_vote_tally) = execution_result.abstaining_vote_tally {
             Reflect::set(
                 &result_obj,
-                &JsValue::from_str("contenders"),
-                &contenders_array,
+                &JsValue::from_str("abstainVoteTally"),
+                &JsValue::from_f64(abstaining_vote_tally as f64),
             )
-            .map_err(|_| JsValue::from_str("Failed to set contenders"))?;
+            .map_err(|_| JsValue::from_str("Failed to set abstainVoteTally"))?;
+        }
 
-            // Add additional fields
-            if let Some(abstain_vote_tally) = additional.abstain_vote_tally {
-                Reflect::set(
-                    &result_obj,
-                    &JsValue::from_str("abstainVoteTally"),
-                    &JsValue::from_f64(abstain_vote_tally as f64),
-                )
-                .map_err(|_| JsValue::from_str("Failed to set abstainVoteTally"))?;
-            }
-
-            if let Some(locked_vote_tally) = additional.locked_vote_tally {
-                Reflect::set(
-                    &result_obj,
-                    &JsValue::from_str("lockedVoteTally"),
-                    &JsValue::from_f64(locked_vote_tally as f64),
-                )
-                .map_err(|_| JsValue::from_str("Failed to set lockedVoteTally"))?;
-            }
-
-            if let Some(winner) = additional.winner {
-                let winner_bytes = winner.to_vec();
-                let winner_uint8 = Uint8Array::from(&winner_bytes[..]);
-                Reflect::set(&result_obj, &JsValue::from_str("winner"), &winner_uint8)
-                    .map_err(|_| JsValue::from_str("Failed to set winner"))?;
-            }
-
-            if additional.skipped_identity_ids.len() > 0 {
-                let skipped_array = Array::new();
-                for id in additional.skipped_identity_ids {
-                    let id_uint8 = Uint8Array::from(id.as_bytes());
-                    skipped_array.push(&id_uint8);
-                }
-                Reflect::set(
-                    &result_obj,
-                    &JsValue::from_str("skippedIdentityIds"),
-                    &skipped_array,
-                )
-                .map_err(|_| JsValue::from_str("Failed to set skippedIdentityIds"))?;
-            }
-
+        if let Some(locked_vote_tally) = execution_result.locked_vote_tally {
             Reflect::set(
                 &result_obj,
-                &JsValue::from_str("finishedResults"),
-                &JsValue::from_bool(additional.finished_results),
+                &JsValue::from_str("lockedVoteTally"),
+                &JsValue::from_f64(locked_vote_tally as f64),
             )
-            .map_err(|_| JsValue::from_str("Failed to set finishedResults"))?;
+            .map_err(|_| JsValue::from_str("Failed to set lockedVoteTally"))?;
+        }
 
-            result_obj.into()
+        if let Some((_winner_info, _block_info)) = execution_result.winner {
+            // For now, just set the winner identifier if available
+            let winner_obj = Object::new();
+            // TODO: Add proper serialization for ContestedDocumentVotePollWinnerInfo
+            // when it implements Serialize
+            Reflect::set(&result_obj, &JsValue::from_str("winner"), &winner_obj)
+                .map_err(|_| JsValue::from_str("Failed to set winner"))?;
         }
-        ContestedDocumentVotePollDriveQueryExecutionResult::Documents(docs) => {
-            // Just return the documents array
-            let docs_array = Array::new();
-            for doc in docs {
-                let doc_bytes = ciborium::ser::into_vec(&doc).map_err(|e| {
-                    JsValue::from_str(&format!("Failed to serialize document: {:?}", e))
-                })?;
-                let doc_uint8 = Uint8Array::from(&doc_bytes[..]);
-                docs_array.push(&doc_uint8);
-            }
-            docs_array.into()
-        }
+
+        Reflect::set(
+            &result_obj,
+            &JsValue::from_str("skipped"),
+            &JsValue::from_f64(execution_result.skipped as f64),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set skipped"))?;
+
+        result_obj.into()
     };
 
     Ok(VerifyVotePollVoteStateProofResult {

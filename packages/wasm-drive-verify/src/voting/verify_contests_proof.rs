@@ -2,7 +2,7 @@ use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use drive::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
-use drive::verify::RootHash;
+use drive::util::object_size_info::DataContractResolvedInfo;
 use js_sys::{Array, Uint8Array};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -50,9 +50,10 @@ pub fn verify_contests_proof(
     let start_at_value_parsed = start_at_value
         .map(|v| {
             let bytes = v.to_vec();
-            ciborium::de::from_reader::<Value, _>(&bytes[..]).map_err(|e| {
+            let value = ciborium::de::from_reader::<Value, _>(&bytes[..]).map_err(|e| {
                 JsValue::from_str(&format!("Failed to deserialize start_at_value: {:?}", e))
-            })
+            })?;
+            Ok::<(Value, bool), JsValue>((value, true)) // true means inclusive
         })
         .transpose()?;
 
@@ -64,12 +65,12 @@ pub fn verify_contests_proof(
 
     // Create the resolved query
     let query = ResolvedVotePollsByDocumentTypeQuery {
-        contract: &contract_arc,
-        document_type_name,
-        index_name,
-        start_at_value: start_at_value_parsed.as_ref(),
-        start_index_values: start_index_values_parsed.as_deref(),
-        end_index_values: end_index_values_parsed.as_deref(),
+        contract: DataContractResolvedInfo::ArcDataContract(contract_arc.clone()),
+        document_type_name: &document_type_name.to_string(),
+        index_name: &index_name.to_string(),
+        start_at_value: &start_at_value_parsed,
+        start_index_values: &start_index_values_parsed.unwrap_or_default(),
+        end_index_values: &end_index_values_parsed.unwrap_or_default(),
         limit,
         order_ascending,
     };
@@ -84,7 +85,8 @@ pub fn verify_contests_proof(
     // Convert Values to JS array
     let js_array = Array::new();
     for value in contests_vec {
-        let value_bytes = ciborium::ser::into_vec(&value)
+        let mut value_bytes = Vec::new();
+        ciborium::into_writer(&value, &mut value_bytes)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize value: {:?}", e)))?;
         let value_uint8 = Uint8Array::from(&value_bytes[..]);
         js_array.push(&value_uint8);

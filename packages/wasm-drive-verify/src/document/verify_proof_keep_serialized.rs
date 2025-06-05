@@ -1,11 +1,12 @@
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive::verify::RootHash;
 use indexmap::IndexMap;
 use js_sys::{Array, Object, Reflect, Uint8Array};
-use serde_wasm_bindgen::{from_value, to_value};
+use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
@@ -44,9 +45,20 @@ pub fn verify_document_proof_keep_serialized(
 ) -> Result<VerifyDocumentProofKeepSerializedResult, JsValue> {
     let proof_vec = proof.to_vec();
 
-    // Parse contract from JS
-    let contract: DataContract = from_value(contract_js.clone())
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse contract: {:?}", e)))?;
+    let platform_version = PlatformVersion::get(platform_version_number)
+        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
+
+    // For now, we need the contract to be provided as CBOR bytes through contract_js
+    // This is a limitation until we have proper JS serialization for DataContract
+    let contract_bytes: Vec<u8> = if contract_js.is_instance_of::<Uint8Array>() {
+        let array: Uint8Array = contract_js.clone().dyn_into().unwrap();
+        array.to_vec()
+    } else {
+        return Err(JsValue::from_str("Contract must be provided as Uint8Array (CBOR bytes)"));
+    };
+    
+    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
+        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
 
     // Get document type
     let document_type = contract
@@ -68,9 +80,6 @@ pub fn verify_document_proof_keep_serialized(
             .unwrap();
         bytes
     });
-
-    let platform_version = PlatformVersion::get(platform_version_number)
-        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     // Create the query
     let query = DriveDocumentQuery {

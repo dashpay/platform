@@ -1,8 +1,6 @@
-use dpp::data_contract::group::Group;
-use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::Uint8Array;
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
@@ -44,7 +42,7 @@ pub fn verify_group_info(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, group_option) = drive::verify::group::verify_group_info(
+    let (root_hash, group_option) = Drive::verify_group_info(
         &proof_vec,
         Identifier::from(contract_id_bytes),
         group_contract_position,

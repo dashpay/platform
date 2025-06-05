@@ -1,6 +1,6 @@
+use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::verify::RootHash;
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -59,41 +59,17 @@ pub fn verify_token_info_for_identity_id(
         Some(info) => {
             let obj = Object::new();
 
-            // Convert IdentityTokenInfo fields to JS object
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("tokenId"),
-                &Uint8Array::from(&info.token_id[..]),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("identityId"),
-                &Uint8Array::from(&info.identity_id[..]),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set identityId"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("balance"),
-                &JsValue::from_f64(info.balance as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set balance"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("allowSell"),
-                &JsValue::from_bool(info.allow_sell),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set allowSell"))?;
-
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("price"),
-                &JsValue::from_f64(info.price as f64),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set price"))?;
+            // IdentityTokenInfo only has a frozen field
+            match info {
+                IdentityTokenInfo::V0(v0) => {
+                    Reflect::set(
+                        &obj,
+                        &JsValue::from_str("frozen"),
+                        &JsValue::from_bool(v0.frozen),
+                    )
+                    .map_err(|_| JsValue::from_str("Failed to set frozen"))?;
+                }
+            }
 
             obj.into()
         }

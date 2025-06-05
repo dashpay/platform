@@ -1,9 +1,8 @@
-use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::Uint8Array;
-use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
+use wasm_dpp::identity::IdentityWasm;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentityByIdentityIdResult {
@@ -42,7 +41,7 @@ pub fn verify_full_identity_by_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_option) =
-        drive::verify::identity::verify_full_identity_by_identity_id(
+        Drive::verify_full_identity_by_identity_id(
             &proof_vec,
             is_proof_subset,
             identity_id_bytes,
@@ -52,12 +51,8 @@ pub fn verify_full_identity_by_identity_id(
 
     let identity_js = match identity_option {
         Some(identity) => {
-            let identity_json = serde_json::to_value(&identity).map_err(|e| {
-                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
-            })?;
-            to_value(&identity_json).map_err(|e| {
-                JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
-            })?
+            let identity_wasm: IdentityWasm = identity.into();
+            JsValue::from(identity_wasm)
         }
         None => JsValue::NULL,
     };

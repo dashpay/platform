@@ -1,9 +1,7 @@
-use dpp::data_contract::group::GroupSumPower;
-use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 
@@ -63,8 +61,8 @@ pub fn verify_action_signers_total_power(
     // Convert action_status from u8 to GroupActionStatus
     let action_status_enum = action_status
         .map(|status| match status {
-            0 => Ok(GroupActionStatus::Active),
-            1 => Ok(GroupActionStatus::Closed),
+            0 => Ok(GroupActionStatus::ActionActive),
+            1 => Ok(GroupActionStatus::ActionClosed),
             _ => Err(JsValue::from_str("Invalid action status value")),
         })
         .transpose()?;
@@ -73,7 +71,7 @@ pub fn verify_action_signers_total_power(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, status, total_power) =
-        drive::verify::group::verify_action_signer_and_total_power(
+        Drive::verify_action_signer_and_total_power(
             &proof_vec,
             Identifier::from(contract_id_bytes),
             group_contract_position,
@@ -87,13 +85,13 @@ pub fn verify_action_signers_total_power(
 
     // Convert GroupActionStatus back to u8
     let status_u8 = match status {
-        GroupActionStatus::Active => 0,
-        GroupActionStatus::Closed => 1,
+        GroupActionStatus::ActionActive => 0,
+        GroupActionStatus::ActionClosed => 1,
     };
 
     Ok(VerifyActionSignersTotalPowerResult {
         root_hash: root_hash.to_vec(),
         action_status: status_u8,
-        total_power,
+        total_power: total_power as u64,
     })
 }

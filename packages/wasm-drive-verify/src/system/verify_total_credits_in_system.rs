@@ -1,7 +1,6 @@
-use dpp::fee::Credits;
 use dpp::prelude::CoreBlockHeight;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 
@@ -41,7 +40,7 @@ pub fn verify_total_credits_in_system(
     let request_activation_core_height =
         || -> Result<CoreBlockHeight, drive::error::Error> { Ok(activation_core_height) };
 
-    let (root_hash, total_credits) = drive::verify::system::verify_total_credits_in_system(
+    let (root_hash, total_credits) = Drive::verify_total_credits_in_system(
         &proof_vec,
         core_subsidy_halving_interval,
         request_activation_core_height,

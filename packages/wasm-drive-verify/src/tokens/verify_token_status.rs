@@ -1,13 +1,14 @@
+use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::verify::RootHash;
 use js_sys::Uint8Array;
+use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyTokenStatusResult {
     root_hash: Vec<u8>,
-    status: Option<u8>,
+    status: JsValue,
 }
 
 #[wasm_bindgen]
@@ -18,8 +19,8 @@ impl VerifyTokenStatusResult {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn status(&self) -> Option<u8> {
-        self.status
+    pub fn status(&self) -> JsValue {
+        self.status.clone()
     }
 }
 
@@ -48,8 +49,21 @@ pub fn verify_token_status(
     )
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
+    let status_js = match status_option {
+        Some(status) => {
+            // Convert TokenStatus to a JS object
+            let status_value = match status {
+                TokenStatus::V0(v0) => {
+                    serde_json::json!({"paused": v0.paused})
+                }
+            };
+            to_value(&status_value).unwrap_or(JsValue::NULL)
+        }
+        None => JsValue::NULL,
+    };
+
     Ok(VerifyTokenStatusResult {
         root_hash: root_hash.to_vec(),
-        status: status_option.map(|s| s as u8),
+        status: status_js,
     })
 }

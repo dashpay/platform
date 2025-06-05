@@ -1,8 +1,7 @@
-use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
-use js_sys::{Array, Object, Reflect, Uint8Array};
+use drive::drive::Drive;
+use js_sys::{Array, Uint8Array};
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
@@ -39,7 +38,7 @@ pub fn verify_epoch_infos(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, epoch_infos_vec) = drive::verify::system::verify_epoch_infos(
+    let (root_hash, epoch_infos_vec) = Drive::verify_epoch_infos(
         &proof_vec,
         current_epoch,
         start_epoch,
@@ -53,13 +52,12 @@ pub fn verify_epoch_infos(
     let js_array = Array::new();
     for epoch_info in epoch_infos_vec {
         let epoch_info_json = serde_json::json!({
-            "index": epoch_info.index,
-            "firstBlockHeight": epoch_info.first_block_height,
-            "firstCoreBlockHeight": epoch_info.first_core_block_height,
-            "startTime": epoch_info.start_time,
-            "feeMultiplier": epoch_info.fee_multiplier,
-            "protocolVersion": epoch_info.protocol_version,
-            "previousEpochIndex": epoch_info.previous_epoch_index,
+            "index": epoch_info.index(),
+            "firstBlockHeight": epoch_info.first_block_height(),
+            "firstCoreBlockHeight": epoch_info.first_core_block_height(),
+            "firstBlockTime": epoch_info.first_block_time(),
+            "feeMultiplierPermille": epoch_info.fee_multiplier_permille(),
+            "protocolVersion": epoch_info.protocol_version(),
         });
 
         let js_value = to_value(&epoch_info_json).map_err(|e| {

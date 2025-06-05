@@ -1,10 +1,9 @@
-use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
-use drive::verify::RootHash;
 use js_sys::Uint8Array;
-use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
+use wasm_dpp::identity::IdentityWasm;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentityByNonUniquePublicKeyHashResult {
@@ -61,7 +60,7 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
     };
 
     let (root_hash, identity_option) =
-        drive::verify::identity::verify_full_identity_by_non_unique_public_key_hash(
+        Drive::verify_full_identity_by_non_unique_public_key_hash(
             &proof,
             public_key_hash_bytes,
             after_bytes,
@@ -71,12 +70,8 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
 
     let identity_js = match identity_option {
         Some(identity) => {
-            let identity_json = serde_json::to_value(&identity).map_err(|e| {
-                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
-            })?;
-            to_value(&identity_json).map_err(|e| {
-                JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
-            })?
+            let identity_wasm: IdentityWasm = identity.into();
+            JsValue::from(identity_wasm)
         }
         None => JsValue::NULL,
     };

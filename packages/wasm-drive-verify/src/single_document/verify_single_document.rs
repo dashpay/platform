@@ -1,8 +1,5 @@
-use dpp::data_contract::DataContract;
-use dpp::prelude::Identifier;
-use drive::error::Error;
+use dpp::version::PlatformVersion;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-use platform_version::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
 
 /// WASM wrapper for SingleDocumentDriveQuery
@@ -128,9 +125,11 @@ pub fn verify_single_document_proof_keep_serialized(
     query: &SingleDocumentDriveQueryWasm,
     is_subset: bool,
     proof: Vec<u8>,
+    platform_version_number: u32,
 ) -> Result<SingleDocumentProofResult, JsValue> {
     // Get platform version
-    let platform_version = PlatformVersion::latest();
+    let platform_version = PlatformVersion::get(platform_version_number)
+        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     // Verify the proof keeping it serialized
     match query

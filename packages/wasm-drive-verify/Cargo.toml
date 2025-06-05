@@ -10,9 +10,10 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-drive = { path = "../rs-drive", features = ["verify"] }
-dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "extended-document", "random-public-keys", "random-identities", "random-documents", "system_contracts"] }
+drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
+dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "system_contracts"] }
 platform-value = { path = "../rs-platform-value" }
+wasm-dpp = { path = "../wasm-dpp" }
 
 wasm-bindgen = { version = "0.2.89" }
 serde = { version = "1.0.193", default-features = false, features = ["alloc"] }
@@ -23,14 +24,20 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 ciborium = { version = "0.2.1" }
 hex = { version = "0.4.3" }
 base64 = { version = "0.22.0" }
+indexmap = { version = "2.0.0" }
+nohash-hasher = { version = "0.2.0" }
+bincode = { version = "2.0.0-rc.3" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.39"
+dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "random-public-keys", "random-identities", "random-documents", "system_contracts"] }
+
 
 [features]
 default = ["console_error_panic_hook"]
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
-opt-level = "s"
+opt-level = "z"
 lto = true
+

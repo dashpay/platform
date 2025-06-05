@@ -85,8 +85,12 @@ pub fn verify_token_balances_for_identity_ids_vec(
 
         // Add balance
         match balance_option {
-            Some(amount) => tuple_array.push(&JsValue::from_f64(amount as f64)),
-            None => tuple_array.push(&JsValue::NULL),
+            Some(amount) => {
+                tuple_array.push(&JsValue::from_f64(amount as f64));
+            }
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);

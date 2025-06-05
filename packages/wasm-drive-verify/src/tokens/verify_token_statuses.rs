@@ -2,6 +2,7 @@ use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
+use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
@@ -78,8 +79,18 @@ pub fn verify_token_statuses_vec(
 
         // Add status
         match status_option {
-            Some(status) => tuple_array.push(&JsValue::from_f64(status as u8 as f64)),
-            None => tuple_array.push(&JsValue::NULL),
+            Some(status) => {
+                let status_value = match status {
+                    TokenStatus::V0(v0) => {
+                        serde_json::json!({"paused": v0.paused})
+                    }
+                };
+                let status_js = to_value(&status_value).unwrap_or(JsValue::NULL);
+                tuple_array.push(&status_js);
+            }
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);
@@ -140,7 +151,14 @@ pub fn verify_token_statuses_map(
         let hex_key = hex::encode(&id);
 
         let status_js = match status_option {
-            Some(status) => JsValue::from_f64(status as u8 as f64),
+            Some(status) => {
+                let status_value = match status {
+                    TokenStatus::V0(v0) => {
+                        serde_json::json!({"paused": v0.paused})
+                    }
+                };
+                to_value(&status_value).unwrap_or(JsValue::NULL)
+            }
             None => JsValue::NULL,
         };
 

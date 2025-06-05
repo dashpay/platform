@@ -1,3 +1,4 @@
+use bincode;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
@@ -35,10 +36,11 @@ pub fn verify_vote_polls_end_date_query_vec(
 ) -> Result<VerifyVotePollsEndDateQueryResult, JsValue> {
     let proof_vec = proof.to_vec();
 
-    // Deserialize the query
+    // Deserialize the query using bincode
     let query: VotePollsByEndDateDriveQuery =
-        ciborium::de::from_reader(&query_cbor.to_vec()[..])
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
+        bincode::decode_from_slice(&query_cbor.to_vec(), bincode::config::standard())
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?
+            .0;
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
@@ -58,7 +60,8 @@ pub fn verify_vote_polls_end_date_query_vec(
         // Add vote polls as array of CBOR-encoded polls
         let polls_array = Array::new();
         for poll in vote_polls {
-            let poll_bytes = ciborium::ser::into_vec(&poll).map_err(|e| {
+            let mut poll_bytes = Vec::new();
+            ciborium::into_writer(&poll, &mut poll_bytes).map_err(|e| {
                 JsValue::from_str(&format!("Failed to serialize vote poll: {:?}", e))
             })?;
             let poll_uint8 = Uint8Array::from(&poll_bytes[..]);
@@ -84,10 +87,11 @@ pub fn verify_vote_polls_end_date_query_map(
 ) -> Result<VerifyVotePollsEndDateQueryResult, JsValue> {
     let proof_vec = proof.to_vec();
 
-    // Deserialize the query
+    // Deserialize the query using bincode
     let query: VotePollsByEndDateDriveQuery =
-        ciborium::de::from_reader(&query_cbor.to_vec()[..])
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
+        bincode::decode_from_slice(&query_cbor.to_vec(), bincode::config::standard())
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?
+            .0;
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
@@ -104,7 +108,8 @@ pub fn verify_vote_polls_end_date_query_map(
         // Convert vote polls to array
         let polls_array = Array::new();
         for poll in vote_polls {
-            let poll_bytes = ciborium::ser::into_vec(&poll).map_err(|e| {
+            let mut poll_bytes = Vec::new();
+            ciborium::into_writer(&poll, &mut poll_bytes).map_err(|e| {
                 JsValue::from_str(&format!("Failed to serialize vote poll: {:?}", e))
             })?;
             let poll_uint8 = Uint8Array::from(&poll_bytes[..]);

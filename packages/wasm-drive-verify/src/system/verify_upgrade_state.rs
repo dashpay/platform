@@ -1,8 +1,6 @@
-use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::{Object, Reflect, Uint8Array};
-use nohash_hasher::IntMap;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -35,7 +33,7 @@ pub fn verify_upgrade_state(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, upgrade_state_map) =
-        drive::verify::system::verify_upgrade_state(&proof_vec, platform_version)
+        Drive::verify_upgrade_state(&proof_vec, platform_version)
             .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert IntMap<ProtocolVersion, u64> to JS object

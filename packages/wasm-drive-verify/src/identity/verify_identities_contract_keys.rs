@@ -1,9 +1,7 @@
-use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::version::PlatformVersion;
-use drive::verify::RootHash;
+use drive::drive::Drive;
 use js_sys::{Array, Uint8Array};
-use platform_value::Identifier;
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
@@ -80,7 +78,7 @@ pub fn verify_identities_contract_keys(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, keys) = drive::verify::identity::verify_identities_contract_keys(
+    let (root_hash, keys) = Drive::verify_identities_contract_keys(
         &proof_vec,
         &identity_ids_vec,
         &contract_id_bytes,

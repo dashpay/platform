@@ -1,5 +1,5 @@
-use dpp::block::epoch::EpochIndex;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
@@ -55,7 +55,7 @@ pub fn verify_epoch_proposers_by_range_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
-        drive::verify::system::verify_epoch_proposers(
+        Drive::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
             proposer_query_type,
@@ -114,7 +114,7 @@ pub fn verify_epoch_proposers_by_range_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
-        drive::verify::system::verify_epoch_proposers(
+        Drive::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
             proposer_query_type,
@@ -173,7 +173,7 @@ pub fn verify_epoch_proposers_by_ids_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
-        drive::verify::system::verify_epoch_proposers(
+        Drive::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
             proposer_query_type,
@@ -234,7 +234,7 @@ pub fn verify_epoch_proposers_by_ids_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
-        drive::verify::system::verify_epoch_proposers(
+        Drive::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
             proposer_query_type,

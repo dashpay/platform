@@ -1,4 +1,5 @@
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
@@ -58,7 +59,7 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_ids_vec): (RootHash, Vec<([u8; 20], Option<[u8; 32]>)>) =
-        drive::verify::identity::verify_identity_ids_by_unique_public_key_hashes(
+        Drive::verify_identity_ids_by_unique_public_key_hashes(
             &proof_vec,
             is_proof_subset,
             &public_key_hashes_vec,
@@ -81,7 +82,9 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_vec(
                 let id_uint8 = Uint8Array::from(&id[..]);
                 tuple_array.push(&id_uint8);
             }
-            None => tuple_array.push(&JsValue::NULL),
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);
@@ -128,7 +131,7 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_ids_map): (RootHash, BTreeMap<[u8; 20], Option<[u8; 32]>>) =
-        drive::verify::identity::verify_identity_ids_by_unique_public_key_hashes(
+        Drive::verify_identity_ids_by_unique_public_key_hashes(
             &proof_vec,
             is_proof_subset,
             &public_key_hashes_vec,

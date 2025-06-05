@@ -6118,21 +6118,22 @@ name = "wasm-drive-verify"
 version = "1.8.0"
 dependencies = [
  "base64 0.22.1",
+ "bincode",
  "ciborium",
  "console_error_panic_hook",
  "dpp",
  "drive",
- "getrandom 0.2.15",
  "hex",
+ "indexmap 2.7.0",
  "js-sys",
+ "nohash-hasher",
  "platform-value",
- "platform-version",
  "serde",
  "serde-wasm-bindgen 0.6.5",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
- "web-sys",
+ "wasm-dpp",
 ]
 
 [[package]]

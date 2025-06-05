@@ -2,10 +2,72 @@ use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
-use drive::verify::RootHash;
-use js_sys::{Array, Uint8Array};
-use serde_wasm_bindgen::to_value;
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
+
+// Helper function to convert PartialIdentity to JS object
+fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue> {
+    let obj = Object::new();
+    
+    // Set id
+    let id_array = Uint8Array::from(identity.id.as_slice());
+    Reflect::set(&obj, &JsValue::from_str("id"), &id_array)
+        .map_err(|_| JsValue::from_str("Failed to set id"))?;
+    
+    // Set loadedPublicKeys
+    let keys_obj = Object::new();
+    for (key_id, _public_key) in &identity.loaded_public_keys {
+        let key_obj = Object::new();
+        
+        // Set key properties
+        Reflect::set(&key_obj, &JsValue::from_str("id"), &JsValue::from_f64(*key_id as f64))
+            .map_err(|_| JsValue::from_str("Failed to set key id"))?;
+        
+        // For now, we'll add a placeholder for the full key data
+        // TODO: Implement full IdentityPublicKey serialization
+        Reflect::set(&key_obj, &JsValue::from_str("data"), &JsValue::from_str("[Key data not yet implemented]"))
+            .map_err(|_| JsValue::from_str("Failed to set key data"))?;
+        
+        Reflect::set(&keys_obj, &JsValue::from_str(&key_id.to_string()), &key_obj)
+            .map_err(|_| JsValue::from_str("Failed to set key in map"))?;
+    }
+    Reflect::set(&obj, &JsValue::from_str("loadedPublicKeys"), &keys_obj)
+        .map_err(|_| JsValue::from_str("Failed to set loadedPublicKeys"))?;
+    
+    // Set balance
+    match identity.balance {
+        Some(balance) => {
+            Reflect::set(&obj, &JsValue::from_str("balance"), &JsValue::from_f64(balance as f64))
+                .map_err(|_| JsValue::from_str("Failed to set balance"))?;
+        }
+        None => {
+            Reflect::set(&obj, &JsValue::from_str("balance"), &JsValue::NULL)
+                .map_err(|_| JsValue::from_str("Failed to set balance to null"))?;
+        }
+    }
+    
+    // Set revision
+    match identity.revision {
+        Some(revision) => {
+            Reflect::set(&obj, &JsValue::from_str("revision"), &JsValue::from_f64(revision as f64))
+                .map_err(|_| JsValue::from_str("Failed to set revision"))?;
+        }
+        None => {
+            Reflect::set(&obj, &JsValue::from_str("revision"), &JsValue::NULL)
+                .map_err(|_| JsValue::from_str("Failed to set revision to null"))?;
+        }
+    }
+    
+    // Set notFoundPublicKeys
+    let not_found_array = Array::new();
+    for key_id in &identity.not_found_public_keys {
+        not_found_array.push(&JsValue::from_f64(*key_id as f64));
+    }
+    Reflect::set(&obj, &JsValue::from_str("notFoundPublicKeys"), &not_found_array)
+        .map_err(|_| JsValue::from_str("Failed to set notFoundPublicKeys"))?;
+    
+    Ok(obj.into())
+}
 
 #[wasm_bindgen]
 pub struct VerifyIdentityKeysByIdentityIdResult {
@@ -83,12 +145,7 @@ pub fn verify_identity_keys_by_identity_id(
 
     let identity_js = match identity_option {
         Some(identity) => {
-            let identity_json = serde_json::to_value(&identity).map_err(|e| {
-                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
-            })?;
-            to_value(&identity_json).map_err(|e| {
-                JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
-            })?
+            partial_identity_to_js(&identity)?
         }
         None => JsValue::NULL,
     };

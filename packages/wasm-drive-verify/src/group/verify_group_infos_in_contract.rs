@@ -1,8 +1,8 @@
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
-use dpp::prelude::StartAtIncluded;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Uint8Array};
 use serde_wasm_bindgen::to_value;
@@ -47,7 +47,7 @@ pub fn verify_group_infos_in_contract_vec(
         .map_err(|_| JsValue::from_str("Invalid contract_id length. Expected 32 bytes."))?;
 
     let start_position = match (start_group_contract_position, start_at_included) {
-        (Some(pos), Some(included)) => Some((pos, StartAtIncluded(included))),
+        (Some(pos), Some(included)) => Some((pos, included)),
         (Some(_), None) => {
             return Err(JsValue::from_str(
                 "start_at_included must be provided when start_group_contract_position is set",
@@ -65,7 +65,7 @@ pub fn verify_group_infos_in_contract_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, groups_vec): (RootHash, Vec<(GroupContractPosition, Group)>) =
-        drive::verify::group::verify_group_infos_in_contract(
+        Drive::verify_group_infos_in_contract(
             &proof_vec,
             Identifier::from(contract_id_bytes),
             start_position,
@@ -116,7 +116,7 @@ pub fn verify_group_infos_in_contract_map(
         .map_err(|_| JsValue::from_str("Invalid contract_id length. Expected 32 bytes."))?;
 
     let start_position = match (start_group_contract_position, start_at_included) {
-        (Some(pos), Some(included)) => Some((pos, StartAtIncluded(included))),
+        (Some(pos), Some(included)) => Some((pos, included)),
         (Some(_), None) => {
             return Err(JsValue::from_str(
                 "start_at_included must be provided when start_group_contract_position is set",
@@ -134,7 +134,7 @@ pub fn verify_group_infos_in_contract_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, groups_map): (RootHash, BTreeMap<GroupContractPosition, Group>) =
-        drive::verify::group::verify_group_infos_in_contract(
+        Drive::verify_group_infos_in_contract(
             &proof_vec,
             Identifier::from(contract_id_bytes),
             start_position,

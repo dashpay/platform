@@ -53,14 +53,14 @@ pub fn verify_token_pre_programmed_distributions_vec(
                 .try_into()
                 .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
             Some(drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
-                at_time_ms: timestamp,
-                identity_id: Identifier::from(id_bytes),
+                start_at_time: timestamp,
+                start_at_recipient: Some((Identifier::from(id_bytes), true)),
             })
         }
         (Some(timestamp), None) => Some(
             drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
-                at_time_ms: timestamp,
-                identity_id: Identifier::default(),
+                start_at_time: timestamp,
+                start_at_recipient: None,
             },
         ),
         _ => None,
@@ -134,14 +134,14 @@ pub fn verify_token_pre_programmed_distributions_map(
                 .try_into()
                 .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
             Some(drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
-                at_time_ms: timestamp,
-                identity_id: Identifier::from(id_bytes),
+                start_at_time: timestamp,
+                start_at_recipient: Some((Identifier::from(id_bytes), true)),
             })
         }
         (Some(timestamp), None) => Some(
             drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
-                at_time_ms: timestamp,
-                identity_id: Identifier::default(),
+                start_at_time: timestamp,
+                start_at_recipient: None,
             },
         ),
         _ => None,

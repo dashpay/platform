@@ -3,7 +3,8 @@ use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use grovedb::PathQuery;
+// PathQuery is re-exported through drive
+use drive::query::PathQuery;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use wasm_bindgen::prelude::*;
@@ -29,11 +30,11 @@ pub fn token_transition_into_path_query(
     platform_version_number: u32,
 ) -> Result<TokenTransitionPathQueryResult, JsValue> {
     // Parse token transition from JS
-    let token_transition: TokenTransition = from_value(token_transition_js.clone())
+    let _token_transition: TokenTransition = from_value(token_transition_js.clone())
         .map_err(|e| JsValue::from_str(&format!("Failed to parse token transition: {:?}", e)))?;
 
     // Parse contract from JS
-    let contract: DataContract = from_value(contract_js.clone())
+    let _contract: DataContract = from_value(contract_js.clone())
         .map_err(|e| JsValue::from_str(&format!("Failed to parse contract: {:?}", e)))?;
 
     // Parse owner ID
@@ -41,9 +42,9 @@ pub fn token_transition_into_path_query(
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid owner_id length. Expected 32 bytes."))?;
-    let owner_identifier = Identifier::from(owner_id_bytes);
+    let _owner_identifier = Identifier::from(owner_id_bytes);
 
-    let platform_version = PlatformVersion::get(platform_version_number)
+    let _platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     // Note: Since we can't directly use the trait method from rs-drive here,
@@ -59,7 +60,7 @@ fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> 
 
     // Convert path
     let path_array = Array::new();
-    for segment in &path_query.path.as_slice() {
+    for segment in path_query.path.as_slice() {
         let segment_array = Uint8Array::from(segment.as_slice());
         path_array.push(&segment_array);
     }
@@ -70,34 +71,18 @@ fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> 
     let query_obj = Object::new();
 
     // Handle different query types
-    if let Some(items) = &path_query.query.query.items {
+    if !path_query.query.query.items.is_empty() {
         let items_array = Array::new();
-        for item in items {
-            let item_array = Uint8Array::from(item.as_slice());
-            items_array.push(&item_array);
+        for _item in &path_query.query.query.items {
+            // TODO: Properly serialize QueryItem
+            items_array.push(&JsValue::from_str("[QueryItem]"));
         }
         Reflect::set(&query_obj, &JsValue::from_str("items"), &items_array)
             .map_err(|_| JsValue::from_str("Failed to set items"))?;
     }
 
-    if let Some(range) = &path_query.query.query.range {
-        let range_obj = Object::new();
-
-        if let Some(start) = &range.start {
-            let start_array = Uint8Array::from(start.as_slice());
-            Reflect::set(&range_obj, &JsValue::from_str("start"), &start_array)
-                .map_err(|_| JsValue::from_str("Failed to set range start"))?;
-        }
-
-        if let Some(end) = &range.end {
-            let end_array = Uint8Array::from(end.as_slice());
-            Reflect::set(&range_obj, &JsValue::from_str("end"), &end_array)
-                .map_err(|_| JsValue::from_str("Failed to set range end"))?;
-        }
-
-        Reflect::set(&query_obj, &JsValue::from_str("range"), &range_obj)
-            .map_err(|_| JsValue::from_str("Failed to set range"))?;
-    }
+    // TODO: Handle range queries properly
+    // Range queries would need to be extracted from the query items
 
     if let Some(limit) = path_query.query.limit {
         Reflect::set(

@@ -1,4 +1,4 @@
-use dpp::balances::credits::Credits;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
@@ -58,7 +58,7 @@ pub fn verify_token_direct_selling_prices_vec(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, prices_vec): (RootHash, Vec<([u8; 32], Option<Credits>)>) =
+    let (root_hash, prices_vec): (RootHash, Vec<([u8; 32], Option<TokenPricingSchedule>)>) =
         drive::drive::Drive::verify_token_direct_selling_prices(
             &proof_vec,
             &token_ids_vec,
@@ -78,8 +78,38 @@ pub fn verify_token_direct_selling_prices_vec(
 
         // Add price
         match price_option {
-            Some(price) => tuple_array.push(&JsValue::from_f64(price as f64)),
-            None => tuple_array.push(&JsValue::NULL),
+            Some(pricing_schedule) => {
+                // Convert TokenPricingSchedule to JS value
+                match pricing_schedule {
+                    TokenPricingSchedule::SinglePrice(credits) => {
+                        let price_obj = Object::new();
+                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("single"))
+                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                        Reflect::set(&price_obj, &JsValue::from_str("price"), &JsValue::from_f64(credits as f64))
+                            .map_err(|_| JsValue::from_str("Failed to set price"))?;
+                        tuple_array.push(&price_obj);
+                    }
+                    TokenPricingSchedule::SetPrices(prices_map) => {
+                        let price_obj = Object::new();
+                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("set"))
+                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                        
+                        let prices_array = Array::new();
+                        for (amount, credits) in prices_map {
+                            let entry = Array::new();
+                            entry.push(&JsValue::from_f64(amount as f64));
+                            entry.push(&JsValue::from_f64(credits as f64));
+                            prices_array.push(&entry);
+                        }
+                        Reflect::set(&price_obj, &JsValue::from_str("prices"), &prices_array)
+                            .map_err(|_| JsValue::from_str("Failed to set prices"))?;
+                        tuple_array.push(&price_obj);
+                    }
+                }
+            }
+            None => {
+                tuple_array.push(&JsValue::NULL);
+            }
         }
 
         js_array.push(&tuple_array);
@@ -125,7 +155,7 @@ pub fn verify_token_direct_selling_prices_map(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, prices_map): (RootHash, BTreeMap<[u8; 32], Option<Credits>>) =
+    let (root_hash, prices_map): (RootHash, BTreeMap<[u8; 32], Option<TokenPricingSchedule>>) =
         drive::drive::Drive::verify_token_direct_selling_prices(
             &proof_vec,
             &token_ids_vec,
@@ -140,7 +170,35 @@ pub fn verify_token_direct_selling_prices_map(
         let hex_key = hex::encode(&id);
 
         let price_js = match price_option {
-            Some(price) => JsValue::from_f64(price as f64),
+            Some(pricing_schedule) => {
+                // Convert TokenPricingSchedule to JS value
+                match pricing_schedule {
+                    TokenPricingSchedule::SinglePrice(credits) => {
+                        let price_obj = Object::new();
+                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("single"))
+                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                        Reflect::set(&price_obj, &JsValue::from_str("price"), &JsValue::from_f64(credits as f64))
+                            .map_err(|_| JsValue::from_str("Failed to set price"))?;
+                        price_obj.into()
+                    }
+                    TokenPricingSchedule::SetPrices(prices_map) => {
+                        let price_obj = Object::new();
+                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("set"))
+                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                        
+                        let prices_array = Array::new();
+                        for (amount, credits) in prices_map {
+                            let entry = Array::new();
+                            entry.push(&JsValue::from_f64(amount as f64));
+                            entry.push(&JsValue::from_f64(credits as f64));
+                            prices_array.push(&entry);
+                        }
+                        Reflect::set(&price_obj, &JsValue::from_str("prices"), &prices_array)
+                            .map_err(|_| JsValue::from_str("Failed to set prices"))?;
+                        price_obj.into()
+                    }
+                }
+            }
             None => JsValue::NULL,
         };
 
