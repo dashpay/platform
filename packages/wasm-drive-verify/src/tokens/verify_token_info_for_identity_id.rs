@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
+use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Object, Reflect};
 
 #[wasm_bindgen]
 pub struct VerifyTokenInfoForIdentityIdResult {
@@ -32,12 +32,12 @@ pub fn verify_token_info_for_identity_id(
     platform_version_number: u32,
 ) -> Result<VerifyTokenInfoForIdentityIdResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let token_id_bytes: [u8; 32] = token_id
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()
@@ -58,25 +58,45 @@ pub fn verify_token_info_for_identity_id(
     let token_info_js = match token_info_option {
         Some(info) => {
             let obj = Object::new();
-            
+
             // Convert IdentityTokenInfo fields to JS object
-            Reflect::set(&obj, &JsValue::from_str("tokenId"), &Uint8Array::from(&info.token_id[..]))
-                .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("identityId"), &Uint8Array::from(&info.identity_id[..]))
-                .map_err(|_| JsValue::from_str("Failed to set identityId"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("balance"), &JsValue::from_f64(info.balance as f64))
-                .map_err(|_| JsValue::from_str("Failed to set balance"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("allowSell"), &JsValue::from_bool(info.allow_sell))
-                .map_err(|_| JsValue::from_str("Failed to set allowSell"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("price"), &JsValue::from_f64(info.price as f64))
-                .map_err(|_| JsValue::from_str("Failed to set price"))?;
-            
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("tokenId"),
+                &Uint8Array::from(&info.token_id[..]),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("identityId"),
+                &Uint8Array::from(&info.identity_id[..]),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set identityId"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("balance"),
+                &JsValue::from_f64(info.balance as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set balance"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("allowSell"),
+                &JsValue::from_bool(info.allow_sell),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set allowSell"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("price"),
+                &JsValue::from_f64(info.price as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set price"))?;
+
             obj.into()
-        },
+        }
         None => JsValue::NULL,
     };
 

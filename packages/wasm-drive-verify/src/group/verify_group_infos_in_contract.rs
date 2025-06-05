@@ -1,13 +1,13 @@
-use drive::verify::RootHash;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Array, Uint8Array, Object};
+use drive::verify::RootHash;
+use js_sys::{Array, Object, Uint8Array};
 use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyGroupInfosInContractResult {
@@ -40,7 +40,7 @@ pub fn verify_group_infos_in_contract_vec(
     platform_version_number: u32,
 ) -> Result<VerifyGroupInfosInContractResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -48,15 +48,23 @@ pub fn verify_group_infos_in_contract_vec(
 
     let start_position = match (start_group_contract_position, start_at_included) {
         (Some(pos), Some(included)) => Some((pos, StartAtIncluded(included))),
-        (Some(_), None) => return Err(JsValue::from_str("start_at_included must be provided when start_group_contract_position is set")),
-        (None, Some(_)) => return Err(JsValue::from_str("start_group_contract_position must be provided when start_at_included is set")),
+        (Some(_), None) => {
+            return Err(JsValue::from_str(
+                "start_at_included must be provided when start_group_contract_position is set",
+            ))
+        }
+        (None, Some(_)) => {
+            return Err(JsValue::from_str(
+                "start_group_contract_position must be provided when start_at_included is set",
+            ))
+        }
         (None, None) => None,
     };
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, groups_vec): (RootHash, Vec<(GroupContractPosition, Group)>) = 
+    let (root_hash, groups_vec): (RootHash, Vec<(GroupContractPosition, Group)>) =
         drive::verify::group::verify_group_infos_in_contract(
             &proof_vec,
             Identifier::from(contract_id_bytes),
@@ -72,13 +80,14 @@ pub fn verify_group_infos_in_contract_vec(
     for (position, group) in groups_vec {
         let pair_array = Array::new();
         pair_array.push(&JsValue::from(position));
-        
+
         let group_json = serde_json::to_value(&group)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize group: {:?}", e)))?;
-        let group_js = to_value(&group_json)
-            .map_err(|e| JsValue::from_str(&format!("Failed to convert group to JsValue: {:?}", e)))?;
+        let group_js = to_value(&group_json).map_err(|e| {
+            JsValue::from_str(&format!("Failed to convert group to JsValue: {:?}", e))
+        })?;
         pair_array.push(&group_js);
-        
+
         js_array.push(&pair_array);
     }
 
@@ -100,7 +109,7 @@ pub fn verify_group_infos_in_contract_map(
     platform_version_number: u32,
 ) -> Result<VerifyGroupInfosInContractResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -108,15 +117,23 @@ pub fn verify_group_infos_in_contract_map(
 
     let start_position = match (start_group_contract_position, start_at_included) {
         (Some(pos), Some(included)) => Some((pos, StartAtIncluded(included))),
-        (Some(_), None) => return Err(JsValue::from_str("start_at_included must be provided when start_group_contract_position is set")),
-        (None, Some(_)) => return Err(JsValue::from_str("start_group_contract_position must be provided when start_at_included is set")),
+        (Some(_), None) => {
+            return Err(JsValue::from_str(
+                "start_at_included must be provided when start_group_contract_position is set",
+            ))
+        }
+        (None, Some(_)) => {
+            return Err(JsValue::from_str(
+                "start_group_contract_position must be provided when start_at_included is set",
+            ))
+        }
         (None, None) => None,
     };
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, groups_map): (RootHash, BTreeMap<GroupContractPosition, Group>) = 
+    let (root_hash, groups_map): (RootHash, BTreeMap<GroupContractPosition, Group>) =
         drive::verify::group::verify_group_infos_in_contract(
             &proof_vec,
             Identifier::from(contract_id_bytes),
@@ -132,9 +149,10 @@ pub fn verify_group_infos_in_contract_map(
     for (position, group) in groups_map {
         let group_json = serde_json::to_value(&group)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize group: {:?}", e)))?;
-        let group_js = to_value(&group_json)
-            .map_err(|e| JsValue::from_str(&format!("Failed to convert group to JsValue: {:?}", e)))?;
-        
+        let group_js = to_value(&group_json).map_err(|e| {
+            JsValue::from_str(&format!("Failed to convert group to JsValue: {:?}", e))
+        })?;
+
         js_sys::Reflect::set(&js_object, &JsValue::from(position.to_string()), &group_js)
             .map_err(|_| JsValue::from_str("Failed to set object property"))?;
     }

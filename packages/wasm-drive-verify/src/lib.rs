@@ -2,11 +2,11 @@ use wasm_bindgen::prelude::*;
 
 pub mod contract;
 pub mod document;
+pub mod group;
 pub mod identity;
 pub mod single_document;
-pub mod system;
-pub mod group;
 pub mod state_transition;
+pub mod system;
 pub mod tokens;
 pub mod voting;
 

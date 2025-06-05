@@ -1,10 +1,10 @@
-use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Array, Object, Reflect};
+use dpp::version::PlatformVersion;
+use drive::verify::RootHash;
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::to_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyEpochInfosResult {
@@ -35,7 +35,7 @@ pub fn verify_epoch_infos(
     platform_version_number: u32,
 ) -> Result<VerifyEpochInfosResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
@@ -61,9 +61,10 @@ pub fn verify_epoch_infos(
             "protocolVersion": epoch_info.protocol_version,
             "previousEpochIndex": epoch_info.previous_epoch_index,
         });
-        
-        let js_value = to_value(&epoch_info_json)
-            .map_err(|e| JsValue::from_str(&format!("Failed to convert epoch info to JsValue: {:?}", e)))?;
+
+        let js_value = to_value(&epoch_info_json).map_err(|e| {
+            JsValue::from_str(&format!("Failed to convert epoch info to JsValue: {:?}", e))
+        })?;
         js_array.push(&js_value);
     }
 

@@ -1,11 +1,11 @@
-use drive::drive::Drive;
-use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
-use drive::verify::RootHash;
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
+use drive::drive::Drive;
+use drive::verify::RootHash;
 use js_sys::{Array, Uint8Array};
 use serde_wasm_bindgen::to_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyIdentityKeysByIdentityIdResult {
@@ -39,7 +39,7 @@ pub fn verify_identity_keys_by_identity_id(
     platform_version_number: u32,
 ) -> Result<VerifyIdentityKeysByIdentityIdResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()
@@ -49,7 +49,8 @@ pub fn verify_identity_keys_by_identity_id(
     let request_type = if let Some(keys_array) = specific_key_ids {
         let mut keys_vec = Vec::new();
         for i in 0..keys_array.length() {
-            let key_id = keys_array.get(i)
+            let key_id = keys_array
+                .get(i)
                 .as_f64()
                 .ok_or_else(|| JsValue::from_str("Invalid key ID"))?
                 as u32;
@@ -82,10 +83,12 @@ pub fn verify_identity_keys_by_identity_id(
 
     let identity_js = match identity_option {
         Some(identity) => {
-            let identity_json = serde_json::to_value(&identity)
-                .map_err(|e| JsValue::from_str(&format!("Failed to serialize identity: {:?}", e)))?;
-            to_value(&identity_json)
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e)))?
+            let identity_json = serde_json::to_value(&identity).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
+            })?;
+            to_value(&identity_json).map_err(|e| {
+                JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
+            })?
         }
         None => JsValue::NULL,
     };

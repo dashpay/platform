@@ -1,9 +1,9 @@
-use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
 use dpp::fee::Credits;
 use dpp::prelude::CoreBlockHeight;
-use wasm_bindgen::prelude::*;
+use dpp::version::PlatformVersion;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyTotalCreditsInSystemResult {
@@ -33,14 +33,13 @@ pub fn verify_total_credits_in_system(
     platform_version_number: u32,
 ) -> Result<VerifyTotalCreditsInSystemResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     // Create a closure that returns the activation core height
-    let request_activation_core_height = || -> Result<CoreBlockHeight, drive::error::Error> {
-        Ok(activation_core_height)
-    };
+    let request_activation_core_height =
+        || -> Result<CoreBlockHeight, drive::error::Error> { Ok(activation_core_height) };
 
     let (root_hash, total_credits) = drive::verify::system::verify_total_credits_in_system(
         &proof_vec,

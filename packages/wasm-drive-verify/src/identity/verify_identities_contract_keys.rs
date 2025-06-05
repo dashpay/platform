@@ -1,11 +1,11 @@
-use drive::verify::RootHash;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::verify::RootHash;
 use js_sys::{Array, Uint8Array};
-use serde_wasm_bindgen::to_value;
 use platform_value::Identifier;
+use serde_wasm_bindgen::to_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyIdentitiesContractKeysResult {
@@ -37,7 +37,7 @@ pub fn verify_identities_contract_keys(
     platform_version_number: u32,
 ) -> Result<VerifyIdentitiesContractKeysResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -46,7 +46,8 @@ pub fn verify_identities_contract_keys(
     // Convert identity_ids array
     let mut identity_ids_vec = Vec::new();
     for i in 0..identity_ids.length() {
-        let id_array = identity_ids.get(i)
+        let id_array = identity_ids
+            .get(i)
             .dyn_into::<Uint8Array>()
             .map_err(|_| JsValue::from_str("Invalid identity_id in array"))?;
         let id_bytes: [u8; 32] = id_array
@@ -59,7 +60,8 @@ pub fn verify_identities_contract_keys(
     // Convert purposes array
     let mut purposes_vec = Vec::new();
     for i in 0..purposes.length() {
-        let purpose_num = purposes.get(i)
+        let purpose_num = purposes
+            .get(i)
             .as_f64()
             .ok_or_else(|| JsValue::from_str("Invalid purpose value"))?;
         let purpose = match purpose_num as u8 {

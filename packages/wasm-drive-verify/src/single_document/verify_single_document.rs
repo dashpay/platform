@@ -1,9 +1,9 @@
-use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-use drive::error::Error;
 use dpp::data_contract::DataContract;
+use dpp::prelude::Identifier;
+use drive::error::Error;
+use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use platform_version::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
-use dpp::prelude::Identifier;
 
 /// WASM wrapper for SingleDocumentDriveQuery
 #[wasm_bindgen]
@@ -27,7 +27,7 @@ impl SingleDocumentDriveQueryWasm {
         let contract_id_array: [u8; 32] = contract_id
             .try_into()
             .map_err(|_| JsValue::from_str("contract_id must be exactly 32 bytes"))?;
-        
+
         let document_id_array: [u8; 32] = document_id
             .try_into()
             .map_err(|_| JsValue::from_str("document_id must be exactly 32 bytes"))?;
@@ -133,17 +133,14 @@ pub fn verify_single_document_proof_keep_serialized(
     let platform_version = PlatformVersion::latest();
 
     // Verify the proof keeping it serialized
-    match query.inner.verify_proof_keep_serialized(
-        is_subset,
-        &proof,
-        &platform_version,
-    ) {
-        Ok((root_hash, maybe_serialized_document)) => {
-            Ok(SingleDocumentProofResult {
-                root_hash: root_hash.to_vec(),
-                document_serialized: maybe_serialized_document,
-            })
-        }
+    match query
+        .inner
+        .verify_proof_keep_serialized(is_subset, &proof, &platform_version)
+    {
+        Ok((root_hash, maybe_serialized_document)) => Ok(SingleDocumentProofResult {
+            root_hash: root_hash.to_vec(),
+            document_serialized: maybe_serialized_document,
+        }),
         Err(e) => Err(JsValue::from_str(&format!("Verification failed: {}", e))),
     }
 }

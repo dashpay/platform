@@ -1,10 +1,10 @@
-use drive::verify::RootHash;
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Object, Reflect};
+use drive::verify::RootHash;
+use js_sys::{Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyContractHistoryResult {
@@ -35,7 +35,7 @@ pub fn verify_contract_history(
     platform_version_number: u32,
 ) -> Result<VerifyContractHistoryResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -58,11 +58,13 @@ pub fn verify_contract_history(
         Some(history_map) => {
             let js_obj = Object::new();
             for (date, contract) in history_map {
-                let contract_json = serde_json::to_value(&contract)
-                    .map_err(|e| JsValue::from_str(&format!("Failed to serialize contract: {:?}", e)))?;
-                let contract_js = to_value(&contract_json)
-                    .map_err(|e| JsValue::from_str(&format!("Failed to convert contract to JsValue: {:?}", e)))?;
-                
+                let contract_json = serde_json::to_value(&contract).map_err(|e| {
+                    JsValue::from_str(&format!("Failed to serialize contract: {:?}", e))
+                })?;
+                let contract_js = to_value(&contract_json).map_err(|e| {
+                    JsValue::from_str(&format!("Failed to convert contract to JsValue: {:?}", e))
+                })?;
+
                 Reflect::set(&js_obj, &JsValue::from_str(&date.to_string()), &contract_js)
                     .map_err(|_| JsValue::from_str("Failed to set contract in history object"))?;
             }

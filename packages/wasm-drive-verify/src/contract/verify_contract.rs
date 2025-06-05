@@ -1,9 +1,9 @@
-use drive::verify::RootHash;
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
 use serde_wasm_bindgen::to_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyContractResult {
@@ -34,7 +34,7 @@ pub fn verify_contract(
     platform_version_number: u32,
 ) -> Result<VerifyContractResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -55,10 +55,12 @@ pub fn verify_contract(
 
     let contract_js = match contract_option {
         Some(contract) => {
-            let contract_json = serde_json::to_value(&contract)
-                .map_err(|e| JsValue::from_str(&format!("Failed to serialize contract: {:?}", e)))?;
-            to_value(&contract_json)
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert contract to JsValue: {:?}", e)))?
+            let contract_json = serde_json::to_value(&contract).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize contract: {:?}", e))
+            })?;
+            to_value(&contract_json).map_err(|e| {
+                JsValue::from_str(&format!("Failed to convert contract to JsValue: {:?}", e))
+            })?
         }
         None => JsValue::NULL,
     };

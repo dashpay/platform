@@ -38,7 +38,14 @@ pub fn verify_epoch_infos(
     ascending: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, Vec<ExtendedEpochInfo>), Error> {
-    Drive::verify_epoch_infos(proof, current_epoch, start_epoch, count, ascending, platform_version)
+    Drive::verify_epoch_infos(
+        proof,
+        current_epoch,
+        start_epoch,
+        count,
+        ascending,
+        platform_version,
+    )
 }
 
 /// Wrapper for Drive::verify_total_credits_in_system

@@ -1,10 +1,10 @@
-use drive::drive::Drive;
-use drive::verify::RootHash;
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
-use wasm_bindgen::prelude::*;
+use drive::drive::Drive;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyMasternodeVoteResult {
@@ -35,19 +35,21 @@ pub fn verify_masternode_vote(
     platform_version_number: u32,
 ) -> Result<VerifyMasternodeVoteResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
-    let masternode_pro_tx_hash_bytes: [u8; 32] = masternode_pro_tx_hash
-        .to_vec()
-        .try_into()
-        .map_err(|_| JsValue::from_str("Invalid masternode_pro_tx_hash length. Expected 32 bytes."))?;
+
+    let masternode_pro_tx_hash_bytes: [u8; 32] =
+        masternode_pro_tx_hash.to_vec().try_into().map_err(|_| {
+            JsValue::from_str("Invalid masternode_pro_tx_hash length. Expected 32 bytes.")
+        })?;
 
     // Deserialize the vote
     let vote: Vote = ciborium::de::from_reader(&vote_cbor.to_vec()[..])
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize vote: {:?}", e)))?;
-    
+
     // Deserialize the data contract
     let data_contract: DataContract = ciborium::de::from_reader(&data_contract_cbor.to_vec()[..])
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e)))?;
+        .map_err(|e| {
+        JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e))
+    })?;
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
@@ -63,10 +65,12 @@ pub fn verify_masternode_vote(
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Serialize the optional vote if it exists
-    let vote_bytes = vote_option.map(|v| {
-        ciborium::ser::into_vec(&v)
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))
-    }).transpose()?;
+    let vote_bytes = vote_option
+        .map(|v| {
+            ciborium::ser::into_vec(&v)
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))
+        })
+        .transpose()?;
 
     Ok(VerifyMasternodeVoteResult {
         root_hash: root_hash.to_vec(),

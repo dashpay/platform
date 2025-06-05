@@ -1,11 +1,11 @@
-use drive::query::vote_poll_contestant_votes_query::ResolvedContestedDocumentVotePollVotesDriveQuery;
-use drive::verify::RootHash;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Array};
+use drive::query::vote_poll_contestant_votes_query::ResolvedContestedDocumentVotePollVotesDriveQuery;
+use drive::verify::RootHash;
+use js_sys::{Array, Uint8Array};
 use std::sync::Arc;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyVotePollVotesProofResult {
@@ -39,27 +39,29 @@ pub fn verify_vote_poll_votes_proof(
     platform_version_number: u32,
 ) -> Result<VerifyVotePollVotesProofResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     // Deserialize the data contract
     let contract: DataContract = ciborium::de::from_reader(&contract_cbor.to_vec()[..])
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
-    
+
     // Parse the contestant ID
     let contestant_id_identifier = Identifier::from_bytes(&contestant_id.to_vec())
         .map_err(|e| JsValue::from_str(&format!("Invalid contestant ID: {:?}", e)))?;
-    
+
     // Parse the contested document resource vote poll identifier
-    let contested_document_resource_vote_poll = Identifier::from_bytes(
-        &contested_document_resource_vote_poll_bytes.to_vec()
-    ).map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
-    
+    let contested_document_resource_vote_poll =
+        Identifier::from_bytes(&contested_document_resource_vote_poll_bytes.to_vec())
+            .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
+
     // Parse start_at if provided
-    let start_at_identifier = start_at.map(|s| {
-        Identifier::from_bytes(&s.to_vec())
-            .map_err(|e| JsValue::from_str(&format!("Invalid start_at identifier: {:?}", e)))
-    }).transpose()?;
-    
+    let start_at_identifier = start_at
+        .map(|s| {
+            Identifier::from_bytes(&s.to_vec())
+                .map_err(|e| JsValue::from_str(&format!("Invalid start_at identifier: {:?}", e)))
+        })
+        .transpose()?;
+
     // Create the resolved query
     let query = ResolvedContestedDocumentVotePollVotesDriveQuery {
         contract: &contract_arc,
@@ -70,15 +72,13 @@ pub fn verify_vote_poll_votes_proof(
         limit,
         order_ascending,
     };
-    
+
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, votes_vec) = query.verify_vote_poll_votes_proof(
-        &proof_vec,
-        platform_version,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    let (root_hash, votes_vec) = query
+        .verify_vote_poll_votes_proof(&proof_vec, platform_version)
+        .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert identifiers to JS array
     let js_array = Array::new();

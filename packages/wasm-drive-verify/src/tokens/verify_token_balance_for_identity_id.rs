@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyTokenBalanceForIdentityIdResult {
@@ -32,12 +32,12 @@ pub fn verify_token_balance_for_identity_id(
     platform_version_number: u32,
 ) -> Result<VerifyTokenBalanceForIdentityIdResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let token_id_bytes: [u8; 32] = token_id
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()

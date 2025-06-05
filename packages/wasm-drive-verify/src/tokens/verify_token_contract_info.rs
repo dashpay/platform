@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
+use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Object, Reflect};
 
 #[wasm_bindgen]
 pub struct VerifyTokenContractInfoResult {
@@ -31,7 +31,7 @@ pub fn verify_token_contract_info(
     platform_version_number: u32,
 ) -> Result<VerifyTokenContractInfoResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let token_id_bytes: [u8; 32] = token_id
         .to_vec()
         .try_into()
@@ -51,31 +51,59 @@ pub fn verify_token_contract_info(
     let contract_info_js = match contract_info_option {
         Some(info) => {
             let obj = Object::new();
-            
+
             // Convert TokenContractInfo fields to JS object
-            Reflect::set(&obj, &JsValue::from_str("tokenId"), &Uint8Array::from(&info.token_id[..]))
-                .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("owner"), &Uint8Array::from(&info.owner[..]))
-                .map_err(|_| JsValue::from_str("Failed to set owner"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("maxSupply"), &JsValue::from_f64(info.max_supply as f64))
-                .map_err(|_| JsValue::from_str("Failed to set maxSupply"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("burnAmount"), &JsValue::from_f64(info.burn_amount as f64))
-                .map_err(|_| JsValue::from_str("Failed to set burnAmount"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("totalSupply"), &JsValue::from_f64(info.total_supply as f64))
-                .map_err(|_| JsValue::from_str("Failed to set totalSupply"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("aggregatedIdentityBalance"), &JsValue::from_f64(info.aggregated_identity_balance as f64))
-                .map_err(|_| JsValue::from_str("Failed to set aggregatedIdentityBalance"))?;
-            
-            Reflect::set(&obj, &JsValue::from_str("contractId"), &Uint8Array::from(&info.contract_id[..]))
-                .map_err(|_| JsValue::from_str("Failed to set contractId"))?;
-            
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("tokenId"),
+                &Uint8Array::from(&info.token_id[..]),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set tokenId"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("owner"),
+                &Uint8Array::from(&info.owner[..]),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set owner"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("maxSupply"),
+                &JsValue::from_f64(info.max_supply as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set maxSupply"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("burnAmount"),
+                &JsValue::from_f64(info.burn_amount as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set burnAmount"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("totalSupply"),
+                &JsValue::from_f64(info.total_supply as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set totalSupply"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("aggregatedIdentityBalance"),
+                &JsValue::from_f64(info.aggregated_identity_balance as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set aggregatedIdentityBalance"))?;
+
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("contractId"),
+                &Uint8Array::from(&info.contract_id[..]),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set contractId"))?;
+
             obj.into()
-        },
+        }
         None => JsValue::NULL,
     };
 

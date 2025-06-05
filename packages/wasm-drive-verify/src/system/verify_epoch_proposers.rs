@@ -1,10 +1,10 @@
-use drive::verify::RootHash;
-use drive::query::proposer_block_count_query::ProposerQueryType;
 use dpp::block::epoch::EpochIndex;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Array, Object, Reflect};
+use drive::query::proposer_block_count_query::ProposerQueryType;
+use drive::verify::RootHash;
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyEpochProposersResult {
@@ -36,12 +36,13 @@ pub fn verify_epoch_proposers_by_range_vec(
     platform_version_number: u32,
 ) -> Result<VerifyEpochProposersResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     // Parse start_at
     let start_at = match (start_at_proposer_id, start_at_included) {
         (Some(id), included) => {
             let id_vec = id.to_vec();
-            let id_bytes: [u8; 32] = id_vec.try_into()
+            let id_bytes: [u8; 32] = id_vec
+                .try_into()
                 .map_err(|_| JsValue::from_str("Invalid proposer ID length. Expected 32 bytes."))?;
             Some((id_bytes, included.unwrap_or(true)))
         }
@@ -53,7 +54,7 @@ pub fn verify_epoch_proposers_by_range_vec(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) = 
+    let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
         drive::verify::system::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
@@ -66,14 +67,14 @@ pub fn verify_epoch_proposers_by_range_vec(
     let js_array = Array::new();
     for (proposer_id, block_count) in proposers_vec {
         let tuple_array = Array::new();
-        
+
         // Add proposer ID as Uint8Array
         let id_uint8 = Uint8Array::from(&proposer_id[..]);
         tuple_array.push(&id_uint8);
-        
+
         // Add block count
         tuple_array.push(&JsValue::from_f64(block_count as f64));
-        
+
         js_array.push(&tuple_array);
     }
 
@@ -94,12 +95,13 @@ pub fn verify_epoch_proposers_by_range_map(
     platform_version_number: u32,
 ) -> Result<VerifyEpochProposersResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     // Parse start_at
     let start_at = match (start_at_proposer_id, start_at_included) {
         (Some(id), included) => {
             let id_vec = id.to_vec();
-            let id_bytes: [u8; 32] = id_vec.try_into()
+            let id_bytes: [u8; 32] = id_vec
+                .try_into()
                 .map_err(|_| JsValue::from_str("Invalid proposer ID length. Expected 32 bytes."))?;
             Some((id_bytes, included.unwrap_or(true)))
         }
@@ -111,7 +113,7 @@ pub fn verify_epoch_proposers_by_range_map(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) = 
+    let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
         drive::verify::system::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
@@ -124,9 +126,13 @@ pub fn verify_epoch_proposers_by_range_map(
     let js_obj = Object::new();
     for (proposer_id, block_count) in proposers_map {
         let hex_key = hex::encode(&proposer_id);
-        
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &JsValue::from_f64(block_count as f64))
-            .map_err(|_| JsValue::from_str("Failed to set proposer in result object"))?;
+
+        Reflect::set(
+            &js_obj,
+            &JsValue::from_str(&hex_key),
+            &JsValue::from_f64(block_count as f64),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set proposer in result object"))?;
     }
 
     Ok(VerifyEpochProposersResult {
@@ -144,17 +150,20 @@ pub fn verify_epoch_proposers_by_ids_vec(
     platform_version_number: u32,
 ) -> Result<VerifyEpochProposersResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     // Parse proposer IDs from JS array
-    let ids_array: Array = proposer_ids.clone().dyn_into()
+    let ids_array: Array = proposer_ids
+        .clone()
+        .dyn_into()
         .map_err(|_| JsValue::from_str("proposer_ids must be an array"))?;
-    
+
     let mut proposer_ids_vec = Vec::new();
     for i in 0..ids_array.length() {
         let id_array = ids_array.get(i);
-        let id_uint8: Uint8Array = id_array.dyn_into()
+        let id_uint8: Uint8Array = id_array
+            .dyn_into()
             .map_err(|_| JsValue::from_str("Each proposer ID must be a Uint8Array"))?;
-        
+
         proposer_ids_vec.push(id_uint8.to_vec());
     }
 
@@ -163,7 +172,7 @@ pub fn verify_epoch_proposers_by_ids_vec(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) = 
+    let (root_hash, proposers_vec): (RootHash, Vec<(Vec<u8>, u64)>) =
         drive::verify::system::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
@@ -176,14 +185,14 @@ pub fn verify_epoch_proposers_by_ids_vec(
     let js_array = Array::new();
     for (proposer_id, block_count) in proposers_vec {
         let tuple_array = Array::new();
-        
+
         // Add proposer ID as Uint8Array
         let id_uint8 = Uint8Array::from(&proposer_id[..]);
         tuple_array.push(&id_uint8);
-        
+
         // Add block count
         tuple_array.push(&JsValue::from_f64(block_count as f64));
-        
+
         js_array.push(&tuple_array);
     }
 
@@ -202,17 +211,20 @@ pub fn verify_epoch_proposers_by_ids_map(
     platform_version_number: u32,
 ) -> Result<VerifyEpochProposersResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     // Parse proposer IDs from JS array
-    let ids_array: Array = proposer_ids.clone().dyn_into()
+    let ids_array: Array = proposer_ids
+        .clone()
+        .dyn_into()
         .map_err(|_| JsValue::from_str("proposer_ids must be an array"))?;
-    
+
     let mut proposer_ids_vec = Vec::new();
     for i in 0..ids_array.length() {
         let id_array = ids_array.get(i);
-        let id_uint8: Uint8Array = id_array.dyn_into()
+        let id_uint8: Uint8Array = id_array
+            .dyn_into()
             .map_err(|_| JsValue::from_str("Each proposer ID must be a Uint8Array"))?;
-        
+
         proposer_ids_vec.push(id_uint8.to_vec());
     }
 
@@ -221,7 +233,7 @@ pub fn verify_epoch_proposers_by_ids_map(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) = 
+    let (root_hash, proposers_map): (RootHash, BTreeMap<Vec<u8>, u64>) =
         drive::verify::system::verify_epoch_proposers(
             &proof_vec,
             epoch_index,
@@ -234,9 +246,13 @@ pub fn verify_epoch_proposers_by_ids_map(
     let js_obj = Object::new();
     for (proposer_id, block_count) in proposers_map {
         let hex_key = hex::encode(&proposer_id);
-        
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &JsValue::from_f64(block_count as f64))
-            .map_err(|_| JsValue::from_str("Failed to set proposer in result object"))?;
+
+        Reflect::set(
+            &js_obj,
+            &JsValue::from_str(&hex_key),
+            &JsValue::from_f64(block_count as f64),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set proposer in result object"))?;
     }
 
     Ok(VerifyEpochProposersResult {

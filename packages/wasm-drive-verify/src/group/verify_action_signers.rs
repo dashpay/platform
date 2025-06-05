@@ -1,13 +1,13 @@
-use drive::verify::RootHash;
 use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Array, Uint8Array, Object};
+use drive::verify::RootHash;
+use js_sys::{Array, Object, Uint8Array};
 use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyActionSignersResult {
@@ -40,7 +40,7 @@ pub fn verify_action_signers_vec(
     platform_version_number: u32,
 ) -> Result<VerifyActionSignersResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -61,7 +61,7 @@ pub fn verify_action_signers_vec(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, signers_vec): (RootHash, Vec<(Identifier, GroupMemberPower)>) = 
+    let (root_hash, signers_vec): (RootHash, Vec<(Identifier, GroupMemberPower)>) =
         drive::verify::group::verify_action_signers(
             &proof_vec,
             Identifier::from(contract_id_bytes),
@@ -100,7 +100,7 @@ pub fn verify_action_signers_map(
     platform_version_number: u32,
 ) -> Result<VerifyActionSignersResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -121,7 +121,7 @@ pub fn verify_action_signers_map(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, signers_map): (RootHash, BTreeMap<Identifier, GroupMemberPower>) = 
+    let (root_hash, signers_map): (RootHash, BTreeMap<Identifier, GroupMemberPower>) =
         drive::verify::group::verify_action_signers(
             &proof_vec,
             Identifier::from(contract_id_bytes),
@@ -138,8 +138,12 @@ pub fn verify_action_signers_map(
     for (signer_id, power) in signers_map {
         // Use base64 encoded identifier as key
         let id_base64 = base64::encode(signer_id.as_bytes());
-        js_sys::Reflect::set(&js_object, &JsValue::from_str(&id_base64), &JsValue::from(power))
-            .map_err(|_| JsValue::from_str("Failed to set object property"))?;
+        js_sys::Reflect::set(
+            &js_object,
+            &JsValue::from_str(&id_base64),
+            &JsValue::from(power),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set object property"))?;
     }
 
     Ok(VerifyActionSignersResult {

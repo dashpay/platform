@@ -1,13 +1,13 @@
-use drive::verify::RootHash;
-use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator, OrderClause};
 use dpp::data_contract::DataContract;
-use dpp::version::PlatformVersion;
 use dpp::platform_value::Value;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Array, Object, Reflect};
-use serde_wasm_bindgen::{to_value, from_value};
-use std::collections::BTreeMap;
+use dpp::version::PlatformVersion;
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::verify::RootHash;
 use indexmap::IndexMap;
+use js_sys::{Array, Object, Reflect, Uint8Array};
+use serde_wasm_bindgen::{from_value, to_value};
+use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyDocumentProofKeepSerializedResult {
@@ -43,7 +43,7 @@ pub fn verify_document_proof_keep_serialized(
     platform_version_number: u32,
 ) -> Result<VerifyDocumentProofKeepSerializedResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     // Parse contract from JS
     let contract: DataContract = from_value(contract_js.clone())
         .map_err(|e| JsValue::from_str(&format!("Failed to parse contract: {:?}", e)))?;
@@ -62,7 +62,8 @@ pub fn verify_document_proof_keep_serialized(
     // Parse start_at
     let start_at_bytes = start_at.map(|arr| {
         let vec = arr.to_vec();
-        let bytes: [u8; 32] = vec.try_into()
+        let bytes: [u8; 32] = vec
+            .try_into()
             .map_err(|_| JsValue::from_str("Invalid start_at length. Expected 32 bytes."))
             .unwrap();
         bytes
@@ -84,7 +85,8 @@ pub fn verify_document_proof_keep_serialized(
         block_time_ms,
     };
 
-    let (root_hash, serialized_docs) = query.verify_proof_keep_serialized(&proof_vec, platform_version)
+    let (root_hash, serialized_docs) = query
+        .verify_proof_keep_serialized(&proof_vec, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert serialized documents to JS array of Uint8Arrays
@@ -106,7 +108,9 @@ fn parse_internal_clauses(where_clauses: &JsValue) -> Result<InternalClauses, Js
         return Ok(InternalClauses::default());
     }
 
-    let obj: Object = where_clauses.clone().dyn_into()
+    let obj: Object = where_clauses
+        .clone()
+        .dyn_into()
         .map_err(|_| JsValue::from_str("where_clauses must be an object"))?;
 
     let mut internal_clauses = InternalClauses::default();
@@ -142,23 +146,25 @@ fn parse_internal_clauses(where_clauses: &JsValue) -> Result<InternalClauses, Js
     // Parse equal_clauses
     if let Ok(clauses) = Reflect::get(&obj, &JsValue::from_str("equal_clauses")) {
         if !clauses.is_null() && !clauses.is_undefined() {
-            let clauses_obj: Object = clauses.dyn_into()
+            let clauses_obj: Object = clauses
+                .dyn_into()
                 .map_err(|_| JsValue::from_str("equal_clauses must be an object"))?;
-            
+
             let keys = Object::keys(&clauses_obj);
             let mut equal_clauses = BTreeMap::new();
-            
+
             for i in 0..keys.length() {
                 let key = keys.get(i);
-                let key_str = key.as_string()
+                let key_str = key
+                    .as_string()
                     .ok_or_else(|| JsValue::from_str("Key must be a string"))?;
-                
+
                 let clause = Reflect::get(&clauses_obj, &key)
                     .map_err(|_| JsValue::from_str("Failed to get clause"))?;
-                
+
                 equal_clauses.insert(key_str, parse_where_clause(&clause)?);
             }
-            
+
             internal_clauses.equal_clauses = equal_clauses;
         }
     }
@@ -167,7 +173,9 @@ fn parse_internal_clauses(where_clauses: &JsValue) -> Result<InternalClauses, Js
 }
 
 fn parse_where_clause(clause_js: &JsValue) -> Result<WhereClause, JsValue> {
-    let obj: Object = clause_js.clone().dyn_into()
+    let obj: Object = clause_js
+        .clone()
+        .dyn_into()
         .map_err(|_| JsValue::from_str("where clause must be an object"))?;
 
     let field = Reflect::get(&obj, &JsValue::from_str("field"))
@@ -192,12 +200,17 @@ fn parse_where_clause(clause_js: &JsValue) -> Result<WhereClause, JsValue> {
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "In" => WhereOperator::In,
         "StartsWith" => WhereOperator::StartsWith,
-        _ => return Err(JsValue::from_str(&format!("Unknown operator: {}", operator_str))),
+        _ => {
+            return Err(JsValue::from_str(&format!(
+                "Unknown operator: {}",
+                operator_str
+            )))
+        }
     };
 
     let value_js = Reflect::get(&obj, &JsValue::from_str("value"))
         .map_err(|_| JsValue::from_str("Failed to get value"))?;
-    
+
     let value: Value = from_value(value_js)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse value: {:?}", e)))?;
 
@@ -215,32 +228,36 @@ fn parse_order_by(order_by_js: &JsValue) -> Result<IndexMap<String, OrderClause>
         return Ok(order_by_map);
     }
 
-    let obj: Object = order_by_js.clone().dyn_into()
+    let obj: Object = order_by_js
+        .clone()
+        .dyn_into()
         .map_err(|_| JsValue::from_str("order_by must be an object"))?;
 
     let keys = Object::keys(&obj);
-    
+
     for i in 0..keys.length() {
         let key = keys.get(i);
-        let key_str = key.as_string()
+        let key_str = key
+            .as_string()
             .ok_or_else(|| JsValue::from_str("Key must be a string"))?;
-        
+
         let clause_js = Reflect::get(&obj, &key)
             .map_err(|_| JsValue::from_str("Failed to get order clause"))?;
-        
-        let clause_obj: Object = clause_js.dyn_into()
+
+        let clause_obj: Object = clause_js
+            .dyn_into()
             .map_err(|_| JsValue::from_str("order clause must be an object"))?;
-        
+
         let field = Reflect::get(&clause_obj, &JsValue::from_str("field"))
             .map_err(|_| JsValue::from_str("Failed to get field"))?
             .as_string()
             .ok_or_else(|| JsValue::from_str("field must be a string"))?;
-        
+
         let ascending = Reflect::get(&clause_obj, &JsValue::from_str("ascending"))
             .map_err(|_| JsValue::from_str("Failed to get ascending"))?
             .as_bool()
             .ok_or_else(|| JsValue::from_str("ascending must be a boolean"))?;
-        
+
         order_by_map.insert(key_str, OrderClause { field, ascending });
     }
 

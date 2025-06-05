@@ -1,9 +1,9 @@
-use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
 use dpp::util::deserializer::ProtocolVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Object, Reflect};
+use dpp::version::PlatformVersion;
+use drive::verify::RootHash;
+use js_sys::{Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyUpgradeVoteStatusResult {
@@ -32,7 +32,7 @@ pub fn verify_upgrade_vote_status(
     platform_version_number: u32,
 ) -> Result<VerifyUpgradeVoteStatusResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
@@ -41,7 +41,9 @@ pub fn verify_upgrade_vote_status(
         Some(hash) => {
             let hash_vec = hash.to_vec();
             if hash_vec.len() != 32 {
-                return Err(JsValue::from_str("start_protx_hash must be exactly 32 bytes"));
+                return Err(JsValue::from_str(
+                    "start_protx_hash must be exactly 32 bytes",
+                ));
             }
             let mut hash_array = [0u8; 32];
             hash_array.copy_from_slice(&hash_vec);
@@ -63,7 +65,7 @@ pub fn verify_upgrade_vote_status(
     for (protx_hash, protocol_version) in vote_status_map {
         let hex_key = hex::encode(&protx_hash);
         let value = JsValue::from_f64(protocol_version as f64);
-        
+
         Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &value)
             .map_err(|_| JsValue::from_str("Failed to set vote status entry in result object"))?;
     }

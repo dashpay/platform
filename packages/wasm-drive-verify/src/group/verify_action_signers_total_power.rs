@@ -1,11 +1,11 @@
-use drive::verify::RootHash;
 use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyActionSignersTotalPowerResult {
@@ -44,7 +44,7 @@ pub fn verify_action_signers_total_power(
     platform_version_number: u32,
 ) -> Result<VerifyActionSignersTotalPowerResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -61,26 +61,29 @@ pub fn verify_action_signers_total_power(
         .map_err(|_| JsValue::from_str("Invalid action_signer_id length. Expected 32 bytes."))?;
 
     // Convert action_status from u8 to GroupActionStatus
-    let action_status_enum = action_status.map(|status| match status {
-        0 => Ok(GroupActionStatus::Active),
-        1 => Ok(GroupActionStatus::Closed),
-        _ => Err(JsValue::from_str("Invalid action status value")),
-    }).transpose()?;
+    let action_status_enum = action_status
+        .map(|status| match status {
+            0 => Ok(GroupActionStatus::Active),
+            1 => Ok(GroupActionStatus::Closed),
+            _ => Err(JsValue::from_str("Invalid action status value")),
+        })
+        .transpose()?;
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, status, total_power) = drive::verify::group::verify_action_signer_and_total_power(
-        &proof_vec,
-        Identifier::from(contract_id_bytes),
-        group_contract_position,
-        action_status_enum,
-        Identifier::from(action_id_bytes),
-        Identifier::from(action_signer_id_bytes),
-        is_proof_subset,
-        platform_version,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    let (root_hash, status, total_power) =
+        drive::verify::group::verify_action_signer_and_total_power(
+            &proof_vec,
+            Identifier::from(contract_id_bytes),
+            group_contract_position,
+            action_status_enum,
+            Identifier::from(action_id_bytes),
+            Identifier::from(action_signer_id_bytes),
+            is_proof_subset,
+            platform_version,
+        )
+        .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert GroupActionStatus back to u8
     let status_u8 = match status {

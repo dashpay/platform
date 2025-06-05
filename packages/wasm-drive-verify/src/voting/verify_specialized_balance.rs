@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifySpecializedBalanceResult {
@@ -31,11 +31,11 @@ pub fn verify_specialized_balance(
     platform_version_number: u32,
 ) -> Result<VerifySpecializedBalanceResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
-    let specialized_balance_id_bytes: [u8; 32] = specialized_balance_id
-        .to_vec()
-        .try_into()
-        .map_err(|_| JsValue::from_str("Invalid specialized_balance_id length. Expected 32 bytes."))?;
+
+    let specialized_balance_id_bytes: [u8; 32] =
+        specialized_balance_id.to_vec().try_into().map_err(|_| {
+            JsValue::from_str("Invalid specialized_balance_id length. Expected 32 bytes.")
+        })?;
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;

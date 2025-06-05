@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyIdentityBalanceForIdentityIdResult {
@@ -31,7 +31,7 @@ pub fn verify_identity_balance_for_identity_id(
     platform_version_number: u32,
 ) -> Result<VerifyIdentityBalanceForIdentityIdResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()

@@ -1,11 +1,11 @@
-use drive::verify::RootHash;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
 use serde_wasm_bindgen::to_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyGroupInfoResult {
@@ -35,7 +35,7 @@ pub fn verify_group_info(
     platform_version_number: u32,
 ) -> Result<VerifyGroupInfoResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let contract_id_bytes: [u8; 32] = contract_id
         .to_vec()
         .try_into()
@@ -58,8 +58,9 @@ pub fn verify_group_info(
         Some(group) => {
             let group_json = serde_json::to_value(&group)
                 .map_err(|e| JsValue::from_str(&format!("Failed to serialize group: {:?}", e)))?;
-            to_value(&group_json)
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert group to JsValue: {:?}", e)))?
+            to_value(&group_json).map_err(|e| {
+                JsValue::from_str(&format!("Failed to convert group to JsValue: {:?}", e))
+            })?
         }
         None => JsValue::null(),
     };

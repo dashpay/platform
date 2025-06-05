@@ -1,9 +1,9 @@
-use drive::verify::RootHash;
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
 use serde_wasm_bindgen::to_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentityByIdentityIdResult {
@@ -32,7 +32,7 @@ pub fn verify_full_identity_by_identity_id(
     platform_version_number: u32,
 ) -> Result<VerifyFullIdentityByIdentityIdResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()
@@ -41,20 +41,23 @@ pub fn verify_full_identity_by_identity_id(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, identity_option) = drive::verify::identity::verify_full_identity_by_identity_id(
-        &proof_vec,
-        is_proof_subset,
-        identity_id_bytes,
-        platform_version,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    let (root_hash, identity_option) =
+        drive::verify::identity::verify_full_identity_by_identity_id(
+            &proof_vec,
+            is_proof_subset,
+            identity_id_bytes,
+            platform_version,
+        )
+        .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     let identity_js = match identity_option {
         Some(identity) => {
-            let identity_json = serde_json::to_value(&identity)
-                .map_err(|e| JsValue::from_str(&format!("Failed to serialize identity: {:?}", e)))?;
-            to_value(&identity_json)
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e)))?
+            let identity_json = serde_json::to_value(&identity).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
+            })?;
+            to_value(&identity_json).map_err(|e| {
+                JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
+            })?
         }
         None => JsValue::NULL,
     };

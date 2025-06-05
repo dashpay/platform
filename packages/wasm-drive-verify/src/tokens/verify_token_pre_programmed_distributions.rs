@@ -1,11 +1,11 @@
-use drive::verify::RootHash;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Array, Object, Reflect};
+use drive::verify::RootHash;
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyTokenPreProgrammedDistributionsResult {
@@ -39,29 +39,30 @@ pub fn verify_token_pre_programmed_distributions_vec(
     platform_version_number: u32,
 ) -> Result<VerifyTokenPreProgrammedDistributionsResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let token_id_bytes: [u8; 32] = token_id
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     // Build start_at parameter
     let start_at = match (start_at_timestamp, start_at_identity_id) {
         (Some(timestamp), Some(id_uint8)) => {
             let id_vec = id_uint8.to_vec();
-            let id_bytes: [u8; 32] = id_vec.try_into()
+            let id_bytes: [u8; 32] = id_vec
+                .try_into()
                 .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
             Some(drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
                 at_time_ms: timestamp,
                 identity_id: Identifier::from(id_bytes),
             })
-        },
-        (Some(timestamp), None) => {
-            Some(drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
+        }
+        (Some(timestamp), None) => Some(
+            drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
                 at_time_ms: timestamp,
                 identity_id: Identifier::default(),
-            })
-        },
+            },
+        ),
         _ => None,
     };
 
@@ -69,7 +70,7 @@ pub fn verify_token_pre_programmed_distributions_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     type DistributionVec = Vec<(Identifier, TokenAmount)>;
-    let (root_hash, distributions_vec): (RootHash, Vec<(TimestampMillis, DistributionVec)>) = 
+    let (root_hash, distributions_vec): (RootHash, Vec<(TimestampMillis, DistributionVec)>) =
         drive::drive::Drive::verify_token_pre_programmed_distributions(
             &proof_vec,
             token_id_bytes,
@@ -84,10 +85,10 @@ pub fn verify_token_pre_programmed_distributions_vec(
     let js_array = Array::new();
     for (timestamp, recipients) in distributions_vec {
         let tuple_array = Array::new();
-        
+
         // Add timestamp
         tuple_array.push(&JsValue::from_f64(timestamp as f64));
-        
+
         // Add recipient distributions as array of tuples
         let recipients_array = Array::new();
         for (identity_id, amount) in recipients {
@@ -97,7 +98,7 @@ pub fn verify_token_pre_programmed_distributions_vec(
             recipients_array.push(&recipient_tuple);
         }
         tuple_array.push(&recipients_array);
-        
+
         js_array.push(&tuple_array);
     }
 
@@ -119,29 +120,30 @@ pub fn verify_token_pre_programmed_distributions_map(
     platform_version_number: u32,
 ) -> Result<VerifyTokenPreProgrammedDistributionsResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let token_id_bytes: [u8; 32] = token_id
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     // Build start_at parameter
     let start_at = match (start_at_timestamp, start_at_identity_id) {
         (Some(timestamp), Some(id_uint8)) => {
             let id_vec = id_uint8.to_vec();
-            let id_bytes: [u8; 32] = id_vec.try_into()
+            let id_bytes: [u8; 32] = id_vec
+                .try_into()
                 .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
             Some(drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
                 at_time_ms: timestamp,
                 identity_id: Identifier::from(id_bytes),
             })
-        },
-        (Some(timestamp), None) => {
-            Some(drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
+        }
+        (Some(timestamp), None) => Some(
+            drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt {
                 at_time_ms: timestamp,
                 identity_id: Identifier::default(),
-            })
-        },
+            },
+        ),
         _ => None,
     };
 
@@ -149,7 +151,7 @@ pub fn verify_token_pre_programmed_distributions_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     type DistributionMap = BTreeMap<Identifier, TokenAmount>;
-    let (root_hash, distributions_map): (RootHash, BTreeMap<TimestampMillis, DistributionMap>) = 
+    let (root_hash, distributions_map): (RootHash, BTreeMap<TimestampMillis, DistributionMap>) =
         drive::drive::Drive::verify_token_pre_programmed_distributions(
             &proof_vec,
             token_id_bytes,
@@ -164,15 +166,23 @@ pub fn verify_token_pre_programmed_distributions_map(
     let js_obj = Object::new();
     for (timestamp, recipients) in distributions_map {
         let recipients_obj = Object::new();
-        
+
         for (identity_id, amount) in recipients {
             let hex_key = hex::encode(identity_id.as_slice());
-            Reflect::set(&recipients_obj, &JsValue::from_str(&hex_key), &JsValue::from_f64(amount as f64))
-                .map_err(|_| JsValue::from_str("Failed to set recipient amount"))?;
+            Reflect::set(
+                &recipients_obj,
+                &JsValue::from_str(&hex_key),
+                &JsValue::from_f64(amount as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set recipient amount"))?;
         }
-        
-        Reflect::set(&js_obj, &JsValue::from_str(&timestamp.to_string()), &recipients_obj)
-            .map_err(|_| JsValue::from_str("Failed to set distribution timestamp"))?;
+
+        Reflect::set(
+            &js_obj,
+            &JsValue::from_str(&timestamp.to_string()),
+            &recipients_obj,
+        )
+        .map_err(|_| JsValue::from_str("Failed to set distribution timestamp"))?;
     }
 
     Ok(VerifyTokenPreProgrammedDistributionsResult {

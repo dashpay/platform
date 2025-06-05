@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyIdentityIdByUniquePublicKeyHashResult {
@@ -31,7 +31,7 @@ pub fn verify_identity_id_by_unique_public_key_hash(
     platform_version_number: u32,
 ) -> Result<VerifyIdentityIdByUniquePublicKeyHashResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let public_key_hash_bytes: [u8; 20] = public_key_hash
         .to_vec()
         .try_into()

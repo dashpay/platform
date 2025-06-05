@@ -1,12 +1,12 @@
-use drive::drive::Drive;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use grovedb::PathQuery;
-use wasm_bindgen::prelude::*;
-use js_sys::{Uint8Array, Object, Reflect, Array};
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct TokenTransitionPathQueryResult {
@@ -49,7 +49,9 @@ pub fn token_transition_into_path_query(
     // Note: Since we can't directly use the trait method from rs-drive here,
     // we would need to implement the path query logic based on the token transition type
     // For now, return an error indicating this needs implementation
-    Err(JsValue::from_str("Token transition path query conversion not yet implemented in WASM bindings"))
+    Err(JsValue::from_str(
+        "Token transition path query conversion not yet implemented in WASM bindings",
+    ))
 }
 
 fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> {
@@ -66,7 +68,7 @@ fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> 
 
     // Convert query (this is a simplified version - real implementation would need to handle all query types)
     let query_obj = Object::new();
-    
+
     // Handle different query types
     if let Some(items) = &path_query.query.query.items {
         let items_array = Array::new();
@@ -80,31 +82,39 @@ fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> 
 
     if let Some(range) = &path_query.query.query.range {
         let range_obj = Object::new();
-        
+
         if let Some(start) = &range.start {
             let start_array = Uint8Array::from(start.as_slice());
             Reflect::set(&range_obj, &JsValue::from_str("start"), &start_array)
                 .map_err(|_| JsValue::from_str("Failed to set range start"))?;
         }
-        
+
         if let Some(end) = &range.end {
             let end_array = Uint8Array::from(end.as_slice());
             Reflect::set(&range_obj, &JsValue::from_str("end"), &end_array)
                 .map_err(|_| JsValue::from_str("Failed to set range end"))?;
         }
-        
+
         Reflect::set(&query_obj, &JsValue::from_str("range"), &range_obj)
             .map_err(|_| JsValue::from_str("Failed to set range"))?;
     }
 
     if let Some(limit) = path_query.query.limit {
-        Reflect::set(&query_obj, &JsValue::from_str("limit"), &JsValue::from_f64(limit as f64))
-            .map_err(|_| JsValue::from_str("Failed to set limit"))?;
+        Reflect::set(
+            &query_obj,
+            &JsValue::from_str("limit"),
+            &JsValue::from_f64(limit as f64),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set limit"))?;
     }
 
     if let Some(offset) = path_query.query.offset {
-        Reflect::set(&query_obj, &JsValue::from_str("offset"), &JsValue::from_f64(offset as f64))
-            .map_err(|_| JsValue::from_str("Failed to set offset"))?;
+        Reflect::set(
+            &query_obj,
+            &JsValue::from_str("offset"),
+            &JsValue::from_f64(offset as f64),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set offset"))?;
     }
 
     Reflect::set(&obj, &JsValue::from_str("query"), &query_obj)
@@ -124,7 +134,7 @@ pub fn token_balance_for_identity_id_query(
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()
@@ -147,21 +157,25 @@ pub fn token_balances_for_identity_ids_query(
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     // Parse identity IDs array
-    let identity_ids_array: Array = identity_ids_js.clone().dyn_into()
+    let identity_ids_array: Array = identity_ids_js
+        .clone()
+        .dyn_into()
         .map_err(|_| JsValue::from_str("identity_ids must be an array"))?;
-    
+
     let mut identity_ids: Vec<[u8; 32]> = Vec::new();
     for i in 0..identity_ids_array.length() {
-        let id_uint8array: Uint8Array = identity_ids_array.get(i).dyn_into()
+        let id_uint8array: Uint8Array = identity_ids_array
+            .get(i)
+            .dyn_into()
             .map_err(|_| JsValue::from_str("Each identity ID must be a Uint8Array"))?;
-        
+
         let id_bytes: [u8; 32] = id_uint8array
             .to_vec()
             .try_into()
             .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
-        
+
         identity_ids.push(id_bytes);
     }
 
@@ -182,7 +196,7 @@ pub fn token_info_for_identity_id_query(
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid token_id length. Expected 32 bytes."))?;
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()
@@ -224,12 +238,12 @@ pub fn group_active_and_closed_action_single_signer_query(
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid contract_id length. Expected 32 bytes."))?;
-    
+
     let action_id_bytes: [u8; 32] = action_id
         .to_vec()
         .try_into()
         .map_err(|_| JsValue::from_str("Invalid action_id length. Expected 32 bytes."))?;
-    
+
     let identity_id_bytes: [u8; 32] = identity_id
         .to_vec()
         .try_into()

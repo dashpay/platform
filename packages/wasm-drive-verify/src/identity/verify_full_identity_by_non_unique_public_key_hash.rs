@@ -1,10 +1,10 @@
-use drive::verify::RootHash;
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
+use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
+use drive::verify::RootHash;
 use js_sys::Uint8Array;
 use serde_wasm_bindgen::to_value;
-use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentityByNonUniquePublicKeyHashResult {
@@ -35,7 +35,7 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
 ) -> Result<VerifyFullIdentityByNonUniquePublicKeyHashResult, JsValue> {
     let identity_proof_vec = identity_proof.map(|proof| proof.to_vec());
     let identity_id_public_key_hash_proof_vec = identity_id_public_key_hash_proof.to_vec();
-    
+
     let public_key_hash_bytes: [u8; 20] = public_key_hash
         .to_vec()
         .try_into()
@@ -43,8 +43,11 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
 
     let after_bytes = if let Some(after_array) = after {
         let after_vec = after_array.to_vec();
-        Some(after_vec.try_into()
-            .map_err(|_| JsValue::from_str("Invalid after length. Expected 32 bytes."))?)
+        Some(
+            after_vec
+                .try_into()
+                .map_err(|_| JsValue::from_str("Invalid after length. Expected 32 bytes."))?,
+        )
     } else {
         None
     };
@@ -57,20 +60,23 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
         identity_id_public_key_hash_proof: identity_id_public_key_hash_proof_vec,
     };
 
-    let (root_hash, identity_option) = drive::verify::identity::verify_full_identity_by_non_unique_public_key_hash(
-        &proof,
-        public_key_hash_bytes,
-        after_bytes,
-        platform_version,
-    )
-    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    let (root_hash, identity_option) =
+        drive::verify::identity::verify_full_identity_by_non_unique_public_key_hash(
+            &proof,
+            public_key_hash_bytes,
+            after_bytes,
+            platform_version,
+        )
+        .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     let identity_js = match identity_option {
         Some(identity) => {
-            let identity_json = serde_json::to_value(&identity)
-                .map_err(|e| JsValue::from_str(&format!("Failed to serialize identity: {:?}", e)))?;
-            to_value(&identity_json)
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e)))?
+            let identity_json = serde_json::to_value(&identity).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
+            })?;
+            to_value(&identity_json).map_err(|e| {
+                JsValue::from_str(&format!("Failed to convert identity to JsValue: {:?}", e))
+            })?
         }
         None => JsValue::NULL,
     };

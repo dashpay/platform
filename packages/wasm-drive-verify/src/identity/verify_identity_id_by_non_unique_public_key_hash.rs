@@ -1,8 +1,8 @@
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
-use dpp::version::PlatformVersion;
-use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VerifyIdentityIdByNonUniquePublicKeyHashResult {
@@ -32,7 +32,7 @@ pub fn verify_identity_id_by_non_unique_public_key_hash(
     platform_version_number: u32,
 ) -> Result<VerifyIdentityIdByNonUniquePublicKeyHashResult, JsValue> {
     let proof_vec = proof.to_vec();
-    
+
     let public_key_hash_bytes: [u8; 20] = public_key_hash
         .to_vec()
         .try_into()
@@ -40,8 +40,11 @@ pub fn verify_identity_id_by_non_unique_public_key_hash(
 
     let after_bytes = if let Some(after_array) = after {
         let after_vec = after_array.to_vec();
-        Some(after_vec.try_into()
-            .map_err(|_| JsValue::from_str("Invalid after length. Expected 32 bytes."))?)
+        Some(
+            after_vec
+                .try_into()
+                .map_err(|_| JsValue::from_str("Invalid after length. Expected 32 bytes."))?,
+        )
     } else {
         None
     };
