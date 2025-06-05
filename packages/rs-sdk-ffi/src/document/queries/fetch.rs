@@ -75,3 +75,223 @@ pub unsafe extern "C" fn dash_sdk_document_fetch(
         Err(e) => DashSDKResult::error(e.into()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::*;
+    use crate::DashSDKErrorCode;
+    use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dash_sdk::dpp::data_contract::v1::DataContractV1;
+    use dash_sdk::dpp::version::PlatformVersion;
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+
+    #[test]
+    fn test_fetch_with_null_sdk_handle() {
+        let data_contract = create_mock_data_contract();
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let document_type = CString::new("testDoc").unwrap();
+        let document_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch(
+                ptr::null(), // null SDK handle
+                data_contract_handle,
+                document_type.as_ptr(),
+                document_id.as_ptr(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("Invalid parameters"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+        }
+    }
+
+    #[test]
+    fn test_fetch_with_null_data_contract() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document_type = CString::new("testDoc").unwrap();
+        let document_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch(
+                sdk_handle,
+                ptr::null(), // null data contract
+                document_type.as_ptr(),
+                document_id.as_ptr(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_fetch_with_null_document_type() {
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let document_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch(
+                sdk_handle,
+                data_contract_handle,
+                ptr::null(), // null document type
+                document_id.as_ptr(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_fetch_with_null_document_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let document_type = CString::new("testDoc").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch(
+                sdk_handle,
+                data_contract_handle,
+                document_type.as_ptr(),
+                ptr::null(), // null document ID
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_fetch_with_invalid_document_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let document_type = CString::new("testDoc").unwrap();
+        let document_id = CString::new("invalid-base58-id!@#$").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch(
+                sdk_handle,
+                data_contract_handle,
+                document_type.as_ptr(),
+                document_id.as_ptr(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("Invalid document ID"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_fetch_with_unknown_document_type() {
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let document_type = CString::new("unknownType").unwrap();
+        let document_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch(
+                sdk_handle,
+                data_contract_handle,
+                document_type.as_ptr(),
+                document_id.as_ptr(),
+            )
+        };
+
+        // This should fail when creating the query
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InternalError);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("Failed to create query"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_fetch_memory_cleanup() {
+        // Test that CString memory is properly managed
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+
+        let document_type = CString::new("testDoc").unwrap();
+        let document_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+
+        // Get raw pointers
+        let document_type_ptr = document_type.as_ptr();
+        let document_id_ptr = document_id.as_ptr();
+
+        // CStrings will be dropped at the end of scope, which is proper cleanup
+        let _result = unsafe {
+            dash_sdk_document_fetch(
+                sdk_handle,
+                data_contract_handle,
+                document_type_ptr,
+                document_id_ptr,
+            )
+        };
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+}

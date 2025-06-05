@@ -262,3 +262,455 @@ pub unsafe extern "C" fn dash_sdk_document_purchase_and_wait(
         Err(e) => DashSDKResult::error(e.into()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::*;
+    use crate::DashSDKErrorCode;
+    use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dash_sdk::dpp::data_contract::v1::DataContractV1;
+    use dash_sdk::dpp::document::{Document, DocumentV0};
+    use dash_sdk::dpp::platform_value::Value;
+    use dash_sdk::dpp::prelude::Identifier;
+    use dash_sdk::dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+
+    // Helper function to create a mock document with price
+    fn create_mock_document() -> Box<Document> {
+        let id = Identifier::from_bytes(&[2u8; 32]).unwrap();
+        let owner_id = Identifier::from_bytes(&[1u8; 32]).unwrap();
+
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "name".to_string(),
+            Value::Text("Purchasable Document".to_string()),
+        );
+        properties.insert("price".to_string(), Value::U64(1000));
+
+        let document = Document::V0(DocumentV0 {
+            id,
+            owner_id,
+            properties: properties,
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+        });
+
+        Box::new(document)
+    }
+
+    #[test]
+    fn test_purchase_with_null_sdk_handle() {
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let price = 2000u64;
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase(
+                ptr::null_mut(), // null SDK handle
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("null"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+    }
+
+    #[test]
+    fn test_purchase_with_null_document() {
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let price = 2000u64;
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase(
+                sdk_handle,
+                ptr::null(), // null document
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_purchase_with_null_purchaser_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let price = 2000u64;
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                ptr::null(), // null purchaser ID
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_purchase_with_invalid_purchaser_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("invalid-base58-id!@#$").unwrap();
+        let price = 2000u64;
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("Invalid purchaser ID"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_purchase_with_zero_price() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let price = 0u64; // Zero price
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        // Should succeed - zero price might be valid for free documents
+        assert!(result.error.is_null());
+        assert!(!result.data.is_null());
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_purchase_with_max_price() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let price = u64::MAX; // Maximum price
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        // Should succeed - the function should handle max values
+        assert!(result.error.is_null());
+        assert!(!result.data.is_null());
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_purchase_and_wait_with_null_parameters() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let price = 2000u64;
+        let put_settings = create_put_settings();
+
+        // Test with null SDK handle
+        let result = unsafe {
+            dash_sdk_document_purchase_and_wait(
+                ptr::null_mut(),
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_purchase_and_wait_with_invalid_purchaser_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let purchaser_id = CString::new("not-a-valid-base58").unwrap();
+        let price = 2000u64;
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_purchase_and_wait(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                price,
+                purchaser_id.as_ptr(),
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("Invalid purchaser ID"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+}

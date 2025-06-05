@@ -13,6 +13,9 @@ mod token;
 mod types;
 mod utils;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use data_contract::*;
 pub use document::*;
 pub use error::*;

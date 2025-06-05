@@ -175,78 +175,15 @@ pub unsafe extern "C" fn dash_sdk_token_burn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::test_utils::*;
     use crate::types::{
         DashSDKConfig, DashSDKPutSettings, DashSDKStateTransitionCreationOptions, SDKHandle,
+        SignerHandle,
     };
     use crate::DashSDKErrorCode;
-    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
-    use dash_sdk::dpp::platform_value::BinaryData;
+    use dash_sdk::platform::IdentityPublicKey;
     use std::ffi::{CStr, CString};
     use std::ptr;
-
-    // Helper function to create a mock SDK handle
-    fn create_mock_sdk_handle() -> *mut SDKHandle {
-        let wrapper = Box::new(crate::sdk::SDKWrapper::new_mock());
-        Box::into_raw(wrapper) as *mut SDKHandle
-    }
-
-    // Helper function to destroy mock SDK handle
-    fn destroy_mock_sdk_handle(handle: *mut SDKHandle) {
-        unsafe {
-            crate::sdk::dash_sdk_destroy(handle);
-        }
-    }
-
-    // Helper function to create a mock identity public key
-    fn create_mock_identity_public_key() -> Box<IdentityPublicKey> {
-        let key_v0 = IdentityPublicKeyV0 {
-            id: 0,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            key_type: KeyType::ECDSA_SECP256K1,
-            read_only: false,
-            data: BinaryData::new(vec![0u8; 33]), // 33 bytes for compressed secp256k1 key
-            disabled_at: None,
-            contract_bounds: None,
-        };
-        Box::new(IdentityPublicKey::V0(key_v0))
-    }
-
-    // Mock signer callbacks
-    unsafe extern "C" fn mock_sign_callback(
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
-        _data: *const u8,
-        _data_len: usize,
-        result_len: *mut usize,
-    ) -> *mut u8 {
-        // Return a mock signature (64 bytes for ECDSA)
-        let signature = vec![0u8; 64];
-        *result_len = signature.len();
-        let ptr = signature.as_ptr() as *mut u8;
-        std::mem::forget(signature); // Prevent deallocation
-        ptr
-    }
-
-    unsafe extern "C" fn mock_can_sign_callback(
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
-    ) -> bool {
-        true
-    }
-
-    // Helper function to create a mock signer
-    fn create_mock_signer() -> Box<crate::signer::IOSSigner> {
-        Box::new(crate::signer::IOSSigner::new(
-            mock_sign_callback,
-            mock_can_sign_callback,
-        ))
-    }
-
-    fn create_valid_transition_owner_id() -> [u8; 32] {
-        [1u8; 32]
-    }
 
     fn create_valid_burn_params() -> DashSDKTokenBurnParams {
         // Note: In real tests, the caller is responsible for freeing the CString memory
@@ -269,20 +206,6 @@ mod tests {
         }
         if !params.public_note.is_null() {
             let _ = CString::from_raw(params.public_note as *mut std::os::raw::c_char);
-        }
-    }
-
-    fn create_put_settings() -> DashSDKPutSettings {
-        DashSDKPutSettings {
-            connect_timeout_ms: 0,
-            timeout_ms: 0,
-            retries: 0,
-            ban_failed_address: false,
-            identity_nonce_stale_time_s: 0,
-            user_fee_increase: 0,
-            allow_signing_with_any_security_level: false,
-            allow_signing_with_any_purpose: false,
-            wait_timeout_ms: 0,
         }
     }
 
@@ -327,7 +250,7 @@ mod tests {
         // This test validates that the function properly handles null transition owner ID
         // We use real mock data to avoid segfaults when the function validates other parameters
         let sdk_handle = create_mock_sdk_handle();
-        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key = create_mock_identity_public_key_with_id(0);
         let signer = create_mock_signer();
 
         let params = create_valid_burn_params();
@@ -369,7 +292,7 @@ mod tests {
         // This test validates that the function properly handles null params
         // We use real mock data to avoid segfaults when the function validates other parameters
         let sdk_handle = create_mock_sdk_handle();
-        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key = create_mock_identity_public_key_with_id(0);
         let signer = create_mock_signer();
 
         let transition_owner_id = create_valid_transition_owner_id();
@@ -449,7 +372,7 @@ mod tests {
         // This test validates that the function properly handles null signer
         // We use real mock data to avoid segfaults when the function validates other parameters
         let sdk_handle = create_mock_sdk_handle();
-        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key = create_mock_identity_public_key_with_id(0);
 
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_burn_params();
@@ -490,7 +413,7 @@ mod tests {
         // which will fail during parameter validation
         let transition_owner_id = create_valid_transition_owner_id();
         let sdk_handle = create_mock_sdk_handle();
-        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key = create_mock_identity_public_key_with_id(0);
         let signer = create_mock_signer();
 
         // Create params with invalid contract ID

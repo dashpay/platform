@@ -306,3 +306,345 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
         Err(e) => DashSDKResult::error(e.into()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::*;
+    use crate::DashSDKErrorCode;
+    use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dash_sdk::dpp::data_contract::v1::DataContractV1;
+    use dash_sdk::dpp::document::{Document, DocumentV0};
+    use dash_sdk::dpp::platform_value::Value;
+    use dash_sdk::dpp::prelude::{Identifier, Revision};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+
+    // Helper function to create a mock document with specific revision
+    fn create_mock_document_with_revision(revision: Revision) -> Box<Document> {
+        let id = Identifier::from_bytes(&[2u8; 32]).unwrap();
+        let owner_id = Identifier::from_bytes(&[1u8; 32]).unwrap();
+
+        let mut properties = BTreeMap::new();
+        properties.insert("name".to_string(), Value::Text("Test Document".to_string()));
+
+        let document = Document::V0(DocumentV0 {
+            id,
+            owner_id,
+            properties: properties,
+            revision: Some(revision),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+        });
+
+        Box::new(document)
+    }
+
+    // Helper function to create valid entropy
+    fn create_valid_entropy() -> [u8; 32] {
+        [42u8; 32]
+    }
+
+    #[test]
+    fn test_put_with_null_sdk_handle() {
+        let document = create_mock_document_with_revision(1);
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let entropy = create_valid_entropy();
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_put_to_platform(
+                ptr::null_mut(), // null SDK handle
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                &entropy,
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(error_msg.contains("null"));
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+    }
+
+    #[test]
+    fn test_put_with_null_document() {
+        let sdk_handle = create_mock_sdk_handle();
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let entropy = create_valid_entropy();
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_put_to_platform(
+                sdk_handle,
+                ptr::null(), // null document
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                &entropy,
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_put_with_null_entropy() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document_with_revision(1);
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_put_to_platform(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                ptr::null(), // null entropy
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_put_new_document_revision_1() {
+        // Test that revision 1 documents use DocumentCreateTransitionBuilder
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document_with_revision(1);
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let entropy = create_valid_entropy();
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_put_to_platform(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                &entropy,
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        // Should succeed with serialized data (mock SDK returns success)
+        assert!(result.error.is_null());
+        assert!(!result.data.is_null());
+
+        // Check result type is binary data
+        unsafe {
+            assert_eq!(result.data_type, DashSDKResultDataType::BinaryData);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_put_existing_document_revision_2() {
+        // Test that revision > 1 documents use DocumentReplaceTransitionBuilder
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document_with_revision(2);
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let entropy = create_valid_entropy();
+        let put_settings = create_put_settings();
+
+        let result = unsafe {
+            dash_sdk_document_put_to_platform(
+                sdk_handle,
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                &entropy,
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        // Should succeed with serialized data (mock SDK returns success)
+        assert!(result.error.is_null());
+        assert!(!result.data.is_null());
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn test_put_and_wait_with_null_parameters() {
+        let sdk_handle = create_mock_sdk_handle();
+        let document = create_mock_document_with_revision(1);
+        let data_contract = create_mock_data_contract();
+        let identity_public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+
+        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
+
+        let document_type_name = CString::new("testDoc").unwrap();
+        let entropy = create_valid_entropy();
+        let put_settings = create_put_settings();
+
+        // Test with null SDK handle
+        let result = unsafe {
+            dash_sdk_document_put_to_platform_and_wait(
+                ptr::null_mut(),
+                document_handle,
+                data_contract_handle,
+                document_type_name.as_ptr(),
+                &entropy,
+                identity_public_key_handle,
+                signer_handle,
+                ptr::null(),
+                &put_settings,
+                ptr::null(),
+            )
+        };
+
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+        }
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+}
