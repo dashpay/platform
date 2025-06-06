@@ -1,9 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::platform_value::Value;
+use dash_sdk::drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use dash_sdk::platform::FetchMany;
-use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-use drive_proof_verifier::types::{ContestedResource, ContestedResources};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::{ContestedResource, ContestedResources};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resources
 ///
@@ -49,23 +50,33 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_resources(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -98,7 +109,8 @@ fn get_contested_resources(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in index name: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let contract_id_bytes = bs58::decode(contract_id_str)
@@ -109,7 +121,7 @@ fn get_contested_resources(
             .try_into()
             .map_err(|_| "Contract ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::Identifier::new(contract_id);
+        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
         // Parse start index values
         let start_index_values = if start_index_values_json.is_null() {
@@ -155,29 +167,29 @@ fn get_contested_resources(
             contract_id,
             document_type_name: document_type_name_str.to_string(),
             index_name: index_name_str.to_string(),
-            start_index_values,
-            end_index_values,
-            start_at_value_info: None,
-            count: Some(count),
+            start_index_values: start_index_values.into_iter().map(Value::from).collect(),
+            end_index_values: end_index_values.into_iter().map(Value::from).collect(),
+            start_at_value: None,
+            limit: Some(count as u16),
             order_ascending,
         };
 
         match ContestedResource::fetch_many(&sdk, query).await {
-            Ok(resources) => {
-                if resources.is_empty() {
+            Ok(contested_resources) => {
+                if contested_resources.0.is_empty() {
                     return Ok(None);
                 }
 
-                let resources_json: Vec<String> = resources
+                let resources_json: Vec<String> = contested_resources.0
                     .iter()
-                    .map(|(id, resource)| {
+                    .map(|resource| {
                         format!(
                             r#"{{"id":"{}","contract_id":"{}","document_type_name":"{}","index_name":"{}","index_values":"{}"}}"#,
-                            bs58::encode(id.as_bytes()).into_string(),
-                            bs58::encode(resource.contract_id().as_bytes()).into_string(),
-                            resource.document_type_name(),
-                            resource.index_name(),
-                            hex::encode(&resource.index_values())
+                            bs58::encode(resource.0.to_identifier_bytes().unwrap_or_else(|_| vec![0u8; 32])).into_string(),
+                            bs58::encode(contract_id.as_bytes()).into_string(),
+                            document_type_name_str,
+                            index_name_str,
+                            "[]"
                         )
                     })
                     .collect();

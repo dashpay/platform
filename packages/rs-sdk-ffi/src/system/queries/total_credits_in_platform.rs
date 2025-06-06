@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use drive_proof_verifier::types::TotalCreditsInPlatform;
+use dash_sdk::query_types::TotalCreditsInPlatform;
 use std::ffi::CString;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 
 /// Fetches the total credits in the platform
 ///
@@ -26,23 +26,33 @@ pub unsafe extern "C" fn dash_sdk_system_get_total_credits_in_platform(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -51,7 +61,8 @@ fn get_total_credits_in_platform(sdk_handle: *const SDKHandle) -> Result<Option<
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         match TotalCreditsInPlatform::fetch_current(&sdk).await {

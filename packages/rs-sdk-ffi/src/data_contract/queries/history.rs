@@ -1,5 +1,6 @@
 //! Data contract history query operations
 
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::Fetch;
@@ -12,7 +13,7 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Query for data contract history
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DataContractHistoryQuery {
     contract_id: Identifier,
     limit: Option<u32>,
@@ -21,26 +22,29 @@ struct DataContractHistoryQuery {
     prove: bool,
 }
 
-impl dash_sdk::platform::Query<dapi_grpc::platform::v0::GetDataContractHistoryRequest>
+impl dash_sdk::platform::Query<dash_sdk::dapi_grpc::platform::v0::GetDataContractHistoryRequest>
     for DataContractHistoryQuery
 {
     fn query(
         self,
         prove: bool,
-    ) -> Result<dapi_grpc::platform::v0::GetDataContractHistoryRequest, dash_sdk::Error> {
-        use dapi_grpc::platform::v0::get_data_contract_history_request::{
+    ) -> Result<dash_sdk::dapi_grpc::platform::v0::GetDataContractHistoryRequest, dash_sdk::Error>
+    {
+        use dash_sdk::dapi_grpc::platform::v0::get_data_contract_history_request::{
             GetDataContractHistoryRequestV0, Version,
         };
 
-        Ok(dapi_grpc::platform::v0::GetDataContractHistoryRequest {
-            version: Some(Version::V0(GetDataContractHistoryRequestV0 {
-                id: self.contract_id.to_vec(),
-                limit: self.limit,
-                offset: self.offset,
-                start_at_ms: self.start_at_ms,
-                prove: self.prove || prove,
-            })),
-        })
+        Ok(
+            dash_sdk::dapi_grpc::platform::v0::GetDataContractHistoryRequest {
+                version: Some(Version::V0(GetDataContractHistoryRequestV0 {
+                    id: self.contract_id.to_vec(),
+                    limit: self.limit,
+                    offset: self.offset,
+                    start_at_ms: self.start_at_ms,
+                    prove: self.prove || prove,
+                })),
+            },
+        )
     }
 }
 
@@ -112,14 +116,16 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_history(
             // Add entries
             json_parts.push("\"entries\":[".to_string());
             let entries: Vec<String> = history
-                .entries
                 .iter()
-                .map(|entry| {
+                .map(|(block_height, contract)| {
+                    let contract_json = serde_json::to_string(&serde_json::json!({
+                        "id": bs58::encode(contract.id().as_bytes()).into_string(),
+                        "owner_id": bs58::encode(contract.owner_id().as_bytes()).into_string(),
+                    }))
+                    .unwrap_or_else(|_| "null".to_string());
                     format!(
-                        "{{\"date\":{},\"contract\":{}}}",
-                        entry.date,
-                        serde_json::to_string(&entry.contract)
-                            .unwrap_or_else(|_| "null".to_string())
+                        "{{\"block_height\":{},\"contract\":{}}}",
+                        block_height, contract_json
                     )
                 })
                 .collect();

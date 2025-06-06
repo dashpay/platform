@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dashcore_rpc::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
-use dashcore_rpc::dashcore::ProTxHash;
-use drive_proof_verifier::types::{MasternodeProtocolVote, MasternodeProtocolVotes};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::{MasternodeProtocolVote, MasternodeProtocolVotes};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches protocol version upgrade vote status
 ///
@@ -30,23 +30,33 @@ pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_vote_status(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -59,7 +69,8 @@ fn get_protocol_version_upgrade_vote_status(
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let start_hash = if start_pro_tx_hash.is_null() {
@@ -79,9 +90,7 @@ fn get_protocol_version_upgrade_vote_status(
         };
 
         let query = dash_sdk::platform::LimitQuery {
-            query: ProtocolVersionUpgradeVoteStatusQuery {
-                start_pro_tx_hash: start_hash,
-            },
+            query: start_hash,
             limit: Some(count),
             start_info: None,
         };
@@ -94,12 +103,14 @@ fn get_protocol_version_upgrade_vote_status(
 
                 let votes_json: Vec<String> = votes
                     .iter()
-                    .map(|(pro_tx_hash, vote)| {
-                        format!(
-                            r#"{{"pro_tx_hash":"{}","version":{}}}"#,
-                            hex::encode(vote.pro_tx_hash.to_byte_array()),
-                            vote.voted_version
-                        )
+                    .filter_map(|(pro_tx_hash, vote_opt)| {
+                        vote_opt.as_ref().map(|vote| {
+                            format!(
+                                r#"{{"pro_tx_hash":"{}","version":{}}}"#,
+                                hex::encode(pro_tx_hash),
+                                vote.voted_version
+                            )
+                        })
                     })
                     .collect();
 
@@ -111,42 +122,6 @@ fn get_protocol_version_upgrade_vote_status(
             )),
         }
     })
-}
-
-// Helper struct for the query
-#[derive(Debug, Clone)]
-struct ProtocolVersionUpgradeVoteStatusQuery {
-    pub start_pro_tx_hash: Option<ProTxHash>,
-}
-
-impl dash_sdk::platform::Query<dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusRequest>
-    for ProtocolVersionUpgradeVoteStatusQuery
-{
-    fn query(
-        self,
-        prove: bool,
-    ) -> Result<dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusRequest, dash_sdk::Error>
-    {
-        use dapi_grpc::platform::v0::{
-            get_protocol_version_upgrade_vote_status_request::{
-                GetProtocolVersionUpgradeVoteStatusRequestV0, Version,
-            },
-            GetProtocolVersionUpgradeVoteStatusRequest,
-        };
-
-        let request = GetProtocolVersionUpgradeVoteStatusRequest {
-            version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {
-                start_pro_tx_hash: self
-                    .start_pro_tx_hash
-                    .map(|hash| hash.to_byte_array().to_vec())
-                    .unwrap_or_default(),
-                count: 0, // Count is handled by LimitQuery wrapper
-                prove,
-            })),
-        };
-
-        Ok(request)
-    }
 }
 
 #[cfg(test)]

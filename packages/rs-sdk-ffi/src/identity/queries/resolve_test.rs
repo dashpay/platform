@@ -4,7 +4,7 @@
 mod tests {
     use super::super::resolve::dash_sdk_identity_resolve_name;
     use crate::sdk::SDKWrapper;
-    use crate::test_utils::setup_test_sdk;
+    use crate::test_utils::test_utils::create_mock_sdk_handle;
     use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
     use std::ffi::CString;
 
@@ -22,11 +22,10 @@ mod tests {
 
     #[test]
     fn test_resolve_name_null_name() {
-        let sdk_wrapper = setup_test_sdk();
-        let sdk_handle = &sdk_wrapper as *const SDKWrapper;
+        let sdk_handle = create_mock_sdk_handle();
 
         unsafe {
-            let result = dash_sdk_identity_resolve_name(sdk_handle as *const _, std::ptr::null());
+            let result = dash_sdk_identity_resolve_name(sdk_handle, std::ptr::null());
             assert!(!result.error.is_null());
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
@@ -35,17 +34,14 @@ mod tests {
 
     #[test]
     fn test_resolve_name_invalid_utf8() {
-        let sdk_wrapper = setup_test_sdk();
-        let sdk_handle = &sdk_wrapper as *const SDKWrapper;
+        let sdk_handle = create_mock_sdk_handle();
 
         // Create invalid UTF-8 sequence
         let invalid_utf8 = vec![0xFF, 0xFE, 0x00];
 
         unsafe {
-            let result = dash_sdk_identity_resolve_name(
-                sdk_handle as *const _,
-                invalid_utf8.as_ptr() as *const _,
-            );
+            let result =
+                dash_sdk_identity_resolve_name(sdk_handle, invalid_utf8.as_ptr() as *const _);
             assert!(!result.error.is_null());
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);

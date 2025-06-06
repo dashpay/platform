@@ -1,10 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::voting::vote_polls::VotePoll;
+use dash_sdk::drive::query::VotePollsByEndDateDriveQuery;
 use dash_sdk::platform::FetchMany;
-use dpp::voting::vote_polls::VotePoll;
-use drive::query::VotePollsByEndDateDriveQuery;
-use drive_proof_verifier::types::VotePollsGroupedByTimestamp;
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::VotePollsGroupedByTimestamp;
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches vote polls by end date
 ///
@@ -50,23 +50,33 @@ pub unsafe extern "C" fn dash_sdk_voting_get_vote_polls_by_end_date(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -84,33 +94,32 @@ fn get_vote_polls_by_end_date(
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let start_time_info = if start_time_ms > 0 {
-            Some(drive::query::time_info_query::TimeInfoQuery {
-                time_ms: start_time_ms,
-                time_included: start_time_included,
-            })
+            Some((start_time_ms, start_time_included))
         } else {
             None
         };
 
         let end_time_info = if end_time_ms > 0 {
-            Some(drive::query::time_info_query::TimeInfoQuery {
-                time_ms: end_time_ms,
-                time_included: end_time_included,
-            })
+            Some((end_time_ms, end_time_included))
         } else {
             None
         };
 
         let query = VotePollsByEndDateDriveQuery {
-            start_time_info,
-            end_time_info,
-            limit: if limit > 0 { Some(limit) } else { None },
-            offset: if offset > 0 { Some(offset) } else { None },
-            ascending,
+            start_time: start_time_info,
+            end_time: end_time_info,
+            limit: if limit > 0 { Some(limit as u16) } else { None },
+            offset: if offset > 0 {
+                Some(offset as u16)
+            } else {
+                None
+            },
+            order_ascending: ascending,
         };
 
         match VotePoll::fetch_many(&sdk, query).await {
@@ -125,16 +134,7 @@ fn get_vote_polls_by_end_date(
                     .map(|(timestamp, vote_polls)| {
                         let polls_json: Vec<String> = vote_polls
                             .iter()
-                            .map(|poll| {
-                                format!(
-                                    r#"{{"contract_id":"{}","document_type_name":"{}","index_name":"{}","index_values":"{}","end_time":{}}}"#,
-                                    bs58::encode(poll.contract_id().as_bytes()).into_string(),
-                                    poll.document_type_name(),
-                                    poll.index_name(),
-                                    hex::encode(&poll.index_values()),
-                                    poll.end_time_ms()
-                                )
-                            })
+                            .map(|poll| format!(r#"{{"end_time":{}}}"#, timestamp))
                             .collect();
 
                         format!(

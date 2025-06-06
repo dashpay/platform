@@ -1,10 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::platform::types::epoch::EpochQuery;
 use dash_sdk::platform::{Fetch, FetchMany, LimitQuery};
-use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches information about multiple epochs
 ///
@@ -33,23 +33,33 @@ pub unsafe extern "C" fn dash_sdk_system_get_epochs_info(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -63,7 +73,8 @@ fn get_epochs_info(
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let start = if start_epoch.is_null() {
@@ -95,16 +106,18 @@ fn get_epochs_info(
 
                 let epochs_json: Vec<String> = epochs
                     .values()
-                    .map(|epoch| {
-                        format!(
-                            r#"{{"index":{},"first_block_time":{},"first_block_height":{},"first_core_block_height":{},"fee_multiplier_permille":{},"protocol_version":{}}}"#,
-                            epoch.index(),
-                            epoch.first_block_time(),
-                            epoch.first_block_height(),
-                            epoch.first_core_block_height(),
-                            epoch.fee_multiplier_permille(),
-                            epoch.protocol_version()
-                        )
+                    .filter_map(|epoch_opt| {
+                        epoch_opt.as_ref().map(|epoch| {
+                            format!(
+                                r#"{{"index":{},"first_block_time":{},"first_block_height":{},"first_core_block_height":{},"fee_multiplier_permille":{},"protocol_version":{}}}"#,
+                                epoch.index(),
+                                epoch.first_block_time(),
+                                epoch.first_block_height(),
+                                epoch.first_core_block_height(),
+                                epoch.fee_multiplier_permille(),
+                                epoch.protocol_version()
+                            )
+                        })
                     })
                     .collect();
 

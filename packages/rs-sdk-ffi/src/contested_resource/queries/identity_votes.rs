@@ -1,10 +1,11 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dash_sdk::dpp::voting::votes::{resource_vote::ResourceVote, Vote};
+use dash_sdk::drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use dash_sdk::platform::FetchMany;
-use dpp::voting::votes::Vote;
-use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
-use drive_proof_verifier::types::ResourceVotesByIdentity;
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::ResourceVotesByIdentity;
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resource identity votes
 ///
@@ -41,23 +42,33 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_identity_votes(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -77,7 +88,8 @@ fn get_contested_resource_identity_votes(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in identity ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let identity_id_bytes = bs58::decode(identity_id_str)
@@ -88,47 +100,45 @@ fn get_contested_resource_identity_votes(
             .try_into()
             .map_err(|_| "Identity ID must be exactly 32 bytes".to_string())?;
 
-        let identity_id = dash_sdk::Identifier::new(identity_id);
+        let identity_id = dash_sdk::platform::Identifier::new(identity_id);
 
         let query = ContestedResourceVotesGivenByIdentityQuery {
             identity_id,
-            start_at_vote_poll_id_info: None,
-            limit: if limit > 0 { Some(limit) } else { None },
-            offset: if offset > 0 { Some(offset) } else { None },
+            start_at: None,
+            limit: if limit > 0 { Some(limit as u16) } else { None },
+            offset: if offset > 0 { Some(offset as u16) } else { None },
             order_ascending,
         };
 
-        match Vote::fetch_many(&sdk, query).await {
-            Ok(votes) => {
-                if votes.is_empty() {
+        match ResourceVote::fetch_many(&sdk, query).await {
+            Ok(votes_map) => {
+                if votes_map.is_empty() {
                     return Ok(None);
                 }
 
-                let votes_json: Vec<String> = votes
+                let votes_json: Vec<String> = votes_map
                     .iter()
-                    .map(|(_, vote)| {
-                        let vote_type = match vote {
-                            Vote::ResourceVote(resource_vote) => {
-                                match &resource_vote.vote_choice {
-                                    dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteChoiceV0Accessors::TowardsIdentity(id) => {
+                    .filter_map(|(vote_poll_id, vote_option)| {
+                        vote_option.as_ref().map(|resource_vote| {
+                            let vote_type = match &resource_vote.resource_vote_choice() {
+                                    dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity(id) => {
                                         format!(r#"{{"type":"towards_identity","identity_id":"{}"}}"#, 
                                             bs58::encode(id.as_bytes()).into_string())
                                     }
-                                    dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteChoiceV0Accessors::Abstain => {
+                                    dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Abstain => {
                                         r#"{"type":"abstain"}"#.to_string()
                                     }
-                                    dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteChoiceV0Accessors::Lock => {
+                                    dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Lock => {
                                         r#"{"type":"lock"}"#.to_string()
                                     }
-                                }
-                            }
-                        };
+                            };
 
                         format!(
                             r#"{{"vote_poll_id":"{}","resource_vote_choice":{}}}"#,
-                            bs58::encode(vote.vote_poll_id().as_bytes()).into_string(),
+                            bs58::encode(vote_poll_id.as_bytes()).into_string(),
                             vote_type
                         )
+                        })
                     })
                     .collect();
 

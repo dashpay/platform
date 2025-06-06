@@ -2,9 +2,10 @@
 
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
+use dash_sdk::dpp::tokens::info::{v0::IdentityTokenInfoV0Accessors, IdentityTokenInfo};
 use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
 use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::token_info::IdentityTokenInfos;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -82,19 +83,19 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_token_infos(
         };
 
         // Fetch token infos
-        let token_infos = IdentityTokenInfo::fetch_many(&wrapper.sdk, query)
+        let token_infos: IdentityTokenInfos = IdentityTokenInfo::fetch_many(&wrapper.sdk, query)
             .await
             .map_err(FFIError::from)?;
 
         // Convert to JSON string
         let mut json_parts = Vec::new();
-        for (token_id, info_opt) in token_infos {
+        for (token_id, info_opt) in token_infos.0.iter() {
             let info_json = match info_opt {
                 Some(info) => {
                     // Create JSON representation of IdentityTokenInfo
                     format!(
-                        "{{\"balance\":{},\"frozen_balance\":{},\"holder_weight\":{}}}",
-                        info.balance, info.frozen_balance, info.holder_weight
+                        "{{\"frozen\":{}}}",
+                        if info.frozen() { "true" } else { "false" }
                     )
                 }
                 None => "null".to_string(),

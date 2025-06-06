@@ -1,10 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::version::ProtocolVersionVoteCount;
 use dash_sdk::platform::FetchMany;
-use dpp::version::ProtocolVersionVoteCount;
-use drive_proof_verifier::types::ProtocolVersionUpgrades;
+use dash_sdk::query_types::ProtocolVersionUpgrades;
 use std::ffi::CString;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 
 /// Fetches protocol version upgrade state
 ///
@@ -27,23 +27,33 @@ pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_state(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -54,23 +64,26 @@ fn get_protocol_version_upgrade_state(
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
             Ok(upgrades) => {
+                let upgrades: dash_sdk::query_types::ProtocolVersionUpgrades = upgrades;
                 if upgrades.is_empty() {
                     return Ok(None);
                 }
 
                 let upgrades_json: Vec<String> = upgrades
                     .iter()
-                    .map(|(version, vote_count)| {
-                        format!(
-                            r#"{{"version_number":{},"vote_count":{}}}"#,
-                            version,
-                            vote_count.vote_count()
-                        )
+                    .filter_map(|(version, vote_count_opt)| {
+                        vote_count_opt.as_ref().map(|vote_count| {
+                            format!(
+                                r#"{{"version_number":{},"vote_count":{}}}"#,
+                                version, vote_count
+                            )
+                        })
                     })
                     .collect();
 

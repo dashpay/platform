@@ -12,35 +12,35 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Query for token perpetual distribution last claim
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TokenPerpetualDistributionLastClaimQuery {
     token_id: Identifier,
-    perpetual_distribution_position: u16,
+    identity_id: Identifier,
 }
 
 impl
     dash_sdk::platform::Query<
-        dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
+        dash_sdk::dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
     > for TokenPerpetualDistributionLastClaimQuery
 {
     fn query(
         self,
         prove: bool,
     ) -> Result<
-        dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
+        dash_sdk::dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
         dash_sdk::Error,
     > {
-        use dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_request::{
+        use dash_sdk::dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_request::{
             GetTokenPerpetualDistributionLastClaimRequestV0, Version,
         };
 
         Ok(
-            dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest {
+            dash_sdk::dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest {
                 version: Some(Version::V0(
                     GetTokenPerpetualDistributionLastClaimRequestV0 {
                         token_id: self.token_id.to_vec(),
-                        perpetual_distribution_position: self.perpetual_distribution_position
-                            as u32,
+                        contract_info: None,
+                        identity_id: self.identity_id.to_vec(),
                         prove,
                     },
                 )),
@@ -54,7 +54,7 @@ impl
 /// # Parameters
 /// - `sdk_handle`: SDK handle
 /// - `token_id`: Base58-encoded token ID
-/// - `distribution_position`: Position of the perpetual distribution (0-based index)
+/// - `identity_id`: Base58-encoded identity ID
 ///
 /// # Returns
 /// JSON string containing the last claim information
@@ -62,12 +62,12 @@ impl
 pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
     sdk_handle: *const SDKHandle,
     token_id: *const c_char,
-    distribution_position: u16,
+    identity_id: *const c_char,
 ) -> DashSDKResult {
-    if sdk_handle.is_null() || token_id.is_null() {
+    if sdk_handle.is_null() || token_id.is_null() || identity_id.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
-            "SDK handle or token ID is null".to_string(),
+            "SDK handle, token ID, or identity ID is null".to_string(),
         ));
     }
 
@@ -88,12 +88,27 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
         }
     };
 
+    let identity_id_str = match CStr::from_ptr(identity_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let identity_id = match Identifier::from_string(identity_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid identity ID: {}", e),
+            ))
+        }
+    };
+
     let result: Result<Option<RewardDistributionMoment>, FFIError> =
         wrapper.runtime.block_on(async {
             // Create the query
             let query = TokenPerpetualDistributionLastClaimQuery {
                 token_id,
-                perpetual_distribution_position: distribution_position,
+                identity_id,
             };
 
             // Fetch last claim
@@ -104,11 +119,18 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
 
     match result {
         Ok(Some(moment)) => {
-            // Create JSON representation
-            let json_str = format!(
-                "{{\"block_height\":{},\"core_block_height\":{},\"time_ms\":{}}}",
-                moment.block_height, moment.core_block_height, moment.time_ms
-            );
+            // Create JSON representation based on moment type
+            let json_str = match moment {
+                RewardDistributionMoment::BlockBasedMoment(height) => {
+                    format!(r#"{{"type":"block_based","value":{}}}"#, height)
+                }
+                RewardDistributionMoment::TimeBasedMoment(timestamp) => {
+                    format!(r#"{{"type":"time_based","value":{}}}"#, timestamp)
+                }
+                RewardDistributionMoment::EpochBasedMoment(epoch) => {
+                    format!(r#"{{"type":"epoch_based","value":{}}}"#, epoch)
+                }
+            };
 
             let c_str = match CString::new(json_str) {
                 Ok(s) => s,

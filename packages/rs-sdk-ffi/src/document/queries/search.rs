@@ -3,11 +3,12 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use dash_sdk::dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::{platform_value, Value};
 use dash_sdk::dpp::prelude::DataContract;
+use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
 use dash_sdk::platform::{DocumentQuery, FetchMany};
-use drive::query::{OrderClause, WhereClause, WhereOperator};
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -59,13 +60,16 @@ fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
     match op {
         "=" | "==" | "equal" => Ok(WhereOperator::Equal),
         ">" | "gt" => Ok(WhereOperator::GreaterThan),
-        ">=" | "gte" => Ok(WhereOperator::GreaterThanOrEqual),
+        ">=" | "gte" => Ok(WhereOperator::GreaterThanOrEquals),
         "<" | "lt" => Ok(WhereOperator::LessThan),
-        "<=" | "lte" => Ok(WhereOperator::LessThanOrEqual),
+        "<=" | "lte" => Ok(WhereOperator::LessThanOrEquals),
         "in" => Ok(WhereOperator::In),
         "startsWith" => Ok(WhereOperator::StartsWith),
-        "contains" => Ok(WhereOperator::Contains),
-        "elementMatch" => Ok(WhereOperator::ElementMatch),
+        // "contains" and "elementMatch" are not supported in the current version
+        "contains" | "elementMatch" => Err(FFIError::InternalError(format!(
+            "Operator '{}' is not supported",
+            op
+        ))),
         _ => Err(FFIError::InternalError(format!(
             "Unknown where operator: {}",
             op
@@ -84,7 +88,8 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
             } else if let Some(u) = n.as_u64() {
                 Ok(Value::U64(u))
             } else if let Some(f) = n.as_f64() {
-                Ok(Value::F64(f))
+                // Platform value doesn't support float, convert to string
+                Ok(Value::Float(f))
             } else {
                 Err(FFIError::InternalError("Invalid number value".to_string()))
             }
@@ -96,13 +101,11 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
             Ok(Value::Array(values?))
         }
         serde_json::Value::Object(map) => {
-            let mut platform_map = platform_value!({});
-            if let Value::Map(ref mut m) = platform_map {
-                for (k, v) in map {
-                    m.insert(Value::Text(k), json_to_platform_value(v)?);
-                }
+            let mut pairs = Vec::new();
+            for (k, v) in map {
+                pairs.push((Value::Text(k), json_to_platform_value(v)?));
             }
-            Ok(platform_map)
+            Ok(Value::Map(pairs))
         }
     }
 }
@@ -192,10 +195,12 @@ pub unsafe extern "C" fn dash_sdk_document_search(
             query.limit = params.limit;
         }
 
-        // Set start if provided (for pagination)
+        // Note: start_at is currently not supported as it requires a document ID
+        // TODO: Implement proper pagination with document IDs
         if params.start_at > 0 {
-            use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
-            query.start = Some(Start::StartAt(params.start_at));
+            return Err(FFIError::InternalError(
+                "start_at pagination is not yet implemented. Use limit instead.".to_string(),
+            ));
         }
 
         // Execute the query
@@ -208,10 +213,14 @@ pub unsafe extern "C" fn dash_sdk_document_search(
         for (_, doc) in documents.iter() {
             if let Some(document) = doc {
                 // Convert document to JSON using its to_object method
-                let doc_json = document.to_object().map_err(|e| {
+                let doc_value = document.to_object().map_err(|e| {
                     FFIError::InternalError(format!("Failed to convert document to JSON: {}", e))
                 })?;
-                json_documents.push(doc_json);
+                // Convert platform value to serde_json::Value
+                let json_value = serde_json::to_value(&doc_value).map_err(|e| {
+                    FFIError::InternalError(format!("Failed to serialize document: {}", e))
+                })?;
+                json_documents.push(json_value);
             }
         }
 

@@ -1,10 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
-use dash_sdk::platform::{group_actions::GroupActionSignersQuery, Fetch};
-use dpp::data_contract::group::GroupMemberPower;
-use dpp::group::group_action_status::GroupActionStatus;
-use drive_proof_verifier::types::groups::GroupActionSigners;
-use std::ffi::{c_char, CStr, CString};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::data_contract::group::GroupMemberPower;
+use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+use dash_sdk::platform::{group_actions::GroupActionSignersQuery, FetchMany};
+use dash_sdk::query_types::groups::GroupActionSigners;
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches group action signers
 ///
@@ -41,23 +41,33 @@ pub unsafe extern "C" fn dash_sdk_group_get_action_signers(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -82,7 +92,8 @@ fn get_group_action_signers(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in action ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let contract_id_bytes = bs58::decode(contract_id_str)
@@ -101,13 +112,12 @@ fn get_group_action_signers(
             .try_into()
             .map_err(|_| "Action ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::Identifier::new(contract_id);
-        let action_id = dash_sdk::Identifier::new(action_id);
+        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
+        let action_id = dash_sdk::platform::Identifier::new(action_id);
 
         let status = match status {
-            0 => GroupActionStatus::Pending,
-            1 => GroupActionStatus::Completed,
-            2 => GroupActionStatus::Expired,
+            0 => GroupActionStatus::ActionActive,
+            1 => GroupActionStatus::ActionClosed,
             _ => return Err("Invalid status value".to_string()),
         };
 
@@ -118,23 +128,32 @@ fn get_group_action_signers(
             action_id,
         };
 
-        match GroupActionSigners::fetch(&sdk, query).await {
-            Ok(Some(signers)) => {
+        match GroupMemberPower::fetch_many(&sdk, query).await {
+            Ok(signers) => {
+                if signers.is_empty() {
+                    return Ok(None);
+                }
+
                 let signers_json: Vec<String> = signers
-                    .signers()
                     .iter()
-                    .map(|(id, power)| {
-                        format!(
-                            r#"{{"id":"{}","power":{}}}"#,
-                            bs58::encode(id.as_bytes()).into_string(),
-                            power
-                        )
+                    .map(|(id, power_opt)| {
+                        if let Some(power) = power_opt {
+                            format!(
+                                r#"{{"id":"{}","power":{}}}"#,
+                                bs58::encode(id.as_bytes()).into_string(),
+                                power
+                            )
+                        } else {
+                            format!(
+                                r#"{{"id":"{}","power":null}}"#,
+                                bs58::encode(id.as_bytes()).into_string()
+                            )
+                        }
                     })
                     .collect();
 
                 Ok(Some(format!("[{}]", signers_json.join(","))))
             }
-            Ok(None) => Ok(None),
             Err(e) => Err(format!("Failed to fetch group action signers: {}", e)),
         }
     })

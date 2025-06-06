@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dashcore_rpc::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
-use dashcore_rpc::dashcore::ProTxHash;
-use drive_proof_verifier::types::{ProposerBlockCountByRange, ProposerBlockCounts};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::{ProposerBlockCountByRange, ProposerBlockCounts};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches proposed epoch blocks by range
 ///
@@ -40,23 +40,33 @@ pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -71,7 +81,8 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let start_after_hash = if start_after.is_null() {
@@ -107,28 +118,25 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
         };
 
         // Create a query with the epoch and range parameters
-        let query = dash_sdk::platform::LimitQuery {
-            query: EvonodesProposedEpochBlocksByRangeQuery {
-                epoch: if epoch > 0 { Some(epoch) } else { None },
-                start_after: start_after_hash,
-                start_at: start_at_hash,
-            },
-            limit: if limit > 0 { Some(limit) } else { None },
-            start_info: None,
+        let query = EvonodesProposedEpochBlocksByRangeQuery {
+            epoch: if epoch > 0 { Some(epoch) } else { None },
+            start_after: start_after_hash,
+            start_at: start_at_hash,
         };
 
         match ProposerBlockCountByRange::fetch_many(&sdk, query).await {
             Ok(block_counts) => {
-                if block_counts.is_empty() {
+                if block_counts.0.is_empty() {
                     return Ok(None);
                 }
 
                 let block_counts_json: Vec<String> = block_counts
+                    .0
                     .iter()
                     .map(|(pro_tx_hash, count)| {
                         format!(
                             r#"{{"pro_tx_hash":"{}","count":{}}}"#,
-                            hex::encode(pro_tx_hash.to_byte_array()),
+                            hex::encode(&pro_tx_hash),
                             count
                         )
                     })
@@ -153,17 +161,18 @@ struct EvonodesProposedEpochBlocksByRangeQuery {
 }
 
 impl
-    dash_sdk::platform::Query<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest>
-    for EvonodesProposedEpochBlocksByRangeQuery
+    dash_sdk::platform::Query<
+        dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
+    > for EvonodesProposedEpochBlocksByRangeQuery
 {
     fn query(
         self,
         prove: bool,
     ) -> Result<
-        dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
+        dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
         dash_sdk::Error,
     > {
-        use dapi_grpc::platform::v0::{
+        use dash_sdk::dapi_grpc::platform::v0::{
             get_evonodes_proposed_epoch_blocks_by_range_request::{
                 get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start,
                 GetEvonodesProposedEpochBlocksByRangeRequestV0, Version,
@@ -172,23 +181,26 @@ impl
         };
 
         let start = if let Some(start_after) = self.start_after {
-            Some(Start::StartAfter(start_after.to_byte_array().to_vec()))
+            Some(Start::StartAfter(
+                AsRef::<[u8]>::as_ref(&start_after).to_vec(),
+            ))
         } else if let Some(start_at) = self.start_at {
-            Some(Start::StartAt(start_at.to_byte_array().to_vec()))
+            Some(Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
         } else {
             None
         };
 
-        let request = GetEvonodesProposedEpochBlocksByRangeRequest {
-            version: Some(Version::V0(
-                GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-                    epoch: self.epoch,
-                    limit: None, // Limit is handled by LimitQuery wrapper
-                    start,
-                    prove,
-                },
-            )),
-        };
+        let request =
+            dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest {
+                version: Some(Version::V0(
+                    GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                        epoch: self.epoch,
+                        limit: None, // Limit is handled by LimitQuery wrapper
+                        start,
+                        prove,
+                    },
+                )),
+            };
 
         Ok(request)
     }

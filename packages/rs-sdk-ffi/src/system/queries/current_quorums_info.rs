@@ -1,9 +1,11 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 use dash_sdk::platform::FetchUnproved;
-use drive_proof_verifier::types::CurrentQuorumsInfo;
+use dash_sdk::query_types::CurrentQuorumsInfo;
+use dash_sdk::query_types::NoParamQuery;
 use std::ffi::CString;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 
 /// Fetches information about current quorums
 ///
@@ -26,23 +28,33 @@ pub unsafe extern "C" fn dash_sdk_system_get_current_quorums_info(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -51,10 +63,11 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
-        match CurrentQuorumsInfo::fetch_unproved(&sdk, ()).await {
+        match CurrentQuorumsInfo::fetch_unproved(&sdk, NoParamQuery).await {
             Ok(Some(info)) => {
                 // Convert quorum hashes to hex strings
                 let quorum_hashes_json: Vec<String> = info
@@ -69,24 +82,24 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
                     .iter()
                     .map(|vs| {
                         let members_json: Vec<String> = vs
-                            .members
+                            .members()
                             .iter()
-                            .map(|m| {
+                            .map(|(pro_tx_hash, validator)| {
                                 format!(
                                     r#"{{"pro_tx_hash":"{}","node_ip":"{}","is_banned":{}}}"#,
-                                    hex::encode(&m.pro_tx_hash),
-                                    m.node_ip,
-                                    m.is_banned
+                                    hex::encode(pro_tx_hash),
+                                    &validator.node_ip,
+                                    validator.is_banned
                                 )
                             })
                             .collect();
 
                         format!(
                             r#"{{"quorum_hash":"{}","core_height":{},"members":[{}],"threshold_public_key":"{}"}}"#,
-                            hex::encode(&vs.quorum_hash),
-                            vs.core_height,
+                            hex::encode(vs.quorum_hash()),
+                            vs.core_height(),
                             members_json.join(","),
-                            hex::encode(&vs.threshold_public_key)
+                            hex::encode(vs.threshold_public_key().0.to_compressed())
                         )
                     })
                     .collect();

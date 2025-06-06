@@ -1,8 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::data_contract::group::{v0::GroupV0, Group};
 use dash_sdk::platform::{group_actions::GroupQuery, Fetch};
-use dpp::data_contract::group::Group;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches information about a group
 ///
@@ -29,23 +29,33 @@ pub unsafe extern "C" fn dash_sdk_group_get_info(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -63,7 +73,8 @@ fn get_group_info(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in contract ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let contract_id_bytes = bs58::decode(contract_id_str)
@@ -74,7 +85,7 @@ fn get_group_info(
             .try_into()
             .map_err(|_| "Contract ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::Identifier::new(contract_id);
+        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
         let query = GroupQuery {
             contract_id,
@@ -83,9 +94,12 @@ fn get_group_info(
 
         match Group::fetch(&sdk, query).await {
             Ok(Some(group)) => {
-                // Convert members to JSON
-                let members_json: Vec<String> = group
-                    .members()
+                // Convert members to JSON based on group variant
+                let (members, required_power) = match &group {
+                    Group::V0(v0) => (&v0.members, v0.required_power),
+                };
+
+                let members_json: Vec<String> = members
                     .iter()
                     .map(|(id, power)| {
                         format!(
@@ -98,7 +112,7 @@ fn get_group_info(
 
                 let json = format!(
                     r#"{{"required_power":{},"members":[{}]}}"#,
-                    group.required_power(),
+                    required_power,
                     members_json.join(",")
                 );
                 Ok(Some(json))

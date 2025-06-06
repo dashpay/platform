@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::drive::grovedb::{query_result_type::Path, Element};
 use dash_sdk::platform::FetchMany;
-use drive::grovedb::{query_result_type::Path, Element};
-use drive_proof_verifier::types::{Elements, KeysInPath};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::{Elements, KeysInPath};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches path elements
 ///
@@ -30,23 +30,33 @@ pub unsafe extern "C" fn dash_sdk_system_get_path_elements(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -69,7 +79,8 @@ fn get_path_elements(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in keys: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         // Parse path JSON array
@@ -104,25 +115,39 @@ fn get_path_elements(
 
                 let elements_json: Vec<String> = elements
                     .iter()
-                    .map(|(key, element)| {
-                        let element_data = match element {
-                            Element::Item(data, _) => hex::encode(data),
-                            Element::Reference(reference, _) => hex::encode(reference.as_slice()),
-                            Element::Tree(_, _) => "tree".to_string(),
-                            Element::SumTree(_, _, _) => "sum_tree".to_string(),
-                        };
+                    .filter_map(|(key, element_opt)| {
+                        element_opt.as_ref().map(|element| {
+                            let element_data = match element {
+                                Element::Item(data, _) => hex::encode(data),
+                                Element::Reference(reference, _, _) => format!("{:?}", reference),
+                                Element::Tree(_, _) => "tree".to_string(),
+                                Element::SumTree(_, _, _) => "sum_tree".to_string(),
+                                Element::SumItem(value, _) => format!("sum_item:{}", value),
+                                Element::BigSumTree(_, value, _) => {
+                                    format!("big_sum_tree:{}", value)
+                                }
+                                Element::CountTree(_, count, _) => format!("count_tree:{}", count),
+                                Element::CountSumTree(_, count, sum, _) => {
+                                    format!("count_sum_tree:{}:{}", count, sum)
+                                }
+                            };
 
-                        format!(
-                            r#"{{"key":"{}","element":"{}","type":"{}"}}"#,
-                            hex::encode(key),
-                            element_data,
-                            match element {
-                                Element::Item(_, _) => "item",
-                                Element::Reference(_, _) => "reference",
-                                Element::Tree(_, _) => "tree",
-                                Element::SumTree(_, _, _) => "sum_tree",
-                            }
-                        )
+                            format!(
+                                r#"{{"key":"{}","element":"{}","type":"{}"}}"#,
+                                hex::encode(key),
+                                element_data,
+                                match element {
+                                    Element::Item(_, _) => "item",
+                                    Element::Reference(_, _, _) => "reference",
+                                    Element::Tree(_, _) => "tree",
+                                    Element::SumTree(_, _, _) => "sum_tree",
+                                    Element::SumItem(_, _) => "sum_item",
+                                    Element::BigSumTree(_, _, _) => "big_sum_tree",
+                                    Element::CountTree(_, _, _) => "count_tree",
+                                    Element::CountSumTree(_, _, _, _) => "count_sum_tree",
+                                }
+                            )
+                        })
                     })
                     .collect();
 

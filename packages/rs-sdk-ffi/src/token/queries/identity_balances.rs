@@ -5,6 +5,7 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::identity_token_balance::IdentityTokenBalances;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -82,15 +83,18 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_token_balances(
         };
 
         // Fetch token balances
-        let balances = TokenAmount::fetch_many(&wrapper.sdk, query)
+        let balances: IdentityTokenBalances = TokenAmount::fetch_many(&wrapper.sdk, query)
             .await
             .map_err(FFIError::from)?;
 
         // Convert to JSON string
         let mut json_parts = Vec::new();
-        for (token_id, balance_opt) in balances {
+        for (token_id, balance_opt) in balances.0.iter() {
             let balance_str = match balance_opt {
-                Some(balance) => balance.to_string(),
+                Some(balance) => {
+                    let val: &u64 = balance;
+                    val.to_string()
+                }
                 None => "null".to_string(),
             };
             json_parts.push(format!(

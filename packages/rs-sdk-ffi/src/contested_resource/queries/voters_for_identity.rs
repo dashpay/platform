@@ -1,9 +1,11 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::platform_value::Value;
+use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dash_sdk::drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use dash_sdk::platform::FetchMany;
-use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
-use drive_proof_verifier::types::{Voter, Voters};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::{Voter, Voters};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches voters for a contested resource identity
 ///
@@ -49,23 +51,33 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_voters_for_identity(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -108,7 +120,8 @@ fn get_contested_resource_voters_for_identity(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in contestant ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let contract_id_bytes = bs58::decode(contract_id_str)
@@ -127,53 +140,61 @@ fn get_contested_resource_voters_for_identity(
             .try_into()
             .map_err(|_| "Contestant ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::Identifier::new(contract_id);
-        let contestant_id = dash_sdk::Identifier::new(contestant_id);
+        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
+        let contestant_id = dash_sdk::platform::Identifier::new(contestant_id);
 
         // Parse index values
         let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
             .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
 
-        let index_values: Vec<Vec<u8>> = index_values_array
+        let index_values: Vec<Value> = index_values_array
             .into_iter()
             .map(|hex_str| {
-                hex::decode(&hex_str).map_err(|e| format!("Failed to decode index value: {}", e))
+                let bytes = hex::decode(&hex_str)
+                    .map_err(|e| format!("Failed to decode index value: {}", e))?;
+                Ok(Value::Bytes(bytes))
             })
-            .collect::<Result<Vec<Vec<u8>>, String>>()?;
+            .collect::<Result<Vec<Value>, String>>()?;
 
-        let query = ContestedDocumentVotePollVotesDriveQuery {
+        let vote_poll = ContestedDocumentResourceVotePoll {
             contract_id,
             document_type_name: document_type_name_str.to_string(),
             index_name: index_name_str.to_string(),
             index_values,
+        };
+
+        let query = ContestedDocumentVotePollVotesDriveQuery {
+            vote_poll,
             contestant_id,
-            start_at_identifier_info: None,
-            count: Some(count),
-            order_ascending,
             offset: None,
+            limit: Some(count as u16),
+            start_at: None,
+            order_ascending,
         };
 
         match Voter::fetch_many(&sdk, query).await {
             Ok(voters) => {
-                if voters.is_empty() {
+                if voters.0.is_empty() {
                     return Ok(None);
                 }
 
                 let voters_json: Vec<String> = voters
+                    .0
                     .iter()
-                    .map(|(_, voter)| {
+                    .map(|voter| {
                         format!(
-                            r#"{{"pro_tx_hash":"{}","voted_at_block_height":{},"is_locked_vote_tally":{}}}"#,
-                            hex::encode(&voter.pro_tx_hash),
-                            voter.voted_at_block_height(),
-                            voter.is_locked_vote_tally()
+                            r#"{{"voter_id":"{}"}}"#,
+                            bs58::encode(voter.0.as_bytes()).into_string()
                         )
                     })
                     .collect();
 
                 Ok(Some(format!("[{}]", voters_json.join(","))))
             }
-            Err(e) => Err(format!("Failed to fetch contested resource voters for identity: {}", e)),
+            Err(e) => Err(format!(
+                "Failed to fetch contested resource voters for identity: {}",
+                e
+            )),
         }
     })
 }

@@ -20,6 +20,7 @@ pub use identities_token_infos::dash_sdk_identities_fetch_token_infos;
 pub use identity_balances::dash_sdk_identity_fetch_token_balances;
 pub use identity_token_infos::dash_sdk_identity_fetch_token_infos;
 pub use perpetual_distribution_last_claim::dash_sdk_token_get_perpetual_distribution_last_claim;
-pub use pre_programmed_distributions::dash_sdk_token_get_pre_programmed_distributions;
+// TODO: Uncomment when GetTokenPreProgrammedDistributionsRequest is exposed in the SDK
+// pub use pre_programmed_distributions::dash_sdk_token_get_pre_programmed_distributions;
 pub use status::dash_sdk_token_get_statuses;
 pub use total_supply::dash_sdk_token_get_total_supply;

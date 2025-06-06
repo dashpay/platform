@@ -104,10 +104,10 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
                 Ok(0) => Ok(Purpose::AUTHENTICATION),
                 Ok(1) => Ok(Purpose::ENCRYPTION),
                 Ok(2) => Ok(Purpose::DECRYPTION),
-                Ok(3) => Ok(Purpose::WITHDRAW),
+                Ok(3) => Ok(Purpose::TRANSFER),
                 _ => Err(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid purpose: {}. Must be 0 (Authentication), 1 (Encryption), 2 (Decryption), or 3 (Withdraw)", purpose_str),
+                    format!("Invalid purpose: {}. Must be 0 (Authentication), 1 (Encryption), 2 (Decryption), or 3 (Transfer)", purpose_str),
                 ))
             }
         })
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
                     Purpose::AUTHENTICATION => "authentication",
                     Purpose::ENCRYPTION => "encryption",
                     Purpose::DECRYPTION => "decryption",
-                    Purpose::WITHDRAW => "withdraw",
+                    Purpose::TRANSFER => "transfer",
                     _ => "unknown",
                 };
 

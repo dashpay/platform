@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dashcore_rpc::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
-use dashcore_rpc::dashcore::ProTxHash;
-use drive_proof_verifier::types::{ProposerBlockCountById, ProposerBlockCounts};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::{ProposerBlockCountById, ProposerBlockCounts};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches proposed epoch blocks by evonode IDs
 ///
@@ -30,23 +30,33 @@ pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_ids(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -64,7 +74,8 @@ fn get_evonodes_proposed_epoch_blocks_by_ids(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in IDs: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         // Parse IDs JSON array
@@ -86,27 +97,24 @@ fn get_evonodes_proposed_epoch_blocks_by_ids(
         let pro_tx_hashes = pro_tx_hashes?;
 
         // Create a query with the epoch and pro_tx_hashes
-        let query = dash_sdk::platform::LimitQuery {
-            query: EvonodesProposedEpochBlocksByIdsQuery {
-                epoch: if epoch > 0 { Some(epoch) } else { None },
-                pro_tx_hashes,
-            },
-            limit: None,
-            start_info: None,
+        let query = EvonodesProposedEpochBlocksByIdsQuery {
+            epoch: if epoch > 0 { Some(epoch) } else { None },
+            pro_tx_hashes,
         };
 
         match ProposerBlockCountById::fetch_many(&sdk, query).await {
             Ok(block_counts) => {
-                if block_counts.is_empty() {
+                if block_counts.0.is_empty() {
                     return Ok(None);
                 }
 
                 let block_counts_json: Vec<String> = block_counts
+                    .0
                     .iter()
                     .map(|(pro_tx_hash, count)| {
                         format!(
                             r#"{{"pro_tx_hash":"{}","count":{}}}"#,
-                            hex::encode(pro_tx_hash.to_byte_array()),
+                            hex::encode(&pro_tx_hash),
                             count
                         )
                     })
@@ -129,32 +137,37 @@ struct EvonodesProposedEpochBlocksByIdsQuery {
     pub pro_tx_hashes: Vec<ProTxHash>,
 }
 
-impl dash_sdk::platform::Query<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest>
-    for EvonodesProposedEpochBlocksByIdsQuery
+impl
+    dash_sdk::platform::Query<
+        dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest,
+    > for EvonodesProposedEpochBlocksByIdsQuery
 {
     fn query(
         self,
         prove: bool,
-    ) -> Result<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest, dash_sdk::Error>
-    {
-        use dapi_grpc::platform::v0::{
+    ) -> Result<
+        dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest,
+        dash_sdk::Error,
+    > {
+        use dash_sdk::dapi_grpc::platform::v0::{
             get_evonodes_proposed_epoch_blocks_by_ids_request::{
                 GetEvonodesProposedEpochBlocksByIdsRequestV0, Version,
             },
             GetEvonodesProposedEpochBlocksByIdsRequest,
         };
 
-        let request = GetEvonodesProposedEpochBlocksByIdsRequest {
-            version: Some(Version::V0(GetEvonodesProposedEpochBlocksByIdsRequestV0 {
-                epoch: self.epoch,
-                ids: self
-                    .pro_tx_hashes
-                    .into_iter()
-                    .map(|hash| hash.to_byte_array().to_vec())
-                    .collect(),
-                prove,
-            })),
-        };
+        let request =
+            dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest {
+                version: Some(Version::V0(GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+                    epoch: self.epoch,
+                    ids: self
+                        .pro_tx_hashes
+                        .into_iter()
+                        .map(|hash| AsRef::<[u8]>::as_ref(&hash).to_vec())
+                        .collect(),
+                    prove,
+                })),
+            };
 
         Ok(request)
     }

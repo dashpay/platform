@@ -1,9 +1,12 @@
 //! Token direct purchase prices query operations
 
+use dash_sdk::dpp::balances::credits::Credits;
+use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dash_sdk::platform::FetchMany;
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -58,7 +61,7 @@ pub unsafe extern "C" fn dash_sdk_token_get_direct_purchase_prices(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         // Fetch token direct purchase prices
-        let prices = TokenPricingSchedule::fetch_many(&wrapper.sdk, identifiers)
+        let prices = TokenPricingSchedule::fetch_many(&wrapper.sdk, identifiers.as_slice())
             .await
             .map_err(FFIError::from)?;
 
@@ -68,11 +71,23 @@ pub unsafe extern "C" fn dash_sdk_token_get_direct_purchase_prices(
             let price_json = match price_opt {
                 Some(schedule) => {
                     // Create JSON representation of TokenPricingSchedule
-                    let price_json = serde_json::json!({
-                        "current_price": schedule.current_price(),
-                        "is_minting_disabled": schedule.is_minting_disabled(),
-                    });
-                    serde_json::to_string(&price_json).unwrap_or_else(|_| "null".to_string())
+                    match schedule {
+                        TokenPricingSchedule::SinglePrice(price) => {
+                            format!(r#"{{"type":"single_price","price":{}}}"#, price)
+                        }
+                        TokenPricingSchedule::SetPrices(prices) => {
+                            let prices_json: Vec<String> = prices
+                                .iter()
+                                .map(|(amount, price)| {
+                                    format!(r#"{{"amount":{},"price":{}}}"#, amount, price)
+                                })
+                                .collect();
+                            format!(
+                                r#"{{"type":"set_prices","prices":[{}]}}"#,
+                                prices_json.join(",")
+                            )
+                        }
+                    }
                 }
                 None => "null".to_string(),
             };

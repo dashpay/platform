@@ -1,8 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dash_sdk::platform::Fetch;
-use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches the total supply of a token
 ///
@@ -27,23 +27,33 @@ pub unsafe extern "C" fn dash_sdk_token_get_total_supply(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -60,7 +70,8 @@ fn get_token_total_supply(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in token ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let token_id_bytes = bs58::decode(token_id_str)
@@ -71,7 +82,7 @@ fn get_token_total_supply(
             .try_into()
             .map_err(|_| "Token ID must be exactly 32 bytes".to_string())?;
 
-        let token_id = dash_sdk::Identifier::new(token_id);
+        let token_id = dash_sdk::platform::Identifier::new(token_id);
 
         match TotalSingleTokenBalance::fetch(&sdk, token_id).await {
             Ok(Some(balance)) => {

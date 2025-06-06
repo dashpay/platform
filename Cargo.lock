@@ -4370,6 +4370,7 @@ name = "rs-sdk-ffi"
 version = "2.0.0-rc.14"
 dependencies = [
  "bincode",
+ "bs58",
  "cbindgen",
  "dash-sdk",
  "hex",

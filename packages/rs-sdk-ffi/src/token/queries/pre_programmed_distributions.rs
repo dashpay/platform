@@ -1,14 +1,17 @@
+// TODO: GetTokenPreProgrammedDistributionsRequest is not yet exposed in the SDK
+// This function is temporarily disabled until the SDK adds support for it
+/*
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
-use dapi_grpc::platform::v0::{
+use crate::{DashSDKError, DashSDKResult, DashSDKResultDataType, DashSDKErrorCode, FFIError};
+use dash_sdk::dapi_grpc::platform::v0::{
     get_token_pre_programmed_distributions_request::{
-        get_token_pre_programmed_distributions_request_v0::{StartAtInfo, Version},
+        get_token_pre_programmed_distributions_request_v0::StartAtInfo,
         GetTokenPreProgrammedDistributionsRequestV0,
     },
     GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
 };
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches pre-programmed distributions for a token
 ///
@@ -48,23 +51,33 @@ pub unsafe extern "C" fn dash_sdk_token_get_pre_programmed_distributions(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e)
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e
+            ))),
         },
     }
 }
@@ -85,7 +98,8 @@ fn get_token_pre_programmed_distributions(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in token ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let token_id_bytes = bs58::decode(token_id_str)
@@ -124,7 +138,7 @@ fn get_token_pre_programmed_distributions(
         };
 
         let request = GetTokenPreProgrammedDistributionsRequest {
-            version: Some(Version::V0(GetTokenPreProgrammedDistributionsRequestV0 {
+            version: Some(dash_sdk::dapi_grpc::platform::v0::get_token_pre_programmed_distributions_request::Version::V0(GetTokenPreProgrammedDistributionsRequestV0 {
                 token_id: token_id.to_vec(),
                 start_at_info,
                 limit: if limit > 0 { Some(limit) } else { None },
@@ -142,9 +156,9 @@ fn get_token_pre_programmed_distributions(
         let response: GetTokenPreProgrammedDistributionsResponse = result.inner;
 
         match response.version {
-            Some(dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::Version::V0(v0)) => {
+            Some(dash_sdk::dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::Version::V0(v0)) => {
                 match v0.result {
-                    Some(dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0::Result::TokenDistributions(distributions)) => {
+                    Some(dash_sdk::dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0::Result::TokenDistributions(distributions)) => {
                         if distributions.token_distributions.is_empty() {
                             return Ok(None);
                         }
@@ -175,7 +189,7 @@ fn get_token_pre_programmed_distributions(
 
                         Ok(Some(format!("[{}]", distributions_json.join(","))))
                     }
-                    Some(dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0::Result::Proof(_proof)) => {
+                    Some(dash_sdk::dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0::Result::Proof(_proof)) => {
                         // For now, return empty result for proof responses
                         // TODO: Implement proper proof verification when SDK supports it
                         Ok(None)
@@ -187,11 +201,14 @@ fn get_token_pre_programmed_distributions(
         }
     })
 }
+*/
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::create_mock_sdk_handle;
+    use std::ffi::CString;
 
     #[test]
     fn test_get_token_pre_programmed_distributions_null_handle() {
@@ -225,3 +242,4 @@ mod tests {
         }
     }
 }
+*/

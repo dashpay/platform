@@ -1,10 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
-use dash_sdk::platform::{group_actions::GroupActionsQuery, Fetch};
-use dpp::group::group_action::GroupAction;
-use dpp::group::group_action_status::GroupActionStatus;
-use drive_proof_verifier::types::groups::GroupActions;
-use std::ffi::{c_char, CStr, CString};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::group::group_action::{v0::GroupActionV0, GroupAction, GroupActionAccessors};
+use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+use dash_sdk::platform::{group_actions::GroupActionsQuery, FetchMany};
+use dash_sdk::query_types::groups::GroupActions;
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches group actions
 ///
@@ -44,23 +44,33 @@ pub unsafe extern "C" fn dash_sdk_group_get_actions(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -81,7 +91,8 @@ fn get_group_actions(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in contract ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let contract_id_bytes = bs58::decode(contract_id_str)
@@ -92,12 +103,11 @@ fn get_group_actions(
             .try_into()
             .map_err(|_| "Contract ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::Identifier::new(contract_id);
+        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
         let status = match status {
-            0 => GroupActionStatus::Pending,
-            1 => GroupActionStatus::Completed,
-            2 => GroupActionStatus::Expired,
+            0 => GroupActionStatus::ActionActive,
+            1 => GroupActionStatus::ActionClosed,
             _ => return Err("Invalid status value".to_string()),
         };
 
@@ -115,7 +125,7 @@ fn get_group_actions(
             let action_id: [u8; 32] = action_id_bytes
                 .try_into()
                 .map_err(|_| "Action ID must be exactly 32 bytes".to_string())?;
-            Some((dash_sdk::Identifier::new(action_id), true))
+            Some((dash_sdk::platform::Identifier::new(action_id), true))
         };
 
         let query = GroupActionsQuery {
@@ -126,27 +136,40 @@ fn get_group_actions(
             limit: Some(limit),
         };
 
-        match GroupActions::fetch(&sdk, query).await {
-            Ok(Some(actions)) => {
+        match GroupAction::fetch_many(&sdk, query).await {
+            Ok(actions) => {
+                if actions.is_empty() {
+                    return Ok(None);
+                }
                 let actions_json: Vec<String> = actions
-                    .actions()
                     .iter()
-                    .map(|action| {
-                        format!(
-                            r#"{{"id":"{}","proposal_id":"{}","proposal_owner_id":"{}","group_contract_position":{},"action_type":"{}","date_proposed":{}}}"#,
-                            bs58::encode(action.id().as_bytes()).into_string(),
-                            bs58::encode(action.proposal_id().as_bytes()).into_string(),
-                            bs58::encode(action.proposal_owner_id().as_bytes()).into_string(),
-                            action.group_contract_position(),
-                            format!("{:?}", action.action_type()),
-                            action.date_proposed()
-                        )
+                    .map(|(id, action_opt)| {
+                        if let Some(action) = action_opt {
+                            // Manually create JSON for GroupAction
+                            let event_str = format!("{:?}", action.event()); // Using Debug format for now
+                            let action_json = format!(
+                                r#"{{"contract_id":"{}","proposer_id":"{}","token_contract_position":{},"event":"{}"}}"#,
+                                bs58::encode(action.contract_id().as_bytes()).into_string(),
+                                bs58::encode(action.proposer_id().as_bytes()).into_string(),
+                                action.token_contract_position(),
+                                event_str
+                            );
+                            format!(
+                                r#"{{"id":"{}","action":{}}}"#,
+                                bs58::encode(id.as_bytes()).into_string(),
+                                action_json
+                            )
+                        } else {
+                            format!(
+                                r#"{{"id":"{}","action":null}}"#,
+                                bs58::encode(id.as_bytes()).into_string()
+                            )
+                        }
                     })
                     .collect();
 
                 Ok(Some(format!("[{}]", actions_json.join(","))))
             }
-            Ok(None) => Ok(None),
             Err(e) => Err(format!("Failed to fetch group actions: {}", e)),
         }
     })

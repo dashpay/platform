@@ -1,8 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
 use dash_sdk::platform::Fetch;
-use drive_proof_verifier::types::PrefundedSpecializedBalance;
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::PrefundedSpecializedBalance;
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches a prefunded specialized balance
 ///
@@ -27,23 +27,33 @@ pub unsafe extern "C" fn dash_sdk_system_get_prefunded_specialized_balance(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -60,7 +70,8 @@ fn get_prefunded_specialized_balance(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in ID: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let id_bytes = bs58::decode(id_str)
@@ -71,7 +82,7 @@ fn get_prefunded_specialized_balance(
             .try_into()
             .map_err(|_| "ID must be exactly 32 bytes".to_string())?;
 
-        let id = dash_sdk::Identifier::new(id);
+        let id = dash_sdk::platform::Identifier::new(id);
 
         match PrefundedSpecializedBalance::fetch(&sdk, id).await {
             Ok(Some(balance)) => {

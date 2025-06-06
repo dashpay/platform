@@ -26,6 +26,10 @@ thiserror = "2.0"
 # Logging
 tracing = "0.1"
 
+# Encoding
+bs58 = "0.5"
+hex = "0.4"
+
 # System APIs
 libc = "0.2"
 

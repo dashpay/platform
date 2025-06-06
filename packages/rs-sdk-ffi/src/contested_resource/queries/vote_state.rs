@@ -1,10 +1,13 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use dash_sdk::dpp::platform_value::Value;
+use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use dash_sdk::platform::FetchMany;
-use dpp::voting::contender_structs::ContenderWithSerializedDocument;
-use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
-use drive_proof_verifier::types::Contenders;
-use std::ffi::{c_char, CStr, CString};
+use dash_sdk::query_types::Contenders;
+use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resource vote state
 ///
@@ -50,23 +53,33 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_vote_state(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data: std::ptr::null(),
-                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                        data_type: DashSDKResultDataType::None,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
                     }
                 }
             };
             DashSDKResult {
-                data: c_str.into_raw(),
-                error: std::ptr::null(),
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
             }
         }
         Ok(None) => DashSDKResult {
-            data: std::ptr::null(),
-            error: std::ptr::null(),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data: std::ptr::null(),
-            error: DashSDKError::new(&e),
+            data_type: DashSDKResultDataType::None,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
         },
     }
 }
@@ -104,7 +117,8 @@ fn get_contested_resource_vote_state(
             .to_str()
             .map_err(|e| format!("Invalid UTF-8 in index values: {}", e))?
     };
-    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
         let contract_id_bytes = bs58::decode(contract_id_str)
@@ -115,70 +129,112 @@ fn get_contested_resource_vote_state(
             .try_into()
             .map_err(|_| "Contract ID must be exactly 32 bytes".to_string())?;
 
-        let contract_id = dash_sdk::Identifier::new(contract_id);
+        let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
         // Parse index values
         let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
             .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
 
-        let index_values: Vec<Vec<u8>> = index_values_array
+        let index_values: Vec<Value> = index_values_array
             .into_iter()
             .map(|hex_str| {
-                hex::decode(&hex_str).map_err(|e| format!("Failed to decode index value: {}", e))
+                let bytes = hex::decode(&hex_str).map_err(|e| format!("Failed to decode index value: {}", e))?;
+                Ok(Value::Bytes(bytes))
             })
-            .collect::<Result<Vec<Vec<u8>>, String>>()?;
+            .collect::<Result<Vec<Value>, String>>()?;
 
         let result_type = match result_type {
-            0 => drive::query::vote_poll_vote_state_query::VotePollVoteStateResultType::DocumentsOnly,
-            1 => drive::query::vote_poll_vote_state_query::VotePollVoteStateResultType::VoteTallyOnly,
-            2 => drive::query::vote_poll_vote_state_query::VotePollVoteStateResultType::DocumentsAndVoteTally,
+            0 => dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::Documents,
+            1 => dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            2 => dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
             _ => return Err("Invalid result type".to_string()),
         };
 
-        let query = ContestedDocumentVotePollDriveQuery {
+        let vote_poll = ContestedDocumentResourceVotePoll {
             contract_id,
             document_type_name: document_type_name_str.to_string(),
             index_name: index_name_str.to_string(),
             index_values,
+        };
+        
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll,
             result_type,
-            start_at_identifier_info: None,
-            count: Some(count),
+            limit: Some(count as u16),
+            start_at: None,
             allow_include_locked_and_abstaining_vote_tally,
             offset: None,
         };
 
         match ContenderWithSerializedDocument::fetch_many(&sdk, query).await {
             Ok(contenders) => {
-                if contenders.is_empty() {
+                let contenders: Contenders = contenders;
+                if contenders.contenders.is_empty() {
                     return Ok(None);
                 }
 
-                let contenders_json: Vec<String> = contenders
-                    .iter()
-                    .map(|(id, contender)| {
-                        let document_json = if let Some(ref document) = contender.document {
-                            format!(r#""document":{}"#, serde_json::to_string(document).unwrap_or_else(|_| "null".to_string()))
-                        } else {
-                            r#""document":null"#.to_string()
-                        };
+                let mut result_json_parts = Vec::new();
+                
+                // Add vote tally info if available
+                if result_type.has_vote_tally() {
+                    result_json_parts.push(format!(
+                        r#""abstain_vote_tally":{},"lock_vote_tally":{}"#,
+                        contenders.abstain_vote_tally.unwrap_or(0),
+                        contenders.lock_vote_tally.unwrap_or(0)
+                    ));
+                }
+                
+                // Add winner info if available
+                if let Some((winner_info, block_info)) = contenders.winner {
+                    let winner_json = match winner_info {
+                        ContestedDocumentVotePollWinnerInfo::NoWinner => {
+                            r#""winner_info":"NoWinner""#.to_string()
+                        }
+                        ContestedDocumentVotePollWinnerInfo::WonByIdentity(identifier) => {
+                            format!(r#""winner_info":{{"type":"WonByIdentity","identity_id":"{}"}}"#, bs58::encode(identifier.as_bytes()).into_string())
+                        }
+                        ContestedDocumentVotePollWinnerInfo::Locked => {
+                            r#""winner_info":"Locked""#.to_string()
+                        }
+                    };
+                    
+                    result_json_parts.push(format!(
+                        r#"{},
+                        "block_info":{{"height":{},"core_height":{},"timestamp":{}}}"#,
+                        winner_json,
+                        block_info.height,
+                        block_info.core_height,
+                        block_info.time_ms
+                    ));
+                }
+                
+                // Add contenders
+                if result_type.has_documents() {
+                    let contenders_json: Vec<String> = contenders.contenders
+                        .iter()
+                        .map(|(id, contender)| {
+                            let document_json = if let Some(ref document) = contender.serialized_document() {
+                                format!(r#""document":"{}""#, 
+                                    hex::encode(document))
+                            } else {
+                                r#""document":null"#.to_string()
+                            };
 
-                        let vote_tally_json = if let Some(ref vote_tally) = contender.vote_tally {
-                            format!(r#""vote_tally":{{"abstain_vote_tally":{},"lock_vote_tally":{}}}"#, 
-                                vote_tally.abstain_vote_tally, vote_tally.lock_vote_tally)
-                        } else {
-                            r#""vote_tally":null"#.to_string()
-                        };
+                            let vote_count = contender.vote_tally().unwrap_or(0);
 
-                        format!(
-                            r#"{{"id":"{}",{},{}}}"#,
-                            bs58::encode(id.as_bytes()).into_string(),
-                            document_json,
-                            vote_tally_json
-                        )
-                    })
-                    .collect();
-
-                Ok(Some(format!("[{}]", contenders_json.join(","))))
+                            format!(
+                                r#"{{"identity_id":"{}","vote_count":{},{}}}"#,
+                                bs58::encode(id.as_bytes()).into_string(),
+                                vote_count,
+                                document_json
+                            )
+                        })
+                        .collect();
+                    
+                    result_json_parts.push(format!(r#""contenders":[{}]"#, contenders_json.join(",")));
+                }
+                
+                Ok(Some(format!("{{{}}}", result_json_parts.join(","))))
             }
             Err(e) => Err(format!("Failed to fetch contested resource vote state: {}", e)),
         }
