@@ -42,50 +42,32 @@ typedef enum SwiftDashSwiftDashNetwork {
   Local = 3,
 } SwiftDashSwiftDashNetwork;
 
-// Token distribution type for claim operations
-typedef enum SwiftDashSwiftDashTokenDistributionType {
-  // Pre-programmed distribution
-  PreProgrammed = 0,
-  // Perpetual distribution
-  Perpetual = 1,
-} SwiftDashSwiftDashTokenDistributionType;
-
-// Opaque handle to a DataContract
-typedef struct SwiftDashDataContractHandle SwiftDashDataContractHandle;
-
-// Opaque handle to a Document
-typedef struct SwiftDashDocumentHandle SwiftDashDocumentHandle;
-
-// Opaque handle to an Identity
-typedef struct SwiftDashIdentityHandle SwiftDashIdentityHandle;
-
-// Opaque handle to an IdentityPublicKey
-typedef struct SwiftDashIdentityPublicKeyHandle SwiftDashIdentityPublicKeyHandle;
-
 // Opaque handle to an SDK instance
 typedef struct SwiftDashSDKHandle SwiftDashSDKHandle;
 
-// Opaque handle to a Signer
-typedef struct SwiftDashSignerHandle SwiftDashSignerHandle;
+// Error structure for Swift interop
+typedef struct SwiftDashSwiftDashError {
+  // Error code
+  enum SwiftDashSwiftDashErrorCode code;
+  // Human-readable error message (null-terminated C string)
+  // Caller must free this with swift_dash_error_free
+  char *message;
+} SwiftDashSwiftDashError;
 
-// Binary data container for results
-typedef struct SwiftDashSwiftDashBinaryData {
-  uint8_t *data;
-  size_t len;
-} SwiftDashSwiftDashBinaryData;
+// Swift result that wraps either success or error
+typedef struct SwiftDashSwiftDashResult {
+  bool success;
+  void *data;
+  struct SwiftDashSwiftDashError *error;
+} SwiftDashSwiftDashResult;
 
-// Settings for put operations
-typedef struct SwiftDashSwiftDashPutSettings {
-  uint64_t connect_timeout_ms;
-  uint64_t timeout_ms;
-  uint32_t retries;
-  bool ban_failed_address;
-  uint64_t identity_nonce_stale_time_s;
-  uint16_t user_fee_increase;
-  bool allow_signing_with_any_security_level;
-  bool allow_signing_with_any_purpose;
-  uint64_t wait_timeout_ms;
-} SwiftDashSwiftDashPutSettings;
+// Information about a data contract
+typedef struct SwiftDashSwiftDashDataContractInfo {
+  char *id;
+  char *owner_id;
+  uint32_t version;
+  char *schema_json;
+} SwiftDashSwiftDashDataContractInfo;
 
 // Information about a document
 typedef struct SwiftDashSwiftDashDocumentInfo {
@@ -97,15 +79,6 @@ typedef struct SwiftDashSwiftDashDocumentInfo {
   int64_t created_at;
   int64_t updated_at;
 } SwiftDashSwiftDashDocumentInfo;
-
-// Error structure for Swift interop
-typedef struct SwiftDashSwiftDashError {
-  // Error code
-  enum SwiftDashSwiftDashErrorCode code;
-  // Human-readable error message (null-terminated C string)
-  // Caller must free this with swift_dash_error_free
-  char *message;
-} SwiftDashSwiftDashError;
 
 // Information about an identity
 typedef struct SwiftDashSwiftDashIdentityInfo {
@@ -123,64 +96,60 @@ typedef struct SwiftDashSwiftDashTransferCreditsResult {
   size_t transaction_data_len;
 } SwiftDashSwiftDashTransferCreditsResult;
 
+// Binary data container for results
+typedef struct SwiftDashSwiftDashBinaryData {
+  uint8_t *data;
+  size_t len;
+} SwiftDashSwiftDashBinaryData;
+
 // Configuration for the Swift Dash Platform SDK
 typedef struct SwiftDashSwiftDashSDKConfig {
   enum SwiftDashSwiftDashNetwork network;
-  bool skip_asset_lock_proof_verification;
-  uint32_t request_retry_count;
-  uint64_t request_timeout_ms;
+  const char *dapi_addresses;
 } SwiftDashSwiftDashSDKConfig;
 
-// Swift result that wraps either success or error
-typedef struct SwiftDashSwiftDashResult {
-  bool success;
-  void *data;
-  struct SwiftDashSwiftDashError *error;
-} SwiftDashSwiftDashResult;
+// Settings for put operations
+typedef struct SwiftDashSwiftDashPutSettings {
+  uint64_t connect_timeout_ms;
+  uint64_t timeout_ms;
+  uint32_t retries;
+  bool ban_failed_address;
+  uint64_t identity_nonce_stale_time_s;
+  uint16_t user_fee_increase;
+  bool allow_signing_with_any_security_level;
+  bool allow_signing_with_any_purpose;
+  uint64_t wait_timeout_ms;
+} SwiftDashSwiftDashPutSettings;
 
-// Swift-friendly token transfer parameters
-typedef struct SwiftDashSwiftDashTokenTransferParams {
-  // Token contract ID (Base58 encoded string)
-  const char *token_contract_id;
-  // Recipient identity ID (Base58 encoded string)
-  const char *recipient_id;
-  // Amount to transfer
-  uint64_t amount;
-  // Optional public note
-  const char *public_note;
-} SwiftDashSwiftDashTokenTransferParams;
+// Swift-compatible signer interface
+//
+// This represents a callback-based signer for iOS/Swift applications.
+// The actual signer implementation will be provided by the iOS app.
+// Type alias for signing callback
+typedef unsigned char *(*SwiftDashSwiftSignCallback)(const unsigned char *identity_public_key_bytes,
+                                                     size_t identity_public_key_len,
+                                                     const unsigned char *data,
+                                                     size_t data_len,
+                                                     size_t *result_len);
 
-// Swift-friendly token mint parameters
-typedef struct SwiftDashSwiftDashTokenMintParams {
-  // Token contract ID (Base58 encoded string)
-  const char *token_contract_id;
-  // Recipient identity ID (Base58 encoded string)
-  const char *recipient_id;
-  // Amount to mint
-  uint64_t amount;
-  // Optional public note
-  const char *public_note;
-} SwiftDashSwiftDashTokenMintParams;
+// Type alias for can_sign callback
+typedef bool (*SwiftDashSwiftCanSignCallback)(const unsigned char *identity_public_key_bytes,
+                                              size_t identity_public_key_len);
 
-// Swift-friendly token burn parameters
-typedef struct SwiftDashSwiftDashTokenBurnParams {
-  // Token contract ID (Base58 encoded string)
-  const char *token_contract_id;
-  // Amount to burn
-  uint64_t amount;
-  // Optional public note
-  const char *public_note;
-} SwiftDashSwiftDashTokenBurnParams;
+// Swift signer configuration
+typedef struct SwiftDashSwiftDashSigner {
+  SwiftDashSwiftSignCallback sign_callback;
+  SwiftDashSwiftCanSignCallback can_sign_callback;
+} SwiftDashSwiftDashSigner;
 
-// Swift-friendly token claim parameters
-typedef struct SwiftDashSwiftDashTokenClaimParams {
-  // Token contract ID (Base58 encoded string)
-  const char *token_contract_id;
-  // Distribution type (PreProgrammed or Perpetual)
-  enum SwiftDashSwiftDashTokenDistributionType distribution_type;
-  // Optional public note
-  const char *public_note;
-} SwiftDashSwiftDashTokenClaimParams;
+// Token information
+typedef struct SwiftDashSwiftDashTokenInfo {
+  char *contract_id;
+  char *name;
+  char *symbol;
+  uint64_t total_supply;
+  uint8_t decimals;
+} SwiftDashSwiftDashTokenInfo;
 
 // Initialize the Swift SDK library.
 // This should be called once at app startup before using any other functions.
@@ -190,159 +159,60 @@ void swift_dash_sdk_init(void);
 const char *swift_dash_sdk_version(void);
 
 // Fetch a data contract by ID
-struct SwiftDashDataContractHandle *swift_dash_data_contract_fetch(struct SwiftDashSDKHandle *sdk_handle,
-                                                                   const char *contract_id);
+char *swift_dash_data_contract_fetch(const struct SwiftDashSDKHandle *sdk_handle,
+                                     const char *contract_id);
 
-// Create a new data contract from JSON schema
-struct SwiftDashDataContractHandle *swift_dash_data_contract_create(struct SwiftDashSDKHandle *sdk_handle,
-                                                                    const char *owner_identity_id,
-                                                                    const char *schema_json);
+// Get data contract history
+char *swift_dash_data_contract_get_history(const struct SwiftDashSDKHandle *sdk_handle,
+                                           const char *contract_id,
+                                           uint32_t limit,
+                                           uint32_t offset);
 
-// Get data contract information as JSON string
-char *swift_dash_data_contract_get_info(struct SwiftDashDataContractHandle *contract_handle);
+// Create a new data contract (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_data_contract_create(const struct SwiftDashSDKHandle *sdk_handle,
+                                                                const char *schema_json,
+                                                                const char *owner_id);
 
-// Get schema for a specific document type
-char *swift_dash_data_contract_get_schema(struct SwiftDashDataContractHandle *contract_handle,
-                                          const char *document_type);
+// Update an existing data contract (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_data_contract_update(const struct SwiftDashSDKHandle *sdk_handle,
+                                                                const char *contract_id,
+                                                                const char *schema_json,
+                                                                uint32_t _version);
 
-// Put data contract to platform and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_data_contract_put_to_platform(struct SwiftDashSDKHandle *sdk_handle,
-                                                                              struct SwiftDashDataContractHandle *contract_handle,
-                                                                              uint32_t public_key_id,
-                                                                              struct SwiftDashSignerHandle *signer_handle,
-                                                                              const struct SwiftDashSwiftDashPutSettings *settings);
+// Free data contract info structure
+void swift_dash_data_contract_info_free(struct SwiftDashSwiftDashDataContractInfo *info);
 
-// Put data contract to platform and wait for confirmation
-struct SwiftDashDataContractHandle *swift_dash_data_contract_put_to_platform_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                      struct SwiftDashDataContractHandle *contract_handle,
-                                                                                      uint32_t public_key_id,
-                                                                                      struct SwiftDashSignerHandle *signer_handle,
-                                                                                      const struct SwiftDashSwiftDashPutSettings *settings);
+// Fetch a document by ID (simplified - returns not implemented)
+char *swift_dash_document_fetch(const struct SwiftDashSDKHandle *sdk_handle,
+                                const char *data_contract_id,
+                                const char *document_type,
+                                const char *document_id);
 
-// Create a new document
-struct SwiftDashDocumentHandle *swift_dash_document_create(struct SwiftDashSDKHandle *sdk_handle,
-                                                           struct SwiftDashDataContractHandle *contract_handle,
-                                                           const char *owner_identity_id,
+// Search for documents (simplified - returns not implemented)
+char *swift_dash_document_search(const struct SwiftDashSDKHandle *sdk_handle,
+                                 const char *data_contract_id,
+                                 const char *document_type,
+                                 const char *_query_json,
+                                 uint32_t _limit);
+
+// Create a new document (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_document_create(const struct SwiftDashSDKHandle *sdk_handle,
+                                                           const char *data_contract_id,
                                                            const char *document_type,
-                                                           const char *data_json);
+                                                           const char *_properties_json,
+                                                           const char *_identity_id);
 
-// Fetch a document by ID
-struct SwiftDashDocumentHandle *swift_dash_document_fetch(struct SwiftDashSDKHandle *sdk_handle,
-                                                          struct SwiftDashDataContractHandle *contract_handle,
-                                                          const char *document_type,
-                                                          const char *document_id);
+// Update an existing document (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_document_update(const struct SwiftDashSDKHandle *sdk_handle,
+                                                           const char *document_id,
+                                                           const char *_properties_json,
+                                                           uint64_t _revision);
 
-// Get document information
-struct SwiftDashSwiftDashDocumentInfo *swift_dash_document_get_info(struct SwiftDashDocumentHandle *document_handle);
+// Delete a document (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_document_delete(const struct SwiftDashSDKHandle *sdk_handle,
+                                                           const char *document_id);
 
-// Put document to platform and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_document_put_to_platform(struct SwiftDashSDKHandle *sdk_handle,
-                                                                         struct SwiftDashDocumentHandle *document_handle,
-                                                                         struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                         const char *document_type_name,
-                                                                         const uint8_t (*entropy)[32],
-                                                                         struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                         struct SwiftDashSignerHandle *signer_handle,
-                                                                         const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                         const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Put document to platform and wait for confirmation
-struct SwiftDashDocumentHandle *swift_dash_document_put_to_platform_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                             struct SwiftDashDocumentHandle *document_handle,
-                                                                             struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                             const char *document_type_name,
-                                                                             const uint8_t (*entropy)[32],
-                                                                             struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                             struct SwiftDashSignerHandle *signer_handle,
-                                                                             const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                             const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Purchase document from platform and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_document_purchase_to_platform(struct SwiftDashSDKHandle *sdk_handle,
-                                                                              struct SwiftDashDocumentHandle *document_handle,
-                                                                              struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                              const char *document_type_name,
-                                                                              uint64_t price,
-                                                                              const char *purchaser_id,
-                                                                              struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                              struct SwiftDashSignerHandle *signer_handle,
-                                                                              const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                              const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Purchase document from platform and wait for confirmation
-struct SwiftDashDocumentHandle *swift_dash_document_purchase_to_platform_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                  struct SwiftDashDocumentHandle *document_handle,
-                                                                                  struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                                  const char *document_type_name,
-                                                                                  uint64_t price,
-                                                                                  const char *purchaser_id,
-                                                                                  struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                                  struct SwiftDashSignerHandle *signer_handle,
-                                                                                  const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                                  const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Update an existing document
-struct SwiftDashDocumentHandle *swift_dash_document_update(struct SwiftDashDocumentHandle *document_handle,
-                                                           const char *properties_json);
-
-// Search for documents
-struct SwiftDashSwiftDashBinaryData *swift_dash_document_search(struct SwiftDashSDKHandle *sdk_handle,
-                                                                struct SwiftDashDataContractHandle *contract_handle,
-                                                                const char *document_type,
-                                                                const char *where_clause,
-                                                                const char *order_by,
-                                                                uint32_t limit,
-                                                                const char *start_after);
-
-// Destroy/delete a document
-struct SwiftDashSwiftDashBinaryData *swift_dash_document_destroy(struct SwiftDashSDKHandle *sdk_handle,
-                                                                 struct SwiftDashDocumentHandle *document_handle);
-
-// Transfer document to another identity
-struct SwiftDashSwiftDashBinaryData *swift_dash_document_transfer_to_identity(struct SwiftDashSDKHandle *sdk_handle,
-                                                                              struct SwiftDashDocumentHandle *document_handle,
-                                                                              const char *recipient_id,
-                                                                              struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                              const char *document_type_name,
-                                                                              struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                              struct SwiftDashSignerHandle *signer_handle,
-                                                                              const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                              const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Transfer document to another identity and wait for confirmation
-struct SwiftDashDocumentHandle *swift_dash_document_transfer_to_identity_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                  struct SwiftDashDocumentHandle *document_handle,
-                                                                                  const char *recipient_id,
-                                                                                  struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                                  const char *document_type_name,
-                                                                                  struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                                  struct SwiftDashSignerHandle *signer_handle,
-                                                                                  const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                                  const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Update the price of a document
-struct SwiftDashSwiftDashBinaryData *swift_dash_document_update_price(struct SwiftDashSDKHandle *sdk_handle,
-                                                                      struct SwiftDashDocumentHandle *document_handle,
-                                                                      struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                      const char *document_type_name,
-                                                                      uint64_t price,
-                                                                      struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                      struct SwiftDashSignerHandle *signer_handle,
-                                                                      const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                      const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Update the price of a document and wait for confirmation
-struct SwiftDashDocumentHandle *swift_dash_document_update_price_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                          struct SwiftDashDocumentHandle *document_handle,
-                                                                          struct SwiftDashDataContractHandle *data_contract_handle,
-                                                                          const char *document_type_name,
-                                                                          uint64_t price,
-                                                                          struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
-                                                                          struct SwiftDashSignerHandle *signer_handle,
-                                                                          const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
-                                                                          const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Free a Swift document info structure
+// Free document info structure
 void swift_dash_document_info_free(struct SwiftDashSwiftDashDocumentInfo *info);
 
 // Free an error message
@@ -355,113 +225,38 @@ void swift_dash_string_free(char *s);
 void swift_dash_bytes_free(uint8_t *bytes, size_t len);
 
 // Fetch an identity by ID
-struct SwiftDashIdentityHandle *swift_dash_identity_fetch(struct SwiftDashSDKHandle *sdk_handle,
-                                                          const char *identity_id);
+char *swift_dash_identity_fetch(const struct SwiftDashSDKHandle *sdk_handle,
+                                const char *identity_id);
 
-// Get identity information
-struct SwiftDashSwiftDashIdentityInfo *swift_dash_identity_get_info(struct SwiftDashIdentityHandle *identity_handle);
+// Get identity balance
+uint64_t swift_dash_identity_get_balance(const struct SwiftDashSDKHandle *sdk_handle,
+                                         const char *identity_id);
 
-// Put identity to platform with instant lock and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_put_to_platform_with_instant_lock(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                           struct SwiftDashIdentityHandle *identity_handle,
-                                                                                           uint32_t public_key_id,
-                                                                                           struct SwiftDashSignerHandle *signer_handle,
-                                                                                           const struct SwiftDashSwiftDashPutSettings *settings);
+// Resolve identity name
+char *swift_dash_identity_resolve_name(const struct SwiftDashSDKHandle *sdk_handle,
+                                       const char *name);
 
-// Put identity to platform with instant lock and wait for confirmation
-struct SwiftDashIdentityHandle *swift_dash_identity_put_to_platform_with_instant_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                               struct SwiftDashIdentityHandle *identity_handle,
-                                                                                               uint32_t public_key_id,
-                                                                                               struct SwiftDashSignerHandle *signer_handle,
-                                                                                               const struct SwiftDashSwiftDashPutSettings *settings);
+// Transfer credits (simplified implementation)
+struct SwiftDashSwiftDashResult swift_dash_identity_transfer_credits(const struct SwiftDashSDKHandle *sdk_handle,
+                                                                     const char *from_identity_id,
+                                                                     const char *to_identity_id,
+                                                                     uint64_t _amount,
+                                                                     const uint8_t *private_key,
+                                                                     size_t _private_key_len);
 
-// Put identity to platform with chain lock and return serialized state transition
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_put_to_platform_with_chain_lock(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                         struct SwiftDashIdentityHandle *identity_handle,
-                                                                                         uint32_t public_key_id,
-                                                                                         struct SwiftDashSignerHandle *signer_handle,
-                                                                                         const struct SwiftDashSwiftDashPutSettings *settings);
+// Create a new identity (mock for now)
+struct SwiftDashSwiftDashResult swift_dash_identity_create(const struct SwiftDashSDKHandle *sdk_handle,
+                                                           const uint8_t *public_key,
+                                                           size_t _public_key_len);
 
-// Put identity to platform with chain lock and wait for confirmation
-struct SwiftDashIdentityHandle *swift_dash_identity_put_to_platform_with_chain_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                             struct SwiftDashIdentityHandle *identity_handle,
-                                                                                             uint32_t public_key_id,
-                                                                                             struct SwiftDashSignerHandle *signer_handle,
-                                                                                             const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Transfer credits to another identity
-struct SwiftDashSwiftDashTransferCreditsResult *swift_dash_identity_transfer_credits(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                     struct SwiftDashIdentityHandle *identity_handle,
-                                                                                     const char *recipient_id,
-                                                                                     uint64_t amount,
-                                                                                     uint32_t public_key_id,
-                                                                                     struct SwiftDashSignerHandle *signer_handle,
-                                                                                     const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Free a Swift identity info structure
+// Free identity info structure
 void swift_dash_identity_info_free(struct SwiftDashSwiftDashIdentityInfo *info);
 
-// Free a Swift binary data structure
-void swift_dash_binary_data_free(struct SwiftDashSwiftDashBinaryData *binary_data);
-
-// Create a new identity
-struct SwiftDashIdentityHandle *swift_dash_identity_create(struct SwiftDashSDKHandle *sdk_handle);
-
-// Top up identity with instant lock
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_topup_with_instant_lock(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                 struct SwiftDashIdentityHandle *identity_handle,
-                                                                                 const uint8_t *instant_lock_bytes,
-                                                                                 size_t instant_lock_len,
-                                                                                 const uint8_t *transaction_bytes,
-                                                                                 size_t transaction_len,
-                                                                                 uint32_t output_index,
-                                                                                 const uint8_t *private_key,
-                                                                                 size_t private_key_len,
-                                                                                 const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Top up identity with instant lock and wait for confirmation
-struct SwiftDashIdentityHandle *swift_dash_identity_topup_with_instant_lock_and_wait(struct SwiftDashSDKHandle *sdk_handle,
-                                                                                     struct SwiftDashIdentityHandle *identity_handle,
-                                                                                     const uint8_t *instant_lock_bytes,
-                                                                                     size_t instant_lock_len,
-                                                                                     const uint8_t *transaction_bytes,
-                                                                                     size_t transaction_len,
-                                                                                     uint32_t output_index,
-                                                                                     const uint8_t *private_key,
-                                                                                     size_t private_key_len,
-                                                                                     const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Withdraw credits from identity to Dash address
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_withdraw(struct SwiftDashSDKHandle *sdk_handle,
-                                                                  struct SwiftDashIdentityHandle *identity_handle,
-                                                                  const char *address,
-                                                                  uint64_t amount,
-                                                                  uint32_t core_fee_per_byte,
-                                                                  uint32_t public_key_id,
-                                                                  struct SwiftDashSignerHandle *signer_handle,
-                                                                  const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Fetch identity balance only
-uint64_t swift_dash_identity_fetch_balance(struct SwiftDashSDKHandle *sdk_handle,
-                                           const char *identity_id);
-
-// Fetch identity public keys as JSON
-char *swift_dash_identity_fetch_public_keys(struct SwiftDashSDKHandle *sdk_handle,
-                                            const char *identity_id);
-
-// Register a DPNS name for identity
-struct SwiftDashSwiftDashBinaryData *swift_dash_identity_register_name(struct SwiftDashSDKHandle *sdk_handle,
-                                                                       struct SwiftDashIdentityHandle *identity_handle,
-                                                                       const char *name,
-                                                                       uint32_t public_key_id,
-                                                                       struct SwiftDashSignerHandle *signer_handle,
-                                                                       const struct SwiftDashSwiftDashPutSettings *settings);
-
-// Resolve a DPNS name to identity ID
-char *swift_dash_identity_resolve_name(struct SwiftDashSDKHandle *sdk_handle, const char *name);
-
-// Free a Swift transfer credits result structure
+// Free transfer result structure
 void swift_dash_transfer_credits_result_free(struct SwiftDashSwiftDashTransferCreditsResult *result);
+
+// Free binary data structure
+void swift_dash_binary_data_free(struct SwiftDashSwiftDashBinaryData *data);
 
 // Create a new SDK instance
 struct SwiftDashSDKHandle *swift_dash_sdk_create(struct SwiftDashSwiftDashSDKConfig config);
@@ -470,10 +265,10 @@ struct SwiftDashSDKHandle *swift_dash_sdk_create(struct SwiftDashSwiftDashSDKCon
 void swift_dash_sdk_destroy(struct SwiftDashSDKHandle *handle);
 
 // Get the network the SDK is configured for
-enum SwiftDashSwiftDashNetwork swift_dash_sdk_get_network(struct SwiftDashSDKHandle *handle);
+enum SwiftDashSwiftDashNetwork swift_dash_sdk_get_network(const struct SwiftDashSDKHandle *handle);
 
 // Get SDK version
-char *swift_dash_sdk_get_version(void);
+const char *swift_dash_sdk_get_version(void);
 
 // Create default settings for put operations
 struct SwiftDashSwiftDashPutSettings swift_dash_put_settings_default(void);
@@ -487,89 +282,48 @@ struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_testnet(void);
 // Create default config for local development
 struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_local(void);
 
-// Create a test signer for development/testing purposes
-struct SwiftDashSignerHandle *swift_dash_signer_create_test(void);
+// Create a new signer with callbacks
+struct SwiftDashSwiftDashSigner *swift_dash_signer_create(SwiftDashSwiftSignCallback sign_callback,
+                                                          SwiftDashSwiftCanSignCallback can_sign_callback);
 
-// Destroy a signer
-void swift_dash_signer_destroy(struct SwiftDashSignerHandle *handle);
+// Free a signer
+void swift_dash_signer_free(struct SwiftDashSwiftDashSigner *signer);
 
-// Transfer tokens between identities
-struct SwiftDashSwiftDashResult swift_dash_token_transfer(struct SwiftDashSDKHandle sdk_handle,
-                                                          struct SwiftDashIdentityHandle sender_identity_handle,
-                                                          struct SwiftDashSwiftDashTokenTransferParams params,
-                                                          uint32_t public_key_id,
-                                                          struct SwiftDashSignerHandle signer_handle,
-                                                          SwiftDashIOSSDKPutSettings put_settings);
+// Test if a signer can sign with a given key
+bool swift_dash_signer_can_sign(const struct SwiftDashSwiftDashSigner *signer,
+                                const unsigned char *identity_public_key_bytes,
+                                size_t identity_public_key_len);
 
-// Transfer tokens and wait for confirmation
-struct SwiftDashSwiftDashResult swift_dash_token_transfer_and_wait(struct SwiftDashSDKHandle sdk_handle,
-                                                                   struct SwiftDashIdentityHandle sender_identity_handle,
-                                                                   struct SwiftDashSwiftDashTokenTransferParams params,
-                                                                   uint32_t public_key_id,
-                                                                   struct SwiftDashSignerHandle signer_handle,
-                                                                   SwiftDashIOSSDKPutSettings put_settings);
+// Sign data with a signer
+unsigned char *swift_dash_signer_sign(const struct SwiftDashSwiftDashSigner *signer,
+                                      const unsigned char *identity_public_key_bytes,
+                                      size_t identity_public_key_len,
+                                      const unsigned char *data,
+                                      size_t data_len,
+                                      size_t *result_len);
 
-// Mint new tokens
-struct SwiftDashSwiftDashResult swift_dash_token_mint(struct SwiftDashSDKHandle sdk_handle,
-                                                      struct SwiftDashIdentityHandle identity_handle,
-                                                      struct SwiftDashSwiftDashTokenMintParams params,
-                                                      uint32_t public_key_id,
-                                                      struct SwiftDashSignerHandle signer_handle,
-                                                      SwiftDashIOSSDKPutSettings put_settings);
+// Get token total supply
+char *swift_dash_token_get_total_supply(const struct SwiftDashSDKHandle *sdk_handle,
+                                        const char *token_contract_id);
 
-// Mint new tokens and wait for confirmation
-struct SwiftDashSwiftDashResult swift_dash_token_mint_and_wait(struct SwiftDashSDKHandle sdk_handle,
-                                                               struct SwiftDashIdentityHandle identity_handle,
-                                                               struct SwiftDashSwiftDashTokenMintParams params,
-                                                               uint32_t public_key_id,
-                                                               struct SwiftDashSignerHandle signer_handle,
-                                                               SwiftDashIOSSDKPutSettings put_settings);
+// Transfer tokens (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_token_transfer(const struct SwiftDashSDKHandle *sdk_handle,
+                                                          const char *token_contract_id,
+                                                          const char *from_identity_id,
+                                                          const char *to_identity_id,
+                                                          uint64_t _amount);
 
-// Burn tokens
-struct SwiftDashSwiftDashResult swift_dash_token_burn(struct SwiftDashSDKHandle sdk_handle,
-                                                      struct SwiftDashIdentityHandle identity_handle,
-                                                      struct SwiftDashSwiftDashTokenBurnParams params,
-                                                      uint32_t public_key_id,
-                                                      struct SwiftDashSignerHandle signer_handle,
-                                                      SwiftDashIOSSDKPutSettings put_settings);
+// Mint tokens (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_token_mint(const struct SwiftDashSDKHandle *sdk_handle,
+                                                      const char *token_contract_id,
+                                                      const char *to_identity_id,
+                                                      uint64_t _amount);
 
-// Burn tokens and wait for confirmation
-struct SwiftDashSwiftDashResult swift_dash_token_burn_and_wait(struct SwiftDashSDKHandle sdk_handle,
-                                                               struct SwiftDashIdentityHandle identity_handle,
-                                                               struct SwiftDashSwiftDashTokenBurnParams params,
-                                                               uint32_t public_key_id,
-                                                               struct SwiftDashSignerHandle signer_handle,
-                                                               SwiftDashIOSSDKPutSettings put_settings);
+// Burn tokens (simplified - returns not implemented)
+struct SwiftDashSwiftDashResult swift_dash_token_burn(const struct SwiftDashSDKHandle *sdk_handle,
+                                                      const char *token_contract_id,
+                                                      const char *from_identity_id,
+                                                      uint64_t _amount);
 
-// Claim tokens from distribution
-struct SwiftDashSwiftDashResult swift_dash_token_claim(struct SwiftDashSDKHandle sdk_handle,
-                                                       struct SwiftDashIdentityHandle identity_handle,
-                                                       struct SwiftDashSwiftDashTokenClaimParams params,
-                                                       uint32_t public_key_id,
-                                                       struct SwiftDashSignerHandle signer_handle,
-                                                       SwiftDashIOSSDKPutSettings put_settings);
-
-// Claim tokens from distribution and wait for confirmation
-struct SwiftDashSwiftDashResult swift_dash_token_claim_and_wait(struct SwiftDashSDKHandle sdk_handle,
-                                                                struct SwiftDashIdentityHandle identity_handle,
-                                                                struct SwiftDashSwiftDashTokenClaimParams params,
-                                                                uint32_t public_key_id,
-                                                                struct SwiftDashSignerHandle signer_handle,
-                                                                SwiftDashIOSSDKPutSettings put_settings);
-
-// Get token balance for an identity
-struct SwiftDashSwiftDashResult swift_dash_token_get_identity_balance(struct SwiftDashSDKHandle sdk_handle,
-                                                                      const char *identity_id,
-                                                                      const char *token_contract_id,
-                                                                      uint16_t token_position);
-
-// Get token information for an identity
-struct SwiftDashSwiftDashResult swift_dash_token_get_identity_info(struct SwiftDashSDKHandle sdk_handle,
-                                                                   const char *identity_id,
-                                                                   const char *token_contract_id,
-                                                                   uint16_t token_position);
-
-// Get token statuses for a contract
-struct SwiftDashSwiftDashResult swift_dash_token_get_statuses(struct SwiftDashSDKHandle sdk_handle,
-                                                              const char *token_contract_id,
-                                                              uint16_t token_position);
+// Free token info structure
+void swift_dash_token_info_free(struct SwiftDashSwiftDashTokenInfo *info);

@@ -1,13 +1,10 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use std::ptr;
 
     #[test]
     fn test_sdk_initialization() {
-        unsafe {
-            swift_dash_sdk_init();
-        }
+        swift_dash_sdk_init();
     }
 
     #[test]

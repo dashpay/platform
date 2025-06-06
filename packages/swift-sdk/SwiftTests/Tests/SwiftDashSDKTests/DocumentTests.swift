@@ -3,9 +3,13 @@ import SwiftDashSDKMock
 
 class DocumentTests: XCTestCase {
     
-    var sdk: OpaquePointer!
-    var signer: OpaquePointer!
-    var contract: OpaquePointer!
+    var sdk: UnsafeMutablePointer<SwiftDashSDKHandle>?
+    
+    // Test configuration data - matching rs-sdk-ffi test vectors
+    let existingDataContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+    let existingIdentityId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+    let documentType = "domain"
+    let nonExistentDocumentId = "1111111111111111111111111111111111111111111"
     
     override func setUp() {
         super.setUp()
@@ -13,387 +17,389 @@ class DocumentTests: XCTestCase {
         
         let config = swift_dash_sdk_config_testnet()
         sdk = swift_dash_sdk_create(config)
-        signer = swift_dash_signer_create_test()
-        
-        // Create a contract for testing documents
-        contract = swift_dash_data_contract_fetch(sdk, "test_contract_456")
+        XCTAssertNotNil(sdk, "SDK should be created successfully")
     }
     
     override func tearDown() {
-        if let signer = signer {
-            swift_dash_signer_destroy(signer)
-        }
         if let sdk = sdk {
             swift_dash_sdk_destroy(sdk)
         }
         super.tearDown()
     }
     
+    // MARK: - Document Fetch Tests
+    
+    func testDocumentFetchNotImplemented() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let result = swift_dash_document_fetch(sdk, existingDataContractId, documentType, nonExistentDocumentId)
+        XCTAssertNil(result, "Document fetching not implemented in mock")
+    }
+    
+    func testDocumentFetchWithNullSDK() {
+        let result = swift_dash_document_fetch(nil, existingDataContractId, documentType, nonExistentDocumentId)
+        XCTAssertNil(result, "Should return nil for null SDK handle")
+    }
+    
+    func testDocumentFetchWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        // Test with null data contract ID
+        var result = swift_dash_document_fetch(sdk, nil, documentType, nonExistentDocumentId)
+        XCTAssertNil(result, "Should return nil for null data contract ID")
+        
+        // Test with null document type
+        result = swift_dash_document_fetch(sdk, existingDataContractId, nil, nonExistentDocumentId)
+        XCTAssertNil(result, "Should return nil for null document type")
+        
+        // Test with null document ID
+        result = swift_dash_document_fetch(sdk, existingDataContractId, documentType, nil)
+        XCTAssertNil(result, "Should return nil for null document ID")
+    }
+    
+    // MARK: - Document Search Tests
+    
+    func testDocumentSearchNotImplemented() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let queryJson = """
+        {
+            "where": [
+                ["normalizedLabel", "==", "dash"]
+            ]
+        }
+        """
+        
+        let result = swift_dash_document_search(sdk, existingDataContractId, documentType, queryJson, 10)
+        XCTAssertNil(result, "Document search not implemented in mock")
+    }
+    
+    func testDocumentSearchWithNullSDK() {
+        let queryJson = "{\"where\":[]}"
+        let result = swift_dash_document_search(nil, existingDataContractId, documentType, queryJson, 10)
+        XCTAssertNil(result, "Should return nil for null SDK handle")
+    }
+    
+    func testDocumentSearchWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let queryJson = "{\"where\":[]}"
+        
+        // Test with null data contract ID
+        var result = swift_dash_document_search(sdk, nil, documentType, queryJson, 10)
+        XCTAssertNil(result, "Should return nil for null data contract ID")
+        
+        // Test with null document type
+        result = swift_dash_document_search(sdk, existingDataContractId, nil, queryJson, 10)
+        XCTAssertNil(result, "Should return nil for null document type")
+        
+        // Test with null query (query can be null for some search operations)
+        result = swift_dash_document_search(sdk, existingDataContractId, documentType, nil, 10)
+        XCTAssertNil(result, "Should return nil for null query in mock")
+    }
+    
     // MARK: - Document Creation Tests
     
     func testDocumentCreate() {
-        let ownerId = "test_identity_123"
-        let documentType = "message"
-        let dataJson = """
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let propertiesJson = """
         {
-            "content": "Hello, Dash Platform!",
-            "timestamp": 1640000000000,
-            "author": "test_user"
+            "label": "test",
+            "normalizedLabel": "test",
+            "normalizedParentDomainName": "dash",
+            "records": {
+                "dashUniqueIdentityId": "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+            }
         }
         """
         
-        let document = swift_dash_document_create(
-            sdk, contract, ownerId, documentType, dataJson
-        )
+        let result = swift_dash_document_create(sdk, existingDataContractId, documentType, propertiesJson, existingIdentityId)
         
-        XCTAssertNotNil(document)
+        // Since this is not implemented in mock, should return not implemented error
+        XCTAssertFalse(result.success, "Document creation should fail (not implemented)")
+        XCTAssertNotNil(result.error, "Should have error for not implemented")
+        
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, NotImplemented, "Should be NotImplemented error")
+            
+            if let message = error.pointee.message {
+                let messageStr = String(cString: message)
+                XCTAssertTrue(messageStr.contains("not yet implemented"), "Error message should mention not implemented")
+            }
+            
+            // Clean up error
+            swift_dash_error_free(error)
+        }
     }
     
-    func testDocumentCreateNullSafety() {
-        let ownerId = "test_identity_123"
-        let documentType = "message"
-        let dataJson = "{}"
+    func testDocumentCreateWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        // Test null SDK
-        var document = swift_dash_document_create(
-            nil, contract, ownerId, documentType, dataJson
-        )
-        XCTAssertNil(document)
+        let propertiesJson = "{\"content\":\"test\"}"
         
-        // Test null contract
-        document = swift_dash_document_create(
-            sdk, nil, ownerId, documentType, dataJson
-        )
-        XCTAssertNil(document)
+        // Test with null SDK
+        var result = swift_dash_document_create(nil, existingDataContractId, documentType, propertiesJson, existingIdentityId)
+        XCTAssertFalse(result.success, "Should fail with null SDK")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
         
-        // Test null owner ID
-        document = swift_dash_document_create(
-            sdk, contract, nil, documentType, dataJson
-        )
-        XCTAssertNil(document)
+        // Test with null data contract ID
+        result = swift_dash_document_create(sdk, nil, documentType, propertiesJson, existingIdentityId)
+        XCTAssertFalse(result.success, "Should fail with null data contract ID")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
         
-        // Test null document type
-        document = swift_dash_document_create(
-            sdk, contract, ownerId, nil, dataJson
-        )
-        XCTAssertNil(document)
-        
-        // Test null data JSON
-        document = swift_dash_document_create(
-            sdk, contract, ownerId, documentType, nil
-        )
-        XCTAssertNil(document)
+        // Test with null document type
+        result = swift_dash_document_create(sdk, existingDataContractId, nil, propertiesJson, existingIdentityId)
+        XCTAssertFalse(result.success, "Should fail with null document type")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
     }
     
-    // MARK: - Document Fetch Tests
+    // MARK: - Document Update Tests
     
-    func testDocumentFetchSuccess() {
-        let documentType = "message"
-        let documentId = "test_doc_789"
+    func testDocumentUpdate() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        let document = swift_dash_document_fetch(
-            sdk, contract, documentType, documentId
-        )
+        let propertiesJson = """
+        {
+            "label": "updated-test",
+            "normalizedLabel": "updated-test",
+            "normalizedParentDomainName": "dash",
+            "records": {
+                "dashUniqueIdentityId": "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+            }
+        }
+        """
         
-        XCTAssertNotNil(document)
+        let result = swift_dash_document_update(sdk, nonExistentDocumentId, propertiesJson, 2)
+        
+        // Since this is not implemented in mock, should return not implemented error
+        XCTAssertFalse(result.success, "Document update should fail (not implemented)")
+        XCTAssertNotNil(result.error, "Should have error for not implemented")
+        
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, NotImplemented, "Should be NotImplemented error")
+            swift_dash_error_free(error)
+        }
     }
     
-    func testDocumentFetchNotFound() {
-        let documentType = "message"
-        let documentId = "non_existent_doc"
+    func testDocumentUpdateWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        let document = swift_dash_document_fetch(
-            sdk, contract, documentType, documentId
-        )
+        let propertiesJson = "{\"content\":\"updated\"}"
         
-        XCTAssertNil(document)
+        // Test with null SDK
+        var result = swift_dash_document_update(nil, nonExistentDocumentId, propertiesJson, 2)
+        XCTAssertFalse(result.success, "Should fail with null SDK")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
+        
+        // Test with null document ID
+        result = swift_dash_document_update(sdk, nil, propertiesJson, 2)
+        XCTAssertFalse(result.success, "Should fail with null document ID")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
     }
     
-    func testDocumentFetchNullSafety() {
-        let documentType = "message"
-        let documentId = "test_doc_789"
+    // MARK: - Document Deletion Tests
+    
+    func testDocumentDelete() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        // Test null SDK
-        var document = swift_dash_document_fetch(
-            nil, contract, documentType, documentId
-        )
-        XCTAssertNil(document)
+        let result = swift_dash_document_delete(sdk, nonExistentDocumentId)
         
-        // Test null contract
-        document = swift_dash_document_fetch(
-            sdk, nil, documentType, documentId
-        )
-        XCTAssertNil(document)
+        // Since this is not implemented in mock, should return not implemented error
+        XCTAssertFalse(result.success, "Document deletion should fail (not implemented)")
+        XCTAssertNotNil(result.error, "Should have error for not implemented")
         
-        // Test null document type
-        document = swift_dash_document_fetch(
-            sdk, contract, nil, documentId
-        )
-        XCTAssertNil(document)
-        
-        // Test null document ID
-        document = swift_dash_document_fetch(
-            sdk, contract, documentType, nil
-        )
-        XCTAssertNil(document)
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, NotImplemented, "Should be NotImplemented error")
+            swift_dash_error_free(error)
+        }
     }
     
-    // MARK: - Document Info Tests
-    
-    func testDocumentGetInfo() {
-        let document = swift_dash_document_fetch(
-            sdk, contract, "message", "test_doc_789"
-        )
-        XCTAssertNotNil(document)
+    func testDocumentDeleteWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        guard let document = document else { return }
+        // Test with null SDK
+        var result = swift_dash_document_delete(nil, nonExistentDocumentId)
+        XCTAssertFalse(result.success, "Should fail with null SDK")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
         
-        let info = swift_dash_document_get_info(document)
-        XCTAssertNotNil(info)
-        
-        guard let info = info else { return }
-        defer { swift_dash_document_info_free(info) }
-        
-        // Verify info contents
-        XCTAssertNotNil(info.pointee.id)
-        let idString = String(cString: info.pointee.id)
-        XCTAssertEqual(idString, "test_doc_789")
-        
-        XCTAssertNotNil(info.pointee.owner_id)
-        let ownerString = String(cString: info.pointee.owner_id)
-        XCTAssertEqual(ownerString, "test_identity_123")
-        
-        XCTAssertNotNil(info.pointee.data_contract_id)
-        let contractString = String(cString: info.pointee.data_contract_id)
-        XCTAssertEqual(contractString, "test_contract_456")
-        
-        XCTAssertNotNil(info.pointee.document_type)
-        let typeString = String(cString: info.pointee.document_type)
-        XCTAssertEqual(typeString, "message")
-        
-        XCTAssertEqual(info.pointee.revision, 1)
-        XCTAssertEqual(info.pointee.created_at, 1640000000000)
-        XCTAssertEqual(info.pointee.updated_at, 1640000001000)
+        // Test with null document ID
+        result = swift_dash_document_delete(sdk, nil)
+        XCTAssertFalse(result.success, "Should fail with null document ID")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
     }
     
-    func testDocumentGetInfoNullHandle() {
-        let info = swift_dash_document_get_info(nil)
-        XCTAssertNil(info)
-    }
+    // MARK: - Complex Query Examples
     
-    // MARK: - Put to Platform Tests
-    
-    func testDocumentPutToPlatform() {
-        let document = swift_dash_document_create(
-            sdk, contract, "test_identity_123", "message",
+    func testComplexDocumentQueries() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        // Test various query patterns that would be used in real applications
+        let queries = [
+            // Simple equality query
             """
             {
-                "content": "Test message",
-                "timestamp": 1640000000000
+                "where": [
+                    ["normalizedLabel", "==", "dash"]
+                ]
+            }
+            """,
+            // Range query
+            """
+            {
+                "where": [
+                    ["$createdAt", ">=", 1640000000000],
+                    ["$createdAt", "<=", 1650000000000]
+                ],
+                "orderBy": [["$createdAt", "desc"]],
+                "limit": 100
+            }
+            """,
+            // Complex query with multiple conditions
+            """
+            {
+                "where": [
+                    ["normalizedParentDomainName", "==", "dash"],
+                    ["records.dashUniqueIdentityId", "!=", null]
+                ],
+                "orderBy": [["normalizedLabel", "asc"]],
+                "startAt": 0,
+                "limit": 50
+            }
+            """,
+            // Prefix search
+            """
+            {
+                "where": [
+                    ["normalizedLabel", "startsWith", "test"]
+                ],
+                "orderBy": [["normalizedLabel", "asc"]]
             }
             """
-        )
-        XCTAssertNotNil(document)
+        ]
         
-        guard let document = document else { return }
-        
-        var settings = swift_dash_put_settings_default()
-        settings.timeout_ms = 60000
-        
-        let result = swift_dash_document_put_to_platform(
-            sdk, document, 0, signer, &settings
-        )
-        
-        XCTAssertNotNil(result)
-        
-        guard let result = result else { return }
-        defer { swift_dash_binary_data_free(result) }
-        
-        // Verify binary data
-        XCTAssertGreaterThan(result.pointee.len, 0)
-        XCTAssertNotNil(result.pointee.data)
-        XCTAssertEqual(result.pointee.len, 256) // Mock returns 256 bytes
+        for (index, query) in queries.enumerated() {
+            let result = swift_dash_document_search(sdk, existingDataContractId, documentType, query, 10)
+            // All should return nil in mock implementation
+            XCTAssertNil(result, "Query \(index + 1) should return nil in mock")
+        }
     }
     
-    func testDocumentPutToPlatformNullSafety() {
-        var settings = swift_dash_put_settings_default()
-        
-        // Test null SDK
-        var result = swift_dash_document_put_to_platform(
-            nil, nil, 0, signer, &settings
-        )
-        XCTAssertNil(result)
-        
-        // Test null document
-        result = swift_dash_document_put_to_platform(
-            sdk, nil, 0, signer, &settings
-        )
-        XCTAssertNil(result)
-        
-        // Test null signer
-        let document = swift_dash_document_fetch(
-            sdk, contract, "message", "test_doc_789"
-        )
-        result = swift_dash_document_put_to_platform(
-            sdk, document, 0, nil, &settings
-        )
-        XCTAssertNil(result)
-    }
+    // MARK: - Document Schema Examples
     
-    // MARK: - Complex Document Tests
-    
-    func testCreateComplexDocument() {
-        let ownerId = "test_identity_123"
-        
-        // Create a more complex document with nested data
-        let complexData = """
-        {
-            "title": "My Blog Post",
-            "content": "This is a detailed blog post about Dash Platform",
-            "author": {
-                "name": "John Doe",
-                "id": "author_identity_123"
-            },
-            "metadata": {
-                "tags": ["blockchain", "dash", "decentralized"],
-                "category": "Technology",
-                "readTime": 5
-            },
-            "stats": {
-                "views": 1000,
-                "likes": 50,
-                "shares": 10
-            },
-            "published": true,
-            "publishedAt": 1640000000000
-        }
-        """
-        
-        let document = swift_dash_document_create(
-            sdk, contract, ownerId, "blog_post", complexData
-        )
-        
-        XCTAssertNotNil(document)
-    }
-    
-    func testCreateDocumentWithArrays() {
-        let ownerId = "test_identity_123"
-        
-        // Document with array fields
-        let arrayData = """
-        {
-            "title": "Shopping List",
-            "items": [
-                {"name": "Apples", "quantity": 5},
-                {"name": "Bananas", "quantity": 3},
-                {"name": "Oranges", "quantity": 7}
-            ],
-            "categories": ["fruits", "groceries"],
-            "createdBy": "\(ownerId)",
-            "timestamp": 1640000000000
-        }
-        """
-        
-        let document = swift_dash_document_create(
-            sdk, contract, ownerId, "list", arrayData
-        )
-        
-        XCTAssertNotNil(document)
-    }
-    
-    func testDocumentLifecycle() {
-        // Test creating, fetching, and putting a document
-        let ownerId = "test_identity_123"
-        let documentType = "profile"
-        let profileData = """
-        {
-            "username": "dashuser",
-            "displayName": "Dash User",
-            "bio": "Enthusiast of decentralized platforms",
-            "avatar": "https://example.com/avatar.png",
-            "verified": false,
-            "joinedAt": 1640000000000
-        }
-        """
-        
-        // 1. Create document
-        let createdDoc = swift_dash_document_create(
-            sdk, contract, ownerId, documentType, profileData
-        )
-        XCTAssertNotNil(createdDoc)
-        
-        guard let createdDoc = createdDoc else { return }
-        
-        // 2. Put to platform
-        var settings = swift_dash_put_settings_default()
-        settings.timeout_ms = 60000
-        
-        let putResult = swift_dash_document_put_to_platform(
-            sdk, createdDoc, 0, signer, &settings
-        )
-        XCTAssertNotNil(putResult)
-        
-        if let putResult = putResult {
-            swift_dash_binary_data_free(putResult)
+    func testDifferentDocumentTypes() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
         }
         
-        // 3. Fetch document (simulating retrieval after put)
-        let fetchedDoc = swift_dash_document_fetch(
-            sdk, contract, documentType, "test_doc_789"
-        )
-        XCTAssertNotNil(fetchedDoc)
-        
-        // 4. Get info from fetched document
-        if let fetchedDoc = fetchedDoc {
-            let info = swift_dash_document_get_info(fetchedDoc)
-            XCTAssertNotNil(info)
-            
-            if let info = info {
-                swift_dash_document_info_free(info)
+        // Test different document type structures
+        let documentExamples = [
+            // DPNS domain document
+            (type: "domain", properties: """
+            {
+                "label": "example",
+                "normalizedLabel": "example",
+                "normalizedParentDomainName": "dash",
+                "preorderSalt": "1234567890abcdef",
+                "records": {
+                    "dashUniqueIdentityId": "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+                },
+                "subdomainRules": {
+                    "allowSubdomains": true
+                }
             }
-        }
-    }
-    
-    func testDocumentBatchOperations() {
-        let ownerId = "test_identity_123"
-        var settings = swift_dash_put_settings_default()
-        settings.timeout_ms = 60000
-        
-        // Create multiple documents
-        let documents = [
-            ("message", """
-            {"content": "First message", "timestamp": 1640000000000}
             """),
-            ("message", """
-            {"content": "Second message", "timestamp": 1640000001000}
+            // Profile document
+            (type: "profile", properties: """
+            {
+                "publicMessage": "Hello from Dash Platform!",
+                "displayName": "Test User",
+                "avatarUrl": "https://example.com/avatar.png",
+                "avatarHash": "abcdef1234567890",
+                "avatarFingerprint": "fingerprint123"
+            }
             """),
-            ("message", """
-            {"content": "Third message", "timestamp": 1640000002000}
+            // Contact request document
+            (type: "contactRequest", properties: """
+            {
+                "toUserId": "7777777777777777777777777777777777777777777",
+                "encryptedPublicKey": "encrypted_key_data",
+                "senderKeyIndex": 0,
+                "recipientKeyIndex": 1,
+                "accountReference": 0
+            }
             """)
         ]
         
-        var createdDocs: [OpaquePointer] = []
-        
-        // Create all documents
-        for (docType, data) in documents {
-            if let doc = swift_dash_document_create(
-                sdk, contract, ownerId, docType, data
-            ) {
-                createdDocs.append(doc)
-            }
-        }
-        
-        XCTAssertEqual(createdDocs.count, documents.count)
-        
-        // Put all documents to platform
-        for doc in createdDocs {
-            let result = swift_dash_document_put_to_platform(
-                sdk, doc, 0, signer, &settings
+        for example in documentExamples {
+            let result = swift_dash_document_create(
+                sdk,
+                existingDataContractId,
+                example.type,
+                example.properties,
+                existingIdentityId
             )
-            XCTAssertNotNil(result)
             
-            if let result = result {
-                swift_dash_binary_data_free(result)
+            // All should fail with not implemented in mock
+            XCTAssertFalse(result.success, "\(example.type) creation should fail (not implemented)")
+            if let error = result.error {
+                XCTAssertEqual(error.pointee.code, NotImplemented, "Should be NotImplemented error")
+                swift_dash_error_free(error)
             }
         }
     }

@@ -3,8 +3,12 @@ import SwiftDashSDKMock
 
 class DataContractTests: XCTestCase {
     
-    var sdk: OpaquePointer!
-    var signer: OpaquePointer!
+    var sdk: UnsafeMutablePointer<SwiftDashSDKHandle>?
+    
+    // Test configuration data - matching rs-sdk-ffi test vectors
+    let existingDataContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+    let nonExistentContractId = "1111111111111111111111111111111111111111111"
+    let existingIdentityId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
     
     override func setUp() {
         super.setUp()
@@ -12,309 +16,283 @@ class DataContractTests: XCTestCase {
         
         let config = swift_dash_sdk_config_testnet()
         sdk = swift_dash_sdk_create(config)
-        signer = swift_dash_signer_create_test()
+        XCTAssertNotNil(sdk, "SDK should be created successfully")
     }
     
     override func tearDown() {
-        if let signer = signer {
-            swift_dash_signer_destroy(signer)
-        }
         if let sdk = sdk {
             swift_dash_sdk_destroy(sdk)
         }
         super.tearDown()
     }
     
-    // MARK: - Contract Fetch Tests
-    
-    func testDataContractFetchSuccess() {
-        let contractId = "test_contract_456"
-        let contract = swift_dash_data_contract_fetch(sdk, contractId)
-        
-        XCTAssertNotNil(contract)
-    }
+    // MARK: - Data Contract Fetch Tests
     
     func testDataContractFetchNotFound() {
-        let contractId = "non_existent_contract"
-        let contract = swift_dash_data_contract_fetch(sdk, contractId)
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        XCTAssertNil(contract)
+        let result = swift_dash_data_contract_fetch(sdk, nonExistentContractId)
+        XCTAssertNil(result, "Non-existent data contract should return nil")
     }
     
-    func testDataContractFetchNullSafety() {
-        // Test null SDK
-        var contract = swift_dash_data_contract_fetch(nil, "test_id")
-        XCTAssertNil(contract)
+    func testDataContractFetch() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        // Test null contract ID
-        contract = swift_dash_data_contract_fetch(sdk, nil)
-        XCTAssertNil(contract)
+        let result = swift_dash_data_contract_fetch(sdk, existingDataContractId)
+        XCTAssertNotNil(result, "Existing data contract should return data")
         
-        // Test both null
-        contract = swift_dash_data_contract_fetch(nil, nil)
-        XCTAssertNil(contract)
+        if let jsonString = result {
+            let jsonStr = String(cString: jsonString)
+            XCTAssertFalse(jsonStr.isEmpty, "JSON string should not be empty")
+            
+            // Verify we can parse the JSON
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                XCTFail("Should be valid JSON")
+                return
+            }
+            
+            // Verify we got a data contract back
+            XCTAssertNotNil(json["id"], "Data contract should have an id field")
+            XCTAssertNotNil(json["version"], "Data contract should have a version field")
+            
+            // Verify the contract ID matches
+            if let id = json["id"] as? String {
+                XCTAssertEqual(id, existingDataContractId, "Contract ID should match requested ID")
+            }
+            
+            // Clean up
+            swift_dash_string_free(jsonString)
+        }
     }
     
-    // MARK: - Contract Creation Tests
+    func testDataContractFetchWithNullSDK() {
+        let result = swift_dash_data_contract_fetch(nil, existingDataContractId)
+        XCTAssertNil(result, "Should return nil for null SDK handle")
+    }
+    
+    func testDataContractFetchWithNullContractId() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let result = swift_dash_data_contract_fetch(sdk, nil)
+        XCTAssertNil(result, "Should return nil for null contract ID")
+    }
+    
+    // MARK: - Data Contract History Tests
+    
+    func testDataContractHistory() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let result = swift_dash_data_contract_get_history(sdk, existingDataContractId, 10, 0)
+        
+        if let jsonString = result {
+            let jsonStr = String(cString: jsonString)
+            XCTAssertFalse(jsonStr.isEmpty, "JSON string should not be empty")
+            
+            // Verify we can parse the JSON
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                XCTFail("Should be valid JSON")
+                return
+            }
+            
+            // Should have contract_id and history fields
+            XCTAssertNotNil(json["contract_id"], "Should have contract_id field")
+            XCTAssertNotNil(json["history"], "Should have history field")
+            
+            if let contractId = json["contract_id"] as? String {
+                XCTAssertEqual(contractId, existingDataContractId, "Contract ID should match")
+            }
+            
+            // Clean up
+            swift_dash_string_free(jsonString)
+        } else {
+            // No history is also valid for test vectors
+            XCTAssertTrue(true, "Contract history may return nil if no history exists")
+        }
+    }
+    
+    func testDataContractHistoryNotFound() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let result = swift_dash_data_contract_get_history(sdk, nonExistentContractId, 10, 0)
+        XCTAssertNil(result, "Non-existent contract should have no history")
+    }
+    
+    func testDataContractHistoryWithNullSDK() {
+        let result = swift_dash_data_contract_get_history(nil, existingDataContractId, 10, 0)
+        XCTAssertNil(result, "Should return nil for null SDK handle")
+    }
+    
+    func testDataContractHistoryWithNullContractId() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let result = swift_dash_data_contract_get_history(sdk, nil, 10, 0)
+        XCTAssertNil(result, "Should return nil for null contract ID")
+    }
+    
+    // MARK: - Data Contract Creation Tests
     
     func testDataContractCreate() {
-        let ownerId = "test_identity_123"
-        let schema = """
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let schemaJson = """
         {
-            "$format_version": "0",
-            "ownerId": "\(ownerId)",
             "documents": {
                 "message": {
                     "type": "object",
                     "properties": {
                         "content": {
                             "type": "string",
-                            "maxLength": 280
-                        },
-                        "timestamp": {
-                            "type": "integer"
+                            "maxLength": 256
                         }
                     },
-                    "required": ["content", "timestamp"],
-                    "additionalProperties": false
+                    "required": ["content"]
                 }
             }
         }
         """
         
-        let contract = swift_dash_data_contract_create(sdk, ownerId, schema)
-        XCTAssertNotNil(contract)
+        let result = swift_dash_data_contract_create(sdk, schemaJson, existingIdentityId)
+        
+        // Since this is not implemented in mock, should return not implemented error
+        XCTAssertFalse(result.success, "Data contract creation should fail (not implemented)")
+        XCTAssertNotNil(result.error, "Should have error for not implemented")
+        
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, NotImplemented, "Should be NotImplemented error")
+            
+            if let message = error.pointee.message {
+                let messageStr = String(cString: message)
+                XCTAssertTrue(messageStr.contains("not yet implemented"), "Error message should mention not implemented")
+            }
+            
+            // Clean up error
+            swift_dash_error_free(error)
+        }
     }
     
-    func testDataContractCreateNullSafety() {
-        let ownerId = "test_identity_123"
-        let schema = "{}"
+    func testDataContractCreateWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        // Test null SDK
-        var contract = swift_dash_data_contract_create(nil, ownerId, schema)
-        XCTAssertNil(contract)
+        let schemaJson = "{\"documents\":{\"test\":{\"type\":\"object\"}}}"
         
-        // Test null owner ID
-        contract = swift_dash_data_contract_create(sdk, nil, schema)
-        XCTAssertNil(contract)
+        // Test with null SDK
+        var result = swift_dash_data_contract_create(nil, schemaJson, existingIdentityId)
+        XCTAssertFalse(result.success, "Should fail with null SDK")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
         
-        // Test null schema
-        contract = swift_dash_data_contract_create(sdk, ownerId, nil)
-        XCTAssertNil(contract)
+        // Test with null schema JSON
+        result = swift_dash_data_contract_create(sdk, nil, existingIdentityId)
+        XCTAssertFalse(result.success, "Should fail with null schema JSON")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
+        
+        // Test with null owner ID
+        result = swift_dash_data_contract_create(sdk, schemaJson, nil)
+        XCTAssertFalse(result.success, "Should fail with null owner ID")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
     }
     
-    // MARK: - Contract Info Tests
+    // MARK: - Data Contract Update Tests
     
-    func testDataContractGetInfo() {
-        let contract = swift_dash_data_contract_fetch(sdk, "test_contract_456")
-        XCTAssertNotNil(contract)
+    func testDataContractUpdate() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
         
-        guard let contract = contract else { return }
-        
-        let infoJson = swift_dash_data_contract_get_info(contract)
-        XCTAssertNotNil(infoJson)
-        
-        guard let infoJson = infoJson else { return }
-        defer { free(infoJson) }
-        
-        let jsonString = String(cString: infoJson)
-        XCTAssertFalse(jsonString.isEmpty)
-        XCTAssertTrue(jsonString.contains("test_contract_456"))
-        XCTAssertTrue(jsonString.contains("version"))
-    }
-    
-    func testDataContractGetInfoNullHandle() {
-        let info = swift_dash_data_contract_get_info(nil)
-        XCTAssertNil(info)
-    }
-    
-    // MARK: - Put to Platform Tests
-    
-    func testDataContractPutToPlatform() {
-        let ownerId = "test_identity_123"
-        let schema = """
+        let schemaJson = """
         {
             "documents": {
-                "profile": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "age": {"type": "integer"}
-                    }
-                }
-            }
-        }
-        """
-        
-        let contract = swift_dash_data_contract_create(sdk, ownerId, schema)
-        XCTAssertNotNil(contract)
-        
-        guard let contract = contract else { return }
-        
-        var settings = swift_dash_put_settings_default()
-        settings.timeout_ms = 60000
-        
-        let result = swift_dash_data_contract_put_to_platform(
-            sdk, contract, 0, signer, &settings
-        )
-        
-        XCTAssertNotNil(result)
-        
-        guard let result = result else { return }
-        defer { swift_dash_binary_data_free(result) }
-        
-        // Verify binary data
-        XCTAssertGreaterThan(result.pointee.len, 0)
-        XCTAssertNotNil(result.pointee.data)
-        XCTAssertEqual(result.pointee.len, 128) // Mock returns 128 bytes
-    }
-    
-    func testDataContractPutToPlatformNullSafety() {
-        var settings = swift_dash_put_settings_default()
-        
-        // Test null SDK
-        var result = swift_dash_data_contract_put_to_platform(
-            nil, nil, 0, signer, &settings
-        )
-        XCTAssertNil(result)
-        
-        // Test null contract
-        result = swift_dash_data_contract_put_to_platform(
-            sdk, nil, 0, signer, &settings
-        )
-        XCTAssertNil(result)
-        
-        // Test null signer
-        let contract = swift_dash_data_contract_fetch(sdk, "test_contract_456")
-        result = swift_dash_data_contract_put_to_platform(
-            sdk, contract, 0, nil, &settings
-        )
-        XCTAssertNil(result)
-    }
-    
-    // MARK: - Schema Examples
-    
-    func testComplexDataContractSchema() {
-        let ownerId = "test_identity_123"
-        
-        // DPNS-like contract schema
-        let dpnsSchema = """
-        {
-            "$format_version": "0",
-            "id": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-            "ownerId": "\(ownerId)",
-            "version": 1,
-            "documentSchemas": {
-                "domain": {
-                    "type": "object",
-                    "properties": {
-                        "label": {
-                            "type": "string",
-                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
-                            "minLength": 3,
-                            "maxLength": 63,
-                            "description": "Domain label"
-                        },
-                        "normalizedLabel": {
-                            "type": "string",
-                            "pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
-                            "maxLength": 63,
-                            "description": "Normalized domain label"
-                        },
-                        "normalizedParentDomainName": {
-                            "type": "string",
-                            "pattern": "^$|^[a-z0-9][a-z0-9-\\\\.]{0,189}[a-z0-9]$",
-                            "maxLength": 190,
-                            "description": "Parent domain"
-                        },
-                        "records": {
-                            "type": "object",
-                            "properties": {
-                                "dashUniqueIdentityId": {
-                                    "type": "array",
-                                    "byteArray": true,
-                                    "minItems": 32,
-                                    "maxItems": 32,
-                                    "description": "Identity ID"
-                                }
-                            },
-                            "additionalProperties": false
-                        }
-                    },
-                    "required": ["label", "normalizedLabel", "normalizedParentDomainName", "records"],
-                    "additionalProperties": false
-                }
-            }
-        }
-        """
-        
-        let contract = swift_dash_data_contract_create(sdk, ownerId, dpnsSchema)
-        XCTAssertNotNil(contract)
-    }
-    
-    func testSocialMediaContractSchema() {
-        let ownerId = "test_identity_123"
-        
-        // Social media-like contract
-        let socialSchema = """
-        {
-            "$format_version": "0",
-            "ownerId": "\(ownerId)",
-            "documents": {
-                "post": {
+                "message": {
                     "type": "object",
                     "properties": {
                         "content": {
                             "type": "string",
-                            "maxLength": 280
-                        },
-                        "author": {
-                            "type": "string"
-                        },
-                        "timestamp": {
-                            "type": "integer"
-                        },
-                        "likes": {
-                            "type": "integer",
-                            "minimum": 0
-                        },
-                        "tags": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "maxLength": 50
-                            },
-                            "maxItems": 10
+                            "maxLength": 512
                         }
                     },
-                    "required": ["content", "author", "timestamp"],
-                    "additionalProperties": false
-                },
-                "comment": {
-                    "type": "object",
-                    "properties": {
-                        "postId": {
-                            "type": "string"
-                        },
-                        "content": {
-                            "type": "string",
-                            "maxLength": 280
-                        },
-                        "author": {
-                            "type": "string"
-                        },
-                        "timestamp": {
-                            "type": "integer"
-                        }
-                    },
-                    "required": ["postId", "content", "author", "timestamp"],
-                    "additionalProperties": false
+                    "required": ["content"]
                 }
             }
         }
         """
         
-        let contract = swift_dash_data_contract_create(sdk, ownerId, socialSchema)
-        XCTAssertNotNil(contract)
+        let result = swift_dash_data_contract_update(sdk, existingDataContractId, schemaJson, 2)
+        
+        // Since this is not implemented in mock, should return not implemented error
+        XCTAssertFalse(result.success, "Data contract update should fail (not implemented)")
+        XCTAssertNotNil(result.error, "Should have error for not implemented")
+        
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, NotImplemented, "Should be NotImplemented error")
+            swift_dash_error_free(error)
+        }
+    }
+    
+    func testDataContractUpdateWithNullParams() {
+        guard let sdk = sdk else {
+            XCTFail("SDK not initialized")
+            return
+        }
+        
+        let schemaJson = "{\"documents\":{\"test\":{\"type\":\"object\"}}}"
+        
+        // Test with null SDK
+        var result = swift_dash_data_contract_update(nil, existingDataContractId, schemaJson, 2)
+        XCTAssertFalse(result.success, "Should fail with null SDK")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
+        
+        // Test with null contract ID
+        result = swift_dash_data_contract_update(sdk, nil, schemaJson, 2)
+        XCTAssertFalse(result.success, "Should fail with null contract ID")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
+        
+        // Test with null schema JSON
+        result = swift_dash_data_contract_update(sdk, existingDataContractId, nil, 2)
+        XCTAssertFalse(result.success, "Should fail with null schema JSON")
+        if let error = result.error {
+            XCTAssertEqual(error.pointee.code, InvalidParameter, "Should be InvalidParameter error")
+            swift_dash_error_free(error)
+        }
     }
 }

@@ -25,9 +25,6 @@ class SDKTests: XCTestCase {
             let versionString = String(cString: version)
             XCTAssertFalse(versionString.isEmpty)
             XCTAssertTrue(versionString.contains("2.0.0"))
-            
-            // Clean up - in real SDK this would be ios_sdk_string_free
-            free(version)
         }
     }
     
@@ -36,32 +33,35 @@ class SDKTests: XCTestCase {
     func testMainnetConfiguration() {
         let config = swift_dash_sdk_config_mainnet()
         
-        XCTAssertEqual(config.network, SwiftDashNetwork_Mainnet)
-        XCTAssertFalse(config.skip_asset_lock_proof_verification)
-        XCTAssertEqual(config.request_retry_count, 3)
-        XCTAssertEqual(config.request_timeout_ms, 30000)
+        XCTAssertEqual(config.network, Mainnet)
+        XCTAssertNotNil(config.dapi_addresses)
+        
+        let dapiAddresses = String(cString: config.dapi_addresses)
+        XCTAssertFalse(dapiAddresses.isEmpty)
     }
     
     func testTestnetConfiguration() {
         let config = swift_dash_sdk_config_testnet()
         
-        XCTAssertEqual(config.network, SwiftDashNetwork_Testnet)
-        XCTAssertFalse(config.skip_asset_lock_proof_verification)
-        XCTAssertEqual(config.request_retry_count, 3)
-        XCTAssertEqual(config.request_timeout_ms, 30000)
+        XCTAssertEqual(config.network, Testnet)
+        XCTAssertNotNil(config.dapi_addresses)
+        
+        let dapiAddresses = String(cString: config.dapi_addresses)
+        XCTAssertFalse(dapiAddresses.isEmpty)
     }
     
     func testLocalConfiguration() {
         let config = swift_dash_sdk_config_local()
         
-        XCTAssertEqual(config.network, SwiftDashNetwork_Local)
-        XCTAssertTrue(config.skip_asset_lock_proof_verification)
-        XCTAssertEqual(config.request_retry_count, 1)
-        XCTAssertEqual(config.request_timeout_ms, 10000)
+        XCTAssertEqual(config.network, Local)
+        XCTAssertNotNil(config.dapi_addresses)
+        
+        let dapiAddresses = String(cString: config.dapi_addresses)
+        XCTAssertTrue(dapiAddresses.contains("127.0.0.1"))
     }
     
     func testDefaultPutSettings() {
-        var settings = swift_dash_put_settings_default()
+        let settings = swift_dash_put_settings_default()
         
         XCTAssertEqual(settings.connect_timeout_ms, 0)
         XCTAssertEqual(settings.timeout_ms, 0)
@@ -85,19 +85,11 @@ class SDKTests: XCTestCase {
         if let sdk = sdk {
             // Test we can get network from SDK
             let network = swift_dash_sdk_get_network(sdk)
-            XCTAssertEqual(network, SwiftDashNetwork_Testnet)
+            XCTAssertEqual(network, Testnet)
             
             // Clean up
             swift_dash_sdk_destroy(sdk)
         }
-    }
-    
-    func testSDKCreateWithInvalidConfig() {
-        var config = swift_dash_sdk_config_testnet()
-        config.request_timeout_ms = 0 // Invalid timeout
-        
-        let sdk = swift_dash_sdk_create(config)
-        XCTAssertNil(sdk, "SDK should not be created with invalid config")
     }
     
     func testSDKDestroyNullHandle() {
@@ -108,24 +100,7 @@ class SDKTests: XCTestCase {
     
     func testGetNetworkWithNullHandle() {
         let network = swift_dash_sdk_get_network(nil)
-        XCTAssertEqual(network, SwiftDashNetwork_Testnet, "Should return default network for null handle")
-    }
-    
-    // MARK: - Signer Tests
-    
-    func testSignerCreateAndDestroy() {
-        let signer = swift_dash_signer_create_test()
-        XCTAssertNotNil(signer)
-        
-        if let signer = signer {
-            swift_dash_signer_destroy(signer)
-        }
-    }
-    
-    func testSignerDestroyNullHandle() {
-        // Should not crash
-        swift_dash_signer_destroy(nil)
-        XCTAssertTrue(true, "Destroying null signer should not crash")
+        XCTAssertEqual(network, Testnet, "Should return default network for null handle")
     }
     
     // MARK: - Custom Put Settings Tests

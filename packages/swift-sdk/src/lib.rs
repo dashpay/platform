@@ -50,9 +50,7 @@ pub extern "C" fn swift_dash_sdk_init() {
     }));
 
     // Initialize the underlying FFI
-    unsafe {
-        rs_sdk_ffi::ios_sdk_init();
-    }
+    rs_sdk_ffi::dash_sdk_init();
 }
 
 /// Get the version of the Swift Dash SDK library

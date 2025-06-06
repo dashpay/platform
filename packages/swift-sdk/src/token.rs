@@ -1,409 +1,104 @@
-//! Token operations for Swift SDK
-//!
-//! This module provides Swift-friendly wrappers for token operations
-//! available in the rs-sdk-ffi crate.
-
+use crate::error::{SwiftDashError, SwiftDashResult};
+use std::ffi::CString;
 use std::os::raw::c_char;
+use std::ptr;
 
-use crate::error::SwiftDashResult;
-
-/// Swift-friendly token transfer parameters
+/// Token information
 #[repr(C)]
-pub struct SwiftDashTokenTransferParams {
-    /// Token contract ID (Base58 encoded string)
-    pub token_contract_id: *const c_char,
-    /// Recipient identity ID (Base58 encoded string)
-    pub recipient_id: *const c_char,
-    /// Amount to transfer
-    pub amount: u64,
-    /// Optional public note
-    pub public_note: *const c_char,
+pub struct SwiftDashTokenInfo {
+    pub contract_id: *mut c_char,
+    pub name: *mut c_char,
+    pub symbol: *mut c_char,
+    pub total_supply: u64,
+    pub decimals: u8,
 }
 
-/// Swift-friendly token mint parameters
-#[repr(C)]
-pub struct SwiftDashTokenMintParams {
-    /// Token contract ID (Base58 encoded string)
-    pub token_contract_id: *const c_char,
-    /// Recipient identity ID (Base58 encoded string)
-    pub recipient_id: *const c_char,
-    /// Amount to mint
-    pub amount: u64,
-    /// Optional public note
-    pub public_note: *const c_char,
+/// Get token total supply
+#[no_mangle]
+pub extern "C" fn swift_dash_token_get_total_supply(
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    token_contract_id: *const c_char,
+) -> *mut c_char {
+    if sdk_handle.is_null() || token_contract_id.is_null() {
+        return ptr::null_mut();
+    }
+
+    unsafe {
+        let result = rs_sdk_ffi::dash_sdk_token_get_total_supply(sdk_handle, token_contract_id);
+
+        if !result.error.is_null() {
+            let _ = Box::from_raw(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut c_char
+    }
 }
 
-/// Swift-friendly token burn parameters
-#[repr(C)]
-pub struct SwiftDashTokenBurnParams {
-    /// Token contract ID (Base58 encoded string)
-    pub token_contract_id: *const c_char,
-    /// Amount to burn
-    pub amount: u64,
-    /// Optional public note
-    pub public_note: *const c_char,
-}
-
-/// Token distribution type for claim operations
-#[repr(C)]
-pub enum SwiftDashTokenDistributionType {
-    /// Pre-programmed distribution
-    PreProgrammed = 0,
-    /// Perpetual distribution
-    Perpetual = 1,
-}
-
-/// Swift-friendly token claim parameters
-#[repr(C)]
-pub struct SwiftDashTokenClaimParams {
-    /// Token contract ID (Base58 encoded string)
-    pub token_contract_id: *const c_char,
-    /// Distribution type (PreProgrammed or Perpetual)
-    pub distribution_type: SwiftDashTokenDistributionType,
-    /// Optional public note
-    pub public_note: *const c_char,
-}
-
-/// Transfer tokens between identities
+/// Transfer tokens (simplified - returns not implemented)
 #[no_mangle]
 pub extern "C" fn swift_dash_token_transfer(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    sender_identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenTransferParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    token_contract_id: *const c_char,
+    from_identity_id: *const c_char,
+    to_identity_id: *const c_char,
+    _amount: u64,
 ) -> SwiftDashResult {
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenTransferParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        recipient_id: params.recipient_id,
-        amount: params.amount,
-        public_note: params.public_note,
-        private_encrypted_note: std::ptr::null(),
-        shared_encrypted_note: std::ptr::null(),
-    };
+    if sdk_handle.is_null() || token_contract_id.is_null() || from_identity_id.is_null() || to_identity_id.is_null() {
+        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
+    }
 
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_transfer(
-            sdk_handle,
-            sender_identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
+    // Token transfers require complex state transition setup with signers
+    SwiftDashResult::error(SwiftDashError::not_implemented("Token transfer not yet implemented"))
 }
 
-/// Transfer tokens and wait for confirmation
-#[no_mangle]
-pub extern "C" fn swift_dash_token_transfer_and_wait(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    sender_identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenTransferParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
-) -> SwiftDashResult {
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenTransferParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        recipient_id: params.recipient_id,
-        amount: params.amount,
-        public_note: params.public_note,
-        private_encrypted_note: std::ptr::null(),
-        shared_encrypted_note: std::ptr::null(),
-    };
-
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_transfer_and_wait(
-            sdk_handle,
-            sender_identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Mint new tokens
+/// Mint tokens (simplified - returns not implemented)
 #[no_mangle]
 pub extern "C" fn swift_dash_token_mint(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenMintParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    token_contract_id: *const c_char,
+    to_identity_id: *const c_char,
+    _amount: u64,
 ) -> SwiftDashResult {
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenMintParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        recipient_id: params.recipient_id,
-        amount: params.amount,
-        public_note: params.public_note,
-    };
+    if sdk_handle.is_null() || token_contract_id.is_null() || to_identity_id.is_null() {
+        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
+    }
 
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_mint(
-            sdk_handle,
-            identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
+    // Token minting requires complex state transition setup with signers
+    SwiftDashResult::error(SwiftDashError::not_implemented("Token minting not yet implemented"))
 }
 
-/// Mint new tokens and wait for confirmation
-#[no_mangle]
-pub extern "C" fn swift_dash_token_mint_and_wait(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenMintParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
-) -> SwiftDashResult {
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenMintParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        recipient_id: params.recipient_id,
-        amount: params.amount,
-        public_note: params.public_note,
-    };
-
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_mint_and_wait(
-            sdk_handle,
-            identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Burn tokens
+/// Burn tokens (simplified - returns not implemented)
 #[no_mangle]
 pub extern "C" fn swift_dash_token_burn(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenBurnParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
-) -> SwiftDashResult {
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenBurnParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        amount: params.amount,
-        public_note: params.public_note,
-    };
-
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_burn(
-            sdk_handle,
-            identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Burn tokens and wait for confirmation
-#[no_mangle]
-pub extern "C" fn swift_dash_token_burn_and_wait(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenBurnParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
-) -> SwiftDashResult {
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenBurnParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        amount: params.amount,
-        public_note: params.public_note,
-    };
-
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_burn_and_wait(
-            sdk_handle,
-            identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Claim tokens from distribution
-#[no_mangle]
-pub extern "C" fn swift_dash_token_claim(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenClaimParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
-) -> SwiftDashResult {
-    let ffi_distribution_type = match params.distribution_type {
-        SwiftDashTokenDistributionType::PreProgrammed => {
-            rs_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
-        }
-        SwiftDashTokenDistributionType::Perpetual => {
-            rs_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
-        }
-    };
-
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenClaimParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        distribution_type: ffi_distribution_type,
-        public_note: params.public_note,
-    };
-
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_claim(
-            sdk_handle,
-            identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Claim tokens from distribution and wait for confirmation
-#[no_mangle]
-pub extern "C" fn swift_dash_token_claim_and_wait(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_handle: rs_sdk_ffi::IdentityHandle,
-    params: SwiftDashTokenClaimParams,
-    public_key_id: u32,
-    signer_handle: rs_sdk_ffi::SignerHandle,
-    put_settings: rs_sdk_ffi::IOSSDKPutSettings,
-) -> SwiftDashResult {
-    let ffi_distribution_type = match params.distribution_type {
-        SwiftDashTokenDistributionType::PreProgrammed => {
-            rs_sdk_ffi::IOSSDKTokenDistributionType::PreProgrammed
-        }
-        SwiftDashTokenDistributionType::Perpetual => {
-            rs_sdk_ffi::IOSSDKTokenDistributionType::Perpetual
-        }
-    };
-
-    let ffi_params = rs_sdk_ffi::IOSSDKTokenClaimParams {
-        token_contract_id: params.token_contract_id,
-        serialized_contract: std::ptr::null(),
-        serialized_contract_len: 0,
-        token_position: 0, // Default to first token
-        distribution_type: ffi_distribution_type,
-        public_note: params.public_note,
-    };
-
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_claim_and_wait(
-            sdk_handle,
-            identity_handle,
-            ffi_params,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    };
-
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Get token balance for an identity
-#[no_mangle]
-pub extern "C" fn swift_dash_token_get_identity_balance(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_id: *const c_char,
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
     token_contract_id: *const c_char,
-    token_position: u16,
+    from_identity_id: *const c_char,
+    _amount: u64,
 ) -> SwiftDashResult {
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_get_identity_balances(
-            sdk_handle,
-            identity_id,
-            token_contract_id,
-            token_position,
-        )
-    };
+    if sdk_handle.is_null() || token_contract_id.is_null() || from_identity_id.is_null() {
+        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
+    }
 
-    SwiftDashResult::from_ffi_result(result)
+    // Token burning requires complex state transition setup with signers
+    SwiftDashResult::error(SwiftDashError::not_implemented("Token burning not yet implemented"))
 }
 
-/// Get token information for an identity
+/// Free token info structure
 #[no_mangle]
-pub extern "C" fn swift_dash_token_get_identity_info(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    identity_id: *const c_char,
-    token_contract_id: *const c_char,
-    token_position: u16,
-) -> SwiftDashResult {
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_get_identity_infos(
-            sdk_handle,
-            identity_id,
-            token_contract_id,
-            token_position,
-        )
-    };
+pub unsafe extern "C" fn swift_dash_token_info_free(info: *mut SwiftDashTokenInfo) {
+    if info.is_null() {
+        return;
+    }
 
-    SwiftDashResult::from_ffi_result(result)
-}
-
-/// Get token statuses for a contract
-#[no_mangle]
-pub extern "C" fn swift_dash_token_get_statuses(
-    sdk_handle: rs_sdk_ffi::SDKHandle,
-    token_contract_id: *const c_char,
-    token_position: u16,
-) -> SwiftDashResult {
-    let result = unsafe {
-        rs_sdk_ffi::ios_sdk_token_get_statuses(sdk_handle, token_contract_id, token_position)
-    };
-
-    SwiftDashResult::from_ffi_result(result)
+    let info = Box::from_raw(info);
+    if !info.contract_id.is_null() {
+        let _ = CString::from_raw(info.contract_id);
+    }
+    if !info.name.is_null() {
+        let _ = CString::from_raw(info.name);
+    }
+    if !info.symbol.is_null() {
+        let _ = CString::from_raw(info.symbol);
+    }
 }

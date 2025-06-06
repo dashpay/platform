@@ -1,214 +1,115 @@
-use crate::identity::SwiftDashBinaryData;
-use crate::sdk::SwiftDashPutSettings;
+use crate::error::{SwiftDashError, SwiftDashResult};
+use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
+
+/// Information about a data contract
+#[repr(C)]
+pub struct SwiftDashDataContractInfo {
+    pub id: *mut c_char,
+    pub owner_id: *mut c_char,
+    pub version: u32,
+    pub schema_json: *mut c_char,
+}
 
 /// Fetch a data contract by ID
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_fetch(
-    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
     contract_id: *const c_char,
-) -> *mut rs_sdk_ffi::DataContractHandle {
+) -> *mut c_char {
     if sdk_handle.is_null() || contract_id.is_null() {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = rs_sdk_ffi::ios_sdk_data_contract_fetch(sdk_handle, contract_id);
+        let result = rs_sdk_ffi::dash_sdk_data_contract_fetch(sdk_handle, contract_id);
 
         if !result.error.is_null() {
-            rs_sdk_ffi::ios_sdk_error_free(result.error);
+            let _ = Box::from_raw(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut rs_sdk_ffi::DataContractHandle
+        result.data as *mut c_char
     }
 }
 
-/// Create a new data contract from JSON schema
+/// Get data contract history
+#[no_mangle]
+pub extern "C" fn swift_dash_data_contract_get_history(
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    contract_id: *const c_char,
+    limit: u32,
+    offset: u32,
+) -> *mut c_char {
+    if sdk_handle.is_null() || contract_id.is_null() {
+        return ptr::null_mut();
+    }
+
+    unsafe {
+        let result = rs_sdk_ffi::dash_sdk_data_contract_fetch_history(
+            sdk_handle,
+            contract_id,
+            limit,
+            offset,
+            0, // start_at_ms parameter
+        );
+
+        if !result.error.is_null() {
+            let _ = Box::from_raw(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut c_char
+    }
+}
+
+/// Create a new data contract (simplified - returns not implemented)
 #[no_mangle]
 pub extern "C" fn swift_dash_data_contract_create(
-    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
-    owner_identity_id: *const c_char,
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
     schema_json: *const c_char,
-) -> *mut rs_sdk_ffi::DataContractHandle {
-    if sdk_handle.is_null() || owner_identity_id.is_null() || schema_json.is_null() {
-        return ptr::null_mut();
+    owner_id: *const c_char,
+) -> SwiftDashResult {
+    if sdk_handle.is_null() || schema_json.is_null() || owner_id.is_null() {
+        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
     }
 
-    unsafe {
-        let result =
-            rs_sdk_ffi::ios_sdk_data_contract_create(sdk_handle, owner_identity_id, schema_json);
-
-        if !result.error.is_null() {
-            rs_sdk_ffi::ios_sdk_error_free(result.error);
-            return ptr::null_mut();
-        }
-
-        result.data as *mut rs_sdk_ffi::DataContractHandle
-    }
+    // Data contract creation requires complex state transition setup
+    SwiftDashResult::error(SwiftDashError::not_implemented("Data contract creation not yet implemented"))
 }
 
-/// Get data contract information as JSON string
+/// Update an existing data contract (simplified - returns not implemented)
 #[no_mangle]
-pub extern "C" fn swift_dash_data_contract_get_info(
-    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
-) -> *mut c_char {
-    if contract_handle.is_null() {
-        return ptr::null_mut();
+pub extern "C" fn swift_dash_data_contract_update(
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    contract_id: *const c_char,
+    schema_json: *const c_char,
+    _version: u32,
+) -> SwiftDashResult {
+    if sdk_handle.is_null() || contract_id.is_null() || schema_json.is_null() {
+        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
     }
 
-    unsafe {
-        let result = rs_sdk_ffi::ios_sdk_data_contract_get_info(contract_handle);
-
-        if !result.error.is_null() {
-            rs_sdk_ffi::ios_sdk_error_free(result.error);
-            return ptr::null_mut();
-        }
-
-        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::String {
-            return ptr::null_mut();
-        }
-
-        result.data as *mut c_char
-    }
+    // Data contract updates require complex state transition setup
+    SwiftDashResult::error(SwiftDashError::not_implemented("Data contract update not yet implemented"))
 }
 
-/// Get schema for a specific document type
+/// Free data contract info structure
 #[no_mangle]
-pub extern "C" fn swift_dash_data_contract_get_schema(
-    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
-    document_type: *const c_char,
-) -> *mut c_char {
-    if contract_handle.is_null() || document_type.is_null() {
-        return ptr::null_mut();
+pub unsafe extern "C" fn swift_dash_data_contract_info_free(info: *mut SwiftDashDataContractInfo) {
+    if info.is_null() {
+        return;
     }
 
-    unsafe {
-        let result = rs_sdk_ffi::ios_sdk_data_contract_get_schema(contract_handle, document_type);
-
-        if !result.error.is_null() {
-            rs_sdk_ffi::ios_sdk_error_free(result.error);
-            return ptr::null_mut();
-        }
-
-        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::String {
-            return ptr::null_mut();
-        }
-
-        result.data as *mut c_char
+    let info = Box::from_raw(info);
+    if !info.id.is_null() {
+        let _ = CString::from_raw(info.id);
     }
-}
-
-/// Put data contract to platform and return serialized state transition
-#[no_mangle]
-pub extern "C" fn swift_dash_data_contract_put_to_platform(
-    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
-    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
-    public_key_id: u32,
-    signer_handle: *mut rs_sdk_ffi::SignerHandle,
-    settings: *const SwiftDashPutSettings,
-) -> *mut SwiftDashBinaryData {
-    if sdk_handle.is_null() || contract_handle.is_null() || signer_handle.is_null() {
-        return ptr::null_mut();
+    if !info.owner_id.is_null() {
+        let _ = CString::from_raw(info.owner_id);
     }
-
-    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
-        ptr::null()
-    } else {
-        unsafe {
-            let swift_settings = *settings;
-            let ffi_settings = Box::new(swift_settings.into());
-            Box::into_raw(ffi_settings)
-        }
-    };
-
-    unsafe {
-        let result = rs_sdk_ffi::ios_sdk_data_contract_put_to_platform(
-            sdk_handle,
-            contract_handle,
-            public_key_id,
-            signer_handle,
-            ffi_settings,
-        );
-
-        // Clean up settings if we allocated them
-        if !ffi_settings.is_null() {
-            let _ = Box::from_raw(ffi_settings);
-        }
-
-        if !result.error.is_null() {
-            rs_sdk_ffi::ios_sdk_error_free(result.error);
-            return ptr::null_mut();
-        }
-
-        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::BinaryData {
-            return ptr::null_mut();
-        }
-
-        if result.data.is_null() {
-            return ptr::null_mut();
-        }
-
-        let ffi_binary_ptr = result.data as *mut rs_sdk_ffi::IOSSDKBinaryData;
-        let ffi_binary = *Box::from_raw(ffi_binary_ptr);
-
-        // Convert to Swift-friendly structure
-        let swift_binary = Box::new(SwiftDashBinaryData {
-            data: ffi_binary.data, // Transfer ownership
-            len: ffi_binary.len,
-        });
-
-        Box::into_raw(swift_binary)
-    }
-}
-
-/// Put data contract to platform and wait for confirmation
-#[no_mangle]
-pub extern "C" fn swift_dash_data_contract_put_to_platform_and_wait(
-    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
-    contract_handle: *mut rs_sdk_ffi::DataContractHandle,
-    public_key_id: u32,
-    signer_handle: *mut rs_sdk_ffi::SignerHandle,
-    settings: *const SwiftDashPutSettings,
-) -> *mut rs_sdk_ffi::DataContractHandle {
-    if sdk_handle.is_null() || contract_handle.is_null() || signer_handle.is_null() {
-        return ptr::null_mut();
-    }
-
-    let ffi_settings: *const rs_sdk_ffi::IOSSDKPutSettings = if settings.is_null() {
-        ptr::null()
-    } else {
-        unsafe {
-            let swift_settings = *settings;
-            let ffi_settings = Box::new(swift_settings.into());
-            Box::into_raw(ffi_settings)
-        }
-    };
-
-    unsafe {
-        let result = rs_sdk_ffi::ios_sdk_data_contract_put_to_platform_and_wait(
-            sdk_handle,
-            contract_handle,
-            public_key_id,
-            signer_handle,
-            ffi_settings,
-        );
-
-        // Clean up settings if we allocated them
-        if !ffi_settings.is_null() {
-            let _ = Box::from_raw(ffi_settings);
-        }
-
-        if !result.error.is_null() {
-            rs_sdk_ffi::ios_sdk_error_free(result.error);
-            return ptr::null_mut();
-        }
-
-        if result.data_type != rs_sdk_ffi::IOSSDKResultDataType::DataContractHandle {
-            return ptr::null_mut();
-        }
-
-        result.data as *mut rs_sdk_ffi::DataContractHandle
+    if !info.schema_json.is_null() {
+        let _ = CString::from_raw(info.schema_json);
     }
 }
