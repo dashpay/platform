@@ -63,6 +63,7 @@ pub unsafe fn get_data_contract(
     serialized_contract: *const u8,
     serialized_contract_len: usize,
     sdk: &dash_sdk::Sdk,
+    runtime: &tokio::runtime::Runtime,
 ) -> Result<DataContract, FFIError> {
     if !token_contract_id.is_null() {
         // Use contract ID to fetch from platform
@@ -72,11 +73,21 @@ pub unsafe fn get_data_contract(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // TODO: Implement contract fetching from platform
-        // For now, return an error as this requires async implementation
-        Err(FFIError::InternalError(
-            "Contract fetching from platform not implemented in FFI layer".to_string(),
-        ))
+        // Fetch contract from platform using runtime
+        use dash_sdk::platform::Fetch;
+
+        let result = runtime.block_on(async {
+            DataContract::fetch(sdk, contract_id)
+                .await
+                .map_err(FFIError::from)
+        })?;
+
+        result.ok_or_else(|| {
+            FFIError::InternalError(format!(
+                "Data contract with ID {} not found",
+                contract_id_str
+            ))
+        })
     } else if !serialized_contract.is_null() && serialized_contract_len > 0 {
         // Deserialize contract from provided data
         let contract_data =

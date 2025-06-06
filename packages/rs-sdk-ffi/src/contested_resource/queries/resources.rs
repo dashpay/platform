@@ -122,7 +122,7 @@ fn get_contested_resources(
             };
             let start_values_array: Vec<String> = serde_json::from_str(start_values_str)
                 .map_err(|e| format!("Failed to parse start index values JSON: {}", e))?;
-            
+
             start_values_array
                 .into_iter()
                 .map(|hex_str| {
@@ -142,7 +142,7 @@ fn get_contested_resources(
             };
             let end_values_array: Vec<String> = serde_json::from_str(end_values_str)
                 .map_err(|e| format!("Failed to parse end index values JSON: {}", e))?;
-            
+
             end_values_array
                 .into_iter()
                 .map(|hex_str| {

@@ -8,16 +8,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// Gas fees payer option
-typedef enum SwiftDashIOSSDKGasFeesPaidBy {
-  // The document owner pays the gas fees
-  DocumentOwner = 0,
-  // The contract owner pays the gas fees
-  ContractOwner = 1,
-  // Prefer contract owner but fallback to document owner if insufficient balance
-  PreferContractOwner = 2,
-} SwiftDashIOSSDKGasFeesPaidBy;
-
 // Error codes for Swift Dash Platform operations
 typedef enum SwiftDashSwiftDashErrorCode {
   // Operation completed successfully
@@ -108,20 +98,6 @@ typedef struct SwiftDashSwiftDashDocumentInfo {
   int64_t updated_at;
 } SwiftDashSwiftDashDocumentInfo;
 
-// Token payment information for transactions
-typedef struct SwiftDashIOSSDKTokenPaymentInfo {
-  // Payment token contract ID (32 bytes), null for same contract
-  const uint8_t (*payment_token_contract_id)[32];
-  // Token position within the contract (0-based index)
-  uint16_t token_contract_position;
-  // Minimum token cost (0 means no minimum)
-  uint64_t minimum_token_cost;
-  // Maximum token cost (0 means no maximum)
-  uint64_t maximum_token_cost;
-  // Who pays the gas fees
-  enum SwiftDashIOSSDKGasFeesPaidBy gas_fees_paid_by;
-} SwiftDashIOSSDKTokenPaymentInfo;
-
 // Error structure for Swift interop
 typedef struct SwiftDashSwiftDashError {
   // Error code
@@ -173,28 +149,6 @@ typedef struct SwiftDashSwiftDashTokenTransferParams {
   // Optional public note
   const char *public_note;
 } SwiftDashSwiftDashTokenTransferParams;
-
-// Put settings for platform operations
-typedef struct SwiftDashIOSSDKPutSettings {
-  // Timeout for establishing a connection (milliseconds), 0 means use default
-  uint64_t connect_timeout_ms;
-  // Timeout for single request (milliseconds), 0 means use default
-  uint64_t timeout_ms;
-  // Number of retries in case of failed requests, 0 means use default
-  uint32_t retries;
-  // Ban DAPI address if node not responded or responded with error
-  bool ban_failed_address;
-  // Identity nonce stale time in seconds, 0 means use default
-  uint64_t identity_nonce_stale_time_s;
-  // User fee increase (additional percentage of processing fee), 0 means no increase
-  uint16_t user_fee_increase;
-  // Enable signing with any security level (for debugging)
-  bool allow_signing_with_any_security_level;
-  // Enable signing with any purpose (for debugging)
-  bool allow_signing_with_any_purpose;
-  // Wait timeout in milliseconds, 0 means use default
-  uint64_t wait_timeout_ms;
-} SwiftDashIOSSDKPutSettings;
 
 // Swift-friendly token mint parameters
 typedef struct SwiftDashSwiftDashTokenMintParams {
@@ -289,7 +243,7 @@ struct SwiftDashSwiftDashBinaryData *swift_dash_document_put_to_platform(struct 
                                                                          const uint8_t (*entropy)[32],
                                                                          struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                          struct SwiftDashSignerHandle *signer_handle,
-                                                                         const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                         const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                          const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Put document to platform and wait for confirmation
@@ -300,7 +254,7 @@ struct SwiftDashDocumentHandle *swift_dash_document_put_to_platform_and_wait(str
                                                                              const uint8_t (*entropy)[32],
                                                                              struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                              struct SwiftDashSignerHandle *signer_handle,
-                                                                             const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                             const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                              const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Purchase document from platform and return serialized state transition
@@ -312,7 +266,7 @@ struct SwiftDashSwiftDashBinaryData *swift_dash_document_purchase_to_platform(st
                                                                               const char *purchaser_id,
                                                                               struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                               struct SwiftDashSignerHandle *signer_handle,
-                                                                              const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                              const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                               const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Purchase document from platform and wait for confirmation
@@ -324,7 +278,7 @@ struct SwiftDashDocumentHandle *swift_dash_document_purchase_to_platform_and_wai
                                                                                   const char *purchaser_id,
                                                                                   struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                                   struct SwiftDashSignerHandle *signer_handle,
-                                                                                  const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                                  const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                                   const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Update an existing document
@@ -352,7 +306,7 @@ struct SwiftDashSwiftDashBinaryData *swift_dash_document_transfer_to_identity(st
                                                                               const char *document_type_name,
                                                                               struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                               struct SwiftDashSignerHandle *signer_handle,
-                                                                              const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                              const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                               const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Transfer document to another identity and wait for confirmation
@@ -363,7 +317,7 @@ struct SwiftDashDocumentHandle *swift_dash_document_transfer_to_identity_and_wai
                                                                                   const char *document_type_name,
                                                                                   struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                                   struct SwiftDashSignerHandle *signer_handle,
-                                                                                  const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                                  const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                                   const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Update the price of a document
@@ -374,7 +328,7 @@ struct SwiftDashSwiftDashBinaryData *swift_dash_document_update_price(struct Swi
                                                                       uint64_t price,
                                                                       struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                       struct SwiftDashSignerHandle *signer_handle,
-                                                                      const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                      const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                       const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Update the price of a document and wait for confirmation
@@ -385,7 +339,7 @@ struct SwiftDashDocumentHandle *swift_dash_document_update_price_and_wait(struct
                                                                           uint64_t price,
                                                                           struct SwiftDashIdentityPublicKeyHandle *identity_public_key_handle,
                                                                           struct SwiftDashSignerHandle *signer_handle,
-                                                                          const struct SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
+                                                                          const SwiftDashIOSSDKTokenPaymentInfo *token_payment_info,
                                                                           const struct SwiftDashSwiftDashPutSettings *settings);
 
 // Free a Swift document info structure
@@ -545,7 +499,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_transfer(struct SwiftDashSDKHan
                                                           struct SwiftDashSwiftDashTokenTransferParams params,
                                                           uint32_t public_key_id,
                                                           struct SwiftDashSignerHandle signer_handle,
-                                                          struct SwiftDashIOSSDKPutSettings put_settings);
+                                                          SwiftDashIOSSDKPutSettings put_settings);
 
 // Transfer tokens and wait for confirmation
 struct SwiftDashSwiftDashResult swift_dash_token_transfer_and_wait(struct SwiftDashSDKHandle sdk_handle,
@@ -553,7 +507,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_transfer_and_wait(struct SwiftD
                                                                    struct SwiftDashSwiftDashTokenTransferParams params,
                                                                    uint32_t public_key_id,
                                                                    struct SwiftDashSignerHandle signer_handle,
-                                                                   struct SwiftDashIOSSDKPutSettings put_settings);
+                                                                   SwiftDashIOSSDKPutSettings put_settings);
 
 // Mint new tokens
 struct SwiftDashSwiftDashResult swift_dash_token_mint(struct SwiftDashSDKHandle sdk_handle,
@@ -561,7 +515,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_mint(struct SwiftDashSDKHandle 
                                                       struct SwiftDashSwiftDashTokenMintParams params,
                                                       uint32_t public_key_id,
                                                       struct SwiftDashSignerHandle signer_handle,
-                                                      struct SwiftDashIOSSDKPutSettings put_settings);
+                                                      SwiftDashIOSSDKPutSettings put_settings);
 
 // Mint new tokens and wait for confirmation
 struct SwiftDashSwiftDashResult swift_dash_token_mint_and_wait(struct SwiftDashSDKHandle sdk_handle,
@@ -569,7 +523,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_mint_and_wait(struct SwiftDashS
                                                                struct SwiftDashSwiftDashTokenMintParams params,
                                                                uint32_t public_key_id,
                                                                struct SwiftDashSignerHandle signer_handle,
-                                                               struct SwiftDashIOSSDKPutSettings put_settings);
+                                                               SwiftDashIOSSDKPutSettings put_settings);
 
 // Burn tokens
 struct SwiftDashSwiftDashResult swift_dash_token_burn(struct SwiftDashSDKHandle sdk_handle,
@@ -577,7 +531,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_burn(struct SwiftDashSDKHandle 
                                                       struct SwiftDashSwiftDashTokenBurnParams params,
                                                       uint32_t public_key_id,
                                                       struct SwiftDashSignerHandle signer_handle,
-                                                      struct SwiftDashIOSSDKPutSettings put_settings);
+                                                      SwiftDashIOSSDKPutSettings put_settings);
 
 // Burn tokens and wait for confirmation
 struct SwiftDashSwiftDashResult swift_dash_token_burn_and_wait(struct SwiftDashSDKHandle sdk_handle,
@@ -585,7 +539,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_burn_and_wait(struct SwiftDashS
                                                                struct SwiftDashSwiftDashTokenBurnParams params,
                                                                uint32_t public_key_id,
                                                                struct SwiftDashSignerHandle signer_handle,
-                                                               struct SwiftDashIOSSDKPutSettings put_settings);
+                                                               SwiftDashIOSSDKPutSettings put_settings);
 
 // Claim tokens from distribution
 struct SwiftDashSwiftDashResult swift_dash_token_claim(struct SwiftDashSDKHandle sdk_handle,
@@ -593,7 +547,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_claim(struct SwiftDashSDKHandle
                                                        struct SwiftDashSwiftDashTokenClaimParams params,
                                                        uint32_t public_key_id,
                                                        struct SwiftDashSignerHandle signer_handle,
-                                                       struct SwiftDashIOSSDKPutSettings put_settings);
+                                                       SwiftDashIOSSDKPutSettings put_settings);
 
 // Claim tokens from distribution and wait for confirmation
 struct SwiftDashSwiftDashResult swift_dash_token_claim_and_wait(struct SwiftDashSDKHandle sdk_handle,
@@ -601,7 +555,7 @@ struct SwiftDashSwiftDashResult swift_dash_token_claim_and_wait(struct SwiftDash
                                                                 struct SwiftDashSwiftDashTokenClaimParams params,
                                                                 uint32_t public_key_id,
                                                                 struct SwiftDashSignerHandle signer_handle,
-                                                                struct SwiftDashIOSSDKPutSettings put_settings);
+                                                                SwiftDashIOSSDKPutSettings put_settings);
 
 // Get token balance for an identity
 struct SwiftDashSwiftDashResult swift_dash_token_get_identity_balance(struct SwiftDashSDKHandle sdk_handle,

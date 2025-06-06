@@ -133,7 +133,7 @@ fn get_contested_resource_voters_for_identity(
         // Parse index values
         let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
             .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
-        
+
         let index_values: Vec<Vec<u8>> = index_values_array
             .into_iter()
             .map(|hex_str| {

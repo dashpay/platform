@@ -140,7 +140,7 @@ fn get_token_pre_programmed_distributions(
 
         // Parse the response using the SDK's proof verification
         let response: GetTokenPreProgrammedDistributionsResponse = result.inner;
-        
+
         match response.version {
             Some(dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::Version::V0(v0)) => {
                 match v0.result {

@@ -12,6 +12,9 @@ pub mod nonce;
 pub mod public_keys;
 pub mod resolve;
 
+#[cfg(test)]
+mod resolve_test;
+
 // Re-export all public functions for convenient access
 pub use balance::dash_sdk_identity_fetch_balance;
 pub use balance_and_revision::dash_sdk_identity_fetch_balance_and_revision;
