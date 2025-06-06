@@ -1,9 +1,8 @@
-//! Token status query operations
+//! Token direct purchase prices query operations
 
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::tokens::status::v0::TokenStatusV0Accessors;
-use dash_sdk::dpp::tokens::status::TokenStatus;
+use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dash_sdk::platform::FetchMany;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -12,16 +11,16 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
-/// Get token statuses
+/// Get token direct purchase prices
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
 /// - `token_ids`: Comma-separated list of Base58-encoded token IDs
 ///
 /// # Returns
-/// JSON string containing token IDs mapped to their status information
+/// JSON string containing token IDs mapped to their pricing information
 #[no_mangle]
-pub unsafe extern "C" fn dash_sdk_token_get_statuses(
+pub unsafe extern "C" fn dash_sdk_token_get_direct_purchase_prices(
     sdk_handle: *const SDKHandle,
     token_ids: *const c_char,
 ) -> DashSDKResult {
@@ -58,26 +57,29 @@ pub unsafe extern "C" fn dash_sdk_token_get_statuses(
     };
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        // Fetch token statuses
-        let statuses = TokenStatus::fetch_many(&wrapper.sdk, identifiers)
+        // Fetch token direct purchase prices
+        let prices = TokenPricingSchedule::fetch_many(&wrapper.sdk, identifiers)
             .await
             .map_err(FFIError::from)?;
 
         // Convert to JSON string
         let mut json_parts = Vec::new();
-        for (token_id, status_opt) in statuses {
-            let status_json = match status_opt {
-                Some(status) => {
-                    // Create JSON representation of TokenStatus
-                    // TokenStatus only contains paused field
-                    format!("{{\"paused\":{}}}", status.paused())
+        for (token_id, price_opt) in prices {
+            let price_json = match price_opt {
+                Some(schedule) => {
+                    // Create JSON representation of TokenPricingSchedule
+                    let price_json = serde_json::json!({
+                        "current_price": schedule.current_price(),
+                        "is_minting_disabled": schedule.is_minting_disabled(),
+                    });
+                    serde_json::to_string(&price_json).unwrap_or_else(|_| "null".to_string())
                 }
                 None => "null".to_string(),
             };
             json_parts.push(format!(
                 "\"{}\":{}",
                 token_id.to_string(Encoding::Base58),
-                status_json
+                price_json
             ));
         }
 

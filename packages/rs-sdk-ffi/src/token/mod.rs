@@ -36,6 +36,7 @@ pub use freeze::*;
 pub use mint::*;
 pub use purchase::*;
 pub use queries::balances::*;
+pub use queries::contract_info::*;
 pub use queries::info::*;
 pub use queries::status::*;
 pub use set_price::*;

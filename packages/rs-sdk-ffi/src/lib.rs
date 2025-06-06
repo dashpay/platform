@@ -3,28 +3,40 @@
 //! This crate provides C-compatible FFI bindings for the Dash Platform SDK,
 //! enabling cross-platform applications to interact with Dash Platform through C interfaces.
 
+mod contested_resource;
 mod data_contract;
 mod document;
 mod error;
+mod evonode;
+mod group;
 mod identity;
+mod protocol_version;
 mod sdk;
 mod signer;
+mod system;
 mod token;
 mod types;
 mod utils;
+mod voting;
 
 #[cfg(test)]
 mod test_utils;
 
+pub use contested_resource::*;
 pub use data_contract::*;
 pub use document::*;
 pub use error::*;
+pub use evonode::*;
+pub use group::*;
 pub use identity::*;
+pub use protocol_version::*;
 pub use sdk::*;
 pub use signer::*;
+pub use system::*;
 pub use token::*;
 pub use types::*;
 pub use utils::*;
+pub use voting::*;
 
 use std::panic;
 

@@ -1,0 +1,115 @@
+use crate::types::SDKHandle;
+use crate::{DashSDKError, DashSDKResult, FFIError};
+use dash_sdk::platform::Fetch;
+use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
+use std::ffi::{c_char, CStr, CString};
+
+/// Fetches the total supply of a token
+///
+/// # Parameters
+/// * `sdk_handle` - Handle to the SDK instance
+/// * `token_id` - Base58-encoded token identifier
+///
+/// # Returns
+/// * JSON string with token supply info or null if not found
+/// * Error message if operation fails
+///
+/// # Safety
+/// This function is unsafe because it handles raw pointers from C
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_token_get_total_supply(
+    sdk_handle: *const SDKHandle,
+    token_id: *const c_char,
+) -> DashSDKResult {
+    match get_token_total_supply(sdk_handle, token_id) {
+        Ok(Some(json)) => {
+            let c_str = match CString::new(json) {
+                Ok(s) => s,
+                Err(e) => {
+                    return DashSDKResult {
+                        data: std::ptr::null(),
+                        error: DashSDKError::new(&format!("Failed to create CString: {}", e)),
+                    }
+                }
+            };
+            DashSDKResult {
+                data: c_str.into_raw(),
+                error: std::ptr::null(),
+            }
+        }
+        Ok(None) => DashSDKResult {
+            data: std::ptr::null(),
+            error: std::ptr::null(),
+        },
+        Err(e) => DashSDKResult {
+            data: std::ptr::null(),
+            error: DashSDKError::new(&e),
+        },
+    }
+}
+
+fn get_token_total_supply(
+    sdk_handle: *const SDKHandle,
+    token_id: *const c_char,
+) -> Result<Option<String>, String> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
+
+    let token_id_str = unsafe {
+        CStr::from_ptr(token_id)
+            .to_str()
+            .map_err(|e| format!("Invalid UTF-8 in token ID: {}", e))?
+    };
+    let sdk = unsafe { &*sdk_handle }.sdk.clone();
+
+    rt.block_on(async move {
+        let token_id_bytes = bs58::decode(token_id_str)
+            .into_vec()
+            .map_err(|e| format!("Failed to decode token ID: {}", e))?;
+
+        let token_id: [u8; 32] = token_id_bytes
+            .try_into()
+            .map_err(|_| "Token ID must be exactly 32 bytes".to_string())?;
+
+        let token_id = dash_sdk::Identifier::new(token_id);
+
+        match TotalSingleTokenBalance::fetch(&sdk, token_id).await {
+            Ok(Some(balance)) => {
+                let json = format!(
+                    r#"{{"token_supply":{},"aggregated_token_account_balances":{}}}"#,
+                    balance.token_supply, balance.aggregated_token_account_balances
+                );
+                Ok(Some(json))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(format!("Failed to fetch token total supply: {}", e)),
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::create_mock_sdk_handle;
+
+    #[test]
+    fn test_get_token_total_supply_null_handle() {
+        unsafe {
+            let result = dash_sdk_token_get_total_supply(
+                std::ptr::null(),
+                CString::new("test").unwrap().as_ptr(),
+            );
+            assert!(!result.error.is_null());
+        }
+    }
+
+    #[test]
+    fn test_get_token_total_supply_null_token_id() {
+        let handle = create_mock_sdk_handle();
+        unsafe {
+            let result = dash_sdk_token_get_total_supply(handle, std::ptr::null());
+            assert!(!result.error.is_null());
+            crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
+        }
+    }
+}

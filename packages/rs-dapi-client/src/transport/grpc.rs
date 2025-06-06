@@ -606,3 +606,12 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_token_perpetual_distribution_last_claim
 );
+
+// rpc getTokenContractInfo(GetTokenContractInfoRequest) returns (GetTokenContractInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenContractInfoRequest,
+    platform_proto::GetTokenContractInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_contract_info
+);

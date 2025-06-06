@@ -1,9 +1,9 @@
-//! Token status query operations
+//! Multiple identities token balances query operations
 
+use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::tokens::status::v0::TokenStatusV0Accessors;
-use dash_sdk::dpp::tokens::status::TokenStatus;
+use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
 use dash_sdk::platform::FetchMany;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -12,72 +12,91 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
-/// Get token statuses
+/// Fetch token balances for multiple identities for a specific token
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `token_ids`: Comma-separated list of Base58-encoded token IDs
+/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
+/// - `token_id`: Base58-encoded token ID
 ///
 /// # Returns
-/// JSON string containing token IDs mapped to their status information
+/// JSON string containing identity IDs mapped to their token balances
 #[no_mangle]
-pub unsafe extern "C" fn dash_sdk_token_get_statuses(
+pub unsafe extern "C" fn dash_sdk_identities_fetch_token_balances(
     sdk_handle: *const SDKHandle,
-    token_ids: *const c_char,
+    identity_ids: *const c_char,
+    token_id: *const c_char,
 ) -> DashSDKResult {
-    if sdk_handle.is_null() || token_ids.is_null() {
+    if sdk_handle.is_null() || identity_ids.is_null() || token_id.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
-            "SDK handle or token IDs is null".to_string(),
+            "SDK handle, identity IDs, or token ID is null".to_string(),
         ));
     }
 
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
-    let ids_str = match CStr::from_ptr(token_ids).to_str() {
+    let ids_str = match CStr::from_ptr(identity_ids).to_str() {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
-    // Parse comma-separated token IDs
-    let identifiers: Result<Vec<Identifier>, DashSDKError> = ids_str
+    let token_str = match CStr::from_ptr(token_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    // Parse comma-separated identity IDs
+    let identity_ids: Result<Vec<Identifier>, DashSDKError> = ids_str
         .split(',')
         .map(|id_str| {
             Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
                 DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid token ID: {}", e),
+                    format!("Invalid identity ID: {}", e),
                 )
             })
         })
         .collect();
 
-    let identifiers = match identifiers {
+    let identity_ids = match identity_ids {
         Ok(ids) => ids,
         Err(e) => return DashSDKResult::error(e),
     };
 
+    let token_id = match Identifier::from_string(token_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid token ID: {}", e),
+            ))
+        }
+    };
+
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        // Fetch token statuses
-        let statuses = TokenStatus::fetch_many(&wrapper.sdk, identifiers)
+        // Create the query
+        let query = IdentitiesTokenBalancesQuery {
+            identity_ids,
+            token_id,
+        };
+
+        // Fetch token balances
+        let balances = TokenAmount::fetch_many(&wrapper.sdk, query)
             .await
             .map_err(FFIError::from)?;
 
         // Convert to JSON string
         let mut json_parts = Vec::new();
-        for (token_id, status_opt) in statuses {
-            let status_json = match status_opt {
-                Some(status) => {
-                    // Create JSON representation of TokenStatus
-                    // TokenStatus only contains paused field
-                    format!("{{\"paused\":{}}}", status.paused())
-                }
+        for (identity_id, balance_opt) in balances {
+            let balance_str = match balance_opt {
+                Some(balance) => balance.to_string(),
                 None => "null".to_string(),
             };
             json_parts.push(format!(
                 "\"{}\":{}",
-                token_id.to_string(Encoding::Base58),
-                status_json
+                identity_id.to_string(Encoding::Base58),
+                balance_str
             ));
         }
 
