@@ -118,3 +118,10 @@ pub unsafe extern "C" fn dash_sdk_data_contract_destroy(handle: *mut DataContrac
         let _ = Box::from_raw(handle as *mut DataContract);
     }
 }
+
+// Re-export query functions
+pub use queries::{
+    dash_sdk_data_contract_fetch,
+    dash_sdk_data_contracts_fetch_many,
+    dash_sdk_data_contract_fetch_history,
+};

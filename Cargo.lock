@@ -4373,13 +4373,18 @@ dependencies = [
  "bs58",
  "cbindgen",
  "dash-sdk",
+ "dotenvy",
+ "env_logger",
+ "envy",
  "hex",
  "libc",
+ "log",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

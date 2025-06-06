@@ -16,5 +16,10 @@ pub mod resolve;
 mod resolve_test;
 
 // Re-export main functions for convenient access
+pub use balance::dash_sdk_identity_fetch_balance;
+pub use balance_and_revision::dash_sdk_identity_fetch_balance_and_revision;
+pub use by_non_unique_public_key_hash::dash_sdk_identity_fetch_by_non_unique_public_key_hash;
+pub use by_public_key_hash::dash_sdk_identity_fetch_by_public_key_hash;
 pub use fetch::dash_sdk_identity_fetch;
+pub use public_keys::dash_sdk_identity_fetch_public_keys;
 pub use resolve::dash_sdk_identity_resolve_name;
