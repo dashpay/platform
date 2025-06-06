@@ -7,7 +7,7 @@ use crate::data_contract::associated_token::token_perpetual_distribution::reward
 use crate::ProtocolError;
 
 /// Details of a single evaluation step within an interval
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvaluationStep {
     /// The step index in the evaluation process
     pub step_index: u64,
