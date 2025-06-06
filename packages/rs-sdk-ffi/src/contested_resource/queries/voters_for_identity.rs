@@ -1,10 +1,10 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::{Voter, Voters};
+use dash_sdk::query_types::Voter;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches voters for a contested resource identity

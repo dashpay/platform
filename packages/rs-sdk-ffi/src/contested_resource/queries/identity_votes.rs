@@ -1,10 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
-use dash_sdk::dpp::voting::votes::{resource_vote::ResourceVote, Vote};
+use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::ResourceVotesByIdentity;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resource identity votes

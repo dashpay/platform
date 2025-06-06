@@ -213,7 +213,7 @@ async fn execute_identities_contract_keys_query(
         })),
     };
 
-    let response = grpc_request
+    let _response = grpc_request
         .execute(sdk, RequestSettings::default())
         .await
         .map_err(|e| FFIError::InternalError(format!("Request execution failed: {}", e)))?;

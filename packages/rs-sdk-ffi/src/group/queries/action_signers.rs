@@ -1,9 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::group::GroupMemberPower;
 use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 use dash_sdk::platform::{group_actions::GroupActionSignersQuery, FetchMany};
-use dash_sdk::query_types::groups::GroupActionSigners;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches group action signers

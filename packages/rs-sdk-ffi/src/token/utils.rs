@@ -2,10 +2,8 @@
 
 use super::types::DashSDKTokenDistributionType;
 use crate::types::{DashSDKPutSettings, DashSDKStateTransitionCreationOptions};
-use crate::{sdk::SDKWrapper, FFIError};
+use crate::FFIError;
 use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::state_transition::StateTransitionSigningOptions;
@@ -57,57 +55,6 @@ pub fn convert_token_distribution_type(
     }
 }
 
-/// Helper function to get data contract from either ID or serialized data
-pub unsafe fn get_data_contract(
-    token_contract_id: *const c_char,
-    serialized_contract: *const u8,
-    serialized_contract_len: usize,
-    sdk: &dash_sdk::Sdk,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<DataContract, FFIError> {
-    if !token_contract_id.is_null() {
-        // Use contract ID to fetch from platform
-        let contract_id_str = unsafe { CStr::from_ptr(token_contract_id) }
-            .to_str()
-            .map_err(FFIError::from)?;
-        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
-
-        // Fetch contract from platform using runtime
-        use dash_sdk::platform::Fetch;
-
-        let result = runtime.block_on(async {
-            DataContract::fetch(sdk, contract_id)
-                .await
-                .map_err(FFIError::from)
-        })?;
-
-        result.ok_or_else(|| {
-            FFIError::InternalError(format!(
-                "Data contract with ID {} not found",
-                contract_id_str
-            ))
-        })
-    } else if !serialized_contract.is_null() && serialized_contract_len > 0 {
-        // Deserialize contract from provided data
-        let contract_data =
-            std::slice::from_raw_parts(serialized_contract, serialized_contract_len);
-
-        use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-
-        DataContract::versioned_deserialize(
-            contract_data,
-            false, // skip validation since it's already validated
-            sdk.version(),
-        )
-        .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))
-    } else {
-        Err(FFIError::InternalError(
-            "Either token_contract_id or serialized_contract must be provided".to_string(),
-        ))
-    }
-}
-
 /// Extract user fee increase from put_settings or use default
 pub unsafe fn extract_user_fee_increase(
     put_settings: *const DashSDKPutSettings,
@@ -153,16 +100,6 @@ pub unsafe fn parse_optional_note(note_ptr: *const c_char) -> Result<Option<Stri
             Err(e) => Err(FFIError::from(e)),
         }
     }
-}
-
-/// Parse recipient ID from C string
-pub unsafe fn parse_recipient_id(recipient_id_ptr: *const c_char) -> Result<Identifier, FFIError> {
-    let recipient_id_str = unsafe { CStr::from_ptr(recipient_id_ptr) }
-        .to_str()
-        .map_err(FFIError::from)?;
-
-    Identifier::from_string(recipient_id_str, Encoding::Base58)
-        .map_err(|e| FFIError::InternalError(format!("Invalid recipient ID: {}", e)))
 }
 
 /// Parse identifier from raw bytes (32 bytes)

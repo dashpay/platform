@@ -1,11 +1,11 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 use dash_sdk::platform::FetchUnproved;
 use dash_sdk::query_types::CurrentQuorumsInfo;
 use dash_sdk::query_types::NoParamQuery;
 use std::ffi::CString;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 
 /// Fetches information about current quorums
 ///

@@ -1,23 +1,19 @@
 //! Data contract operations
 
 mod put;
-mod queries;
+pub mod queries;
 mod util;
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dash_sdk::dpp::data_contract::{accessors::v0::DataContractV0Getters, DataContractFactory};
+use dash_sdk::dpp::data_contract::DataContractFactory;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value;
 use dash_sdk::dpp::prelude::{DataContract, Identity};
-use dash_sdk::platform::Fetch;
 
 use crate::sdk::SDKWrapper;
-use crate::types::{
-    DashSDKResultDataType, DataContractHandle, IdentityHandle, SDKHandle, SignerHandle,
-};
+use crate::types::{DataContractHandle, IdentityHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Data contract information

@@ -1,10 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::drive::query::VotePollsByEndDateDriveQuery;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::VotePollsGroupedByTimestamp;
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_void, CString};
 
 /// Fetches vote polls by end date
 ///
@@ -134,7 +133,7 @@ fn get_vote_polls_by_end_date(
                     .map(|(timestamp, vote_polls)| {
                         let polls_json: Vec<String> = vote_polls
                             .iter()
-                            .map(|poll| format!(r#"{{"end_time":{}}}"#, timestamp))
+                            .map(|_poll| format!(r#"{{"end_time":{}}}"#, timestamp))
                             .collect();
 
                         format!(

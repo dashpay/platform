@@ -1,5 +1,5 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
@@ -156,7 +156,6 @@ fn get_contested_resource_vote_state(
             index_name: index_name_str.to_string(),
             index_values,
         };
-        
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll,
             result_type,
@@ -174,7 +173,6 @@ fn get_contested_resource_vote_state(
                 }
 
                 let mut result_json_parts = Vec::new();
-                
                 // Add vote tally info if available
                 if result_type.has_vote_tally() {
                     result_json_parts.push(format!(
@@ -183,7 +181,6 @@ fn get_contested_resource_vote_state(
                         contenders.lock_vote_tally.unwrap_or(0)
                     ));
                 }
-                
                 // Add winner info if available
                 if let Some((winner_info, block_info)) = contenders.winner {
                     let winner_json = match winner_info {
@@ -197,7 +194,6 @@ fn get_contested_resource_vote_state(
                             r#""winner_info":"Locked""#.to_string()
                         }
                     };
-                    
                     result_json_parts.push(format!(
                         r#"{},
                         "block_info":{{"height":{},"core_height":{},"timestamp":{}}}"#,
@@ -207,7 +203,6 @@ fn get_contested_resource_vote_state(
                         block_info.time_ms
                     ));
                 }
-                
                 // Add contenders
                 if result_type.has_documents() {
                     let contenders_json: Vec<String> = contenders.contenders
@@ -230,10 +225,8 @@ fn get_contested_resource_vote_state(
                             )
                         })
                         .collect();
-                    
                     result_json_parts.push(format!(r#""contenders":[{}]"#, contenders_json.join(",")));
                 }
-                
                 Ok(Some(format!("{{{}}}", result_json_parts.join(","))))
             }
             Err(e) => Err(format!("Failed to fetch contested resource vote state: {}", e)),

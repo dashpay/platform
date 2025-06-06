@@ -1,8 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dashcore_rpc::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::{MasternodeProtocolVote, MasternodeProtocolVotes};
+use dash_sdk::query_types::MasternodeProtocolVote;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches protocol version upgrade vote status

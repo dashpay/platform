@@ -1,6 +1,6 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
-use dash_sdk::dpp::data_contract::group::{v0::GroupV0, Group};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
+use dash_sdk::dpp::data_contract::group::Group;
 use dash_sdk::platform::{group_actions::GroupQuery, Fetch};
 use std::ffi::{c_char, c_void, CStr, CString};
 

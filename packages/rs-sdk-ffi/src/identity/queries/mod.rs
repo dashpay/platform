@@ -15,15 +15,6 @@ pub mod resolve;
 #[cfg(test)]
 mod resolve_test;
 
-// Re-export all public functions for convenient access
-pub use balance::dash_sdk_identity_fetch_balance;
-pub use balance_and_revision::dash_sdk_identity_fetch_balance_and_revision;
-pub use by_non_unique_public_key_hash::dash_sdk_identity_fetch_by_non_unique_public_key_hash;
-pub use by_public_key_hash::dash_sdk_identity_fetch_by_public_key_hash;
-pub use contract_nonce::dash_sdk_identity_fetch_contract_nonce;
+// Re-export main functions for convenient access
 pub use fetch::dash_sdk_identity_fetch;
-pub use identities_balances::dash_sdk_identities_fetch_balances;
-pub use identities_contract_keys::dash_sdk_identities_fetch_contract_keys;
-pub use nonce::dash_sdk_identity_fetch_nonce;
-pub use public_keys::dash_sdk_identity_fetch_public_keys;
 pub use resolve::dash_sdk_identity_resolve_name;

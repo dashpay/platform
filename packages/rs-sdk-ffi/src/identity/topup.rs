@@ -2,7 +2,6 @@
 
 use dash_sdk::dpp::prelude::Identity;
 use dash_sdk::platform::Fetch;
-use std::os::raw::c_char;
 
 use crate::identity::helpers::{
     convert_put_settings, create_instant_asset_lock_proof, parse_private_key,

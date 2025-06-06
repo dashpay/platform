@@ -4,9 +4,7 @@ use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use std::ffi::CString;
 
-use crate::sdk::SDKWrapper;
-use crate::types::{DashSDKDocumentInfo, DocumentHandle, SDKHandle};
-use crate::{DashSDKError, DashSDKErrorCode, FFIError};
+use crate::types::{DashSDKDocumentInfo, DocumentHandle};
 
 /// Get document information
 #[no_mangle]

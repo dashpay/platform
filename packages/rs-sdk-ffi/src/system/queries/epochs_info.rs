@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::platform::types::epoch::EpochQuery;
-use dash_sdk::platform::{Fetch, FetchMany, LimitQuery};
+use dash_sdk::platform::{FetchMany, LimitQuery};
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches information about multiple epochs

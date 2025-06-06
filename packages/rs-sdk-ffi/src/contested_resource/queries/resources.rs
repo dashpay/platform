@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::{ContestedResource, ContestedResources};
+use dash_sdk::query_types::ContestedResource;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resources

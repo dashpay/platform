@@ -12,7 +12,7 @@ use crate::types::{
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-use dash_sdk::dpp::data_contract::{DataContract, TokenContractPosition};
+use dash_sdk::dpp::data_contract::TokenContractPosition;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;

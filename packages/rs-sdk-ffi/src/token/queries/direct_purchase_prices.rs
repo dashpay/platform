@@ -1,12 +1,9 @@
 //! Token direct purchase prices query operations
 
-use dash_sdk::dpp::balances::credits::Credits;
-use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dash_sdk::platform::FetchMany;
-use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 

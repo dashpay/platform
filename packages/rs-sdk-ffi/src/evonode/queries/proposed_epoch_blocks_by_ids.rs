@@ -1,8 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dashcore_rpc::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::{ProposerBlockCountById, ProposerBlockCounts};
+use dash_sdk::query_types::ProposerBlockCountById;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches proposed epoch blocks by evonode IDs
@@ -153,7 +153,6 @@ impl
             get_evonodes_proposed_epoch_blocks_by_ids_request::{
                 GetEvonodesProposedEpochBlocksByIdsRequestV0, Version,
             },
-            GetEvonodesProposedEpochBlocksByIdsRequest,
         };
 
         let request =

@@ -30,10 +30,7 @@ pub use transfer::{
 pub use withdraw::dash_sdk_identity_withdraw;
 
 // Re-export query functions
-pub use queries::{
-    dash_sdk_identity_fetch, dash_sdk_identity_fetch_balance, dash_sdk_identity_fetch_public_keys,
-    dash_sdk_identity_resolve_name,
-};
+pub use queries::{dash_sdk_identity_fetch, dash_sdk_identity_resolve_name};
 
 // Re-export helper functions for use by submodules
 pub use helpers::{

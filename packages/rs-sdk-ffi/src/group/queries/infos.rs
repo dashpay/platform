@@ -1,8 +1,6 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
-use dash_sdk::dpp::data_contract::group::{accessors::v0::GroupV0Getters, Group};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::GroupContractPosition;
-use dash_sdk::platform::FetchMany;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches information about multiple groups
@@ -64,16 +62,16 @@ pub unsafe extern "C" fn dash_sdk_group_get_infos(
 fn get_group_infos(
     sdk_handle: *const SDKHandle,
     start_at_position: *const c_char,
-    limit: u32,
+    _limit: u32,
 ) -> Result<Option<String>, String> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
-    let sdk = wrapper.sdk.clone();
+    let _sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
-        let start_position: GroupContractPosition = if start_at_position.is_null() {
+        let _start_position: GroupContractPosition = if start_at_position.is_null() {
             0
         } else {
             let position_str = unsafe {

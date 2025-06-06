@@ -1,7 +1,6 @@
 //! Helper functions for document operations
 
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::state_transition::StateTransitionSigningOptions;
 use dash_sdk::dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;

@@ -1,9 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
-use dash_sdk::dpp::group::group_action::{v0::GroupActionV0, GroupAction, GroupActionAccessors};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
+use dash_sdk::dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 use dash_sdk::platform::{group_actions::GroupActionsQuery, FetchMany};
-use dash_sdk::query_types::groups::GroupActions;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches group actions

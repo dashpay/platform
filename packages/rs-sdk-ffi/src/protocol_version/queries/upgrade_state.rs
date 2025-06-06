@@ -1,10 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::version::ProtocolVersionVoteCount;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::ProtocolVersionUpgrades;
 use std::ffi::CString;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 
 /// Fetches protocol version upgrade state
 ///

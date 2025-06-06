@@ -1,8 +1,8 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dashcore_rpc::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
-use dash_sdk::query_types::{ProposerBlockCountByRange, ProposerBlockCounts};
+use dash_sdk::query_types::ProposerBlockCountByRange;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches proposed epoch blocks by range
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
 fn get_evonodes_proposed_epoch_blocks_by_range(
     sdk_handle: *const SDKHandle,
     epoch: u32,
-    limit: u32,
+    _limit: u32,
     start_after: *const c_char,
     start_at: *const c_char,
 ) -> Result<Option<String>, String> {
@@ -177,7 +177,6 @@ impl
                 get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start,
                 GetEvonodesProposedEpochBlocksByRangeRequestV0, Version,
             },
-            GetEvonodesProposedEpochBlocksByRangeRequest,
         };
 
         let start = if let Some(start_after) = self.start_after {

@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::query_types::TotalCreditsInPlatform;
 use std::ffi::CString;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 
 /// Fetches the total credits in the platform
 ///

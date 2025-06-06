@@ -1,5 +1,5 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::PrefundedSpecializedBalance;
 use std::ffi::{c_char, c_void, CStr, CString};
