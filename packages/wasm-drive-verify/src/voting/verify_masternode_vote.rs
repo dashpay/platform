@@ -49,10 +49,12 @@ pub fn verify_masternode_vote(
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize vote: {:?}", e)))?;
 
     // Deserialize the data contract
-    let data_contract = DataContract::versioned_deserialize(&data_contract_cbor.to_vec(), true, platform_version)
-        .map_err(|e| {
-        JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e))
-    })?;
+    let data_contract = DataContract::versioned_deserialize(
+        &data_contract_cbor.to_vec(),
+        true,
+        platform_version,
+    )
+    .map_err(|e| JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e)))?;
 
     let (root_hash, vote_option) = Drive::verify_masternode_vote(
         &proof_vec,

@@ -83,17 +83,29 @@ pub fn verify_token_direct_selling_prices_vec(
                 match pricing_schedule {
                     TokenPricingSchedule::SinglePrice(credits) => {
                         let price_obj = Object::new();
-                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("single"))
-                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-                        Reflect::set(&price_obj, &JsValue::from_str("price"), &JsValue::from_f64(credits as f64))
-                            .map_err(|_| JsValue::from_str("Failed to set price"))?;
+                        Reflect::set(
+                            &price_obj,
+                            &JsValue::from_str("type"),
+                            &JsValue::from_str("single"),
+                        )
+                        .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                        Reflect::set(
+                            &price_obj,
+                            &JsValue::from_str("price"),
+                            &JsValue::from_f64(credits as f64),
+                        )
+                        .map_err(|_| JsValue::from_str("Failed to set price"))?;
                         tuple_array.push(&price_obj);
                     }
                     TokenPricingSchedule::SetPrices(prices_map) => {
                         let price_obj = Object::new();
-                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("set"))
-                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-                        
+                        Reflect::set(
+                            &price_obj,
+                            &JsValue::from_str("type"),
+                            &JsValue::from_str("set"),
+                        )
+                        .map_err(|_| JsValue::from_str("Failed to set type"))?;
+
                         let prices_array = Array::new();
                         for (amount, credits) in prices_map {
                             let entry = Array::new();
@@ -175,17 +187,29 @@ pub fn verify_token_direct_selling_prices_map(
                 match pricing_schedule {
                     TokenPricingSchedule::SinglePrice(credits) => {
                         let price_obj = Object::new();
-                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("single"))
-                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-                        Reflect::set(&price_obj, &JsValue::from_str("price"), &JsValue::from_f64(credits as f64))
-                            .map_err(|_| JsValue::from_str("Failed to set price"))?;
+                        Reflect::set(
+                            &price_obj,
+                            &JsValue::from_str("type"),
+                            &JsValue::from_str("single"),
+                        )
+                        .map_err(|_| JsValue::from_str("Failed to set type"))?;
+                        Reflect::set(
+                            &price_obj,
+                            &JsValue::from_str("price"),
+                            &JsValue::from_f64(credits as f64),
+                        )
+                        .map_err(|_| JsValue::from_str("Failed to set price"))?;
                         price_obj.into()
                     }
                     TokenPricingSchedule::SetPrices(prices_map) => {
                         let price_obj = Object::new();
-                        Reflect::set(&price_obj, &JsValue::from_str("type"), &JsValue::from_str("set"))
-                            .map_err(|_| JsValue::from_str("Failed to set type"))?;
-                        
+                        Reflect::set(
+                            &price_obj,
+                            &JsValue::from_str("type"),
+                            &JsValue::from_str("set"),
+                        )
+                        .map_err(|_| JsValue::from_str("Failed to set type"))?;
+
                         let prices_array = Array::new();
                         for (amount, credits) in prices_map {
                             let entry = Array::new();

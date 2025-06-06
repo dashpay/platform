@@ -1,6 +1,6 @@
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
 use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
+use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 use wasm_dpp::identity::IdentityWasm;
@@ -59,14 +59,13 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
         identity_id_public_key_hash_proof: identity_id_public_key_hash_proof_vec,
     };
 
-    let (root_hash, identity_option) =
-        Drive::verify_full_identity_by_non_unique_public_key_hash(
-            &proof,
-            public_key_hash_bytes,
-            after_bytes,
-            platform_version,
-        )
-        .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    let (root_hash, identity_option) = Drive::verify_full_identity_by_non_unique_public_key_hash(
+        &proof,
+        public_key_hash_bytes,
+        after_bytes,
+        platform_version,
+    )
+    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     let identity_js = match identity_option {
         Some(identity) => {

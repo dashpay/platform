@@ -13,30 +13,46 @@ fn group_action_to_js(action: &GroupAction) -> Result<JsValue, JsValue> {
     match action {
         GroupAction::V0(v0) => {
             let v0_obj = Object::new();
-            
+
             // Set contract_id
             let contract_id_array = Uint8Array::from(v0.contract_id.as_slice());
-            Reflect::set(&v0_obj, &JsValue::from_str("contract_id"), &contract_id_array)
-                .map_err(|_| JsValue::from_str("Failed to set contract_id"))?;
-            
+            Reflect::set(
+                &v0_obj,
+                &JsValue::from_str("contract_id"),
+                &contract_id_array,
+            )
+            .map_err(|_| JsValue::from_str("Failed to set contract_id"))?;
+
             // Set proposer_id
             let proposer_id_array = Uint8Array::from(v0.proposer_id.as_slice());
-            Reflect::set(&v0_obj, &JsValue::from_str("proposer_id"), &proposer_id_array)
-                .map_err(|_| JsValue::from_str("Failed to set proposer_id"))?;
-            
+            Reflect::set(
+                &v0_obj,
+                &JsValue::from_str("proposer_id"),
+                &proposer_id_array,
+            )
+            .map_err(|_| JsValue::from_str("Failed to set proposer_id"))?;
+
             // Set token_contract_position
-            Reflect::set(&v0_obj, &JsValue::from_str("token_contract_position"), &JsValue::from_f64(v0.token_contract_position as f64))
-                .map_err(|_| JsValue::from_str("Failed to set token_contract_position"))?;
-            
+            Reflect::set(
+                &v0_obj,
+                &JsValue::from_str("token_contract_position"),
+                &JsValue::from_f64(v0.token_contract_position as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set token_contract_position"))?;
+
             // For now, we'll set a placeholder for the event
             // TODO: Implement full event serialization
-            Reflect::set(&v0_obj, &JsValue::from_str("event"), &JsValue::from_str("[Event serialization not yet implemented]"))
-                .map_err(|_| JsValue::from_str("Failed to set event"))?;
-            
+            Reflect::set(
+                &v0_obj,
+                &JsValue::from_str("event"),
+                &JsValue::from_str("[Event serialization not yet implemented]"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set event"))?;
+
             let action_obj = Object::new();
             Reflect::set(&action_obj, &JsValue::from_str("V0"), &v0_obj)
                 .map_err(|_| JsValue::from_str("Failed to set V0"))?;
-            
+
             Ok(action_obj.into())
         }
     }

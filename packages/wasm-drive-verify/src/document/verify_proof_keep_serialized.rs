@@ -54,9 +54,11 @@ pub fn verify_document_proof_keep_serialized(
         let array: Uint8Array = contract_js.clone().dyn_into().unwrap();
         array.to_vec()
     } else {
-        return Err(JsValue::from_str("Contract must be provided as Uint8Array (CBOR bytes)"));
+        return Err(JsValue::from_str(
+            "Contract must be provided as Uint8Array (CBOR bytes)",
+        ));
     };
-    
+
     let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
 

@@ -47,7 +47,7 @@ pub fn verify_vote_poll_vote_state_proof(
     let contract_bytes = contract_cbor.to_vec();
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
-        
+
     let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
@@ -91,7 +91,11 @@ pub fn verify_vote_poll_vote_state_proof(
         // Add contenders array
         let contenders_array = Array::new();
         for contender in execution_result.contenders {
-            let doc_bytes = contender.serialized_document().as_ref().map(|doc| doc.to_vec()).unwrap_or_default();
+            let doc_bytes = contender
+                .serialized_document()
+                .as_ref()
+                .map(|doc| doc.to_vec())
+                .unwrap_or_default();
             let doc_uint8 = Uint8Array::from(&doc_bytes[..]);
             contenders_array.push(&doc_uint8);
         }

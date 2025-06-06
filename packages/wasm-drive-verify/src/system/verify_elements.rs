@@ -31,5 +31,7 @@ pub fn verify_elements(
 ) -> Result<VerifyElementsResult, JsValue> {
     // This function requires Element type from grovedb which is not available in wasm context
     // TODO: Implement a version that works with serialized elements
-    Err(JsValue::from_str("verify_elements is not yet implemented for WASM due to grovedb dependency"))
+    Err(JsValue::from_str(
+        "verify_elements is not yet implemented for WASM due to grovedb dependency",
+    ))
 }

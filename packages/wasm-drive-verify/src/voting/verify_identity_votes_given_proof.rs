@@ -17,33 +17,43 @@ fn deserialize_contested_resource_votes_query(
     // Deserialize the query components from CBOR
     let query_value: serde_json::Value = ciborium::de::from_reader(&query_cbor.to_vec()[..])
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {:?}", e)))?;
-    
+
     // Extract fields from the deserialized value
-    let query_obj = query_value.as_object()
+    let query_obj = query_value
+        .as_object()
         .ok_or_else(|| JsValue::from_str("Query must be an object"))?;
-    
-    let identity_id_bytes: Vec<u8> = query_obj.get("identity_id")
+
+    let identity_id_bytes: Vec<u8> = query_obj
+        .get("identity_id")
         .and_then(|v| v.as_array())
-        .and_then(|arr| arr.iter().map(|v| v.as_u64().map(|n| n as u8)).collect::<Option<Vec<_>>>())
+        .and_then(|arr| {
+            arr.iter()
+                .map(|v| v.as_u64().map(|n| n as u8))
+                .collect::<Option<Vec<_>>>()
+        })
         .ok_or_else(|| JsValue::from_str("Invalid identity_id in query"))?;
-    
+
     let identity_id = Identifier::from_bytes(&identity_id_bytes)
         .map_err(|e| JsValue::from_str(&format!("Invalid identity_id: {:?}", e)))?;
-    
-    let offset = query_obj.get("offset")
+
+    let offset = query_obj
+        .get("offset")
         .and_then(|v| v.as_u64())
         .map(|n| n as u16);
-    
-    let limit = query_obj.get("limit")
+
+    let limit = query_obj
+        .get("limit")
         .and_then(|v| v.as_u64())
         .map(|n| n as u16);
-    
-    let start_at = query_obj.get("start_at")
+
+    let start_at = query_obj
+        .get("start_at")
         .and_then(|v| v.as_array())
         .and_then(|arr| {
             if arr.len() == 2 {
                 let bytes_arr = arr[0].as_array()?;
-                let bytes: Vec<u8> = bytes_arr.iter()
+                let bytes: Vec<u8> = bytes_arr
+                    .iter()
                     .map(|v| v.as_u64().map(|n| n as u8))
                     .collect::<Option<Vec<_>>>()?;
                 let bytes_32: [u8; 32] = bytes.try_into().ok()?;
@@ -53,11 +63,12 @@ fn deserialize_contested_resource_votes_query(
                 None
             }
         });
-    
-    let order_ascending = query_obj.get("order_ascending")
+
+    let order_ascending = query_obj
+        .get("order_ascending")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    
+
     Ok(ContestedResourceVotesGivenByIdentityQuery {
         identity_id,
         offset,
@@ -180,7 +191,10 @@ pub fn verify_identity_votes_given_proof_map(
 }
 
 // Helper function to create contract lookup function from JS object
-fn create_contract_lookup_fn<'a>(contract_lookup: &JsValue, platform_version: &PlatformVersion) -> Result<Box<ContractLookupFn<'a>>, JsValue> {
+fn create_contract_lookup_fn<'a>(
+    contract_lookup: &JsValue,
+    platform_version: &PlatformVersion,
+) -> Result<Box<ContractLookupFn<'a>>, JsValue> {
     if !contract_lookup.is_object() {
         return Err(JsValue::from_str("contract_lookup must be an object"));
     }

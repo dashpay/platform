@@ -47,7 +47,7 @@ pub fn verify_vote_poll_votes_proof(
     let contract_bytes = contract_cbor.to_vec();
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
-        
+
     let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
@@ -84,9 +84,10 @@ pub fn verify_vote_poll_votes_proof(
         order_ascending,
     };
 
-    let contract_lookup = |_: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
-        Ok(Some(contract_arc.clone()))
-    };
+    let contract_lookup =
+        |_: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
+            Ok(Some(contract_arc.clone()))
+        };
 
     let resolved_query = query
         .resolve_with_known_contracts_provider(&Box::new(contract_lookup))

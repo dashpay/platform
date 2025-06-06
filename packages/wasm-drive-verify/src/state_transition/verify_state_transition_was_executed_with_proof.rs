@@ -58,9 +58,8 @@ pub fn verify_state_transition_was_executed_with_proof(
     let known_contracts = parse_known_contracts(known_contracts_js)?;
 
     // Create contract lookup function
-    let contract_lookup_fn: Box<ContractLookupFn> = Box::new(move |identifier: &Identifier| {
-        Ok(known_contracts.get(identifier).cloned())
-    });
+    let contract_lookup_fn: Box<ContractLookupFn> =
+        Box::new(move |identifier: &Identifier| Ok(known_contracts.get(identifier).cloned()));
 
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
@@ -113,7 +112,7 @@ fn parse_known_contracts(
             .ok_or_else(|| JsValue::from_str("Contract ID must be a string"))?;
 
         // Parse identifier from hex string
-        use platform_value::string_encoding::Encoding;
+        use dpp::platform_value::string_encoding::Encoding;
         let identifier = Identifier::from_string(&key_str, Encoding::Hex)
             .map_err(|e| JsValue::from_str(&format!("Invalid contract ID: {:?}", e)))?;
 
