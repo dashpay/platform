@@ -90,9 +90,7 @@ pub fn verify_identities_contract_keys(
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert IdentitiesContractKeys to JavaScript object
-    let keys_json = serde_json::to_value(&keys)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize keys: {:?}", e)))?;
-    let keys_js = to_value(&keys_json)
+    let keys_js = to_value(&keys)
         .map_err(|e| JsValue::from_str(&format!("Failed to convert keys to JsValue: {:?}", e)))?;
 
     Ok(VerifyIdentitiesContractKeysResult {

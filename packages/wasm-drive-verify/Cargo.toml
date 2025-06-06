@@ -12,7 +12,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "system_contracts"] }
-platform-value = { path = "../rs-platform-value" }
 wasm-dpp = { path = "../wasm-dpp" }
 
 wasm-bindgen = { version = "0.2.89" }

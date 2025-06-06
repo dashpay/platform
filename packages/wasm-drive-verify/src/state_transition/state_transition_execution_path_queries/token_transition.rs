@@ -4,7 +4,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 // PathQuery is re-exported through drive
-use drive::query::PathQuery;
+use drive::query::{PathQuery, QueryItem};
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use wasm_bindgen::prelude::*;
@@ -73,22 +73,22 @@ fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> 
     // Handle different query types
     if !path_query.query.query.items.is_empty() {
         let items_array = Array::new();
-        for _item in &path_query.query.query.items {
-            // TODO: Properly serialize QueryItem
-            items_array.push(&JsValue::from_str("[QueryItem]"));
+        for item in &path_query.query.query.items {
+            let item_js = serialize_query_item(item)?;
+            items_array.push(&item_js);
         }
         Reflect::set(&query_obj, &JsValue::from_str("items"), &items_array)
             .map_err(|_| JsValue::from_str("Failed to set items"))?;
     }
 
-    // TODO: Handle range queries properly
-    // Range queries would need to be extracted from the query items
+    // Range queries are handled through the QueryItem serialization above
+    // Each QueryItem contains its own range information
 
     if let Some(limit) = path_query.query.limit {
         Reflect::set(
             &query_obj,
             &JsValue::from_str("limit"),
-            &JsValue::from_f64(limit as f64),
+            &JsValue::from(limit),
         )
         .map_err(|_| JsValue::from_str("Failed to set limit"))?;
     }
@@ -97,7 +97,7 @@ fn convert_path_query_to_js(path_query: &PathQuery) -> Result<JsValue, JsValue> 
         Reflect::set(
             &query_obj,
             &JsValue::from_str("offset"),
-            &JsValue::from_f64(offset as f64),
+            &JsValue::from(offset),
         )
         .map_err(|_| JsValue::from_str("Failed to set offset"))?;
     }
@@ -245,4 +245,182 @@ pub fn group_active_and_closed_action_single_signer_query(
     Ok(TokenTransitionPathQueryResult {
         path_query: path_query_js,
     })
+}
+
+fn serialize_query_item(item: &QueryItem) -> Result<JsValue, JsValue> {
+    let obj = Object::new();
+
+    match item {
+        QueryItem::Key(key) => {
+            Reflect::set(&obj, &JsValue::from_str("type"), &JsValue::from_str("Key"))
+                .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let key_array = Uint8Array::from(key.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("key"), &key_array)
+                .map_err(|_| JsValue::from_str("Failed to set key"))?;
+        }
+        QueryItem::Range(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("Range"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let start_array = Uint8Array::from(range.start.as_slice());
+            let end_array = Uint8Array::from(range.end.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("start"), &start_array)
+                .map_err(|_| JsValue::from_str("Failed to set start"))?;
+            Reflect::set(&obj, &JsValue::from_str("end"), &end_array)
+                .map_err(|_| JsValue::from_str("Failed to set end"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("startInclusive"),
+                &JsValue::from_bool(true),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set startInclusive"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("endInclusive"),
+                &JsValue::from_bool(false),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
+        }
+        QueryItem::RangeInclusive(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("Range"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let start_array = Uint8Array::from(range.start().as_slice());
+            let end_array = Uint8Array::from(range.end().as_slice());
+            Reflect::set(&obj, &JsValue::from_str("start"), &start_array)
+                .map_err(|_| JsValue::from_str("Failed to set start"))?;
+            Reflect::set(&obj, &JsValue::from_str("end"), &end_array)
+                .map_err(|_| JsValue::from_str("Failed to set end"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("startInclusive"),
+                &JsValue::from_bool(true),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set startInclusive"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("endInclusive"),
+                &JsValue::from_bool(true),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
+        }
+        QueryItem::RangeFull(_) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeFull"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+        }
+        QueryItem::RangeFrom(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeFrom"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let start_array = Uint8Array::from(range.start.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("start"), &start_array)
+                .map_err(|_| JsValue::from_str("Failed to set start"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("startInclusive"),
+                &JsValue::from_bool(true),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set startInclusive"))?;
+        }
+        QueryItem::RangeTo(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeTo"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let end_array = Uint8Array::from(range.end.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("end"), &end_array)
+                .map_err(|_| JsValue::from_str("Failed to set end"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("endInclusive"),
+                &JsValue::from_bool(false),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
+        }
+        QueryItem::RangeToInclusive(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeTo"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let end_array = Uint8Array::from(range.end.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("end"), &end_array)
+                .map_err(|_| JsValue::from_str("Failed to set end"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("endInclusive"),
+                &JsValue::from_bool(true),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
+        }
+        QueryItem::RangeAfter(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeAfter"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let start_array = Uint8Array::from(range.start.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("start"), &start_array)
+                .map_err(|_| JsValue::from_str("Failed to set start"))?;
+        }
+        QueryItem::RangeAfterTo(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeAfterTo"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let start_array = Uint8Array::from(range.start.as_slice());
+            let end_array = Uint8Array::from(range.end.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("start"), &start_array)
+                .map_err(|_| JsValue::from_str("Failed to set start"))?;
+            Reflect::set(&obj, &JsValue::from_str("end"), &end_array)
+                .map_err(|_| JsValue::from_str("Failed to set end"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("endInclusive"),
+                &JsValue::from_bool(false),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
+        }
+        QueryItem::RangeAfterToInclusive(range) => {
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("RangeAfterTo"),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            let start_array = Uint8Array::from(range.start().as_slice());
+            let end_array = Uint8Array::from(range.end().as_slice());
+            Reflect::set(&obj, &JsValue::from_str("start"), &start_array)
+                .map_err(|_| JsValue::from_str("Failed to set start"))?;
+            Reflect::set(&obj, &JsValue::from_str("end"), &end_array)
+                .map_err(|_| JsValue::from_str("Failed to set end"))?;
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("endInclusive"),
+                &JsValue::from_bool(true),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
+        }
+    }
+
+    Ok(obj.into())
 }
