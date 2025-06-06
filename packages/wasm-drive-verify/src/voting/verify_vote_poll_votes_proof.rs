@@ -57,7 +57,7 @@ pub fn verify_vote_poll_votes_proof(
         .map_err(|e| JsValue::from_str(&format!("Invalid contestant ID: {:?}", e)))?;
 
     // Parse the contested document resource vote poll identifier
-    let _contested_document_resource_vote_poll =
+    let contested_vote_poll_id =
         Identifier::from_bytes(&contested_document_resource_vote_poll_bytes.to_vec())
             .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
 
@@ -75,7 +75,8 @@ pub fn verify_vote_poll_votes_proof(
             contract_id: contract_arc.id(),
             document_type_name: document_type_name.to_string(),
             index_name: index_name.to_string(),
-            index_values: vec![],
+            // Use the provided vote-poll ID as the index value
+            index_values: vec![contested_vote_poll_id.into()],
         },
         contestant_id: contestant_id_identifier,
         offset: None,

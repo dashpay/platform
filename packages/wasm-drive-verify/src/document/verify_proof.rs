@@ -52,7 +52,8 @@ pub fn verify_document_proof(
     // For now, we need the contract to be provided as CBOR bytes through contract_js
     // This is a limitation until we have proper JS serialization for DataContract
     let contract_bytes: Vec<u8> = if contract_js.is_instance_of::<Uint8Array>() {
-        let array: Uint8Array = contract_js.clone().dyn_into().unwrap();
+        let array: Uint8Array = contract_js.clone().dyn_into()
+            .map_err(|_| JsValue::from_str("Failed to convert to Uint8Array"))?;
         array.to_vec()
     } else {
         return Err(JsValue::from_str(
