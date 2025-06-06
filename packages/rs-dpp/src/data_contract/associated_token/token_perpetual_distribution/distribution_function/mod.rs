@@ -5,7 +5,7 @@ use std::fmt;
 
 mod encode;
 mod evaluate;
-mod evaluate_interval;
+pub mod evaluate_interval;
 pub mod reward_ratio;
 mod validation;
 
