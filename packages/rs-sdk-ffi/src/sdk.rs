@@ -103,7 +103,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
     };
 
     // Build SDK
-    let sdk_result = runtime.block_on(async { builder.build().map_err(FFIError::from) });
+    let sdk_result = builder.build().map_err(FFIError::from);
 
     match sdk_result {
         Ok(sdk) => {
@@ -137,5 +137,46 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashS
         Network::Devnet => DashSDKNetwork::Devnet,
         Network::Regtest => DashSDKNetwork::Local,
         _ => DashSDKNetwork::Local, // Fallback for any other network types
+    }
+}
+
+/// Create a mock SDK instance with a dump directory (for offline testing)
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
+    dump_dir: *const std::os::raw::c_char,
+) -> *mut SDKHandle {
+    // Create runtime
+    let runtime = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    // Parse dump directory
+    let dump_dir_str = if dump_dir.is_null() {
+        ""
+    } else {
+        match CStr::from_ptr(dump_dir).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    // Create mock SDK
+    let mut builder = SdkBuilder::new_mock();
+
+    if !dump_dir_str.is_empty() {
+        let path = std::path::PathBuf::from(dump_dir_str);
+        builder = builder.with_dump_dir(&path);
+    }
+
+    // Build SDK
+    let sdk_result = builder.build();
+
+    match sdk_result {
+        Ok(sdk) => {
+            let wrapper = Box::new(SDKWrapper::new(sdk, runtime));
+            Box::into_raw(wrapper) as *mut SDKHandle
+        }
+        Err(_) => std::ptr::null_mut(),
     }
 }

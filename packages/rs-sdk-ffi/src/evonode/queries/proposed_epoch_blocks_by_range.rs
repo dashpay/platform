@@ -78,6 +78,11 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
     start_after: *const c_char,
     start_at: *const c_char,
 ) -> Result<Option<String>, String> {
+    // Check for null pointer
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
@@ -228,7 +233,7 @@ mod tests {
     fn test_get_evonodes_proposed_epoch_blocks_by_range() {
         let handle = create_mock_sdk_handle();
         unsafe {
-            let result = dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
+            let _result = dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
                 handle,
                 0,
                 10,

@@ -62,6 +62,14 @@ fn get_prefunded_specialized_balance(
     sdk_handle: *const SDKHandle,
     id: *const c_char,
 ) -> Result<Option<String>, String> {
+    // Check for null pointers
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+    if id.is_null() {
+        return Err("ID is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

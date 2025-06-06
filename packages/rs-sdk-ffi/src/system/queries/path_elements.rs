@@ -66,6 +66,17 @@ fn get_path_elements(
     path_json: *const c_char,
     keys_json: *const c_char,
 ) -> Result<Option<String>, String> {
+    // Check for null pointers
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+    if path_json.is_null() {
+        return Err("Path JSON is null".to_string());
+    }
+    if keys_json.is_null() {
+        return Err("Keys JSON is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

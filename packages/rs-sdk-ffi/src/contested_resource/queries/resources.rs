@@ -91,6 +91,22 @@ fn get_contested_resources(
     count: u32,
     order_ascending: bool,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
+    if contract_id.is_null() {
+        return Err("Contract ID is null".to_string());
+    }
+
+    if document_type_name.is_null() {
+        return Err("Document type name is null".to_string());
+    }
+
+    if index_name.is_null() {
+        return Err("Index name is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

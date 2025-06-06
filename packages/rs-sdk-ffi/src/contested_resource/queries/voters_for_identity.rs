@@ -92,6 +92,30 @@ fn get_contested_resource_voters_for_identity(
     count: u32,
     order_ascending: bool,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
+    if contract_id.is_null() {
+        return Err("Contract ID is null".to_string());
+    }
+
+    if document_type_name.is_null() {
+        return Err("Document type name is null".to_string());
+    }
+
+    if index_name.is_null() {
+        return Err("Index name is null".to_string());
+    }
+
+    if index_values_json.is_null() {
+        return Err("Index values JSON is null".to_string());
+    }
+
+    if contestant_id.is_null() {
+        return Err("Contestant ID is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

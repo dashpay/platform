@@ -66,6 +66,11 @@ fn get_protocol_version_upgrade_vote_status(
     start_pro_tx_hash: *const c_char,
     count: u32,
 ) -> Result<Option<String>, String> {
+    // Check for null pointer
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
@@ -145,7 +150,7 @@ mod tests {
     fn test_get_protocol_version_upgrade_vote_status() {
         let handle = create_mock_sdk_handle();
         unsafe {
-            let result =
+            let _result =
                 dash_sdk_protocol_version_get_upgrade_vote_status(handle, std::ptr::null(), 10);
             // Result depends on mock implementation
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);

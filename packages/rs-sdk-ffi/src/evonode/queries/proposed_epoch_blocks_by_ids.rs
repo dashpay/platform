@@ -66,6 +66,14 @@ fn get_evonodes_proposed_epoch_blocks_by_ids(
     epoch: u32,
     ids_json: *const c_char,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
+    if ids_json.is_null() {
+        return Err("IDs JSON is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

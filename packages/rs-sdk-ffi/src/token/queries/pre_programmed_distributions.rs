@@ -90,6 +90,14 @@ fn get_token_pre_programmed_distributions(
     start_recipient_included: bool,
     limit: u32,
 ) -> Result<Option<String>, String> {
+    // Check for null pointers
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+    if token_id.is_null() {
+        return Err("Token ID is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

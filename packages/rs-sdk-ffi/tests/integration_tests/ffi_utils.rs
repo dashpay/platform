@@ -3,27 +3,34 @@
 use rs_sdk_ffi::*;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::path::PathBuf;
 use std::ptr;
 
 /// Create an SDK handle for testing using the mock mode with offline test vectors
-pub fn create_test_sdk_handle(_namespace: &str) -> *const SDKHandle {
-    // Create a mock SDK handle for testing
-    // Note: The actual SDK doesn't have a create_handle_with_mock function anymore
-    // We'll use the standard SDK creation with mock configuration
-    let config = DashSDKConfig {
-        network: DashSDKNetwork::Local,
-        dapi_addresses: ptr::null(), // null means use mock SDK
-        skip_asset_lock_proof_verification: true,
-        request_retry_count: 3,
-        request_timeout_ms: 5000,
+pub fn create_test_sdk_handle(namespace: &str) -> *const SDKHandle {
+    // Use the rs-sdk test vectors directory
+    let base_dump_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("rs-sdk")
+        .join("tests")
+        .join("vectors");
+
+    let dump_dir = if namespace.is_empty() {
+        base_dump_dir
+    } else {
+        let namespace = namespace.replace(' ', "_");
+        base_dump_dir.join(namespace)
     };
 
+    let dump_dir_str = CString::new(dump_dir.to_string_lossy().as_ref()).unwrap();
+
     unsafe {
-        let result = dash_sdk_create(&config);
-        if !result.error.is_null() {
-            panic!("Failed to create SDK handle");
+        let handle = dash_sdk_create_handle_with_mock(dump_dir_str.as_ptr());
+        if handle.is_null() {
+            panic!("Failed to create mock SDK handle");
         }
-        result.data as *const SDKHandle
+        handle as *const SDKHandle
     }
 }
 

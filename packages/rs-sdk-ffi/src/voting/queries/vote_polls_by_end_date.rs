@@ -90,6 +90,10 @@ fn get_vote_polls_by_end_date(
     offset: u32,
     ascending: bool,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
@@ -177,7 +181,7 @@ mod tests {
     fn test_get_vote_polls_by_end_date() {
         let handle = create_mock_sdk_handle();
         unsafe {
-            let result =
+            let _result =
                 dash_sdk_voting_get_vote_polls_by_end_date(handle, 0, false, 0, false, 10, 0, true);
             // Result depends on mock implementation
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);

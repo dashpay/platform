@@ -82,6 +82,14 @@ fn get_group_actions(
     start_at_action_id: *const c_char,
     limit: u16,
 ) -> Result<Option<String>, String> {
+    // Check for null pointers
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+    if contract_id.is_null() {
+        return Err("Contract ID is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 

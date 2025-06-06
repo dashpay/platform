@@ -60,6 +60,10 @@ pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_state(
 fn get_protocol_version_upgrade_state(
     sdk_handle: *const SDKHandle,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
@@ -113,7 +117,7 @@ mod tests {
     fn test_get_protocol_version_upgrade_state() {
         let handle = create_mock_sdk_handle();
         unsafe {
-            let result = dash_sdk_protocol_version_get_upgrade_state(handle);
+            let _result = dash_sdk_protocol_version_get_upgrade_state(handle);
             // Result depends on mock implementation
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }

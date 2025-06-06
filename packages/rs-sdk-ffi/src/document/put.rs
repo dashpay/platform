@@ -535,9 +535,7 @@ mod tests {
         assert!(!result.data.is_null());
 
         // Check result type is binary data
-        unsafe {
-            assert_eq!(result.data_type, DashSDKResultDataType::BinaryData);
-        }
+        assert_eq!(result.data_type, DashSDKResultDataType::BinaryData);
 
         // Clean up
         unsafe {

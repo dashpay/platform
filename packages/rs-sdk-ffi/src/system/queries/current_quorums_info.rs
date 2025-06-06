@@ -60,6 +60,10 @@ pub unsafe extern "C" fn dash_sdk_system_get_current_quorums_info(
 }
 
 fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
@@ -138,7 +142,7 @@ mod tests {
     fn test_get_current_quorums_info() {
         let handle = create_mock_sdk_handle();
         unsafe {
-            let result = dash_sdk_system_get_current_quorums_info(handle);
+            let _result = dash_sdk_system_get_current_quorums_info(handle);
             // Result depends on mock implementation
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }

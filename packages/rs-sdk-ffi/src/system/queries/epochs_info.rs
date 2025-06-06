@@ -70,6 +70,10 @@ fn get_epochs_info(
     count: u32,
     ascending: bool,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
@@ -146,7 +150,7 @@ mod tests {
     fn test_get_epochs_info_with_start() {
         let handle = create_mock_sdk_handle();
         unsafe {
-            let result = dash_sdk_system_get_epochs_info(
+            let _result = dash_sdk_system_get_epochs_info(
                 handle,
                 CString::new("100").unwrap().as_ptr(),
                 10,

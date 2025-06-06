@@ -79,6 +79,14 @@ fn get_contested_resource_identity_votes(
     offset: u32,
     order_ascending: bool,
 ) -> Result<Option<String>, String> {
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
+    if identity_id.is_null() {
+        return Err("Identity ID is null".to_string());
+    }
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
