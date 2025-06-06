@@ -1,5 +1,5 @@
 // Element type is not exposed through drive's verify feature
-// We'll work with the serialized format instead
+// This is a placeholder implementation that demonstrates the limitation
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -22,6 +22,26 @@ impl VerifyElementsResult {
     }
 }
 
+/// Verifies elements at a specific path with given keys
+///
+/// **Note**: This function is currently not fully implemented due to limitations in the
+/// WASM environment. The Element type from grovedb is not exposed through the verify
+/// feature, making it impossible to properly serialize and return element data.
+///
+/// For document verification, please use the document-specific verification functions
+/// such as `verify_proof_keep_serialized` which are designed to work within these
+/// limitations.
+///
+/// # Alternative Approaches:
+///
+/// 1. For document queries: Use `DriveDocumentQuery.verify_proof_keep_serialized()`
+/// 2. For identity queries: Use the identity-specific verification functions
+/// 3. For contract queries: Use `verify_contract()`
+///
+/// This limitation exists because:
+/// - The Element enum from grovedb contains references to internal tree structures
+/// - These structures cannot be safely exposed across the WASM boundary
+/// - The verify feature intentionally excludes server-side types for security
 #[wasm_bindgen(js_name = "verifyElements")]
 pub fn verify_elements(
     _proof: &Uint8Array,
@@ -29,9 +49,9 @@ pub fn verify_elements(
     _keys: &Array,
     _platform_version_number: u32,
 ) -> Result<VerifyElementsResult, JsValue> {
-    // This function requires Element type from grovedb which is not available in wasm context
-    // TODO: Implement a version that works with serialized elements
     Err(JsValue::from_str(
-        "verify_elements is not yet implemented for WASM due to grovedb dependency",
+        "verify_elements is not available in WASM due to grovedb Element type limitations. \
+         Please use document, identity, or contract-specific verification functions instead. \
+         See the function documentation for alternatives.",
     ))
 }

@@ -125,11 +125,62 @@ pub fn verify_vote_poll_vote_state_proof(
             .map_err(|_| JsValue::from_str("Failed to set lockedVoteTally"))?;
         }
 
-        if let Some((_winner_info, _block_info)) = execution_result.winner {
-            // For now, just set the winner identifier if available
+        if let Some((winner_info, block_info)) = execution_result.winner {
             let winner_obj = Object::new();
-            // TODO: Add proper serialization for ContestedDocumentVotePollWinnerInfo
-            // when it implements Serialize
+
+            // Serialize ContestedDocumentVotePollWinnerInfo
+            match winner_info {
+                dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo::NoWinner => {
+                    Reflect::set(&winner_obj, &JsValue::from_str("type"), &JsValue::from_str("NoWinner"))
+                        .map_err(|_| JsValue::from_str("Failed to set winner type"))?;
+                }
+                dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo::WonByIdentity(identifier) => {
+                    Reflect::set(&winner_obj, &JsValue::from_str("type"), &JsValue::from_str("WonByIdentity"))
+                        .map_err(|_| JsValue::from_str("Failed to set winner type"))?;
+                    let id_array = Uint8Array::from(identifier.as_slice());
+                    Reflect::set(&winner_obj, &JsValue::from_str("identityId"), &id_array)
+                        .map_err(|_| JsValue::from_str("Failed to set winner identity"))?;
+                }
+                dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo::Locked => {
+                    Reflect::set(&winner_obj, &JsValue::from_str("type"), &JsValue::from_str("Locked"))
+                        .map_err(|_| JsValue::from_str("Failed to set winner type"))?;
+                }
+            }
+
+            // Add block info
+            let block_info_obj = Object::new();
+            Reflect::set(
+                &block_info_obj,
+                &JsValue::from_str("height"),
+                &JsValue::from_f64(block_info.height as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set block height"))?;
+            Reflect::set(
+                &block_info_obj,
+                &JsValue::from_str("coreHeight"),
+                &JsValue::from(block_info.core_height),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set core height"))?;
+            Reflect::set(
+                &block_info_obj,
+                &JsValue::from_str("timeMs"),
+                &JsValue::from_f64(block_info.time_ms as f64),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set time ms"))?;
+            Reflect::set(
+                &block_info_obj,
+                &JsValue::from_str("epoch"),
+                &JsValue::from(block_info.epoch.index),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set epoch"))?;
+
+            Reflect::set(
+                &winner_obj,
+                &JsValue::from_str("blockInfo"),
+                &block_info_obj,
+            )
+            .map_err(|_| JsValue::from_str("Failed to set block info"))?;
+
             Reflect::set(&result_obj, &JsValue::from_str("winner"), &winner_obj)
                 .map_err(|_| JsValue::from_str("Failed to set winner"))?;
         }

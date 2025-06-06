@@ -1,3 +1,4 @@
+use dpp::identity::identity_public_key::IdentityPublicKey;
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
@@ -6,7 +7,7 @@ use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 // Helper function to convert PartialIdentity to JS object
-fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue> {
+pub fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue> {
     let obj = Object::new();
 
     // Set id
@@ -19,22 +20,18 @@ fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue
     for (key_id, _public_key) in &identity.loaded_public_keys {
         let key_obj = Object::new();
 
-        // Set key properties
-        Reflect::set(
-            &key_obj,
-            &JsValue::from_str("id"),
-            &JsValue::from_str(&key_id.to_string()),
-        )
-        .map_err(|_| JsValue::from_str("Failed to set key id"))?;
+        // Serialize the full IdentityPublicKey
+        let serialized_key = serialize_identity_public_key(_public_key)?;
 
-        // For now, we'll add a placeholder for the full key data
-        // TODO: Implement full IdentityPublicKey serialization
-        Reflect::set(
-            &key_obj,
-            &JsValue::from_str("data"),
-            &JsValue::from_str("[Key data not yet implemented]"),
-        )
-        .map_err(|_| JsValue::from_str("Failed to set key data"))?;
+        // Merge the serialized key properties into the key object
+        let key_keys = Object::keys(&serialized_key);
+        for i in 0..key_keys.length() {
+            let prop_name = key_keys.get(i);
+            let prop_value = Reflect::get(&serialized_key, &prop_name)
+                .map_err(|_| JsValue::from_str("Failed to get key property"))?;
+            Reflect::set(&key_obj, &prop_name, &prop_value)
+                .map_err(|_| JsValue::from_str("Failed to set key property"))?;
+        }
 
         Reflect::set(&keys_obj, &JsValue::from_str(&key_id.to_string()), &key_obj)
             .map_err(|_| JsValue::from_str("Failed to set key in map"))?;
@@ -173,4 +170,103 @@ pub fn verify_identity_keys_by_identity_id(
         root_hash: root_hash.to_vec(),
         identity: identity_js,
     })
+}
+
+// Helper function to serialize IdentityPublicKey to JS object
+fn serialize_identity_public_key(key: &IdentityPublicKey) -> Result<Object, JsValue> {
+    let obj = Object::new();
+
+    match key {
+        IdentityPublicKey::V0(key_v0) => {
+            // Set id
+            Reflect::set(&obj, &JsValue::from_str("id"), &JsValue::from(key_v0.id))
+                .map_err(|_| JsValue::from_str("Failed to set key id"))?;
+
+            // Set purpose (as number)
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("purpose"),
+                &JsValue::from(key_v0.purpose as u8),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set purpose"))?;
+
+            // Set security level (as number)
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("securityLevel"),
+                &JsValue::from(key_v0.security_level as u8),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set security level"))?;
+
+            // Set contract bounds (optional)
+            match &key_v0.contract_bounds {
+                Some(bounds) => {
+                    let bounds_obj = Object::new();
+                    match bounds {
+                        dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContract { id } => {
+                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContract"))
+                                .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                            let id_array = Uint8Array::from(id.as_slice());
+                            Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
+                                .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
+                        }
+                        dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContractDocumentType { id, document_type_name } => {
+                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContractDocumentType"))
+                                .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                            let id_array = Uint8Array::from(id.as_slice());
+                            Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
+                                .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
+                            Reflect::set(&bounds_obj, &JsValue::from_str("documentTypeName"), &JsValue::from_str(document_type_name))
+                                .map_err(|_| JsValue::from_str("Failed to set document type name"))?;
+                        }
+                    }
+                    Reflect::set(&obj, &JsValue::from_str("contractBounds"), &bounds_obj)
+                        .map_err(|_| JsValue::from_str("Failed to set contract bounds"))?;
+                }
+                None => {
+                    Reflect::set(&obj, &JsValue::from_str("contractBounds"), &JsValue::NULL)
+                        .map_err(|_| JsValue::from_str("Failed to set contract bounds to null"))?;
+                }
+            }
+
+            // Set key type (as number)
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("type"),
+                &JsValue::from(key_v0.key_type as u8),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set key type"))?;
+
+            // Set read only flag
+            Reflect::set(
+                &obj,
+                &JsValue::from_str("readOnly"),
+                &JsValue::from_bool(key_v0.read_only),
+            )
+            .map_err(|_| JsValue::from_str("Failed to set read only"))?;
+
+            // Set key data (as Uint8Array)
+            let data_array = Uint8Array::from(key_v0.data.as_slice());
+            Reflect::set(&obj, &JsValue::from_str("data"), &data_array)
+                .map_err(|_| JsValue::from_str("Failed to set key data"))?;
+
+            // Set disabled_at (optional timestamp)
+            match key_v0.disabled_at {
+                Some(timestamp) => {
+                    Reflect::set(
+                        &obj,
+                        &JsValue::from_str("disabledAt"),
+                        &JsValue::from_str(&timestamp.to_string()),
+                    )
+                    .map_err(|_| JsValue::from_str("Failed to set disabled at"))?;
+                }
+                None => {
+                    Reflect::set(&obj, &JsValue::from_str("disabledAt"), &JsValue::NULL)
+                        .map_err(|_| JsValue::from_str("Failed to set disabled at to null"))?;
+                }
+            }
+        }
+    }
+
+    Ok(obj)
 }

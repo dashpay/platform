@@ -7,10 +7,13 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::ContractLookupFn;
 use js_sys::{Object, Reflect, Uint8Array};
-use serde_wasm_bindgen::from_value;
+use serde_wasm_bindgen::{from_value, to_value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+
+// Import the partial identity serialization function from the identity module
+use crate::identity::verify_identity_keys_by_identity_id::partial_identity_to_js;
 
 #[wasm_bindgen]
 pub struct VerifyStateTransitionWasExecutedWithProofResult {
@@ -144,13 +147,11 @@ fn convert_proof_result_to_js(
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
-            // TODO: Add serialization of the data contract
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("dataContract"),
-                &JsValue::from_str("Data contract serialization not yet implemented"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set dataContract"))?;
+            let contract_js = to_value(_contract).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize data contract: {:?}", e))
+            })?;
+            Reflect::set(&obj, &JsValue::from_str("dataContract"), &contract_js)
+                .map_err(|_| JsValue::from_str("Failed to set dataContract"))?;
         }
         StateTransitionProofResult::VerifiedIdentity(_identity) => {
             Reflect::set(
@@ -160,13 +161,11 @@ fn convert_proof_result_to_js(
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
-            // TODO: Add serialization of the identity
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("identity"),
-                &JsValue::from_str("Identity serialization not yet implemented"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set identity"))?;
+            let identity_js = to_value(_identity).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize identity: {:?}", e))
+            })?;
+            Reflect::set(&obj, &JsValue::from_str("identity"), &identity_js)
+                .map_err(|_| JsValue::from_str("Failed to set identity"))?;
         }
         StateTransitionProofResult::VerifiedDocuments(_documents) => {
             Reflect::set(
@@ -176,13 +175,11 @@ fn convert_proof_result_to_js(
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
-            // TODO: Add serialization of the documents
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("documents"),
-                &JsValue::from_str("Documents serialization not yet implemented"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set documents"))?;
+            let documents_js = to_value(_documents).map_err(|e| {
+                JsValue::from_str(&format!("Failed to serialize documents: {:?}", e))
+            })?;
+            Reflect::set(&obj, &JsValue::from_str("documents"), &documents_js)
+                .map_err(|_| JsValue::from_str("Failed to set documents"))?;
         }
         StateTransitionProofResult::VerifiedPartialIdentity(_partial_identity) => {
             Reflect::set(
@@ -192,11 +189,11 @@ fn convert_proof_result_to_js(
             )
             .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
-            // TODO: Add serialization of the partial identity
+            let partial_identity_js = partial_identity_to_js(_partial_identity)?;
             Reflect::set(
                 &obj,
                 &JsValue::from_str("partialIdentity"),
-                &JsValue::from_str("Partial identity serialization not yet implemented"),
+                &partial_identity_js,
             )
             .map_err(|_| JsValue::from_str("Failed to set partialIdentity"))?;
         }
