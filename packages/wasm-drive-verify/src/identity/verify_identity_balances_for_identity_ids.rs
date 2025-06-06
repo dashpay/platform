@@ -80,7 +80,7 @@ pub fn verify_identity_balances_for_identity_ids_vec(
         // Add balance
         match balance_option {
             Some(credits) => {
-                tuple_array.push(&JsValue::from_f64(credits as f64));
+                tuple_array.push(&JsValue::from_str(&credits.to_string()));
             }
             None => {
                 tuple_array.push(&JsValue::NULL);
@@ -145,7 +145,7 @@ pub fn verify_identity_balances_for_identity_ids_map(
         let hex_key = hex::encode(&id);
 
         let balance_js = match balance_option {
-            Some(credits) => JsValue::from_f64(credits as f64),
+            Some(credits) => JsValue::from_str(&credits.to_string()),
             None => JsValue::NULL,
         };
 

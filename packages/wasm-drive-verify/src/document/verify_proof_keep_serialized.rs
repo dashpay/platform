@@ -51,7 +51,10 @@ pub fn verify_document_proof_keep_serialized(
     // For now, we need the contract to be provided as CBOR bytes through contract_js
     // This is a limitation until we have proper JS serialization for DataContract
     let contract_bytes: Vec<u8> = if contract_js.is_instance_of::<Uint8Array>() {
-        let array: Uint8Array = contract_js.clone().dyn_into().unwrap();
+        let array: Uint8Array = contract_js
+            .clone()
+            .dyn_into()
+            .map_err(|_| JsValue::from_str("Failed to convert contract to Uint8Array"))?;
         array.to_vec()
     } else {
         return Err(JsValue::from_str(
@@ -74,14 +77,15 @@ pub fn verify_document_proof_keep_serialized(
     let order_by_map = parse_order_by(order_by)?;
 
     // Parse start_at
-    let start_at_bytes = start_at.map(|arr| {
+    let start_at_bytes = if let Some(arr) = start_at {
         let vec = arr.to_vec();
         let bytes: [u8; 32] = vec
             .try_into()
-            .map_err(|_| JsValue::from_str("Invalid start_at length. Expected 32 bytes."))
-            .unwrap();
-        bytes
-    });
+            .map_err(|_| JsValue::from_str("Invalid start_at length. Expected 32 bytes."))?;
+        Some(bytes)
+    } else {
+        None
+    };
 
     // Create the query
     let query = DriveDocumentQuery {

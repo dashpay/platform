@@ -23,7 +23,7 @@ fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue
         Reflect::set(
             &key_obj,
             &JsValue::from_str("id"),
-            &JsValue::from_f64(*key_id as f64),
+            &JsValue::from_str(&key_id.to_string()),
         )
         .map_err(|_| JsValue::from_str("Failed to set key id"))?;
 
@@ -48,7 +48,7 @@ fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue
             Reflect::set(
                 &obj,
                 &JsValue::from_str("balance"),
-                &JsValue::from_f64(balance as f64),
+                &JsValue::from_str(&balance.to_string()),
             )
             .map_err(|_| JsValue::from_str("Failed to set balance"))?;
         }
@@ -64,7 +64,7 @@ fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue
             Reflect::set(
                 &obj,
                 &JsValue::from_str("revision"),
-                &JsValue::from_f64(revision as f64),
+                &JsValue::from_str(&revision.to_string()),
             )
             .map_err(|_| JsValue::from_str("Failed to set revision"))?;
         }
@@ -77,7 +77,7 @@ fn partial_identity_to_js(identity: &PartialIdentity) -> Result<JsValue, JsValue
     // Set notFoundPublicKeys
     let not_found_array = Array::new();
     for key_id in &identity.not_found_public_keys {
-        not_found_array.push(&JsValue::from_f64(*key_id as f64));
+        not_found_array.push(&JsValue::from_str(&key_id.to_string()));
     }
     Reflect::set(
         &obj,
@@ -133,9 +133,10 @@ pub fn verify_identity_keys_by_identity_id(
         for i in 0..keys_array.length() {
             let key_id = keys_array
                 .get(i)
-                .as_f64()
-                .ok_or_else(|| JsValue::from_str("Invalid key ID"))?
-                as u32;
+                .as_string()
+                .ok_or_else(|| JsValue::from_str("Key ID must be a string"))?
+                .parse::<u32>()
+                .map_err(|_| JsValue::from_str("Invalid key ID number"))?;
             keys_vec.push(key_id);
         }
         KeyRequestType::SpecificKeys(keys_vec)

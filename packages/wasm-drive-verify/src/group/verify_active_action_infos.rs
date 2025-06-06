@@ -36,7 +36,7 @@ fn group_action_to_js(action: &GroupAction) -> Result<JsValue, JsValue> {
             Reflect::set(
                 &v0_obj,
                 &JsValue::from_str("token_contract_position"),
-                &JsValue::from_f64(v0.token_contract_position as f64),
+                &JsValue::from_str(&v0.token_contract_position.to_string()),
             )
             .map_err(|_| JsValue::from_str("Failed to set token_contract_position"))?;
 
