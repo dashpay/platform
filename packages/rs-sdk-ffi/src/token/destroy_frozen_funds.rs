@@ -188,9 +188,9 @@ pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
 mod tests {
     use super::*;
     use crate::types::{DashSDKPutSettings, DashSDKStateTransitionCreationOptions, SDKHandle};
-    use crate::{DashSDKError, DashSDKErrorCode};
+    use crate::DashSDKErrorCode;
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dash_sdk::dpp::identity::{KeyID, KeyType, Purpose, SecurityLevel};
+    use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dash_sdk::dpp::platform_value::BinaryData;
     use dash_sdk::platform::IdentityPublicKey;
     use std::ffi::{CStr, CString};

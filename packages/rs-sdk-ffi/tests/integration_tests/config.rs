@@ -69,7 +69,7 @@ pub struct Config {
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
     pub const CONFIG_PREFIX: &'static str = "DASH_SDK_";
-    
+
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
@@ -117,7 +117,7 @@ impl Config {
     fn default_document_type_name() -> String {
         "domain".to_string()
     }
-    
+
     fn default_document_id() -> String {
         // dash TLD document ID
         "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec".to_string()

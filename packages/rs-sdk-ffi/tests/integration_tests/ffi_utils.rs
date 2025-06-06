@@ -17,7 +17,7 @@ pub fn create_test_sdk_handle(_namespace: &str) -> *const SDKHandle {
         request_retry_count: 3,
         request_timeout_ms: 5000,
     };
-    
+
     unsafe {
         let result = dash_sdk_create(&config);
         if !result.error.is_null() {
@@ -52,7 +52,11 @@ pub unsafe fn from_c_string(ptr: *const c_char) -> Option<String> {
 pub unsafe fn parse_string_result(result: DashSDKResult) -> Result<Option<String>, String> {
     if !result.error.is_null() {
         let error = Box::from_raw(result.error);
-        return Err(format!("Error code {}: {}", error.code as i32, from_c_string(error.message).unwrap_or_default()));
+        return Err(format!(
+            "Error code {}: {}",
+            error.code as i32,
+            from_c_string(error.message).unwrap_or_default()
+        ));
     }
 
     match result.data_type {
@@ -87,14 +91,16 @@ pub unsafe fn assert_success_with_data(result: DashSDKResult) -> String {
 
 /// Test helper to assert that a result is successful but contains no data (None)
 pub unsafe fn assert_success_none(result: DashSDKResult) {
-    let data = parse_string_result(result)
-        .expect("Result should be successful");
+    let data = parse_string_result(result).expect("Result should be successful");
     assert!(data.is_none(), "Expected None but got data: {:?}", data);
 }
 
 /// Test helper to assert that a result is an error
 pub unsafe fn assert_error(result: DashSDKResult) {
-    assert!(parse_string_result(result).is_err(), "Expected error but got success");
+    assert!(
+        parse_string_result(result).is_err(),
+        "Expected error but got success"
+    );
 }
 
 /// Setup logging for tests

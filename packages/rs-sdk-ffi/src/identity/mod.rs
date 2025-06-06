@@ -31,12 +31,10 @@ pub use withdraw::dash_sdk_identity_withdraw;
 
 // Re-export query functions
 pub use queries::{
-    dash_sdk_identity_fetch_balance,
+    dash_sdk_identity_fetch, dash_sdk_identity_fetch_balance,
     dash_sdk_identity_fetch_balance_and_revision,
     dash_sdk_identity_fetch_by_non_unique_public_key_hash,
-    dash_sdk_identity_fetch_by_public_key_hash,
-    dash_sdk_identity_fetch,
-    dash_sdk_identity_fetch_public_keys,
+    dash_sdk_identity_fetch_by_public_key_hash, dash_sdk_identity_fetch_public_keys,
     dash_sdk_identity_resolve_name,
 };
 

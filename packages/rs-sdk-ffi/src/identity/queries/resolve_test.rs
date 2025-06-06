@@ -3,9 +3,9 @@
 #[cfg(test)]
 mod tests {
     use super::super::resolve::dash_sdk_identity_resolve_name;
-    use crate::sdk::SDKWrapper;
+
     use crate::test_utils::test_utils::create_mock_sdk_handle;
-    use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
+    use crate::DashSDKErrorCode;
     use std::ffi::CString;
 
     #[test]

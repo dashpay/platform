@@ -176,10 +176,7 @@ pub unsafe extern "C" fn dash_sdk_token_burn(
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::*;
-    use crate::types::{
-        DashSDKConfig, DashSDKPutSettings, DashSDKStateTransitionCreationOptions, SDKHandle,
-        SignerHandle,
-    };
+    use crate::types::{DashSDKStateTransitionCreationOptions, SignerHandle};
     use crate::DashSDKErrorCode;
     use dash_sdk::platform::IdentityPublicKey;
     use std::ffi::{CStr, CString};

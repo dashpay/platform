@@ -219,12 +219,11 @@ mod tests {
     use super::*;
     use crate::test_utils::test_utils::*;
     use crate::DashSDKErrorCode;
-    use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-    use dash_sdk::dpp::data_contract::v1::DataContractV1;
+
     use dash_sdk::dpp::document::{Document, DocumentV0};
-    use dash_sdk::dpp::platform_value::{platform_value, Value};
-    use dash_sdk::dpp::prelude::{Identifier, Revision};
-    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::dpp::platform_value::Value;
+    use dash_sdk::dpp::prelude::Identifier;
+
     use std::collections::BTreeMap;
     use std::ffi::{CStr, CString};
     use std::ptr;

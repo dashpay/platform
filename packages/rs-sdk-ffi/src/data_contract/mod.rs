@@ -121,7 +121,6 @@ pub unsafe extern "C" fn dash_sdk_data_contract_destroy(handle: *mut DataContrac
 
 // Re-export query functions
 pub use queries::{
-    dash_sdk_data_contract_fetch,
+    dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_history,
     dash_sdk_data_contracts_fetch_many,
-    dash_sdk_data_contract_fetch_history,
 };

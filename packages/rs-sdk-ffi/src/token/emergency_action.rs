@@ -190,7 +190,7 @@ mod tests {
     use super::*;
     use crate::types::DashSDKConfig;
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dash_sdk::dpp::identity::{KeyID, KeyType, Purpose, SecurityLevel};
+    use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dash_sdk::dpp::platform_value::BinaryData;
     use std::ffi::CString;
     use std::ptr;
