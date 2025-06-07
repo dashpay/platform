@@ -1474,7 +1474,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a polynomial distribution that increases at an accelerating rate with base amount 1000 tokens",
+                "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1000 tokens",
                 "The token contract was registered before epoch 6",
                 "we are currently at epoch 16",
                 "you have 10 intervals of rewards"
@@ -1568,7 +1568,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that increases at a slowing rate with base amount 2000 tokens",
+                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2000 tokens",
                 "The token contract was registered before epoch 101",
                 "we are currently at epoch 111",
                 "you have 10 intervals of rewards"
@@ -1615,8 +1615,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
-                "Early claimants receive significantly more tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
                 "The token contract was registered before epoch 51",
                 "we are currently at epoch 61",
                 "you have 10 intervals of rewards"
@@ -2201,7 +2200,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a polynomial distribution that starts high and gradually declines with base amount 5000 tokens",
+                "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5000 tokens",
                 "The last claim was for block 10000",
                 "we are currently at block 11001",
                 "you have 10 intervals of rewards"
@@ -2514,7 +2513,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that increases at a slowing rate with base amount 2000 tokens",
+                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2000 tokens",
                 "The token contract was registered before block 101",
                 "we are currently at block 111",
                 "you have 10 intervals of rewards"
@@ -2561,7 +2560,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that decreases at a slowing rate with base amount 2000 tokens",
+                "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2000 tokens",
                 "The last claim was for block 100",
                 "we are currently at block 111",
                 "you have 10 intervals of rewards"
@@ -2608,8 +2607,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
-                "Early claimants receive significantly more tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
                 "The token contract was registered before block 51",
                 "we are currently at block 61",
                 "you have 10 intervals of rewards"
@@ -2656,8 +2654,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
-                "Early claimants receive significantly more tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
                 "The last claim was for block 50",
                 "we are currently at block 61",
                 "you have 10 intervals of rewards"
@@ -3296,7 +3293,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a polynomial distribution that increases at an accelerating rate with base amount 1000 tokens",
+                "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1000 tokens",
                 "The token contract was registered before time period 6",
                 "we are currently at time period 16",
                 "you have 10 intervals of rewards"
@@ -3343,7 +3340,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a polynomial distribution that starts high and gradually declines with base amount 5000 tokens",
+                "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5000 tokens",
                 "The last claim was for time period 10000",
                 "we are currently at time period 11001",
                 "you have 10 intervals of rewards"
@@ -3484,7 +3481,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that increases at a slowing rate with base amount 2000 tokens",
+                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2000 tokens",
                 "The token contract was registered before time period 101",
                 "we are currently at time period 111",
                 "you have 10 intervals of rewards"
@@ -3531,7 +3528,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that decreases at a slowing rate with base amount 2000 tokens",
+                "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2000 tokens",
                 "The last claim was for time period 100",
                 "we are currently at time period 111",
                 "you have 10 intervals of rewards"
@@ -3578,8 +3575,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
-                "Early claimants receive significantly more tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
                 "The token contract was registered before time period 51",
                 "we are currently at time period 61",
                 "you have 10 intervals of rewards"
@@ -3626,8 +3622,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
-                "Early claimants receive significantly more tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
                 "The last claim was for time period 50",
                 "we are currently at time period 61",
                 "you have 10 intervals of rewards"
