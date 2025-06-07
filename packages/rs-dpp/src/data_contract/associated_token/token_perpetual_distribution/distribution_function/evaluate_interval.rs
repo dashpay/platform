@@ -468,13 +468,19 @@ impl IntervalEvaluationExplanation {
                     "follows a polynomial curve"
                 };
 
+                let base_amount = if *b > 0 {
+                    format!(" with a base amount of {}", format_token_amount_with_plural(*b, decimal_offset))
+                } else {
+                    String::new()
+                };
+
                 if is_first_claim {
                     format!(
-                        "This token follows a polynomial distribution that {} with base amount {}. \
+                        "This token follows a polynomial distribution that {}{}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
                         you have {} {} of rewards totaling {}",
                         growth_desc,
-                        format_token_amount_with_plural(*b, decimal_offset),
+                        base_amount,
                         period_unit,
                         self.interval_start_excluded.to_u64() + 1,
                         period_unit,
@@ -485,11 +491,11 @@ impl IntervalEvaluationExplanation {
                     )
                 } else {
                     format!(
-                        "This token follows a polynomial distribution that {} with base amount {}. \
+                        "This token follows a polynomial distribution that {}{}. \
                         The last claim was for {} {} and we are currently at {} {}, \
                         you have {} {} of rewards totaling {}",
                         growth_desc,
-                        format_token_amount_with_plural(*b, decimal_offset),
+                        base_amount,
                         period_unit,
                         self.interval_start_excluded.to_u64(),
                         period_unit,
@@ -566,13 +572,19 @@ impl IntervalEvaluationExplanation {
                     "decreases at a slowing rate"
                 };
 
+                let base_amount = if *b > 0 {
+                    format!(" with a base amount of {}", format_token_amount_with_plural(*b, decimal_offset))
+                } else {
+                    String::new()
+                };
+
                 if is_first_claim {
                     format!(
-                        "This token follows a logarithmic distribution that {} with base amount {}. \
+                        "This token follows a logarithmic distribution that {}{}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
                         you have {} {} of rewards totaling {}",
                         growth_desc,
-                        format_token_amount_with_plural(*b, decimal_offset),
+                        base_amount,
                         period_unit,
                         self.interval_start_excluded.to_u64() + 1,
                         period_unit,
@@ -583,11 +595,11 @@ impl IntervalEvaluationExplanation {
                     )
                 } else {
                     format!(
-                        "This token follows a logarithmic distribution that {} with base amount {}. \
+                        "This token follows a logarithmic distribution that {}{}. \
                         The last claim was for {} {} and we are currently at {} {}, \
                         you have {} {} of rewards totaling {}",
                         growth_desc,
-                        format_token_amount_with_plural(*b, decimal_offset),
+                        base_amount,
                         period_unit,
                         self.interval_start_excluded.to_u64(),
                         period_unit,
@@ -608,13 +620,18 @@ impl IntervalEvaluationExplanation {
 
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
+                let base_amount = if *b > 0 {
+                    format!(", with a base amount of {}", format_token_amount_with_plural(*b, decimal_offset))
+                } else {
+                    String::new()
+                };
+
                 if is_first_claim {
                     format!(
                         "This token starts with high rewards that gradually decrease following an inverted \
-                        logarithmic curve, with base amount {}. Early claimants receive significantly \
-                        more tokens. The token contract was registered before {} {} and we are currently at \
-                        {} {}, you have {} {} of rewards totaling {} tokens",
-                        format_token_amount_with_plural(*b, decimal_offset),
+                        logarithmic curve{}. The token contract was registered \
+                        before {} {} and we are currently at {} {}, you have {} {} of rewards totaling {}",
+                        base_amount,
                         period_unit,
                         self.interval_start_excluded.to_u64() + 1,
                         period_unit,
@@ -626,10 +643,9 @@ impl IntervalEvaluationExplanation {
                 } else {
                     format!(
                         "This token starts with high rewards that gradually decrease following an inverted \
-                        logarithmic curve, with base amount {}. Early claimants receive significantly \
-                        more tokens. The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {} of rewards totaling {}",
-                        format_token_amount_with_plural(*b, decimal_offset),
+                        logarithmic curve{}. The last claim was for {} {} and we are \
+                        currently at {} {}, you have {} {} of rewards totaling {}",
+                        base_amount,
                         period_unit,
                         self.interval_start_excluded.to_u64(),
                         period_unit,
@@ -1599,7 +1615,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with base amount 0 tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
                 "Early claimants receive significantly more tokens",
                 "The token contract was registered before epoch 51",
                 "we are currently at epoch 61",
@@ -2592,7 +2608,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with base amount 0 tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
                 "Early claimants receive significantly more tokens",
                 "The token contract was registered before block 51",
                 "we are currently at block 61",
@@ -2640,7 +2656,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with base amount 0 tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
                 "Early claimants receive significantly more tokens",
                 "The last claim was for block 50",
                 "we are currently at block 61",
@@ -3562,7 +3578,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with base amount 0 tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
                 "Early claimants receive significantly more tokens",
                 "The token contract was registered before time period 51",
                 "we are currently at time period 61",
@@ -3610,7 +3626,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with base amount 0 tokens",
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve, with a base amount of 0 tokens",
                 "Early claimants receive significantly more tokens",
                 "The last claim was for time period 50",
                 "we are currently at time period 61",
