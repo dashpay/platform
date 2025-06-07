@@ -64,18 +64,21 @@ impl RewardDistributionType {
     /// - `current_moment_included` (`RewardDistributionMoment`):  
     ///   The latest point up to which rewards should be counted (inclusive).
     /// - `get_epoch_reward_ratio`: Optional function providing a reward ratio for epoch-based distributions.
+    /// - `is_first_claim`: Explanation will be based on whether this is the first claim or not.
     ///
     /// # Returns
     ///
     /// - `Ok(IntervalEvaluationExplanation)`: A detailed explanation containing the result and all calculation steps.
     /// - `Err(ProtocolError)`: If any evaluation fails (e.g., overflow, invalid configuration).
     ///
+    #[cfg(feature = "token-reward-explanations")]
     pub fn rewards_in_interval_with_explanation<F>(
         &self,
         distribution_start: RewardDistributionMoment,
         start_at_moment: RewardDistributionMoment,
         current_moment_included: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
+        is_first_claim: bool,
     ) -> Result<IntervalEvaluationExplanation, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -86,6 +89,7 @@ impl RewardDistributionType {
             current_moment_included,
             self.interval(),
             get_epoch_reward_ratio,
+            is_first_claim,
         )
     }
 }

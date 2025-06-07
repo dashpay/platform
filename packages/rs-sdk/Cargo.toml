@@ -52,7 +52,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-dpp = { path = "../rs-dpp", features = [
+dpp = { path = "../rs-dpp", default-features = false, features = [
   "client",
   "validation",
   "random-documents",
@@ -66,7 +66,7 @@ assert_matches = "1.5.0"
 
 [features]
 # TODO: remove mocks from default features
-default = ["mocks", "offline-testing", "dapi-grpc/client"]
+default = ["mocks", "offline-testing", "dapi-grpc/client", "token_reward_explanations"]
 
 mocks = [
   "dep:serde",
@@ -113,6 +113,8 @@ generate-test-vectors = ["network-testing"]
 # Have the system data contracts inside the dpp crate
 
 system-data-contracts = ["dpp/data-contracts"]
+
+token_reward_explanations = ["dpp/token-reward-explanations"]
 
 [[example]]
 

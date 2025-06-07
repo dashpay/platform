@@ -46,6 +46,8 @@ pub struct IntervalEvaluationExplanation {
     pub fixed_amount_optimization_used: bool,
     /// Number of steps calculated
     pub steps_count: u64,
+    /// Is this the first claim
+    pub is_first_claim: bool,
     /// Any special conditions or optimizations applied
     pub optimization_notes: Vec<String>,
 }
@@ -100,7 +102,7 @@ fn format_token_amount_with_plural(amount: TokenAmount, decimal_offset: u8) -> S
 
 impl IntervalEvaluationExplanation {
     /// Returns a short explanation of the evaluation result
-    pub fn short_explanation(&self, is_first_claim: bool, decimal_offset: u8) -> String {
+    pub fn short_explanation(&self, decimal_offset: u8) -> String {
         match &self.distribution_function {
             DistributionFunction::FixedAmount { amount } => {
                 match (
@@ -116,7 +118,7 @@ impl IntervalEvaluationExplanation {
                         let amount_str = format_token_amount(*amount, decimal_offset);
                         let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
-                        if is_first_claim {
+                        if self.is_first_claim {
                             format!(
                                 "This token distributes every epoch a fixed amount of {}. \
                                 The token contract was registered in the epoch before epoch {} \
@@ -164,7 +166,7 @@ impl IntervalEvaluationExplanation {
                         let amount_str = format_token_amount(*amount, decimal_offset);
                         let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
-                        if is_first_claim {
+                        if self.is_first_claim {
                             format!(
                                 "This token distributes every {} a fixed amount of {}. \
                                 The token contract was registered before {} {} and we are \
@@ -211,7 +213,7 @@ impl IntervalEvaluationExplanation {
                 };
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token distributes a random amount between {} and {} per {}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -272,7 +274,7 @@ impl IntervalEvaluationExplanation {
                     * 100.0;
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token starts distributing {} and decreases by {:.1}% every {} {}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -350,7 +352,7 @@ impl IntervalEvaluationExplanation {
 
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token distributes tokens in predefined steps: {}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -414,7 +416,7 @@ impl IntervalEvaluationExplanation {
                     "remains constant".to_string()
                 };
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token starts at {} and {}per {}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -469,12 +471,15 @@ impl IntervalEvaluationExplanation {
                 };
 
                 let base_amount = if *b > 0 {
-                    format!(" with a base amount of {}", format_token_amount_with_plural(*b, decimal_offset))
+                    format!(
+                        " with a base amount of {}",
+                        format_token_amount_with_plural(*b, decimal_offset)
+                    )
                 } else {
                     String::new()
                 };
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token follows a polynomial distribution that {}{}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -522,7 +527,7 @@ impl IntervalEvaluationExplanation {
                     "decays exponentially"
                 };
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token {} starting from a base of {} with scaling factor {}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -573,12 +578,15 @@ impl IntervalEvaluationExplanation {
                 };
 
                 let base_amount = if *b > 0 {
-                    format!(" with a base amount of {}", format_token_amount_with_plural(*b, decimal_offset))
+                    format!(
+                        " with a base amount of {}",
+                        format_token_amount_with_plural(*b, decimal_offset)
+                    )
                 } else {
                     String::new()
                 };
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token follows a logarithmic distribution that {}{}. \
                         The token contract was registered before {} {} and we are currently at {} {}, \
@@ -621,12 +629,15 @@ impl IntervalEvaluationExplanation {
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
 
                 let base_amount = if *b > 0 {
-                    format!(", with a base amount of {}", format_token_amount_with_plural(*b, decimal_offset))
+                    format!(
+                        ", with a base amount of {}",
+                        format_token_amount_with_plural(*b, decimal_offset)
+                    )
                 } else {
                     String::new()
                 };
 
-                if is_first_claim {
+                if self.is_first_claim {
                     format!(
                         "This token starts with high rewards that gradually decrease following an inverted \
                         logarithmic curve{}. The token contract was registered \
@@ -1022,6 +1033,7 @@ impl DistributionFunction {
     ///
     /// - `Ok(IntervalEvaluationExplanation)` containing the result and detailed explanation.
     /// - `Err(ProtocolError)` on mismatched types, zero steps, or overflow.
+    #[cfg(feature = "token-reward-explanations")]
     pub fn evaluate_interval_with_explanation<F>(
         &self,
         distribution_start: RewardDistributionMoment,
@@ -1029,6 +1041,7 @@ impl DistributionFunction {
         interval_end_included: RewardDistributionMoment,
         step: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
+        is_first_claim: bool,
     ) -> Result<IntervalEvaluationExplanation, ProtocolError>
     where
         F: Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>,
@@ -1044,6 +1057,7 @@ impl DistributionFunction {
             reward_ratios_applied: false,
             fixed_amount_optimization_used: false,
             steps_count: 0,
+            is_first_claim,
             optimization_notes: Vec::new(),
         };
 
@@ -1224,6 +1238,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1233,7 +1248,7 @@ mod tests {
                            would be 7740, you therefore have 185 intervals of rewards. \
                            185 * 10000 = 1850000 tokens";
 
-            assert_eq!(result.short_explanation(true, 0), expected);
+            assert_eq!(result.short_explanation(0), expected);
         }
 
         #[test]
@@ -1251,6 +1266,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -1259,7 +1275,7 @@ mod tests {
                            the last epoch you can claim would be 7740, you therefore have 186 \
                            intervals of rewards. 186 * 10000 = 1860000 tokens";
 
-            assert_eq!(result.short_explanation(false, 0), expected);
+            assert_eq!(result.short_explanation(0), expected);
         }
 
         #[test]
@@ -1277,10 +1293,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per epoch."));
             assert!(actual.contains("The token contract was registered before epoch 51"));
             assert!(actual.contains("we are currently at epoch 61"));
@@ -1302,10 +1319,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             assert!(actual.contains("The last claim was for epoch 50"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
@@ -1335,6 +1353,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1346,7 +1365,7 @@ mod tests {
                 "After all decreasing steps, it distributes 1000 tokens per interval"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1379,6 +1398,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1389,7 +1409,7 @@ mod tests {
                 "you have 20 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1423,6 +1443,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1433,7 +1454,7 @@ mod tests {
                 "you have 10 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1470,6 +1491,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1480,7 +1502,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1517,6 +1539,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1527,7 +1550,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1564,6 +1587,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1574,7 +1598,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1611,6 +1635,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1621,7 +1646,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1647,10 +1672,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             let medium = result.medium_explanation();
             let long = result.long_explanation();
 
@@ -1690,6 +1716,7 @@ mod tests {
                     end_included,
                     step,
                     Some(get_ratio),
+                    true,
                 )
                 .unwrap();
 
@@ -1713,10 +1740,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             assert!(
                 actual.contains("you therefore have 1 interval of rewards"),
                 "Expected singular 'interval', got: {}",
@@ -1744,11 +1772,12 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
             // Test with decimal offset of 5
-            let actual = result.short_explanation(true, 5);
+            let actual = result.short_explanation(5);
             assert!(
                 actual.contains("5.2 tokens"),
                 "Expected '5.2 tokens' with decimal offset 5, got: {}",
@@ -1779,10 +1808,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             // Should say "1 token" not "1 token`s`"
             assert!(
                 actual.contains("a fixed amount of 1 token"),
@@ -1803,10 +1833,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual_decimals = result_with_decimals.short_explanation(true, 6);
+            let actual_decimals = result_with_decimals.short_explanation(6);
             assert!(
                 actual_decimals.contains("0.000001 token"),
                 "Expected singular 'token' for fractional amount, got: {}",
@@ -1829,11 +1860,12 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
             // Test with decimal offset of 8 (common for crypto tokens)
-            let actual = result.short_explanation(true, 8);
+            let actual = result.short_explanation(8);
             assert!(
                 actual.contains("1.23456789 tokens"),
                 "Expected '1.23456789 tokens' with decimal offset 8, got: {}",
@@ -1866,10 +1898,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             // Should say "1 token" not "1 token`s`"
             assert!(
                 actual.contains("a fixed amount of 1 token"),
@@ -1898,6 +1931,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -1909,7 +1943,7 @@ mod tests {
             assert!(result.evaluation_steps.is_empty()); // No individual steps due to optimization
 
             // Test explanations
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             assert!(short.contains("fixed amount of 100 tokens"));
             assert!(short.contains("500 tokens"));
 
@@ -1918,7 +1952,7 @@ mod tests {
             assert!(medium.contains("Total Steps Evaluated: 5"));
 
             // Test with is_first_claim = false
-            let short_not_first = result.short_explanation(false, 0);
+            let short_not_first = result.short_explanation(0);
             assert!(short_not_first.contains("The last claim was for"));
 
             let long = result.long_explanation();
@@ -1948,6 +1982,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1956,7 +1991,7 @@ mod tests {
             assert!(!result.evaluation_steps.is_empty()); // Should have individual steps
 
             // Test that explanations contain function type
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             assert!(short.contains("starts at 50 tokens"));
 
             let medium = result.medium_explanation();
@@ -1981,6 +2016,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -1992,7 +2028,7 @@ mod tests {
                 .any(|note| note.contains("Start >= End")));
 
             // Test that empty range still generates explanation
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             assert!(short.contains("0 tokens"));
         }
 
@@ -2019,6 +2055,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2043,6 +2080,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2067,6 +2105,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2078,7 +2117,7 @@ mod tests {
                 "10 * 5000 = 50000 tokens",
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2107,10 +2146,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             assert!(
                 actual.contains("you have 1 interval of rewards"),
                 "Expected singular 'interval', got: {}",
@@ -2148,6 +2188,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2159,7 +2200,7 @@ mod tests {
                 "After all decreasing steps, it distributes 100 tokens per interval"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2196,6 +2237,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2206,7 +2248,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2232,6 +2274,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2243,7 +2286,7 @@ mod tests {
                 "186 * 10000 = 1860000 tokens",
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2269,10 +2312,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per block."));
             assert!(actual.contains("The token contract was registered before block 51"));
             assert!(actual.contains("we are currently at block 61"));
@@ -2294,10 +2338,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             assert!(actual.contains("The last claim was for block 50"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
@@ -2324,6 +2369,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2334,7 +2380,7 @@ mod tests {
                 "you have 20 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2368,6 +2414,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2378,7 +2425,7 @@ mod tests {
                 "you have 10 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2415,6 +2462,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2425,7 +2473,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2462,6 +2510,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2472,7 +2521,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2509,6 +2558,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2519,7 +2569,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2556,6 +2606,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2566,7 +2617,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2603,6 +2654,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2613,7 +2665,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2650,6 +2702,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2660,7 +2713,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2686,10 +2739,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             let medium = result.medium_explanation();
             let long = result.long_explanation();
 
@@ -2729,6 +2783,7 @@ mod tests {
                     end_included,
                     step,
                     Some(get_ratio),
+                    true,
                 )
                 .unwrap();
 
@@ -2752,11 +2807,12 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
             // Test with decimal offset of 5
-            let actual = result.short_explanation(true, 5);
+            let actual = result.short_explanation(5);
             assert!(
                 actual.contains("5.2 tokens"),
                 "Expected '5.2 tokens' with decimal offset 5, got: {}",
@@ -2786,11 +2842,12 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
             // Test with decimal offset of 8 (common for crypto tokens)
-            let actual = result.short_explanation(true, 8);
+            let actual = result.short_explanation(8);
             assert!(
                 actual.contains("1.23456789 tokens"),
                 "Expected '1.23456789 tokens' with decimal offset 8, got: {}",
@@ -2823,10 +2880,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             // Should say "1 token" not "1 token`s`"
             assert!(
                 actual.contains("a fixed amount of 1 token"),
@@ -2855,6 +2913,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -2866,7 +2925,7 @@ mod tests {
                 "12 * 2500 = 30000 tokens",
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2892,11 +2951,12 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
             // Test with decimal offset of 5 - should show "5" not "5.00000"
-            let actual = result.short_explanation(true, 5);
+            let actual = result.short_explanation(5);
             assert!(
                 actual.contains("5 tokens"),
                 "Expected '5 tokens' without trailing zeros, got: {}",
@@ -2932,6 +2992,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2942,7 +3003,7 @@ mod tests {
                 "you have 12 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2976,6 +3037,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -2986,7 +3048,7 @@ mod tests {
                 "you have 3 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3012,6 +3074,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3023,7 +3086,7 @@ mod tests {
                 "185 * 10000 = 1850000 tokens",
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3049,10 +3112,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per time period."));
             assert!(actual.contains("The token contract was registered before time period 51"));
             assert!(actual.contains("we are currently at time period 61"));
@@ -3074,10 +3138,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             assert!(actual.contains("The last claim was for time period 50"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
@@ -3107,6 +3172,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3118,7 +3184,7 @@ mod tests {
                 "After all decreasing steps, it distributes 1000 tokens per interval"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3154,6 +3220,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3165,7 +3232,7 @@ mod tests {
                 "After all decreasing steps, it distributes 100 tokens per interval"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3198,6 +3265,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3208,7 +3276,7 @@ mod tests {
                 "you have 20 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3242,6 +3310,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3252,7 +3321,7 @@ mod tests {
                 "you have 10 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3289,6 +3358,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3299,7 +3369,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3336,6 +3406,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3346,7 +3417,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3383,6 +3454,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3393,7 +3465,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3430,6 +3502,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3440,7 +3513,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3477,6 +3550,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3487,7 +3561,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3524,6 +3598,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3534,7 +3609,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3571,6 +3646,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3581,7 +3657,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3618,6 +3694,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
                 )
                 .unwrap();
 
@@ -3628,7 +3705,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(false, 0);
+            let actual = result.short_explanation(0);
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3654,10 +3731,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             let medium = result.medium_explanation();
             let long = result.long_explanation();
 
@@ -3697,6 +3775,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3721,6 +3800,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3745,6 +3825,7 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
@@ -3756,7 +3837,7 @@ mod tests {
                 .any(|note| note.contains("Start >= End")));
 
             // Test that empty range still generates explanation
-            let short = result.short_explanation(true, 0);
+            let short = result.short_explanation(0);
             assert!(short.contains("0 tokens"));
         }
 
@@ -3783,6 +3864,7 @@ mod tests {
                     end_included,
                     step,
                     Some(get_ratio),
+                    true,
                 )
                 .unwrap();
 
@@ -3806,10 +3888,11 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(true, 0);
+            let actual = result.short_explanation(0);
             assert!(
                 actual.contains("you have 1 interval of rewards"),
                 "Expected singular 'interval', got: {}",
@@ -3837,11 +3920,12 @@ mod tests {
                     end_included,
                     step,
                     None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    true,
                 )
                 .unwrap();
 
             // Test with decimal offset of 8 (common for crypto tokens)
-            let actual = result.short_explanation(true, 8);
+            let actual = result.short_explanation(8);
             assert!(
                 actual.contains("1.23456789 tokens"),
                 "Expected '1.23456789 tokens' with decimal offset 8, got: {}",

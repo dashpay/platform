@@ -67,7 +67,7 @@ once_cell = "1.19.0"
 test-case = { version = "3.3" }
 tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
-dpp = { path = ".", features = ["all_features_without_client"] }
+dpp = { path = ".", default-features = false, features = ["all_features_without_client", "token-reward-explanations"] }
 assert_matches = "1.5.0"
 once_cell = "1.7"
 env_logger = { version = "0.11.8" }
@@ -121,6 +121,7 @@ all_features = [
   "fee-distribution",
   "client",
   "vote-serialization",
+  "token-reward-explanations"
 ]
 
 dash-sdk-features = [
@@ -296,6 +297,7 @@ extended-document = [
   "data-contract-serde-conversion",
   "data-contract-json-conversion",
 ]
+token-reward-explanations = []
 
 factories = []
 client = ["factories", "state-transitions"]
