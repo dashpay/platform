@@ -1,7 +1,7 @@
 use std::os::raw::c_uchar;
 
 /// Swift-compatible signer interface
-/// 
+///
 /// This represents a callback-based signer for iOS/Swift applications.
 /// The actual signer implementation will be provided by the iOS app.
 
@@ -74,7 +74,11 @@ pub unsafe extern "C" fn swift_dash_signer_sign(
     data_len: usize,
     result_len: *mut usize,
 ) -> *mut c_uchar {
-    if signer.is_null() || identity_public_key_bytes.is_null() || data.is_null() || result_len.is_null() {
+    if signer.is_null()
+        || identity_public_key_bytes.is_null()
+        || data.is_null()
+        || result_len.is_null()
+    {
         return std::ptr::null_mut();
     }
 

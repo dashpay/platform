@@ -105,37 +105,186 @@ pub extern "C" fn swift_dash_identity_resolve_name(
     }
 }
 
-/// Transfer credits (simplified implementation)
+/// Transfer credits from one identity to another
 #[no_mangle]
 pub extern "C" fn swift_dash_identity_transfer_credits(
     sdk_handle: *const rs_sdk_ffi::SDKHandle,
-    from_identity_id: *const c_char,
+    from_identity_handle: *const rs_sdk_ffi::IdentityHandle,
     to_identity_id: *const c_char,
-    _amount: u64,
-    private_key: *const u8,
-    _private_key_len: usize,
-) -> SwiftDashResult {
-    if sdk_handle.is_null() || from_identity_id.is_null() || to_identity_id.is_null() || private_key.is_null() {
-        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
+    amount: u64,
+    identity_public_key_handle: *const rs_sdk_ffi::IdentityPublicKeyHandle,
+    signer_handle: *const rs_sdk_ffi::SignerHandle,
+) -> *mut SwiftDashTransferCreditsResult {
+    if sdk_handle.is_null()
+        || from_identity_handle.is_null()
+        || to_identity_id.is_null()
+        || signer_handle.is_null()
+    {
+        return ptr::null_mut();
     }
 
-    // This is a simplified implementation - in practice would need proper signer setup
-    SwiftDashResult::error(SwiftDashError::not_implemented("Credit transfer not yet implemented"))
+    unsafe {
+        let result = rs_sdk_ffi::dash_sdk_identity_transfer_credits(
+            sdk_handle as *mut rs_sdk_ffi::SDKHandle,
+            from_identity_handle,
+            to_identity_id,
+            amount,
+            identity_public_key_handle, // Can be null for auto-select
+            signer_handle,
+            ptr::null(), // Use default put settings
+        );
+
+        if !result.error.is_null() {
+            let _ = Box::from_raw(result.error);
+            return ptr::null_mut();
+        }
+
+        // Cast the result data to DashSDKTransferCreditsResult
+        let ffi_result = result.data as *const rs_sdk_ffi::DashSDKTransferCreditsResult;
+        if ffi_result.is_null() {
+            return ptr::null_mut();
+        }
+
+        let _transfer_result = &*ffi_result;
+
+        // Copy the to_identity_id string
+        let to_id_cstr = CStr::from_ptr(to_identity_id);
+        let recipient_id = match CString::new(to_id_cstr.to_bytes()) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return ptr::null_mut(),
+        };
+
+        let swift_result = Box::new(SwiftDashTransferCreditsResult {
+            amount,
+            recipient_id,
+            transaction_data: ptr::null_mut(),
+            transaction_data_len: 0,
+        });
+
+        Box::into_raw(swift_result)
+    }
 }
 
-/// Create a new identity (mock for now)
+/// Put identity to platform with instant lock
 #[no_mangle]
-pub extern "C" fn swift_dash_identity_create(
+pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock(
     sdk_handle: *const rs_sdk_ffi::SDKHandle,
-    public_key: *const u8,
-    _public_key_len: usize,
+    identity_handle: *const rs_sdk_ffi::IdentityHandle,
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+    private_key: *const [u8; 32],
+    signer_handle: *const rs_sdk_ffi::SignerHandle,
 ) -> SwiftDashResult {
-    if sdk_handle.is_null() || public_key.is_null() {
-        return SwiftDashResult::error(SwiftDashError::invalid_parameter("Missing required parameters"));
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
+        || signer_handle.is_null()
+    {
+        return SwiftDashResult::error(SwiftDashError::invalid_parameter(
+            "Missing required parameters",
+        ));
     }
 
-    // This would need to be implemented with proper identity creation logic
-    SwiftDashResult::error(SwiftDashError::not_implemented("Identity creation not yet implemented"))
+    unsafe {
+        let result = rs_sdk_ffi::dash_sdk_identity_put_to_platform_with_instant_lock(
+            sdk_handle as *mut rs_sdk_ffi::SDKHandle,
+            identity_handle,
+            instant_lock_bytes,
+            instant_lock_len,
+            transaction_bytes,
+            transaction_len,
+            output_index,
+            private_key,
+            signer_handle,
+            ptr::null(), // Use default put settings
+        );
+
+        if !result.error.is_null() {
+            let error = Box::from_raw(result.error);
+            return SwiftDashResult::error(SwiftDashError::from_ffi_error(&*error));
+        }
+
+        // Extract binary data from result
+        if result.data_type == rs_sdk_ffi::DashSDKResultDataType::BinaryData
+            && !result.data.is_null()
+        {
+            let binary_data = result.data as *const rs_sdk_ffi::DashSDKBinaryData;
+            let binary = &*binary_data;
+            SwiftDashResult::success_binary(binary.data as *mut std::os::raw::c_void, binary.len)
+        } else {
+            SwiftDashResult::success()
+        }
+    }
+}
+
+/// Put identity to platform with instant lock and wait
+#[no_mangle]
+pub extern "C" fn swift_dash_identity_put_to_platform_with_instant_lock_and_wait(
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    identity_handle: *const rs_sdk_ffi::IdentityHandle,
+    instant_lock_bytes: *const u8,
+    instant_lock_len: usize,
+    transaction_bytes: *const u8,
+    transaction_len: usize,
+    output_index: u32,
+    private_key: *const [u8; 32],
+    signer_handle: *const rs_sdk_ffi::SignerHandle,
+) -> *mut rs_sdk_ffi::IdentityHandle {
+    if sdk_handle.is_null()
+        || identity_handle.is_null()
+        || instant_lock_bytes.is_null()
+        || transaction_bytes.is_null()
+        || private_key.is_null()
+        || signer_handle.is_null()
+    {
+        return ptr::null_mut();
+    }
+
+    unsafe {
+        let result = rs_sdk_ffi::dash_sdk_identity_put_to_platform_with_instant_lock_and_wait(
+            sdk_handle as *mut rs_sdk_ffi::SDKHandle,
+            identity_handle,
+            instant_lock_bytes,
+            instant_lock_len,
+            transaction_bytes,
+            transaction_len,
+            output_index,
+            private_key,
+            signer_handle,
+            ptr::null(), // Use default put settings
+        );
+
+        if !result.error.is_null() {
+            let _ = Box::from_raw(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut rs_sdk_ffi::IdentityHandle
+    }
+}
+
+/// Create identity is done by creating Identity object locally and then putting to platform
+/// This is a helper note - actual creation requires proper key generation and asset lock proof
+#[no_mangle]
+pub extern "C" fn swift_dash_identity_create_note() -> *const c_char {
+    let note = CString::new(
+        "To create identity: 1. Generate keys, 2. Create asset lock, 3. Use put_to_platform",
+    )
+    .unwrap();
+    note.into_raw()
+}
+
+/// Free identity handle
+#[no_mangle]
+pub unsafe extern "C" fn swift_dash_identity_destroy(handle: *mut rs_sdk_ffi::IdentityHandle) {
+    if !handle.is_null() {
+        rs_sdk_ffi::dash_sdk_identity_destroy(handle);
+    }
 }
 
 /// Free identity info structure
@@ -153,7 +302,9 @@ pub unsafe extern "C" fn swift_dash_identity_info_free(info: *mut SwiftDashIdent
 
 /// Free transfer result structure
 #[no_mangle]
-pub unsafe extern "C" fn swift_dash_transfer_credits_result_free(result: *mut SwiftDashTransferCreditsResult) {
+pub unsafe extern "C" fn swift_dash_transfer_credits_result_free(
+    result: *mut SwiftDashTransferCreditsResult,
+) {
     if result.is_null() {
         return;
     }
@@ -163,7 +314,11 @@ pub unsafe extern "C" fn swift_dash_transfer_credits_result_free(result: *mut Sw
         let _ = CString::from_raw(result.recipient_id);
     }
     if !result.transaction_data.is_null() && result.transaction_data_len > 0 {
-        let _ = Vec::from_raw_parts(result.transaction_data, result.transaction_data_len, result.transaction_data_len);
+        let _ = Vec::from_raw_parts(
+            result.transaction_data,
+            result.transaction_data_len,
+            result.transaction_data_len,
+        );
     }
 }
 

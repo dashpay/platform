@@ -100,6 +100,36 @@ impl SwiftDashError {
             format!("Not implemented: {}", message),
         )
     }
+
+    pub fn from_ffi_error(error: &rs_sdk_ffi::DashSDKError) -> Self {
+        let message = if error.message.is_null() {
+            "Unknown error".to_string()
+        } else {
+            unsafe {
+                std::ffi::CStr::from_ptr(error.message)
+                    .to_string_lossy()
+                    .to_string()
+            }
+        };
+
+        let code = match error.code {
+            rs_sdk_ffi::DashSDKErrorCode::Success => SwiftDashErrorCode::Success,
+            rs_sdk_ffi::DashSDKErrorCode::InvalidParameter => SwiftDashErrorCode::InvalidParameter,
+            rs_sdk_ffi::DashSDKErrorCode::InvalidState => SwiftDashErrorCode::InvalidState,
+            rs_sdk_ffi::DashSDKErrorCode::NetworkError => SwiftDashErrorCode::NetworkError,
+            rs_sdk_ffi::DashSDKErrorCode::SerializationError => {
+                SwiftDashErrorCode::SerializationError
+            }
+            rs_sdk_ffi::DashSDKErrorCode::ProtocolError => SwiftDashErrorCode::ProtocolError,
+            rs_sdk_ffi::DashSDKErrorCode::CryptoError => SwiftDashErrorCode::CryptoError,
+            rs_sdk_ffi::DashSDKErrorCode::NotFound => SwiftDashErrorCode::NotFound,
+            rs_sdk_ffi::DashSDKErrorCode::Timeout => SwiftDashErrorCode::Timeout,
+            rs_sdk_ffi::DashSDKErrorCode::NotImplemented => SwiftDashErrorCode::NotImplemented,
+            rs_sdk_ffi::DashSDKErrorCode::InternalError => SwiftDashErrorCode::InternalError,
+        };
+
+        Self::new(code, message)
+    }
 }
 
 impl From<rs_sdk_ffi::DashSDKError> for SwiftDashError {
@@ -139,6 +169,7 @@ impl From<rs_sdk_ffi::DashSDKError> for SwiftDashError {
 pub struct SwiftDashResult {
     pub success: bool,
     pub data: *mut std::os::raw::c_void,
+    pub data_len: usize,
     pub error: *mut SwiftDashError,
 }
 
@@ -147,6 +178,7 @@ impl SwiftDashResult {
         SwiftDashResult {
             success: true,
             data,
+            data_len: 0,
             error: std::ptr::null_mut(),
         }
     }
@@ -155,6 +187,16 @@ impl SwiftDashResult {
         SwiftDashResult {
             success: true,
             data: std::ptr::null_mut(),
+            data_len: 0,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn success_binary(data: *mut std::os::raw::c_void, _len: usize) -> Self {
+        SwiftDashResult {
+            success: true,
+            data,
+            data_len: 0, // Not used for now
             error: std::ptr::null_mut(),
         }
     }
@@ -163,6 +205,7 @@ impl SwiftDashResult {
         SwiftDashResult {
             success: false,
             data: std::ptr::null_mut(),
+            data_len: 0,
             error: Box::into_raw(Box::new(error)),
         }
     }
