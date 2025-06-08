@@ -49,23 +49,26 @@ impl DriveHighLevelBatchOperationConverter for TokenDirectPurchaseTransitionActi
                     allow_saturation: false,
                 }));
 
-                ops.push(IdentityOperation(
-                    IdentityOperationType::RemoveFromIdentityBalance {
-                        identity_id: owner_id.to_buffer(),
-                        balance_to_remove: self.total_agreed_price(),
-                    },
-                ));
-                ops.push(IdentityOperation(
-                    IdentityOperationType::AddToIdentityBalance {
-                        identity_id: self
-                            .base()
-                            .data_contract_fetch_info()
-                            .contract
-                            .owner_id()
-                            .to_buffer(),
-                        added_balance: self.total_agreed_price(),
-                    },
-                ));
+                if owner_id != self.base().data_contract_fetch_info().contract.owner_id() {
+                    // We can not send to ourselves
+                    ops.push(IdentityOperation(
+                        IdentityOperationType::RemoveFromIdentityBalance {
+                            identity_id: owner_id.to_buffer(),
+                            balance_to_remove: self.total_agreed_price(),
+                        },
+                    ));
+                    ops.push(IdentityOperation(
+                        IdentityOperationType::AddToIdentityBalance {
+                            identity_id: self
+                                .base()
+                                .data_contract_fetch_info()
+                                .contract
+                                .owner_id()
+                                .to_buffer(),
+                            added_balance: self.total_agreed_price(),
+                        },
+                    ));
+                }
 
                 let token_configuration = self.base().token_configuration()?;
                 if token_configuration
