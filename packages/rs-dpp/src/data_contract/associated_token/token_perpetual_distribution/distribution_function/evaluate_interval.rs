@@ -57,10 +57,31 @@ pub struct IntervalEvaluationExplanation {
     pub optimization_notes: Vec<String>,
 }
 
+/// Helper function to format numbers with thousand separators
+fn format_number_with_separators(num: u64) -> String {
+    let num_str = num.to_string();
+    let chars: Vec<char> = num_str.chars().collect();
+    let len = chars.len();
+
+    if len <= 3 {
+        return num_str;
+    }
+
+    let mut result = String::new();
+    for (i, ch) in chars.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(*ch);
+    }
+
+    result
+}
+
 /// Helper function to format token amounts with decimal offset
 fn format_token_amount(amount: TokenAmount, decimal_offset: u8) -> String {
     if decimal_offset == 0 {
-        return amount.to_string();
+        return format_number_with_separators(amount);
     }
 
     let divisor = 10u64.pow(decimal_offset as u32);
@@ -68,15 +89,15 @@ fn format_token_amount(amount: TokenAmount, decimal_offset: u8) -> String {
     let fraction = amount % divisor;
 
     if fraction == 0 {
-        whole.to_string()
+        format_number_with_separators(whole)
     } else {
         // Format with appropriate decimal places, removing trailing zeros
         let fraction_str = format!("{:0width$}", fraction, width = decimal_offset as usize);
         let trimmed = fraction_str.trim_end_matches('0');
         if trimmed.is_empty() {
-            whole.to_string()
+            format_number_with_separators(whole)
         } else {
-            format!("{}.{}", whole, trimmed)
+            format!("{}.{}", format_number_with_separators(whole), trimmed)
         }
     }
 }
@@ -175,11 +196,11 @@ impl IntervalEvaluationExplanation {
                     ) => {
                         if self.is_first_claim {
                             format!(
-                                "This token distributes every epoch a fixed amount of {}. \
-                                The token contract was registered in the epoch before epoch {} \
+                                "This token distributes a fixed amount of {} every epoch. \
+                                The token contract was registered before epoch {} \
                                 and we are currently in epoch {}, the last epoch you can claim \
                                 would be {}, you therefore have {} {} of rewards{}. \
-                                {} * {} = {}",
+                                {} × {} = {}",
                                 format_token_amount_with_plural(*amount, decimal_offset),
                                 start_epoch.saturating_add(1),
                                 end_epoch.saturating_add(1),
@@ -187,16 +208,16 @@ impl IntervalEvaluationExplanation {
                                 self.steps_count,
                                 interval_word,
                                 max_claim_text,
-                                self.steps_count,
+                                format_number_with_separators(self.steps_count),
                                 amount_str,
                                 format_token_amount_with_plural(self.total_amount, decimal_offset)
                             )
                         } else {
                             format!(
-                                "This token distributes every epoch a fixed amount of {}. \
+                                "This token distributes a fixed amount of {} every epoch. \
                                 The last claim was for epoch {} and we are currently in epoch {}, \
                                 the last epoch you can claim would be {}, you therefore have {} \
-                                {} of rewards{}. {} * {} = {}",
+                                {} of rewards{}. {} × {} = {}",
                                 format_token_amount_with_plural(*amount, decimal_offset),
                                 start_epoch,
                                 end_epoch.saturating_add(1),
@@ -220,7 +241,7 @@ impl IntervalEvaluationExplanation {
                                         "This token distributes a fixed amount of {} at each interval. \
                                         The token contract was registered before {} and we are \
                                         currently at {}, you have {} {} of rewards{}. \
-                                        {} * {} = {}",
+                                        {} × {} = {}",
                                         format_token_amount_with_plural(*amount, decimal_offset),
                                         format_timestamp_to_date(start_time + 1, time_zone),
                                         format_timestamp_to_date(end_time + 1, time_zone),
@@ -235,7 +256,7 @@ impl IntervalEvaluationExplanation {
                                 format!(
                                         "This token distributes a fixed amount of {} at each interval. \
                                         The last claim was on {} and we are currently at {}, \
-                                        you have {} {} of rewards{}. {} * {} = {}",
+                                        you have {} {} of rewards{}. {} × {} = {}",
                                         format_token_amount_with_plural(*amount, decimal_offset),
                                         format_timestamp_to_date(*start_time, time_zone),
                                         format_timestamp_to_date(end_time + 1, time_zone),
@@ -256,21 +277,33 @@ impl IntervalEvaluationExplanation {
                                 _ => ("period", 0),
                             };
                             if self.is_first_claim {
+                                let registration_text = if unit == "block" {
+                                    format!(
+                                        "The token contract was registered on {} {}",
+                                        unit,
+                                        self.interval_start_excluded.to_u64()
+                                    )
+                                } else {
+                                    format!(
+                                        "The token contract was registered before {} {}",
+                                        unit,
+                                        self.interval_start_excluded.to_u64() + 1
+                                    )
+                                };
                                 format!(
-                                    "This token distributes every {} a fixed amount of {}. \
-                                        The token contract was registered before {} {} and we are \
+                                    "This token distributes a fixed amount of {} every {}. \
+                                        {} and we are \
                                         currently at {} {}, you have {} {} of rewards{}. \
-                                        {} * {} = {}",
-                                    unit,
+                                        {} × {} = {}",
                                     format_token_amount_with_plural(*amount, decimal_offset),
                                     unit,
-                                    self.interval_start_excluded.to_u64() + 1,
+                                    registration_text,
                                     unit,
                                     current,
                                     self.steps_count,
                                     interval_word,
                                     max_claim_text,
-                                    self.steps_count,
+                                    format_number_with_separators(self.steps_count),
                                     amount_str,
                                     format_token_amount_with_plural(
                                         self.total_amount,
@@ -279,11 +312,11 @@ impl IntervalEvaluationExplanation {
                                 )
                             } else {
                                 format!(
-                                        "This token distributes every {} a fixed amount of {}. \
+                                        "This token distributes a fixed amount of {} every {}. \
                                         The last claim was for {} {} and we are currently at {} {}, \
-                                        you have {} {} of rewards{}. {} * {} = {}",
-                                        unit,
+                                        you have {} {} of rewards{}. {} × {} = {}",
                                         format_token_amount_with_plural(*amount, decimal_offset),
+                                        unit,
                                         unit,
                                         self.interval_start_excluded.to_u64(),
                                         unit,
@@ -291,7 +324,7 @@ impl IntervalEvaluationExplanation {
                                         self.steps_count,
                                         interval_word,
                                         max_claim_text,
-                                        self.steps_count,
+                                        format_number_with_separators(self.steps_count),
                                         amount_str,
                                         format_token_amount_with_plural(self.total_amount, decimal_offset)
                                     )
@@ -320,7 +353,7 @@ impl IntervalEvaluationExplanation {
                                 "This token distributes a random amount between {} and {} at each interval. \
                                 The token contract was registered before {} and we are currently at {}, \
                                 you have {} {}{} of rewards. The exact amount is randomly determined \
-                                for each interval, totaling {}",
+                                for each interval, Total rewards: {}",
                                 format_token_amount_with_plural(*min, decimal_offset),
                                 format_token_amount_with_plural(*max, decimal_offset),
                                 format_timestamp_to_date(start_time + 1, time_zone),
@@ -335,7 +368,7 @@ impl IntervalEvaluationExplanation {
                                 "This token distributes a random amount between {} and {} at each interval. \
                                 The last claim was on {} and we are currently at {}, \
                                 you have {} {}{} of rewards. The exact amount is randomly determined \
-                                for each interval, totaling {}",
+                                for each interval, Total rewards: {}",
                                 format_token_amount_with_plural(*min, decimal_offset),
                                 format_token_amount_with_plural(*max, decimal_offset),
                                 format_timestamp_to_date(*start_time, time_zone),
@@ -354,16 +387,28 @@ impl IntervalEvaluationExplanation {
                             _ => "period",
                         };
                         if self.is_first_claim {
+                            let registration_text = if period_unit == "block" {
+                                format!(
+                                    "The token contract was registered on {} {}",
+                                    period_unit,
+                                    self.interval_start_excluded.to_u64()
+                                )
+                            } else {
+                                format!(
+                                    "The token contract was registered before {} {}",
+                                    period_unit,
+                                    self.interval_start_excluded.to_u64() + 1
+                                )
+                            };
                             format!(
                                 "This token distributes a random amount between {} and {} per {}. \
-                                The token contract was registered before {} {} and we are currently at {} {}, \
+                                {} and we are currently at {} {}, \
                                 you have {} {}{} of rewards. The exact amount is randomly determined \
-                                for each interval, totaling {}",
+                                for each interval, Total rewards: {}",
                                 format_token_amount_with_plural(*min, decimal_offset),
                                 format_token_amount_with_plural(*max, decimal_offset),
                                 period_unit,
-                                period_unit,
-                                self.interval_start_excluded.to_u64() + 1,
+                                registration_text,
                                 period_unit,
                                 self.interval_end_included.to_u64() + 1,
                                 self.steps_count,
@@ -376,7 +421,7 @@ impl IntervalEvaluationExplanation {
                                 "This token distributes a random amount between {} and {} per {}. \
                                 The last claim was for {} {} and we are currently at {} {}, \
                                 you have {} {}{} of rewards. The exact amount is randomly determined \
-                                for each interval, totaling {}",
+                                for each interval, Total rewards: {}",
                                 format_token_amount_with_plural(*min, decimal_offset),
                                 format_token_amount_with_plural(*max, decimal_offset),
                                 period_unit,
@@ -438,7 +483,7 @@ impl IntervalEvaluationExplanation {
                                 per interval. Total rewards: {}",
                                 format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
                                 decrease_percentage,
-                                step_count,
+                                format_number_with_separators(*step_count as u64),
                                 format_timestamp_to_date(*start_time, time_zone),
                                 format_timestamp_to_date(*end_time, time_zone),
                                 self.steps_count,
@@ -455,7 +500,7 @@ impl IntervalEvaluationExplanation {
                                 per interval. Total rewards: {}",
                                 format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
                                 decrease_percentage,
-                                step_count,
+                                format_number_with_separators(*step_count as u64),
                                 format_timestamp_to_date(*start_time, time_zone),
                                 format_timestamp_to_date(*end_time, time_zone),
                                 self.steps_count,
@@ -479,8 +524,8 @@ impl IntervalEvaluationExplanation {
                                 per interval. Total rewards: {}",
                                 format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
                                 decrease_percentage,
-                                step_count,
-                                start_block + 1,
+                                format_number_with_separators(*step_count as u64),
+                                start_block,
                                 end_block + 1,
                                 self.steps_count,
                                 interval_word,
@@ -496,7 +541,7 @@ impl IntervalEvaluationExplanation {
                                 per interval. Total rewards: {}",
                                 format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
                                 decrease_percentage,
-                                step_count,
+                                format_number_with_separators(*step_count as u64),
                                 start_block,
                                 end_block + 1,
                                 self.steps_count,
@@ -515,12 +560,12 @@ impl IntervalEvaluationExplanation {
                         if self.is_first_claim {
                             format!(
                                 "This token starts distributing {} and decreases by {:.1}% every {} epochs. \
-                                The token contract was registered during epoch {} and we are currently in epoch {}, \
+                                The token contract was registered before epoch {} and we are currently at epoch {}, \
                                 you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
                                 per interval. Total rewards: {}",
                                 format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
                                 decrease_percentage,
-                                step_count,
+                                format_number_with_separators(*step_count as u64),
                                 start_epoch + 1,
                                 end_epoch + 1,
                                 self.steps_count,
@@ -537,7 +582,7 @@ impl IntervalEvaluationExplanation {
                                 per interval. Total rewards: {}",
                                 format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
                                 decrease_percentage,
-                                step_count,
+                                format_number_with_separators(*step_count as u64),
                                 start_epoch,
                                 end_epoch + 1,
                                 self.steps_count,
@@ -635,7 +680,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The token contract was registered before {} and we are currently at {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 format_timestamp_to_date(start_time + 1, time_zone),
                                 format_timestamp_to_date(end_time + 1, time_zone),
@@ -648,7 +693,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The last claim was on {} and we are currently at {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 format_timestamp_to_date(*start_time, time_zone),
                                 format_timestamp_to_date(end_time + 1, time_zone),
@@ -667,7 +712,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The token contract was registered on block {} and we are currently at block {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 start_block + 1,
                                 end_block + 1,
@@ -680,7 +725,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The last claim was for block {} and we are currently at block {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 start_block,
                                 end_block + 1,
@@ -698,8 +743,8 @@ impl IntervalEvaluationExplanation {
                         if self.is_first_claim {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
-                                The token contract was registered during epoch {} and we are currently in epoch {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                The token contract was registered before epoch {} and we are currently at epoch {}, \
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 start_epoch + 1,
                                 end_epoch + 1,
@@ -712,7 +757,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The last claim was for epoch {} and we are currently in epoch {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 start_epoch,
                                 end_epoch + 1,
@@ -729,7 +774,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The token contract was registered before interval {} and we are currently at interval {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 self.interval_start_excluded.to_u64() + 1,
                                 self.interval_end_included.to_u64() + 1,
@@ -742,7 +787,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token distributes tokens in predefined steps: {}. \
                                 The last claim was for interval {} and we are currently at interval {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 steps_preview,
                                 self.interval_start_excluded.to_u64(),
                                 self.interval_end_included.to_u64() + 1,
@@ -799,7 +844,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token starts at {} and {} at each interval. \
                                 The token contract was registered before {} and we are currently at {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 format_token_amount_with_plural(*starting_amount, decimal_offset),
                                 change_desc,
                                 format_timestamp_to_date(start_time + 1, time_zone),
@@ -813,7 +858,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token starts at {} and {} at each interval. \
                                 The last claim was on {} and we are currently at {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 format_token_amount_with_plural(*starting_amount, decimal_offset),
                                 change_desc,
                                 format_timestamp_to_date(*start_time, time_zone),
@@ -832,15 +877,27 @@ impl IntervalEvaluationExplanation {
                             _ => "interval",
                         };
                         if self.is_first_claim {
+                            let registration_text = if period_unit == "block" {
+                                format!(
+                                    "The token contract was registered on {} {}",
+                                    period_unit,
+                                    self.interval_start_excluded.to_u64()
+                                )
+                            } else {
+                                format!(
+                                    "The token contract was registered before {} {}",
+                                    period_unit,
+                                    self.interval_start_excluded.to_u64() + 1
+                                )
+                            };
                             format!(
                                 "This token starts at {} and {} per {}. \
-                                The token contract was registered before {} {} and we are currently at {} {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                {} and we are currently at {} {}, \
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 format_token_amount_with_plural(*starting_amount, decimal_offset),
                                 change_desc,
                                 period_unit,
-                                period_unit,
-                                self.interval_start_excluded.to_u64() + 1,
+                                registration_text,
                                 period_unit,
                                 self.interval_end_included.to_u64() + 1,
                                 self.steps_count,
@@ -852,7 +909,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token starts at {} and {} per {}. \
                                 The last claim was for {} {} and we are currently at {} {}, \
-                                you have {} {}{} of rewards totaling {}",
+                                you have {} {}{} of rewards. Total rewards: {}",
                                 format_token_amount_with_plural(*starting_amount, decimal_offset),
                                 change_desc,
                                 period_unit,
@@ -906,14 +963,26 @@ impl IntervalEvaluationExplanation {
                 };
 
                 if self.is_first_claim {
+                    let registration_text = if period_unit == "block" {
+                        format!(
+                            "The token contract was registered on {} {}",
+                            period_unit,
+                            self.interval_start_excluded.to_u64()
+                        )
+                    } else {
+                        format!(
+                            "The token contract was registered before {} {}",
+                            period_unit,
+                            self.interval_start_excluded.to_u64() + 1
+                        )
+                    };
                     format!(
                         "This token follows a polynomial distribution that {}{}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
+                        {} and we are currently at {} {}, \
+                        you have {} {}{} of rewards. Total rewards: {}",
                         growth_desc,
                         base_amount,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
+                        registration_text,
                         period_unit,
                         self.interval_end_included.to_u64() + 1,
                         self.steps_count,
@@ -925,7 +994,7 @@ impl IntervalEvaluationExplanation {
                     format!(
                         "This token follows a polynomial distribution that {}{}. \
                         The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
+                        you have {} {}{} of rewards. Total rewards: {}",
                         growth_desc,
                         base_amount,
                         period_unit,
@@ -963,15 +1032,27 @@ impl IntervalEvaluationExplanation {
                 };
 
                 if self.is_first_claim {
+                    let registration_text = if period_unit == "block" {
+                        format!(
+                            "The token contract was registered on {} {}",
+                            period_unit,
+                            self.interval_start_excluded.to_u64()
+                        )
+                    } else {
+                        format!(
+                            "The token contract was registered before {} {}",
+                            period_unit,
+                            self.interval_start_excluded.to_u64() + 1
+                        )
+                    };
                     format!(
                         "This token {} starting from a base of {} with scaling factor {}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
+                        {} and we are currently at {} {}, \
+                        you have {} {}{} of rewards. Total rewards: {}",
                         growth_desc,
                         format_token_amount_with_plural(*b, decimal_offset),
                         a,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
+                        registration_text,
                         period_unit,
                         self.interval_end_included.to_u64() + 1,
                         self.steps_count,
@@ -983,7 +1064,7 @@ impl IntervalEvaluationExplanation {
                     format!(
                         "This token {} starting from a base of {} with scaling factor {}. \
                         The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
+                        you have {} {}{} of rewards. Total rewards: {}",
                         growth_desc,
                         format_token_amount_with_plural(*b, decimal_offset),
                         a,
@@ -1031,14 +1112,26 @@ impl IntervalEvaluationExplanation {
                 };
 
                 if self.is_first_claim {
+                    let registration_text = if period_unit == "block" {
+                        format!(
+                            "The token contract was registered on {} {}",
+                            period_unit,
+                            self.interval_start_excluded.to_u64()
+                        )
+                    } else {
+                        format!(
+                            "The token contract was registered before {} {}",
+                            period_unit,
+                            self.interval_start_excluded.to_u64() + 1
+                        )
+                    };
                     format!(
                         "This token follows a logarithmic distribution that {}{}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
+                        {} and we are currently at {} {}, \
+                        you have {} {}{} of rewards. Total rewards: {}",
                         growth_desc,
                         base_amount,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
+                        registration_text,
                         period_unit,
                         self.interval_end_included.to_u64() + 1,
                         self.steps_count,
@@ -1050,7 +1143,7 @@ impl IntervalEvaluationExplanation {
                     format!(
                         "This token follows a logarithmic distribution that {}{}. \
                         The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
+                        you have {} {}{} of rewards. Total rewards: {}",
                         growth_desc,
                         base_amount,
                         period_unit,
@@ -1100,7 +1193,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token starts with high rewards that gradually decrease following an inverted \
                                 logarithmic curve{}. The token contract was registered \
-                                before {} and we are currently at {}, you have {} {}{} of rewards totaling {}",
+                                before {} and we are currently at {}, you have {} {}{} of rewards. Total rewards: {}",
                                 base_amount,
                                 format_timestamp_to_date(start_time + 1, time_zone),
                                 format_timestamp_to_date(current_time, time_zone),
@@ -1111,13 +1204,24 @@ impl IntervalEvaluationExplanation {
                             )
                         }
                         _ => {
+                            let registration_text = if period_unit == "block" {
+                                format!(
+                                    "The token contract was registered on {} {}",
+                                    period_unit,
+                                    self.interval_start_excluded.to_u64()
+                                )
+                            } else {
+                                format!(
+                                    "The token contract was registered before {} {}",
+                                    period_unit,
+                                    self.interval_start_excluded.to_u64() + 1
+                                )
+                            };
                             format!(
                                 "This token starts with high rewards that gradually decrease following an inverted \
-                                logarithmic curve{}. The token contract was registered \
-                                before {} {} and we are currently at {} {}, you have {} {}{} of rewards totaling {}",
+                                logarithmic curve{}. {} and we are currently at {} {}, you have {} {}{} of rewards. Total rewards: {}",
                                 base_amount,
-                                period_unit,
-                                self.interval_start_excluded.to_u64() + 1,
+                                registration_text,
                                 period_unit,
                                 self.interval_end_included.to_u64() + 1,
                                 self.steps_count,
@@ -1137,7 +1241,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token starts with high rewards that gradually decrease following an inverted \
                                 logarithmic curve{}. The last claim was on {} and we are \
-                                currently at {}, you have {} {}{} of rewards totaling {}",
+                                currently at {}, you have {} {}{} of rewards. Total rewards: {}",
                                 base_amount,
                                 format_timestamp_to_date(*start_time, time_zone),
                                 format_timestamp_to_date(current_time, time_zone),
@@ -1151,7 +1255,7 @@ impl IntervalEvaluationExplanation {
                             format!(
                                 "This token starts with high rewards that gradually decrease following an inverted \
                                 logarithmic curve{}. The last claim was for {} {} and we are \
-                                currently at {} {}, you have {} {}{} of rewards totaling {}",
+                                currently at {} {}, you have {} {}{} of rewards. Total rewards: {}",
                                 base_amount,
                                 period_unit,
                                 self.interval_start_excluded.to_u64(),
@@ -1741,11 +1845,11 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected = "This token distributes every epoch a fixed amount of 10000 tokens. \
-                           The token contract was registered in the epoch before epoch 7556 \
+            let expected = "This token distributes a fixed amount of 10,000 tokens every epoch. \
+                           The token contract was registered before epoch 7556 \
                            and we are currently in epoch 7741, the last epoch you can claim \
                            would be 7740, you therefore have 185 intervals of rewards. \
-                           185 * 10000 = 1850000 tokens";
+                           185 × 10,000 = 1,850,000 tokens";
 
             assert_eq!(
                 result.short_explanation(0, PlatformVersion::latest(), "UTC"),
@@ -1772,10 +1876,10 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected = "This token distributes every epoch a fixed amount of 10000 tokens. \
+            let expected = "This token distributes a fixed amount of 10,000 tokens every epoch. \
                            The last claim was for epoch 7554 and we are currently in epoch 7741, \
                            the last epoch you can claim would be 7740, you therefore have 186 \
-                           intervals of rewards. 186 * 10000 = 1860000 tokens";
+                           intervals of rewards. 186 × 10,000 = 1,860,000 tokens";
 
             assert_eq!(
                 result.short_explanation(0, PlatformVersion::latest(), "UTC"),
@@ -1803,10 +1907,14 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per epoch."));
-            assert!(actual.contains("The token contract was registered before epoch 51"));
-            assert!(actual.contains("we are currently at epoch 61"));
-            assert!(actual.contains("you have 10 intervals of rewards"));
+            let expected = format!(
+                "This token distributes a random amount between 100 tokens and 500 tokens per epoch. \
+                The token contract was registered before epoch 51 and we are currently at epoch 61, \
+                you have 10 intervals of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -1829,8 +1937,14 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(actual.contains("The last claim was for epoch 50"));
-            assert!(actual.contains("you have 10 intervals of rewards"));
+            let expected = format!(
+                "This token distributes a random amount between 100 tokens and 500 tokens per epoch. \
+                The last claim was for epoch 50 and we are currently at epoch 61, \
+                you have 10 intervals of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -1862,23 +1976,15 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts distributing 50000 tokens and decreases by 7.0% every 210000 epochs",
-                "The token contract was registered before epoch 1",
-                "we are currently at epoch 11",
-                "you have 10 intervals of rewards",
-                "After all decreasing steps, it distributes 1000 tokens per interval"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts distributing 50,000 tokens and decreases by 7.0% every 210,000 epochs. \
+                The token contract was registered before epoch 1 and we are currently at epoch 11, \
+                you have 10 intervals of rewards. After all decreasing steps, it distributes 1,000 tokens \
+                per interval. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -1907,22 +2013,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes tokens in predefined steps: 1000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20",
-                "The token contract was registered before epoch 6",
-                "we are currently at epoch 26",
-                "you have 20 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
+                The token contract was registered before epoch 6 and we are currently at epoch 26, \
+                you have 20 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -1952,22 +2050,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts at 5000 tokens and increases by 100/1 tokens per epoch",
-                "The token contract was registered before epoch 11",
-                "we are currently at epoch 21",
-                "you have 10 intervals of rewards",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts at 5,000 tokens and increases by 100/1 tokens per epoch. \
+                The token contract was registered before epoch 11 and we are currently at epoch 21, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2000,22 +2090,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1000 tokens",
-                "The token contract was registered before epoch 6",
-                "we are currently at epoch 16",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1,000 tokens. \
+                The token contract was registered before epoch 6 and we are currently at epoch 16, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2048,22 +2130,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token grows exponentially starting from a base of 500 tokens with scaling factor 100",
-                "The token contract was registered before epoch 21",
-                "we are currently at epoch 31",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token grows exponentially starting from a base of 500 tokens with scaling factor 100. \
+                The token contract was registered before epoch 21 and we are currently at epoch 31, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2096,22 +2170,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2000 tokens",
-                "The token contract was registered before epoch 101",
-                "we are currently at epoch 111",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2,000 tokens. \
+                The token contract was registered before epoch 101 and we are currently at epoch 111, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2144,22 +2210,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
-                "The token contract was registered before epoch 51",
-                "we are currently at epoch 61",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve. \
+                The token contract was registered before epoch 51 and we are currently at epoch 61, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2186,7 +2244,11 @@ mod tests {
             let long = result.long_explanation();
 
             // Short should be a descriptive explanation
-            assert!(short.contains("This token"));
+            let expected_short = "This token distributes a fixed amount of 50 tokens every epoch. \
+                The token contract was registered before epoch 2 and we are currently in epoch 4, \
+                the last epoch you can claim would be 3, you therefore have 2 intervals of rewards. \
+                2 × 50 = 100 tokens";
+            assert_eq!(short, expected_short);
 
             // Medium should be multiple lines but not too long
             assert!(medium.contains('\n'));
@@ -2291,7 +2353,7 @@ mod tests {
 
             // Test total amount formatting
             assert!(
-                actual.contains("1 * 5.2 = 5.2 tokens"),
+                actual.contains("1 × 5.2 = 5.2 tokens"),
                 "Expected formatted calculation, got: {}",
                 actual
             );
@@ -2325,7 +2387,7 @@ mod tests {
                 actual
             );
             assert!(
-                actual.contains("1 * 1 = 1 token"),
+                actual.contains("1 × 1 = 1 token"),
                 "Expected singular 'token' in total, got: {}",
                 actual
             );
@@ -2378,7 +2440,7 @@ mod tests {
                 actual
             );
             assert!(
-                actual.contains("2 * 1.23456789 = 2.46913578 tokens"),
+                actual.contains("2 × 1.23456789 = 2.46913578 tokens"),
                 "Expected formatted calculation, got: {}",
                 actual
             );
@@ -2416,7 +2478,7 @@ mod tests {
                 actual
             );
             assert!(
-                actual.contains("1 * 1 = 1 token"),
+                actual.contains("1 × 1 = 1 token"),
                 "Expected singular 'token' in total, got: {}",
                 actual
             );
@@ -2535,7 +2597,10 @@ mod tests {
 
             // Test that empty range still generates explanation
             let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(short.contains("0 tokens"));
+            let expected = "This token distributes a fixed amount of 100 tokens every block. \
+                The token contract was registered on block 10 and we are currently at block 6, \
+                you have 0 intervals of rewards. 0 × 100 = 0 tokens";
+            assert_eq!(short, expected);
         }
 
         #[test]
@@ -2615,23 +2680,11 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes every block a fixed amount of 5000 tokens",
-                "The token contract was registered before block 1001",
-                "we are currently at block 1101",
-                "you have 10 intervals of rewards",
-                "10 * 5000 = 50000 tokens",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = "This token distributes a fixed amount of 5,000 tokens every block. \
+                The token contract was registered on block 1000 and we are currently at block 1101, \
+                you have 10 intervals of rewards. 10 × 5,000 = 50,000 tokens";
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2657,16 +2710,14 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(
-                actual.contains("you have 1 interval of rewards"),
-                "Expected singular 'interval', got: {}",
-                actual
+            let expected = format!(
+                "This token distributes a random amount between 500 tokens and 1,500 tokens per block. \
+                The token contract was registered on block 200 and we are currently at block 202, \
+                you have 1 interval of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
             );
-            assert!(
-                !actual.contains("1 intervals"),
-                "Should not contain '1 intervals', got: {}",
-                actual
-            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2698,23 +2749,15 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts distributing 10000 tokens and decreases by 10.0% every 100 blocks",
-                "The last claim was for block 500",
-                "we are currently at block 601",
-                "you have 10 intervals of rewards",
-                "After all decreasing steps, it distributes 100 tokens per interval"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts distributing 10,000 tokens and decreases by 10.0% every 100 blocks. \
+                The last claim was for block 500 and we are currently at block 601, \
+                you have 10 intervals of rewards. After all decreasing steps, it distributes 100 tokens \
+                per interval. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2747,22 +2790,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5000 tokens",
-                "The last claim was for block 10000",
-                "we are currently at block 11001",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5,000 tokens. \
+                The last claim was for block 10000 and we are currently at block 11001, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2784,23 +2819,11 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes every block a fixed amount of 10000 tokens",
-                "The last claim was for block 7554",
-                "we are currently at block 7741",
-                "you have 186 intervals of rewards",
-                "186 * 10000 = 1860000 tokens",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = "This token distributes a fixed amount of 10,000 tokens every block. \
+                The last claim was for block 7554 and we are currently at block 7741, \
+                you have 186 intervals of rewards. 186 × 10,000 = 1,860,000 tokens";
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2823,10 +2846,14 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per block."));
-            assert!(actual.contains("The token contract was registered before block 51"));
-            assert!(actual.contains("we are currently at block 61"));
-            assert!(actual.contains("you have 10 intervals of rewards"));
+            let expected = format!(
+                "This token distributes a random amount between 100 tokens and 500 tokens per block. \
+                The token contract was registered on block 50 and we are currently at block 61, \
+                you have 10 intervals of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2849,8 +2876,14 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(actual.contains("The last claim was for block 50"));
-            assert!(actual.contains("you have 10 intervals of rewards"));
+            let expected = format!(
+                "This token distributes a random amount between 100 tokens and 500 tokens per block. \
+                The last claim was for block 50 and we are currently at block 61, \
+                you have 10 intervals of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2879,22 +2912,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes tokens in predefined steps: 1000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20",
-                "The last claim was for block 5",
-                "we are currently at block 26",
-                "you have 20 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
+                The last claim was for block 5 and we are currently at block 26, \
+                you have 20 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2924,22 +2949,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts at 5000 tokens and decreases by 50/1 tokens per block",
-                "The last claim was for block 10",
-                "we are currently at block 21",
-                "you have 10 intervals of rewards",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts at 5,000 tokens and decreases by 50/1 tokens per block. \
+                The last claim was for block 10 and we are currently at block 21, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -2972,22 +2989,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token grows exponentially starting from a base of 500 tokens with scaling factor 100",
-                "The token contract was registered before block 21",
-                "we are currently at block 31",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token grows exponentially starting from a base of 500 tokens with scaling factor 100. \
+                The token contract was registered on block 20 and we are currently at block 31, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3020,22 +3029,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token decays exponentially starting from a base of 500 tokens with scaling factor 100",
-                "The last claim was for block 20",
-                "we are currently at block 31",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token decays exponentially starting from a base of 500 tokens with scaling factor 100. \
+                The last claim was for block 20 and we are currently at block 31, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3068,22 +3069,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2000 tokens",
-                "The token contract was registered before block 101",
-                "we are currently at block 111",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2,000 tokens. \
+                The token contract was registered on block 100 and we are currently at block 111, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3116,22 +3109,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2000 tokens",
-                "The last claim was for block 100",
-                "we are currently at block 111",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2,000 tokens. \
+                The last claim was for block 100 and we are currently at block 111, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3164,22 +3149,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
-                "The token contract was registered before block 51",
-                "we are currently at block 61",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve. \
+                The token contract was registered on block 50 and we are currently at block 61, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3212,22 +3189,14 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
-                "The last claim was for block 50",
-                "we are currently at block 61",
-                "you have 10 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts with high rewards that gradually decrease following an inverted logarithmic curve. \
+                The last claim was for block 50 and we are currently at block 61, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3254,7 +3223,10 @@ mod tests {
             let long = result.long_explanation();
 
             // Short should be a descriptive explanation
-            assert!(short.contains("This token"));
+            let expected_short = "This token distributes a fixed amount of 50 tokens every block. \
+                The token contract was registered on block 1 and we are currently at block 4, \
+                you have 2 intervals of rewards. 2 × 50 = 100 tokens";
+            assert_eq!(short, expected_short);
 
             // Medium should be multiple lines but not too long
             assert!(medium.contains('\n'));
@@ -3327,7 +3299,7 @@ mod tests {
 
             // Test total amount formatting
             assert!(
-                actual.contains("1 * 5.2 = 5.2 tokens"),
+                actual.contains("1 × 5.2 = 5.2 tokens"),
                 "Expected formatted calculation, got: {}",
                 actual
             );
@@ -3360,7 +3332,7 @@ mod tests {
                 actual
             );
             assert!(
-                actual.contains("2 * 1.23456789 = 2.46913578 tokens"),
+                actual.contains("2 × 1.23456789 = 2.46913578 tokens"),
                 "Expected formatted calculation, got: {}",
                 actual
             );
@@ -3392,16 +3364,16 @@ mod tests {
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             // Should say "1 token" not "1 token`s`"
-            assert!(
-                actual.contains("a fixed amount of 1 token"),
-                "Expected singular 'token' for amount 1, got: {}",
-                actual
+            // For TimeBasedMoment, the format is different from EpochBasedMoment and BlockBasedMoment
+            let expected = format!(
+                "This token distributes a fixed amount of 1 token at each interval. \
+                The token contract was registered before {} and we are \
+                currently at {}, you have 1 interval of rewards. \
+                1 × 1 = 1 token",
+                format_timestamp_to_date(1, "UTC"),
+                format_timestamp_to_date(2, "UTC")
             );
-            assert!(
-                actual.contains("1 * 1 = 1 token"),
-                "Expected singular 'token' in total, got: {}",
-                actual
-            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3423,23 +3395,15 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes a fixed amount of 2500 tokens",
-                "The last claim was on",
-                "we are currently at",
-                "you have 12 intervals of rewards",
-                "12 * 2500 = 30000 tokens",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token distributes a fixed amount of 2,500 tokens at each interval. \
+                The last claim was on {} and we are currently at {}, \
+                you have 12 intervals of rewards. 12 × 2,500 = 30,000 tokens",
+                format_timestamp_to_date(3600, "UTC"),
+                format_timestamp_to_date(7201, "UTC")
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3502,22 +3466,16 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts at 1000 tokens and increases by 25/1 tokens",
-                "The token contract was registered before",
-                "we are currently at",
-                "you have 12 intervals of rewards",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts at 1,000 tokens and increases by 25/1 tokens at each interval. \
+                The token contract was registered before {} and we are currently at {}, \
+                you have 12 intervals of rewards. Total rewards: {} tokens",
+                format_timestamp_to_date(3601, "UTC"),
+                format_timestamp_to_date(7201, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3547,22 +3505,16 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes tokens in predefined steps: 2000 tokens from interval 0, 1500 tokens from interval 5, 1000 tokens from interval 10, and 1 more step",
-                "The token contract was registered before",
-                "we are currently at",
-                "you have 3 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token distributes tokens in predefined steps: 2,000 tokens from interval 0, 1,500 tokens from interval 5, 1,000 tokens from interval 10, and 1 more step. \
+                The token contract was registered before {} and we are currently at {}, \
+                you have 3 intervals of rewards. Total rewards: {} tokens",
+                format_timestamp_to_date(1801, "UTC"),
+                format_timestamp_to_date(3601, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3584,23 +3536,16 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes a fixed amount of 10000 tokens at each interval",
-                "The token contract was registered before Thursday January 1 1970",
-                "we are currently at Thursday January 1 1970",
-                "you have 185 intervals of rewards",
-                "185 * 10000 = 1850000 tokens",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token distributes a fixed amount of 10,000 tokens at each interval. \
+                The token contract was registered before {} and we are \
+                currently at {}, you have 185 intervals of rewards. \
+                185 × 10,000 = 1,850,000 tokens",
+                format_timestamp_to_date(7556, "UTC"),
+                format_timestamp_to_date(7741, "UTC")
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3623,12 +3568,16 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(actual.starts_with(
-                "This token distributes a random amount between 100 tokens and 500 tokens"
-            ));
-            assert!(actual.contains("The token contract was registered before"));
-            assert!(actual.contains("we are currently at"));
-            assert!(actual.contains("you have 10 intervals of rewards"));
+            let expected = format!(
+                "This token distributes a random amount between 100 tokens and 500 tokens at each interval. \
+                The token contract was registered before {} and we are currently at {}, \
+                you have 10 intervals of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_timestamp_to_date(51, "UTC"),
+                format_timestamp_to_date(61, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3651,8 +3600,16 @@ mod tests {
                 .unwrap();
 
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            assert!(actual.contains("The last claim was"));
-            assert!(actual.contains("you have 10 intervals of rewards"));
+            let expected = format!(
+                "This token distributes a random amount between 100 tokens and 500 tokens at each interval. \
+                The last claim was on {} and we are currently at {}, \
+                you have 10 intervals of rewards. The exact amount is randomly determined \
+                for each interval, Total rewards: {} tokens",
+                format_timestamp_to_date(50, "UTC"),
+                format_timestamp_to_date(61, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3684,23 +3641,17 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts distributing 50000 tokens and decreases by 7.0% every 210000 intervals",
-                "The token contract was registered before",
-                "we are currently at",
-                "you have 10 intervals of rewards",
-                "After all decreasing steps, it distributes 1000 tokens per interval"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts distributing 50,000 tokens and decreases by 7.0% every 210,000 intervals. \
+                The token contract was registered on {} and we are currently at {}, \
+                you have 10 intervals of rewards. After all decreasing steps, it distributes 1,000 tokens \
+                per interval. Total rewards: {} tokens",
+                format_timestamp_to_date(0, "UTC"),
+                format_timestamp_to_date(10, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3732,23 +3683,17 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts distributing 10000 tokens and decreases by 10.0% every 100 intervals",
-                "The last claim was",
-                "we are currently at",
-                "you have 10 intervals of rewards",
-                "After all decreasing steps, it distributes 100 tokens per interval"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts distributing 10,000 tokens and decreases by 10.0% every 100 intervals. \
+                The last claim was on {} and we are currently at {}, \
+                you have 10 intervals of rewards. After all decreasing steps, it distributes 100 tokens \
+                per interval. Total rewards: {} tokens",
+                format_timestamp_to_date(500, "UTC"),
+                format_timestamp_to_date(600, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3777,22 +3722,16 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token distributes tokens in predefined steps: 1000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20",
-                "The last claim was for time period 5",
-                "we are currently at time period 26",
-                "you have 20 intervals of rewards"
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
+                The last claim was on {} and we are currently at {}, \
+                you have 20 intervals of rewards. Total rewards: {} tokens",
+                format_timestamp_to_date(5, "UTC"),
+                format_timestamp_to_date(26, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3822,22 +3761,16 @@ mod tests {
                 )
                 .unwrap();
 
-            let expected_contains = vec![
-                "This token starts at 5000 tokens and decreases by 50/1 tokens",
-                "The last claim was",
-                "we are currently at",
-                "you have 10 intervals of rewards",
-            ];
-
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            for expected_part in expected_contains {
-                assert!(
-                    actual.contains(expected_part),
-                    "Expected to find '{}' in '{}'",
-                    expected_part,
-                    actual
-                );
-            }
+            let expected = format!(
+                "This token starts at 5,000 tokens and decreases by 50/1 tokens at each interval. \
+                The last claim was on {} and we are currently at {}, \
+                you have 10 intervals of rewards. Total rewards: {} tokens",
+                format_timestamp_to_date(10, "UTC"),
+                format_timestamp_to_date(21, "UTC"),
+                format_number_with_separators(result.total_amount)
+            );
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -3871,7 +3804,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1000 tokens",
+                "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1,000 tokens",
                 "The token contract was registered before time period 6",
                 "we are currently at time period 16",
                 "you have 10 intervals of rewards"
@@ -3919,7 +3852,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5000 tokens",
+                "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5,000 tokens",
                 "The last claim was for time period 10000",
                 "we are currently at time period 11001",
                 "you have 10 intervals of rewards"
@@ -4063,7 +3996,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2000 tokens",
+                "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2,000 tokens",
                 "The token contract was registered before time period 101",
                 "we are currently at time period 111",
                 "you have 10 intervals of rewards"
@@ -4111,7 +4044,7 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2000 tokens",
+                "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2,000 tokens",
                 "The last claim was for time period 100",
                 "we are currently at time period 111",
                 "you have 10 intervals of rewards"
@@ -4440,7 +4373,7 @@ mod tests {
                 actual
             );
             assert!(
-                actual.contains("2 * 1.23456789 = 2.46913578 tokens"),
+                actual.contains("2 × 1.23456789 = 2.46913578 tokens"),
                 "Expected formatted calculation, got: {}",
                 actual
             );
