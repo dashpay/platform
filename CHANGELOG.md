@@ -1,3 +1,29 @@
+## [2.0.0-rc.15](https://github.com/dashpay/platform/compare/v2.0.0-rc.14...v2.0.0-rc.15) (2025-06-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. (#2658)
+
+### Features
+
+* **dpp:** export more token transition fields ([#2655](https://github.com/dashpay/platform/issues/2655))
+* **sdk:** add sdk wrappers for easily pushing document transitions for create, delete, purchase, replace, set price, and transfer to platform ([#2659](https://github.com/dashpay/platform/issues/2659))
+* **sdk:** add token state transition functionalities to rs-sdk ([#2657](https://github.com/dashpay/platform/issues/2657))
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. ([#2658](https://github.com/dashpay/platform/issues/2658))
+
+
+### Bug Fixes
+
+* fixes issue [#2653](https://github.com/dashpay/platform/issues/2653) Cannot decode DataContractCreateV1 with WASM-DPP ([#2654](https://github.com/dashpay/platform/issues/2654))
+* **platform:** npm audit security for tar-fs ([#2656](https://github.com/dashpay/platform/issues/2656))
+* **platform:** resolve direct purchase from self issue causing chain stall ([#2663](https://github.com/dashpay/platform/issues/2663))
+
+
+### Documentation
+
+* add CLAUDE.md for development guidance ([#2652](https://github.com/dashpay/platform/issues/2652))
+
 ## [2.0.0-rc.14](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.14) (2025-05-29)
 
 
