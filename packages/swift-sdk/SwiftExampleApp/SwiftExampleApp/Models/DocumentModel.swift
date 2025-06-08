@@ -1,10 +1,15 @@
 import Foundation
 
 struct DocumentModel: Identifiable {
+    /// Get the owner ID as a hex string
+    var ownerIdString: String {
+        ownerId.toHexString()
+    }
+    
     let id: String
     let contractId: String
     let documentType: String
-    let ownerId: String
+    let ownerId: Data
     let data: [String: Any]
     let createdAt: Date?
     let updatedAt: Date?
@@ -13,7 +18,7 @@ struct DocumentModel: Identifiable {
     let dppDocument: DPPDocument?
     let revision: Revision
     
-    init(id: String, contractId: String, documentType: String, ownerId: String, data: [String: Any], createdAt: Date? = nil, updatedAt: Date? = nil, dppDocument: DPPDocument? = nil, revision: Revision = 0) {
+    init(id: String, contractId: String, documentType: String, ownerId: Data, data: [String: Any], createdAt: Date? = nil, updatedAt: Date? = nil, dppDocument: DPPDocument? = nil, revision: Revision = 0) {
         self.id = id
         self.contractId = contractId
         self.documentType = documentType
@@ -30,7 +35,7 @@ struct DocumentModel: Identifiable {
         self.id = dppDocument.idString
         self.contractId = contractId
         self.documentType = documentType
-        self.ownerId = dppDocument.ownerIdString
+        self.ownerId = dppDocument.ownerId
         
         // Convert PlatformValue properties to simple dictionary
         var simpleData: [String: Any] = [:]

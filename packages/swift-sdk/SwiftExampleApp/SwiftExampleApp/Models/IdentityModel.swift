@@ -15,7 +15,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    let id: String
+    let id: Data  // Changed from String to Data
     let balance: UInt64
     let isLocal: Bool
     let alias: String?
@@ -29,7 +29,12 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     let dppIdentity: DPPIdentity?
     let publicKeys: [IdentityPublicKey]
     
-    init(id: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
+    /// Get the identity ID as a hex string
+    var idString: String {
+        id.toHexString()
+    }
+    
+    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
         self.id = id
         self.balance = balance
         self.isLocal = isLocal
@@ -43,8 +48,15 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         self.publicKeys = publicKeys
     }
     
+    /// Initialize with hex string ID for convenience
+    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
+        guard let idData = Data(hexString: idString), idData.count == 32 else { return nil }
+        self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dppIdentity: dppIdentity, publicKeys: publicKeys)
+    }
+    
     init?(from identity: SwiftDashSDK.Identity) {
-        self.id = identity.id
+        guard let idData = Data(hexString: identity.id), idData.count == 32 else { return nil }
+        self.id = idData
         self.balance = identity.balance
         self.isLocal = false
         self.alias = nil
@@ -59,7 +71,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     
     /// Create from DPP Identity
     init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = []) {
-        self.id = dppIdentity.idString
+        self.id = dppIdentity.id  // DPPIdentity already uses Data for id
         self.balance = dppIdentity.balance
         self.isLocal = false
         self.alias = alias

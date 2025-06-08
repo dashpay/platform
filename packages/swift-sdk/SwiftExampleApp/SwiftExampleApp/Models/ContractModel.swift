@@ -1,6 +1,11 @@
 import Foundation
 
 struct ContractModel: Identifiable, Hashable {
+    /// Get the owner ID as a hex string
+    var ownerIdString: String {
+        ownerId.toHexString()
+    }
+    
     static func == (lhs: ContractModel, rhs: ContractModel) -> Bool {
         lhs.id == rhs.id
     }
@@ -11,7 +16,7 @@ struct ContractModel: Identifiable, Hashable {
     let id: String
     let name: String
     let version: Int
-    let ownerId: String
+    let ownerId: Data
     let documentTypes: [String]
     let schema: [String: Any]
     
@@ -21,7 +26,7 @@ struct ContractModel: Identifiable, Hashable {
     let keywords: [String]
     let description: String?
     
-    init(id: String, name: String, version: Int, ownerId: String, documentTypes: [String], schema: [String: Any], dppDataContract: DPPDataContract? = nil, tokens: [TokenConfiguration] = [], keywords: [String] = [], description: String? = nil) {
+    init(id: String, name: String, version: Int, ownerId: Data, documentTypes: [String], schema: [String: Any], dppDataContract: DPPDataContract? = nil, tokens: [TokenConfiguration] = [], keywords: [String] = [], description: String? = nil) {
         self.id = id
         self.name = name
         self.version = version
@@ -39,7 +44,7 @@ struct ContractModel: Identifiable, Hashable {
         self.id = dppContract.idString
         self.name = name
         self.version = Int(dppContract.version)
-        self.ownerId = dppContract.ownerIdString
+        self.ownerId = dppContract.ownerId
         self.documentTypes = Array(dppContract.documentTypes.keys)
         
         // Convert document types to simple schema representation

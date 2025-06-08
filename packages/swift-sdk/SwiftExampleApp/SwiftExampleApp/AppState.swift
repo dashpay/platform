@@ -15,12 +15,37 @@ class AppState: ObservableObject {
     @Published var tokens: [TokenModel] = []
     @Published var documents: [DocumentModel] = []
     
+    @Published var currentNetwork: Network {
+        didSet {
+            UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
+            Task {
+                await switchNetwork(to: currentNetwork)
+            }
+        }
+    }
+    
+    @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
+    
     private let testSigner = TestSigner()
     private var dataManager: DataManager?
+    private var modelContext: ModelContext?
+    
+    init() {
+        // Load saved network preference or use default
+        if let savedNetwork = UserDefaults.standard.string(forKey: "currentNetwork"),
+           let network = Network(rawValue: savedNetwork) {
+            self.currentNetwork = network
+        } else {
+            self.currentNetwork = .testnet
+        }
+    }
     
     func initializeSDK(modelContext: ModelContext) {
+        // Save the model context for later use
+        self.modelContext = modelContext
+        
         // Initialize DataManager
-        self.dataManager = DataManager(modelContext: modelContext)
+        self.dataManager = DataManager(modelContext: modelContext, currentNetwork: currentNetwork)
         
         Task {
             do {
@@ -29,17 +54,15 @@ class AppState: ObservableObject {
                 // Initialize the SDK library
                 SDK.initialize()
                 
-                // Create SDK instance for testnet
-                let newSDK = try SDK(network: SwiftDashSwiftDashNetwork(rawValue: 1))
+                // Create SDK instance for current network
+                guard let sdkNetwork = currentNetwork.sdkNetwork else {
+                    throw SDKError.invalidParameter("Invalid network")
+                }
+                let newSDK = try SDK(network: sdkNetwork)
                 sdk = newSDK
                 
                 // Load persisted data first
                 await loadPersistedData()
-                
-                // If no identities exist, load sample identities
-                if identities.isEmpty {
-                    await loadSampleIdentities()
-                }
                 
                 isLoading = false
             } catch {
@@ -79,24 +102,24 @@ class AppState: ObservableObject {
         // Add some sample local identities for testing
         let sampleIdentities = [
             IdentityModel(
-                id: "11111111111111111111111111111111",
+                idString: "1111111111111111111111111111111111111111111111111111111111111111",
                 balance: 1000000000,
                 isLocal: true,
                 alias: "Alice"
             ),
             IdentityModel(
-                id: "22222222222222222222222222222222",
+                idString: "2222222222222222222222222222222222222222222222222222222222222222",
                 balance: 500000000,
                 isLocal: true,
                 alias: "Bob"
             ),
             IdentityModel(
-                id: "33333333333333333333333333333333",
+                idString: "3333333333333333333333333333333333333333333333333333333333333333",
                 balance: 250000000,
                 isLocal: true,
                 alias: "Charlie"
             )
-        ]
+        ].compactMap { $0 }
         
         // Save to persistence
         for identity in sampleIdentities {
@@ -114,6 +137,39 @@ class AppState: ObservableObject {
     func showError(message: String) {
         errorMessage = message
         showError = true
+    }
+    
+    func switchNetwork(to network: Network) async {
+        guard let modelContext = modelContext else { return }
+        
+        // Clear current data
+        identities.removeAll()
+        contracts.removeAll()
+        documents.removeAll()
+        tokens.removeAll()
+        
+        // Update DataManager's current network
+        dataManager?.currentNetwork = network
+        
+        // Re-initialize SDK with new network
+        do {
+            isLoading = true
+            
+            // Create new SDK instance for the network
+            guard let sdkNetwork = network.sdkNetwork else {
+                throw SDKError.invalidParameter("Invalid network")
+            }
+            let newSDK = try SDK(network: sdkNetwork)
+            sdk = newSDK
+            
+            // Reload data for the new network
+            await loadPersistedData()
+            
+            isLoading = false
+        } catch {
+            showError(message: "Failed to switch network: \(error.localizedDescription)")
+            isLoading = false
+        }
     }
     
     func addIdentity(_ identity: IdentityModel) {
@@ -148,7 +204,7 @@ class AppState: ObservableObject {
         }
     }
     
-    func updateIdentityBalance(id: String, newBalance: UInt64) {
+    func updateIdentityBalance(id: Data, newBalance: UInt64) {
         guard let dataManager = dataManager else { return }
         
         if let index = identities.firstIndex(where: { $0.id == id }) {

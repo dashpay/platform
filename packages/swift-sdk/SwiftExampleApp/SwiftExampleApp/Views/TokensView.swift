@@ -34,7 +34,7 @@ struct TokensView: View {
                             Picker("Identity", selection: $selectedIdentity) {
                                 Text("Select an identity").tag(nil as IdentityModel?)
                                 ForEach(appState.identities) { identity in
-                                    Text(identity.alias ?? identity.id)
+                                    Text(identity.alias ?? identity.idString)
                                         .tag(identity as IdentityModel?)
                                 }
                             }
@@ -253,7 +253,7 @@ struct TokenActionDetailView: View {
                         VStack(alignment: .leading) {
                             Text(identity.alias ?? "Identity")
                                 .font(.headline)
-                            Text(identity.id)
+                            Text(identity.idString)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)

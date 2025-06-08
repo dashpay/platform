@@ -162,8 +162,10 @@ extension DPPDocument {
     
     /// Create from our simplified DocumentModel
     init(from model: DocumentModel) {
-        self.id = Data.identifier(from: model.id) ?? Data(repeating: 0, count: 32)
-        self.ownerId = Data.identifier(from: model.ownerId) ?? Data(repeating: 0, count: 32)
+        // model.id is a string, convert it to Data
+        self.id = Data.identifier(fromHex: model.id) ?? Data(repeating: 0, count: 32)
+        // model.ownerId is already Data
+        self.ownerId = model.ownerId
         
         // Convert properties - in a real implementation, this would properly convert types
         var platformProperties: [String: PlatformValue] = [:]

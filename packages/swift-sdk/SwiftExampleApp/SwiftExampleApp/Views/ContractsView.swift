@@ -53,7 +53,7 @@ struct ContractsView: View {
                 id: "dpns-contract",
                 name: "DPNS",
                 version: 1,
-                ownerId: "system",
+                ownerId: Data(repeating: 0, count: 32),
                 documentTypes: ["domain", "preorder"],
                 schema: [
                     "domain": [
@@ -70,7 +70,7 @@ struct ContractsView: View {
                 id: "dashpay-contract",
                 name: "DashPay",
                 version: 1,
-                ownerId: "system",
+                ownerId: Data(repeating: 0, count: 32),
                 documentTypes: ["profile", "contactRequest"],
                 schema: [
                     "profile": [
@@ -86,7 +86,7 @@ struct ContractsView: View {
                 id: "masternode-reward-shares-contract",
                 name: "Masternode Reward Shares",
                 version: 1,
-                ownerId: "system",
+                ownerId: Data(repeating: 0, count: 32),
                 documentTypes: ["rewardShare"],
                 schema: [
                     "rewardShare": [
@@ -158,7 +158,7 @@ struct ContractDetailView: View {
                             DetailRow(label: "Contract Name", value: contract.name)
                             DetailRow(label: "Contract ID", value: contract.id)
                             DetailRow(label: "Version", value: "\(contract.version)")
-                            DetailRow(label: "Owner ID", value: contract.ownerId)
+                            DetailRow(label: "Owner ID", value: contract.ownerIdString)
                         }
                         .padding()
                         .background(Color.gray.opacity(0.1))

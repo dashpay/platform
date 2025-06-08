@@ -194,7 +194,8 @@ extension DPPIdentity {
     
     /// Create an identity from our simplified IdentityModel
     init?(from model: IdentityModel) {
-        guard let idData = Data.identifier(from: model.id) else { return nil }
+        // model.id is already Data, no conversion needed
+        let idData = model.id
         
         self.id = idData
         self.publicKeys = [:]

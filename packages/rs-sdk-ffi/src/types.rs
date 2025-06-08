@@ -78,6 +78,8 @@ pub enum DashSDKResultDataType {
     DocumentHandle = 4,
     /// Data contract handle
     DataContractHandle = 5,
+    /// Map of identity IDs to balances
+    IdentityBalanceMap = 6,
 }
 
 /// Binary data container for results
@@ -87,6 +89,24 @@ pub struct DashSDKBinaryData {
     pub data: *mut u8,
     /// Length of the data
     pub len: usize,
+}
+
+/// Single entry in an identity balance map
+#[repr(C)]
+pub struct DashSDKIdentityBalanceEntry {
+    /// Identity ID (32 bytes)
+    pub identity_id: [u8; 32],
+    /// Balance in credits (u64::MAX means identity not found)
+    pub balance: u64,
+}
+
+/// Map of identity IDs to balances
+#[repr(C)]
+pub struct DashSDKIdentityBalanceMap {
+    /// Array of entries
+    pub entries: *mut DashSDKIdentityBalanceEntry,
+    /// Number of entries
+    pub count: usize,
 }
 
 /// Result type for FFI functions that return data
@@ -142,6 +162,15 @@ impl DashSDKResult {
         DashSDKResult {
             data_type: handle_type,
             data: handle,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with an identity balance map
+    pub fn success_identity_balance_map(map: DashSDKIdentityBalanceMap) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::IdentityBalanceMap,
+            data: Box::into_raw(Box::new(map)) as *mut c_void,
             error: std::ptr::null_mut(),
         }
     }
@@ -298,4 +327,18 @@ pub unsafe extern "C" fn dash_sdk_document_info_free(info: *mut DashSDKDocumentI
     dash_sdk_string_free(info.owner_id);
     dash_sdk_string_free(info.data_contract_id);
     dash_sdk_string_free(info.document_type);
+}
+
+/// Free an identity balance map
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_identity_balance_map_free(map: *mut DashSDKIdentityBalanceMap) {
+    if map.is_null() {
+        return;
+    }
+
+    let map = Box::from_raw(map);
+    if !map.entries.is_null() && map.count > 0 {
+        // Free the entries array
+        let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+    }
 }

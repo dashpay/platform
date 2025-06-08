@@ -64,9 +64,9 @@ struct IdentitiesView: View {
     private func refreshAllBalances() async {
         guard let sdk = appState.sdk else { return }
         
-        // Get all non-local identity IDs
+        // Get all non-local identity IDs as Data
         let identityIds = appState.identities
-            .filter { !$0.isLocal }
+//            .filter { !$0.isLocal }
             .map { $0.id }
         
         guard !identityIds.isEmpty else { return }
@@ -133,7 +133,7 @@ struct IdentityRow: View {
                 }
             }
             
-            Text(identity.id)
+            Text(identity.idString)
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .lineLimit(1)
@@ -171,7 +171,7 @@ struct IdentityRow: View {
         guard let sdk = appState.sdk else { return }
         
         do {
-            if let fetchedIdentity = try sdk.identities.get(id: identity.id) {
+            if let fetchedIdentity = try sdk.identities.get(id: identity.idString) {
                 appState.updateIdentityBalance(id: identity.id, newBalance: fetchedIdentity.balance)
             }
         } catch {
@@ -227,8 +227,13 @@ struct AddIdentityView: View {
     }
     
     private func addLocalIdentity() {
+        guard let idData = Data(hexString: identityId), idData.count == 32 else {
+            appState.showError(message: "Invalid identity ID. Must be a 64-character hex string.")
+            return
+        }
+        
         let identity = IdentityModel(
-            id: identityId,
+            id: idData,
             balance: 0,
             isLocal: true,
             alias: alias.isEmpty ? nil : alias
@@ -267,7 +272,7 @@ struct FetchIdentityView: View {
                 if let fetchedIdentity = fetchedIdentity {
                     Section("Fetched Identity") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("ID: \(fetchedIdentity.id)")
+                            Text("ID: \(fetchedIdentity.idString)")
                                 .font(.caption)
                             Text("Balance: \(fetchedIdentity.formattedBalance)")
                                 .font(.subheadline)

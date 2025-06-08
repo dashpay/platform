@@ -129,6 +129,16 @@ public class Identities {
         return nil
     }
     
+    /// Get an identity by ID using Data
+    public func get(id: Data) throws -> Identity? {
+        guard id.count == 32 else {
+            throw SDKError.invalidParameter("Identity ID must be exactly 32 bytes")
+        }
+        
+        // Convert Data to hex string for now
+        return try get(id: id.toHexString())
+    }
+    
     /// Get a single identity balance
     public func getBalance(id: String) throws -> UInt64 {
         guard let sdk = sdk, let handle = sdk.handle else {
@@ -139,10 +149,10 @@ public class Identities {
         return balance
     }
     
-    /// Fetch balances for multiple identities
-    /// - Parameter ids: Array of identity IDs to fetch balances for
-    /// - Returns: Dictionary mapping identity IDs to their balances (nil if identity not found)
-    public func fetchBalances(ids: [String]) throws -> [String: UInt64?] {
+    /// Fetch balances for multiple identities using Data (32-byte arrays)
+    /// - Parameter ids: Array of identity IDs as Data objects (must be exactly 32 bytes each)
+    /// - Returns: Dictionary mapping identity IDs (as Data) to their balances (nil if identity not found)
+    public func fetchBalances(ids: [Data]) throws -> [Data: UInt64?] {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
@@ -151,45 +161,95 @@ public class Identities {
             return [:]
         }
         
-        // Join IDs with commas for the C function
-        let idsString = ids.joined(separator: ",")
+        // Validate all IDs are 32 bytes
+        for id in ids {
+            guard id.count == 32 else {
+                throw SDKError.invalidParameter("Identity ID must be exactly 32 bytes, got \(id.count)")
+            }
+        }
         
-        guard let resultPtr = swift_dash_identities_fetch_balances(handle, idsString) else {
+        // Convert Data to byte arrays
+        let idByteArrays: [[UInt8]] = ids.map { Array($0) }
+        
+        // Create array of tuples (32-byte arrays)
+        let idTuples: [(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)] = 
+            idByteArrays.map { bytes in
+                (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                 bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+                 bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23],
+                 bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31])
+            }
+        
+        guard let resultMapPtr = idTuples.withUnsafeBufferPointer({ buffer -> UnsafeMutablePointer<SwiftDashDashSDKIdentityBalanceMap>? in
+            let idsPtr = buffer.baseAddress
+            return swift_dash_identities_fetch_balances(handle, idsPtr, idByteArrays.count)
+        }) else {
             throw SDKError.networkError("Failed to fetch balances")
         }
         
         defer {
-            swift_dash_string_free(resultPtr)
+            swift_dash_identity_balance_map_free(resultMapPtr)
         }
         
-        let resultString = String(cString: resultPtr)
+        let resultMap = resultMapPtr.pointee
         
-        // Parse JSON result
-        guard let data = resultString.data(using: String.Encoding.utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SDKError.serializationError("Failed to parse balances response")
-        }
+        // Convert to dictionary
+        var balances: [Data: UInt64?] = [:]
         
-        // Convert to proper return type
-        var balances: [String: UInt64?] = [:]
-        for id in ids {
-            if let value = json[id] {
-                if let balance = value as? UInt64 {
-                    balances[id] = balance
-                } else if value is NSNull {
-                    balances[id] = nil
-                } else if let balanceString = value as? String,
-                         let balance = UInt64(balanceString) {
-                    balances[id] = balance
+        if resultMap.count > 0 && resultMap.entries != nil {
+            for i in 0..<resultMap.count {
+                let entry = resultMap.entries[i]
+                let idData = withUnsafeBytes(of: entry.identity_id) { Data($0) }
+                
+                // Check if balance is u64::MAX (which means not found)
+                if entry.balance == UInt64.max {
+                    balances[idData] = nil
                 } else {
-                    balances[id] = nil
+                    balances[idData] = entry.balance
                 }
-            } else {
+            }
+        }
+        
+        // Make sure all requested IDs are in the result
+        for id in ids {
+            if balances[id] == nil {
                 balances[id] = nil
             }
         }
         
         return balances
+    }
+    
+    // Helper function to convert hex string to bytes
+    private func hexToBytes(_ hex: String) -> [UInt8]? {
+        let hex = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hex.count == 64 else { return nil } // 32 bytes = 64 hex chars
+        
+        var bytes = [UInt8]()
+        var index = hex.startIndex
+        
+        while index < hex.endIndex {
+            let nextIndex = hex.index(index, offsetBy: 2)
+            let byteString = hex[index..<nextIndex]
+            
+            if let byte = UInt8(byteString, radix: 16) {
+                bytes.append(byte)
+            } else {
+                return nil
+            }
+            
+            index = nextIndex
+        }
+        
+        return bytes.count == 32 ? bytes : nil
+    }
+    
+    // Helper function to convert bytes to hex string
+    private func bytesToHex(_ bytes: [UInt8]) -> String {
+        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -210,5 +270,14 @@ public class Contracts {
         // TODO: Call C function to get data contract
         // For now, return nil
         return nil
+    }
+}
+
+// MARK: - Data Extensions
+
+extension Data {
+    /// Convert Data to hex string
+    func toHexString() -> String {
+        map { String(format: "%02x", $0) }.joined()
     }
 }

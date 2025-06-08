@@ -56,7 +56,7 @@ struct DocumentsView: View {
                 id: "doc1",
                 contractId: "dpns-contract",
                 documentType: "domain",
-                ownerId: "11111111111111111111111111111111",
+                ownerId: Data(hexString: "1111111111111111111111111111111111111111111111111111111111111111")!,
                 data: [
                     "label": "alice",
                     "normalizedLabel": "alice",
@@ -69,7 +69,7 @@ struct DocumentsView: View {
                 id: "doc2",
                 contractId: "dashpay-contract",
                 documentType: "profile",
-                ownerId: "22222222222222222222222222222222",
+                ownerId: Data(hexString: "2222222222222222222222222222222222222222222222222222222222222222")!,
                 data: [
                     "displayName": "Bob",
                     "publicMessage": "Hello from Bob!"
@@ -111,7 +111,7 @@ struct DocumentRow: View {
                         .frame(maxWidth: 100)
                 }
                 
-                Text("Owner: \(document.ownerId)")
+                Text("Owner: \(document.ownerIdString)")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -142,7 +142,7 @@ struct DocumentDetailView: View {
                             DetailRow(label: "Document Type", value: document.documentType)
                             DetailRow(label: "Document ID", value: document.id)
                             DetailRow(label: "Contract ID", value: document.contractId)
-                            DetailRow(label: "Owner ID", value: document.ownerId)
+                            DetailRow(label: "Owner ID", value: document.ownerIdString)
                             
                             if let createdAt = document.createdAt {
                                 DetailRow(label: "Created", value: createdAt.formatted())
@@ -199,7 +199,7 @@ struct CreateDocumentView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section("Document Configuration") {
+                Section(header: Text("Document Configuration")) {
                     Picker("Contract", selection: $selectedContract) {
                         Text("Select a contract").tag(nil as ContractModel?)
                         ForEach(appState.contracts) { contract in
@@ -219,8 +219,8 @@ struct CreateDocumentView: View {
                     Picker("Owner", selection: $selectedOwnerId) {
                         Text("Select owner").tag("")
                         ForEach(appState.identities) { identity in
-                            Text(identity.alias ?? identity.id)
-                                .tag(identity.id)
+                            Text(identity.alias ?? identity.idString)
+                                .tag(identity.idString)
                         }
                     }
                 }
@@ -298,7 +298,7 @@ struct CreateDocumentView: View {
                 id: UUID().uuidString,
                 contractId: contract.id,
                 documentType: selectedDocumentType,
-                ownerId: selectedOwnerId,
+                ownerId: Data(hexString: selectedOwnerId) ?? Data(),
                 data: documentData,
                 createdAt: Date(),
                 updatedAt: Date()
@@ -321,7 +321,7 @@ struct CreateDocumentView: View {
                 id: "dpns-contract",
                 name: "DPNS",
                 version: 1,
-                ownerId: "system",
+                ownerId: Data(hexString: "0000000000000000000000000000000000000000000000000000000000000000") ?? Data(),
                 documentTypes: ["domain", "preorder"],
                 schema: [
                     "domain": [
@@ -338,7 +338,7 @@ struct CreateDocumentView: View {
                 id: "dashpay-contract",
                 name: "DashPay",
                 version: 1,
-                ownerId: "system",
+                ownerId: Data(hexString: "0000000000000000000000000000000000000000000000000000000000000000") ?? Data(),
                 documentTypes: ["profile", "contactRequest"],
                 schema: [
                     "profile": [

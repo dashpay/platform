@@ -8,7 +8,7 @@ final class PersistentDocument {
     @Attribute(.unique) var documentId: String
     var contractId: String
     var documentType: String
-    var ownerId: String
+    var ownerId: Data
     var revision: Int64
     
     // MARK: - Properties Storage
@@ -37,6 +37,9 @@ final class PersistentDocument {
     var isDeleted: Bool
     var lastSyncedAt: Date?
     
+    // MARK: - Network
+    var network: String
+    
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify, inverse: \PersistentIdentity.documents) 
     var owner: PersistentIdentity?
@@ -49,12 +52,13 @@ final class PersistentDocument {
         documentId: String,
         contractId: String,
         documentType: String,
-        ownerId: String,
+        ownerId: Data,
         revision: Int64 = 0,
         properties: [String: Any] = [:],
         createdAt: Date? = nil,
         updatedAt: Date? = nil,
-        isDeleted: Bool = false
+        isDeleted: Bool = false,
+        network: String = Network.defaultNetwork.rawValue
     ) {
         self.documentId = documentId
         self.contractId = contractId
@@ -76,6 +80,7 @@ final class PersistentDocument {
         self.deletedAtCoreBlockHeight = nil
         self.isDeleted = isDeleted
         self.lastSyncedAt = nil
+        self.network = network
     }
     
     // MARK: - Computed Properties
@@ -92,6 +97,11 @@ final class PersistentDocument {
         }
     }
     
+    /// Get the owner ID as a hex string
+    var ownerIdString: String {
+        ownerId.toHexString()
+    }
+    
     // MARK: - Methods
     func updateRevision(_ newRevision: Int64) {
         self.revision = newRevision
@@ -105,7 +115,7 @@ final class PersistentDocument {
         self.deletedAtCoreBlockHeight = coreBlockHeight
     }
     
-    func markAsTransferred(to newOwnerId: String, at blockHeight: Int64? = nil, coreBlockHeight: Int32? = nil) {
+    func markAsTransferred(to newOwnerId: Data, at blockHeight: Int64? = nil, coreBlockHeight: Int32? = nil) {
         self.ownerId = newOwnerId
         self.transferredAt = Date()
         self.transferredAtBlockHeight = blockHeight
@@ -183,7 +193,7 @@ extension PersistentDocument {
             documentId: dppDocument.idString,
             contractId: contractId,
             documentType: documentType,
-            ownerId: dppDocument.ownerIdString,
+            ownerId: dppDocument.ownerId,
             revision: Int64(dppDocument.revision ?? 0),
             properties: jsonProperties,
             createdAt: dppDocument.createdDate,
@@ -256,7 +266,7 @@ extension PersistentDocument {
     }
     
     /// Predicate to find documents by owner
-    static func predicate(ownerId: String) -> Predicate<PersistentDocument> {
+    static func predicate(ownerId: Data) -> Predicate<PersistentDocument> {
         #Predicate<PersistentDocument> { document in
             document.ownerId == ownerId
         }
@@ -287,6 +297,20 @@ extension PersistentDocument {
     static func predicate(contractId: String, documentType: String) -> Predicate<PersistentDocument> {
         #Predicate<PersistentDocument> { document in
             document.contractId == contractId && document.documentType == documentType
+        }
+    }
+    
+    /// Predicate to find documents by network
+    static func predicate(network: String) -> Predicate<PersistentDocument> {
+        #Predicate<PersistentDocument> { document in
+            document.network == network
+        }
+    }
+    
+    /// Predicate to find documents by contract and network
+    static func predicate(contractId: String, network: String) -> Predicate<PersistentDocument> {
+        #Predicate<PersistentDocument> { document in
+            document.contractId == contractId && document.network == network
         }
     }
 }

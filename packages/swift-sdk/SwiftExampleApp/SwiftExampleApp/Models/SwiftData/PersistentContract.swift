@@ -8,7 +8,7 @@ final class PersistentContract {
     @Attribute(.unique) var contractId: String
     var name: String
     var version: Int32
-    var ownerId: String
+    var ownerId: Data
     
     // MARK: - Schema Storage
     /// JSON encoded schema data
@@ -47,7 +47,7 @@ final class PersistentContract {
         contractId: String,
         name: String,
         version: Int32 = 1,
-        ownerId: String,
+        ownerId: Data,
         schema: [String: Any] = [:],
         documentTypes: [String] = [],
         keywords: [String] = [],
@@ -74,6 +74,11 @@ final class PersistentContract {
     }
     
     // MARK: - Computed Properties
+    /// Get the owner ID as a hex string
+    var ownerIdString: String {
+        ownerId.toHexString()
+    }
+    
     var schema: [String: Any] {
         get {
             guard let json = try? JSONSerialization.jsonObject(with: schemaData),
@@ -290,7 +295,7 @@ extension PersistentContract {
     }
     
     /// Predicate to find contracts by owner
-    static func predicate(ownerId: String) -> Predicate<PersistentContract> {
+    static func predicate(ownerId: Data) -> Predicate<PersistentContract> {
         #Predicate<PersistentContract> { contract in
             contract.ownerId == ownerId
         }
@@ -321,6 +326,20 @@ extension PersistentContract {
     static func needsSyncPredicate(olderThan date: Date) -> Predicate<PersistentContract> {
         #Predicate<PersistentContract> { contract in
             contract.lastSyncedAt == nil || contract.lastSyncedAt! < date
+        }
+    }
+    
+    /// Predicate to find contracts by network
+    static func predicate(network: String) -> Predicate<PersistentContract> {
+        #Predicate<PersistentContract> { contract in
+            contract.network == network
+        }
+    }
+    
+    /// Predicate to find contracts with tokens by network
+    static func contractsWithTokensPredicate(network: String) -> Predicate<PersistentContract> {
+        #Predicate<PersistentContract> { contract in
+            contract.hasTokens == true && contract.network == network
         }
     }
 }

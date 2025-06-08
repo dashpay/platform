@@ -112,6 +112,22 @@ typedef struct SwiftDashSwiftDashTransferCreditsResult {
   size_t transaction_data_len;
 } SwiftDashSwiftDashTransferCreditsResult;
 
+// Single entry in an identity balance map
+typedef struct SwiftDashDashSDKIdentityBalanceEntry {
+  // Identity ID (32 bytes)
+  uint8_t identity_id[32];
+  // Balance in credits (u64::MAX means identity not found)
+  uint64_t balance;
+} SwiftDashDashSDKIdentityBalanceEntry;
+
+// Map of identity IDs to balances
+typedef struct SwiftDashDashSDKIdentityBalanceMap {
+  // Array of entries
+  struct SwiftDashDashSDKIdentityBalanceEntry *entries;
+  // Number of entries
+  size_t count;
+} SwiftDashDashSDKIdentityBalanceMap;
+
 // Information about an identity
 typedef struct SwiftDashSwiftDashIdentityInfo {
   char *id;
@@ -388,12 +404,14 @@ const char *swift_dash_identity_create_note(void);
 //
 // # Parameters
 // - `sdk_handle`: SDK handle
-// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
+// - `identity_ids`: Array of identity IDs (32-byte arrays)
+// - `identity_ids_len`: Number of identity IDs in the array
 //
 // # Returns
-// JSON string containing identity IDs mapped to their balances
-char *swift_dash_identities_fetch_balances(const struct SwiftDashSDKHandle *sdk_handle,
-                                           const char *identity_ids);
+// Pointer to DashSDKIdentityBalanceMap containing identity IDs mapped to their balances
+struct SwiftDashDashSDKIdentityBalanceMap *swift_dash_identities_fetch_balances(const struct SwiftDashSDKHandle *sdk_handle,
+                                                                                const uint8_t (*identity_ids)[32],
+                                                                                size_t identity_ids_len);
 
 // Free identity handle
 void swift_dash_identity_destroy(struct SwiftDashIdentityHandle *handle);
@@ -406,6 +424,9 @@ void swift_dash_transfer_credits_result_free(struct SwiftDashSwiftDashTransferCr
 
 // Free binary data structure
 void swift_dash_binary_data_free(struct SwiftDashSwiftDashBinaryData *data);
+
+// Free identity balance map
+void swift_dash_identity_balance_map_free(struct SwiftDashDashSDKIdentityBalanceMap *map);
 
 // Create a new SDK instance
 struct SwiftDashSDKHandle *swift_dash_sdk_create(struct SwiftDashSwiftDashSDKConfig config);

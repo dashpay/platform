@@ -6,7 +6,7 @@ import SwiftData
 final class PersistentTokenBalance {
     // MARK: - Core Properties
     var tokenId: String
-    var identityId: String
+    var identityId: Data
     var balance: Int64
     var frozen: Bool
     
@@ -20,18 +20,22 @@ final class PersistentTokenBalance {
     var tokenSymbol: String?
     var tokenDecimals: Int32?
     
+    // MARK: - Network
+    var network: String
+    
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify) var identity: PersistentIdentity?
     
     // MARK: - Initialization
     init(
         tokenId: String,
-        identityId: String,
+        identityId: Data,
         balance: Int64 = 0,
         frozen: Bool = false,
         tokenName: String? = nil,
         tokenSymbol: String? = nil,
-        tokenDecimals: Int32? = nil
+        tokenDecimals: Int32? = nil,
+        network: String = Network.defaultNetwork.rawValue
     ) {
         self.tokenId = tokenId
         self.identityId = identityId
@@ -43,6 +47,7 @@ final class PersistentTokenBalance {
         self.createdAt = Date()
         self.lastUpdated = Date()
         self.lastSyncedAt = nil
+        self.network = network
     }
     
     // MARK: - Computed Properties
@@ -110,14 +115,14 @@ extension PersistentTokenBalance {
 
 extension PersistentTokenBalance {
     /// Predicate to find balance by token and identity
-    static func predicate(tokenId: String, identityId: String) -> Predicate<PersistentTokenBalance> {
+    static func predicate(tokenId: String, identityId: Data) -> Predicate<PersistentTokenBalance> {
         #Predicate<PersistentTokenBalance> { balance in
             balance.tokenId == tokenId && balance.identityId == identityId
         }
     }
     
     /// Predicate to find all balances for an identity
-    static func predicate(identityId: String) -> Predicate<PersistentTokenBalance> {
+    static func predicate(identityId: Data) -> Predicate<PersistentTokenBalance> {
         #Predicate<PersistentTokenBalance> { balance in
             balance.identityId == identityId
         }

@@ -20,9 +20,9 @@ struct ContentView: View {
                     Label("Documents", systemImage: "doc.text")
                 }
             
-            ContractsView()
+            OptionsView()
                 .tabItem {
-                    Label("Contracts", systemImage: "doc.plaintext")
+                    Label("Options", systemImage: "gearshape")
                 }
         }
         .overlay {

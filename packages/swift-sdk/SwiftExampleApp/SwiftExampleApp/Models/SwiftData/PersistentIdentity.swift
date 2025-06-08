@@ -5,7 +5,7 @@ import SwiftData
 @Model
 final class PersistentIdentity {
     // MARK: - Core Properties
-    @Attribute(.unique) var identityId: String
+    @Attribute(.unique) var identityId: Data
     var balance: Int64
     var revision: Int64
     var isLocal: Bool
@@ -35,7 +35,7 @@ final class PersistentIdentity {
     
     // MARK: - Initialization
     init(
-        identityId: String,
+        identityId: Data,
         balance: Int64 = 0,
         revision: Int64 = 0,
         isLocal: Bool = true,
@@ -67,6 +67,10 @@ final class PersistentIdentity {
     }
     
     // MARK: - Computed Properties
+    var identityIdString: String {
+        identityId.toHexString()
+    }
+    
     var formattedBalance: String {
         let dashAmount = Double(balance) / 100_000_000
         return String(format: "%.8f DASH", dashAmount)
@@ -142,7 +146,7 @@ extension PersistentIdentity {
         
         // Add public keys
         for publicKey in model.publicKeys {
-            if let persistentKey = PersistentPublicKey.from(publicKey, identityId: model.id) {
+            if let persistentKey = PersistentPublicKey.from(publicKey, identityId: model.idString) {
                 persistent.addPublicKey(persistentKey)
             }
         }
@@ -153,7 +157,7 @@ extension PersistentIdentity {
     /// Create from DPPIdentity
     static func from(_ dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, network: String = "testnet") -> PersistentIdentity {
         let persistent = PersistentIdentity(
-            identityId: dppIdentity.idString,
+            identityId: dppIdentity.id,
             balance: Int64(dppIdentity.balance),
             revision: Int64(dppIdentity.revision),
             isLocal: false,
@@ -177,7 +181,7 @@ extension PersistentIdentity {
 
 extension PersistentIdentity {
     /// Predicate to find identity by ID
-    static func predicate(identityId: String) -> Predicate<PersistentIdentity> {
+    static func predicate(identityId: Data) -> Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
             identity.identityId == identityId
         }
@@ -202,6 +206,20 @@ extension PersistentIdentity {
     static func needsSyncPredicate(olderThan date: Date) -> Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
             identity.lastSyncedAt == nil || identity.lastSyncedAt! < date
+        }
+    }
+    
+    /// Predicate to find identities by network
+    static func predicate(network: String) -> Predicate<PersistentIdentity> {
+        #Predicate<PersistentIdentity> { identity in
+            identity.network == network
+        }
+    }
+    
+    /// Predicate to find local identities by network
+    static func localIdentitiesPredicate(network: String) -> Predicate<PersistentIdentity> {
+        #Predicate<PersistentIdentity> { identity in
+            identity.isLocal == true && identity.network == network
         }
     }
 }

@@ -280,31 +280,43 @@ pub extern "C" fn swift_dash_identity_create_note() -> *const c_char {
 }
 
 /// Fetch balances for multiple identities
-/// 
+///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
-/// 
+/// - `identity_ids`: Array of identity IDs (32-byte arrays)
+/// - `identity_ids_len`: Number of identity IDs in the array
+///
 /// # Returns
-/// JSON string containing identity IDs mapped to their balances
+/// Pointer to DashSDKIdentityBalanceMap containing identity IDs mapped to their balances
 #[no_mangle]
 pub extern "C" fn swift_dash_identities_fetch_balances(
     sdk_handle: *const rs_sdk_ffi::SDKHandle,
-    identity_ids: *const c_char,
-) -> *mut c_char {
-    if sdk_handle.is_null() || identity_ids.is_null() {
+    identity_ids: *const [u8; 32],
+    identity_ids_len: usize,
+) -> *mut rs_sdk_ffi::DashSDKIdentityBalanceMap {
+    if sdk_handle.is_null() || (identity_ids.is_null() && identity_ids_len > 0) {
         return ptr::null_mut();
     }
 
     unsafe {
-        let result = rs_sdk_ffi::dash_sdk_identities_fetch_balances(sdk_handle, identity_ids);
+        let result = rs_sdk_ffi::dash_sdk_identities_fetch_balances(
+            sdk_handle,
+            identity_ids,
+            identity_ids_len,
+        );
 
         if !result.error.is_null() {
             let _ = Box::from_raw(result.error);
             return ptr::null_mut();
         }
 
-        result.data as *mut c_char
+        if result.data_type == rs_sdk_ffi::DashSDKResultDataType::IdentityBalanceMap
+            && !result.data.is_null()
+        {
+            result.data as *mut rs_sdk_ffi::DashSDKIdentityBalanceMap
+        } else {
+            ptr::null_mut()
+        }
     }
 }
 
@@ -361,5 +373,15 @@ pub unsafe extern "C" fn swift_dash_binary_data_free(data: *mut SwiftDashBinaryD
     let data = Box::from_raw(data);
     if !data.data.is_null() && data.len > 0 {
         let _ = Vec::from_raw_parts(data.data, data.len, data.len);
+    }
+}
+
+/// Free identity balance map
+#[no_mangle]
+pub unsafe extern "C" fn swift_dash_identity_balance_map_free(
+    map: *mut rs_sdk_ffi::DashSDKIdentityBalanceMap,
+) {
+    if !map.is_null() {
+        rs_sdk_ffi::dash_sdk_identity_balance_map_free(map);
     }
 }

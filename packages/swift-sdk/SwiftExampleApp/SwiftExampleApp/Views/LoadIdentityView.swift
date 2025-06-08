@@ -264,9 +264,29 @@ struct LoadIdentityView: View {
         
         Task {
             do {
+                // Validate and convert identity ID to Data
+                let trimmedId = identityIdInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                // Try hex first, then Base58
+                var idData: Data?
+                if let hexData = Data(hexString: trimmedId), hexData.count == 32 {
+                    idData = hexData
+                } else if let base58Data = Data.identifier(fromBase58: trimmedId), base58Data.count == 32 {
+                    idData = base58Data
+                }
+                
+                guard let validIdData = idData else {
+                    await MainActor.run {
+                        errorMessage = "Invalid identity ID. Must be a 64-character hex string or valid Base58 string."
+                        isLoading = false
+                        loadStartTime = nil
+                    }
+                    return
+                }
+                
                 // Create the identity model
                 let identity = IdentityModel(
-                    id: identityIdInput.trimmingCharacters(in: .whitespacesAndNewlines),
+                    id: validIdData,
                     balance: 0,
                     isLocal: true,
                     alias: aliasInput.isEmpty ? nil : aliasInput,
