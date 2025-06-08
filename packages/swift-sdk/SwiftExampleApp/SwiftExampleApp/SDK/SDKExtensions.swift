@@ -1,19 +1,16 @@
 import Foundation
 import SwiftDashSDK
+import CSwiftDashSDK
 
-// MARK: - Network Helper
-extension Network {
-    static let mainnet = Network(rawValue: 0)
-    static let testnet = Network(rawValue: 1)
-    static let devnet = Network(rawValue: 2)
-    static let local = Network(rawValue: 3)
-}
+// MARK: - Network Helper  
+// C enums are imported as structs with RawValue in Swift
+// We'll use the raw values directly
 
 extension SDK {
-    var network: Network? {
+    var network: SwiftDashSwiftDashNetwork? {
         // In a real implementation, we would track the network during initialization
         // For now, return testnet as default
-        return .testnet
+        return SwiftDashSwiftDashNetwork(rawValue: 1)
     }
 }
 
@@ -65,7 +62,7 @@ private let globalCanSignCallback: SwiftDashSwiftCanSignCallback = { identityPub
 // MARK: - SDK Extensions for the example app
 extension SDK {
     /// Initialize SDK with a custom signer for the example app
-    convenience init(network: Network, signer: Signer) throws {
+    convenience init(network: SwiftDashSwiftDashNetwork, signer: Signer) throws {
         // Store the signer globally for C callbacks
         globalSignerStorage = signer
         

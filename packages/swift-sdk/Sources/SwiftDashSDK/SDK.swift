@@ -128,6 +128,69 @@ public class Identities {
         // For now, return nil
         return nil
     }
+    
+    /// Get a single identity balance
+    public func getBalance(id: String) throws -> UInt64 {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let balance = swift_dash_identity_get_balance(handle, id)
+        return balance
+    }
+    
+    /// Fetch balances for multiple identities
+    /// - Parameter ids: Array of identity IDs to fetch balances for
+    /// - Returns: Dictionary mapping identity IDs to their balances (nil if identity not found)
+    public func fetchBalances(ids: [String]) throws -> [String: UInt64?] {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        guard !ids.isEmpty else {
+            return [:]
+        }
+        
+        // Join IDs with commas for the C function
+        let idsString = ids.joined(separator: ",")
+        
+        guard let resultPtr = swift_dash_identities_fetch_balances(handle, idsString) else {
+            throw SDKError.networkError("Failed to fetch balances")
+        }
+        
+        defer {
+            swift_dash_string_free(resultPtr)
+        }
+        
+        let resultString = String(cString: resultPtr)
+        
+        // Parse JSON result
+        guard let data = resultString.data(using: String.Encoding.utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse balances response")
+        }
+        
+        // Convert to proper return type
+        var balances: [String: UInt64?] = [:]
+        for id in ids {
+            if let value = json[id] {
+                if let balance = value as? UInt64 {
+                    balances[id] = balance
+                } else if value is NSNull {
+                    balances[id] = nil
+                } else if let balanceString = value as? String,
+                         let balance = UInt64(balanceString) {
+                    balances[id] = balance
+                } else {
+                    balances[id] = nil
+                }
+            } else {
+                balances[id] = nil
+            }
+        }
+        
+        return balances
+    }
 }
 
 /// Contracts operations

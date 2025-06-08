@@ -279,6 +279,35 @@ pub extern "C" fn swift_dash_identity_create_note() -> *const c_char {
     note.into_raw()
 }
 
+/// Fetch balances for multiple identities
+/// 
+/// # Parameters
+/// - `sdk_handle`: SDK handle
+/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
+/// 
+/// # Returns
+/// JSON string containing identity IDs mapped to their balances
+#[no_mangle]
+pub extern "C" fn swift_dash_identities_fetch_balances(
+    sdk_handle: *const rs_sdk_ffi::SDKHandle,
+    identity_ids: *const c_char,
+) -> *mut c_char {
+    if sdk_handle.is_null() || identity_ids.is_null() {
+        return ptr::null_mut();
+    }
+
+    unsafe {
+        let result = rs_sdk_ffi::dash_sdk_identities_fetch_balances(sdk_handle, identity_ids);
+
+        if !result.error.is_null() {
+            let _ = Box::from_raw(result.error);
+            return ptr::null_mut();
+        }
+
+        result.data as *mut c_char
+    }
+}
+
 /// Free identity handle
 #[no_mangle]
 pub unsafe extern "C" fn swift_dash_identity_destroy(handle: *mut rs_sdk_ffi::IdentityHandle) {

@@ -21,5 +21,6 @@ pub use balance_and_revision::dash_sdk_identity_fetch_balance_and_revision;
 pub use by_non_unique_public_key_hash::dash_sdk_identity_fetch_by_non_unique_public_key_hash;
 pub use by_public_key_hash::dash_sdk_identity_fetch_by_public_key_hash;
 pub use fetch::dash_sdk_identity_fetch;
+pub use identities_balances::dash_sdk_identities_fetch_balances;
 pub use public_keys::dash_sdk_identity_fetch_public_keys;
 pub use resolve::dash_sdk_identity_resolve_name;

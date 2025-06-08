@@ -25,6 +25,9 @@ struct IdentitiesView: View {
                 }
             }
             .navigationTitle("Identities")
+            .refreshable {
+                await refreshAllBalances()
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -54,6 +57,35 @@ struct IdentitiesView: View {
             .sheet(isPresented: $showingLoadIdentity) {
                 LoadIdentityView()
                     .environmentObject(appState)
+            }
+        }
+    }
+    
+    private func refreshAllBalances() async {
+        guard let sdk = appState.sdk else { return }
+        
+        // Get all non-local identity IDs
+        let identityIds = appState.identities
+            .filter { !$0.isLocal }
+            .map { $0.id }
+        
+        guard !identityIds.isEmpty else { return }
+        
+        do {
+            // Fetch all balances in a single request
+            let balances = try sdk.identities.fetchBalances(ids: identityIds)
+            
+            // Update each identity's balance
+            await MainActor.run {
+                for (id, balance) in balances {
+                    if let balance = balance {
+                        appState.updateIdentityBalance(id: id, newBalance: balance)
+                    }
+                }
+            }
+        } catch {
+            await MainActor.run {
+                appState.showError(message: "Failed to refresh balances: \(error.localizedDescription)")
             }
         }
     }

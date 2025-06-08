@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import SwiftDashSDK
+import CSwiftDashSDK
 
 @MainActor
 class AppState: ObservableObject {
@@ -29,7 +30,7 @@ class AppState: ObservableObject {
                 SDK.initialize()
                 
                 // Create SDK instance for testnet
-                let newSDK = try SDK(network: .testnet)
+                let newSDK = try SDK(network: SwiftDashSwiftDashNetwork(rawValue: 1))
                 sdk = newSDK
                 
                 // Load persisted data first

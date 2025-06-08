@@ -25,9 +25,11 @@ let package = Package(
             dependencies: ["CSwiftDashSDK"],
             path: "Sources/SwiftDashSDK",
             linkerSettings: [
+                .linkedLibrary("swift_sdk", .when(platforms: [.iOS])),
                 .unsafeFlags([
-                    "-L/Users/samuelw/Documents/src/platform/target/release",
-                    "-lswift_sdk"
+                    "-L/Users/samuelw/Documents/src/platform/target/aarch64-apple-ios-sim/release",
+                    "-Xlinker", "-force_load",
+                    "-Xlinker", "/Users/samuelw/Documents/src/platform/target/aarch64-apple-ios-sim/release/libswift_sdk.a"
                 ])
             ]
         ),

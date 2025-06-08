@@ -42,7 +42,7 @@ struct LoadIdentityView: View {
     
     private var formView: some View {
         Form {
-            if appState.sdk?.network == .testnet && testnetNodes != nil {
+            if appState.sdk?.network?.rawValue == 1 && testnetNodes != nil { // testnet
                 Section {
                     HStack {
                         Button("Fill Random HPMN") {
