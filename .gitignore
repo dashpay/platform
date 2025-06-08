@@ -33,6 +33,7 @@ node_modules
 
 # Rust build artifacts
 /target
+packages/*/target
 .gitaipconfig
 
 # Swift build artifacts and IDE files
