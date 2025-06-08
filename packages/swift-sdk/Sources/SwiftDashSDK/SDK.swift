@@ -1,5 +1,56 @@
 import Foundation
-import CSwiftDashSDK
+import CDashSDKFFI
+
+// MARK: - Data Extensions
+extension Data {
+    /// Convert Data to Base58 string
+    func toBase58() -> String {
+        let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        var bytes = Array(self)
+        var encoded = ""
+        var zeroCount = 0
+        
+        // Count leading zeros
+        for byte in bytes {
+            if byte == 0 {
+                zeroCount += 1
+            } else {
+                break
+            }
+        }
+        
+        // Remove leading zeros for processing
+        bytes = Array(bytes.dropFirst(zeroCount))
+        
+        // Convert bytes to base58
+        while !bytes.isEmpty {
+            var remainder: UInt = 0
+            var newBytes: [UInt8] = []
+            
+            for byte in bytes {
+                let temp = UInt(byte) + remainder * 256
+                remainder = temp % 58
+                let quotient = temp / 58
+                if !newBytes.isEmpty || quotient > 0 {
+                    newBytes.append(UInt8(quotient))
+                }
+            }
+            
+            bytes = newBytes
+            encoded = String(alphabet[alphabet.index(alphabet.startIndex, offsetBy: Int(remainder))]) + encoded
+        }
+        
+        // Add '1' for each leading zero byte
+        encoded = String(repeating: "1", count: zeroCount) + encoded
+        
+        return encoded
+    }
+    
+    /// Convert to hex string
+    func toHexString() -> String {
+        return self.map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 /// Swift wrapper for the Dash Platform SDK
 public class SDK {
@@ -13,37 +64,112 @@ public class SDK {
     
     /// Initialize the SDK library (call once at app startup)
     public static func initialize() {
-        swift_dash_sdk_init()
+        dash_sdk_init()
     }
     
+    /// Testnet DAPI addresses provided by the user
+    private static let testnetDAPIAddresses = [
+        "https://54.186.161.118:1443",
+        "https://52.43.70.6:1443",
+        "https://18.237.42.109:1443",
+        "https://52.42.192.140:1443",
+        "https://35.166.242.82:1443",
+        "https://35.93.135.201:1443",
+        "https://35.91.145.176:1443",
+        "https://52.10.229.11:1443",
+        "https://54.200.102.141:1443",
+        "https://52.33.28.47:1443",
+        "https://54.189.18.97:1443",
+        "https://44.236.189.81:1443",
+        "https://52.88.31.190:1443",
+        "https://52.10.216.154:1443",
+        "https://35.85.157.172:1443",
+        "https://44.228.242.181:1443",
+        "https://54.69.121.35:1443",
+        "https://52.89.154.228:1443",
+        "https://35.163.144.230:1443",
+        "https://52.32.4.156:1443"
+    ].joined(separator: ",")
+    
     /// Create a new SDK instance
-    public init(network: SwiftDashSwiftDashNetwork) throws {
-        let config: SwiftDashSwiftDashSDKConfig
+    public init(network: Network) throws {
+        var config = dash_sdk_DashSDKConfig()
         
+        // Map network - in C enums, Swift imports them as raw values
+        config.network = network
+        
+        // Set DAPI addresses based on network
         switch network {
-        case SwiftDashSwiftDashNetwork(rawValue: 0): // Mainnet
-            config = swift_dash_sdk_config_mainnet()
-        case SwiftDashSwiftDashNetwork(rawValue: 1): // Testnet
-            config = swift_dash_sdk_config_testnet()
-        case SwiftDashSwiftDashNetwork(rawValue: 3): // Local
-            config = swift_dash_sdk_config_local()
+        case dash_sdk_DashSDKNetwork(rawValue: 0): // Mainnet
+            config.dapi_addresses = nil // Use default mainnet addresses
+        case dash_sdk_DashSDKNetwork(rawValue: 1): // Testnet
+            // Use the testnet addresses provided by the user
+            config.dapi_addresses = nil // Will be set below
+        case dash_sdk_DashSDKNetwork(rawValue: 2): // Devnet
+            config.dapi_addresses = nil // Use default devnet addresses
+        case dash_sdk_DashSDKNetwork(rawValue: 3): // Local
+            config.dapi_addresses = nil // Use default local addresses
         default:
-            // For devnet or unknown, use testnet config as a fallback
-            config = swift_dash_sdk_config_testnet()
+            config.dapi_addresses = nil
         }
         
-        handle = swift_dash_sdk_create(config)
+        config.skip_asset_lock_proof_verification = false
+        config.request_retry_count = 3
+        config.request_timeout_ms = 30000 // 30 seconds
         
-        if handle == nil {
-            throw SDKError.internalError("Failed to create SDK instance")
+        // Create SDK with new FFI
+        let result: dash_sdk_DashSDKResult
+        if network == dash_sdk_DashSDKNetwork(rawValue: 1) { // Testnet
+            result = Self.testnetDAPIAddresses.withCString { addressesCStr -> dash_sdk_DashSDKResult in
+                var mutableConfig = config
+                mutableConfig.dapi_addresses = addressesCStr
+                return dash_sdk_create(&mutableConfig)
+            }
+        } else {
+            result = dash_sdk_create(&config)
         }
+        
+        // Check for errors
+        if result.error != nil {
+            let error = result.error!.pointee
+            let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+            defer {
+                dash_sdk_error_free(result.error)
+            }
+            
+            throw SDKError.internalError("Failed to create SDK: \(errorMessage)")
+        }
+        
+        guard result.data != nil else {
+            throw SDKError.internalError("No SDK handle returned")
+        }
+        
+        // Store the handle
+        handle = OpaquePointer(result.data)
     }
     
     deinit {
         if let handle = handle {
-            swift_dash_sdk_destroy(handle)
+            // The handle is already the correct type for the C function
+            dash_sdk_destroy(handle)
         }
     }
+    
+    // TODO: Re-enable when CDashSDKFFI module is working
+    // /// Test the new FFI connection
+    // public func testNewFFI() -> Bool {
+    //     guard let newHandle = newFFIHandle else {
+    //         print("No new FFI handle available")
+    //         return false
+    //     }
+    //     
+    //     // Try to get the network from the new FFI
+    //     let sdkHandle = UnsafePointer<dash_sdk_SDKHandle>(OpaquePointer(newHandle))
+    //     let network = dash_sdk_get_network(sdkHandle)
+    //     
+    //     print("New FFI network: \(network)")
+    //     return true
+    // }
     
     /// Get an identity by ID
     public func getIdentity(id: String) async throws -> Identity? {
@@ -74,29 +200,29 @@ public enum SDKError: Error {
     case internalError(String)
     case unknown(String)
     
-    public static func fromSwiftDashError(_ error: SwiftDashError) -> SDKError {
+    public static func fromDashSDKError(_ error: dash_sdk_DashSDKError) -> SDKError {
         let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
         
-        switch SwiftDashSwiftDashErrorCode(rawValue: error.code) {
-        case SwiftDashSwiftDashErrorCode(rawValue: 1): // InvalidParameter
+        switch error.code {
+        case dash_sdk_DashSDKErrorCode(rawValue: 1): // Invalid parameter
             return .invalidParameter(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 2): // InvalidState
+        case dash_sdk_DashSDKErrorCode(rawValue: 2): // Invalid state
             return .invalidState(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 3): // NetworkError
+        case dash_sdk_DashSDKErrorCode(rawValue: 3): // Network error
             return .networkError(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 4): // SerializationError
+        case dash_sdk_DashSDKErrorCode(rawValue: 4): // Serialization error
             return .serializationError(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 5): // ProtocolError
+        case dash_sdk_DashSDKErrorCode(rawValue: 5): // Protocol error
             return .protocolError(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 6): // CryptoError
+        case dash_sdk_DashSDKErrorCode(rawValue: 6): // Crypto error
             return .cryptoError(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 7): // NotFound
+        case dash_sdk_DashSDKErrorCode(rawValue: 7): // Not found
             return .notFound(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 8): // Timeout
+        case dash_sdk_DashSDKErrorCode(rawValue: 8): // Timeout
             return .timeout(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 9): // NotImplemented
+        case dash_sdk_DashSDKErrorCode(rawValue: 9): // Not implemented
             return .notImplemented(message)
-        case SwiftDashSwiftDashErrorCode(rawValue: 99): // InternalError
+        case dash_sdk_DashSDKErrorCode(rawValue: 99): // Internal error
             return .internalError(message)
         default:
             return .unknown(message)
@@ -104,11 +230,6 @@ public enum SDKError: Error {
     }
 }
 
-/// Swift wrapper for SwiftDashError
-public struct SwiftDashError {
-    public var code: UInt32 = 0
-    public var message: UnsafeMutablePointer<CChar>?
-}
 
 /// Identities operations
 public class Identities {
@@ -120,7 +241,7 @@ public class Identities {
     
     /// Get an identity by ID
     public func get(id: String) throws -> Identity? {
-        guard let sdk = sdk, let handle = sdk.handle else {
+        guard let sdk = sdk, let _ = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
@@ -140,12 +261,43 @@ public class Identities {
     }
     
     /// Get a single identity balance
-    public func getBalance(id: String) throws -> UInt64 {
+    public func getBalance(id: Data) throws -> UInt64 {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let balance = swift_dash_identity_get_balance(handle, id)
+        guard id.count == 32 else {
+            throw SDKError.invalidParameter("Identity ID must be exactly 32 bytes")
+        }
+        
+        // Convert Data to Base58 string (the FFI expects string IDs)
+        let idString = id.toBase58()
+        
+        let result = idString.withCString { cString in
+            // Handle is OpaquePointer which Swift should convert automatically
+            return dash_sdk_identity_fetch_balance(handle, cString)
+        }
+        
+        // Check for errors
+        if result.error != nil {
+            let error = result.error!.pointee
+            defer {
+                dash_sdk_error_free(result.error)
+            }
+            throw SDKError.fromDashSDKError(error)
+        }
+        
+        guard result.data != nil else {
+            throw SDKError.internalError("No balance data returned")
+        }
+        
+        // Parse the balance from result
+        let balancePtr = result.data.assumingMemoryBound(to: UInt64.self)
+        let balance = balancePtr.pointee
+        
+        // Free the result data
+        dash_sdk_bytes_free(result.data)
+        
         return balance
     }
     
@@ -171,8 +323,8 @@ public class Identities {
         // Convert Data to byte arrays
         let idByteArrays: [[UInt8]] = ids.map { Array($0) }
         
-        // Create array of tuples (32-byte arrays)
-        let idTuples: [(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        // Create array of 32-byte arrays for FFI
+        let idArrays: [(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)] = 
@@ -183,25 +335,34 @@ public class Identities {
                  bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31])
             }
         
-        guard let resultMapPtr = idTuples.withUnsafeBufferPointer({ buffer -> UnsafeMutablePointer<SwiftDashDashSDKIdentityBalanceMap>? in
+        let result = idArrays.withUnsafeBufferPointer { buffer -> dash_sdk_DashSDKResult in
             let idsPtr = buffer.baseAddress
-            return swift_dash_identities_fetch_balances(handle, idsPtr, idByteArrays.count)
-        }) else {
-            throw SDKError.networkError("Failed to fetch balances")
+            // The handle is already the correct type for the C function
+            return dash_sdk_identities_fetch_balances(handle, idsPtr, UInt(ids.count))
         }
         
-        defer {
-            swift_dash_identity_balance_map_free(resultMapPtr)
+        // Check for errors
+        if result.error != nil {
+            let error = result.error!.pointee
+            defer {
+                dash_sdk_error_free(result.error)
+            }
+            throw SDKError.fromDashSDKError(error)
         }
         
-        let resultMap = resultMapPtr.pointee
+        guard result.data != nil else {
+            throw SDKError.internalError("No data returned from fetch balances")
+        }
         
-        // Convert to dictionary
+        // Parse the identity balance map
+        let mapPtr = result.data.assumingMemoryBound(to: dash_sdk_DashSDKIdentityBalanceMap.self)
+        let map = mapPtr.pointee
+        
         var balances: [Data: UInt64?] = [:]
         
-        if resultMap.count > 0 && resultMap.entries != nil {
-            for i in 0..<resultMap.count {
-                let entry = resultMap.entries[i]
+        if map.count > 0 && map.entries != nil {
+            for i in 0..<map.count {
+                let entry = map.entries[Int(i)]
                 let idData = withUnsafeBytes(of: entry.identity_id) { Data($0) }
                 
                 // Check if balance is u64::MAX (which means not found)
@@ -212,6 +373,9 @@ public class Identities {
                 }
             }
         }
+        
+        // Free the result
+        dash_sdk_identity_balance_map_free(mapPtr)
         
         // Make sure all requested IDs are in the result
         for id in ids {
@@ -263,7 +427,7 @@ public class Contracts {
     
     /// Get a data contract by ID
     public func get(id: String) throws -> DataContract? {
-        guard let sdk = sdk, let handle = sdk.handle else {
+        guard let sdk = sdk, let _ = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
@@ -273,11 +437,3 @@ public class Contracts {
     }
 }
 
-// MARK: - Data Extensions
-
-extension Data {
-    /// Convert Data to hex string
-    func toHexString() -> String {
-        map { String(format: "%02x", $0) }.joined()
-    }
-}

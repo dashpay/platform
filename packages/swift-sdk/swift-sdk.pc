@@ -1,8 +1,0 @@
-prefix=/Users/samuelw/Documents/src/platform/packages/swift-sdk
-libdir=${prefix}/target/release
-
-Name: SwiftDashSDK
-Description: Swift bindings for Dash Platform SDK
-Version: 2.0.0
-Libs: -L${libdir} -lswift_sdk
-Cflags: -I${prefix}/Sources/CSwiftDashSDK

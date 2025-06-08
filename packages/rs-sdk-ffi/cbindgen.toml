@@ -51,7 +51,6 @@ derive_const_casts = false
 derive_mut_casts = false
 cast_assert_name = "assert"
 must_use = "DASH_SDK_WARN_UNUSED_RESULT"
-enable_enum_variant_attributes = false
 
 [const]
 allow_static_const = true

@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct IdentitiesView: View {
     @EnvironmentObject var appState: AppState
@@ -85,7 +86,51 @@ struct IdentitiesView: View {
             }
         } catch {
             await MainActor.run {
-                appState.showError(message: "Failed to refresh balances: \(error.localizedDescription)")
+                var errorMessage = "Failed to refresh balances: "
+                
+                // Check if it's an SDKError
+                if let sdkError = error as? SDKError {
+                    switch sdkError {
+                    case .invalidParameter(let detail):
+                        errorMessage += "Invalid parameter - \(detail)"
+                    case .invalidState(let detail):
+                        errorMessage += "Invalid state - \(detail)"
+                    case .networkError(let detail):
+                        errorMessage += "Network error - \(detail)"
+                    case .serializationError(let detail):
+                        errorMessage += "Data serialization error - \(detail)"
+                    case .protocolError(let detail):
+                        errorMessage += "Protocol error - \(detail)"
+                    case .cryptoError(let detail):
+                        errorMessage += "Cryptographic error - \(detail)"
+                    case .notFound(let detail):
+                        errorMessage += "Not found - \(detail)"
+                    case .timeout(let detail):
+                        errorMessage += "Request timed out - \(detail)"
+                    case .notImplemented(let detail):
+                        errorMessage += "Feature not implemented - \(detail)"
+                    case .internalError(let detail):
+                        errorMessage += "Internal error - \(detail)"
+                    case .unknown(let detail):
+                        errorMessage += detail
+                    }
+                } else {
+                    // For other errors, try to get more details
+                    let nsError = error as NSError
+                    if nsError.domain.isEmpty {
+                        errorMessage += error.localizedDescription
+                    } else {
+                        errorMessage += "\(nsError.domain) - Code: \(nsError.code)"
+                        if let reason = nsError.localizedFailureReason {
+                            errorMessage += " - \(reason)"
+                        }
+                        if let suggestion = nsError.localizedRecoverySuggestion {
+                            errorMessage += "\n\(suggestion)"
+                        }
+                    }
+                }
+                
+                appState.showError(message: errorMessage)
             }
         }
     }

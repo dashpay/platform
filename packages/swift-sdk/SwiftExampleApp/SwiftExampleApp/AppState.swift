@@ -1,7 +1,6 @@
 import Foundation
 import SwiftData
 import SwiftDashSDK
-import CSwiftDashSDK
 
 @MainActor
 class AppState: ObservableObject {
@@ -55,9 +54,7 @@ class AppState: ObservableObject {
                 SDK.initialize()
                 
                 // Create SDK instance for current network
-                guard let sdkNetwork = currentNetwork.sdkNetwork else {
-                    throw SDKError.invalidParameter("Invalid network")
-                }
+                let sdkNetwork = currentNetwork.sdkNetwork
                 let newSDK = try SDK(network: sdkNetwork)
                 sdk = newSDK
                 
@@ -156,9 +153,7 @@ class AppState: ObservableObject {
             isLoading = true
             
             // Create new SDK instance for the network
-            guard let sdkNetwork = network.sdkNetwork else {
-                throw SDKError.invalidParameter("Invalid network")
-            }
+            let sdkNetwork = network.sdkNetwork
             let newSDK = try SDK(network: sdkNetwork)
             sdk = newSDK
             

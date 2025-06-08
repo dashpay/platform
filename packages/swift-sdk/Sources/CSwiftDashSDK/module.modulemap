@@ -1,5 +1,0 @@
-module CSwiftDashSDK {
-    header "SwiftDashSDK.h"
-    link "swift_sdk"
-    export *
-}

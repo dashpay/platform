@@ -47,3 +47,7 @@ xcuserdata/
 *.o
 *.swiftdeps
 *.d
+
+# Generated Swift SDK header files
+packages/swift-sdk/Sources/CDashSDKFFI/DashSDKFFI.h
+packages/swift-sdk/generated/DashSDKFFI.h

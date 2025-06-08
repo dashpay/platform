@@ -1,16 +1,15 @@
 import Foundation
 import SwiftDashSDK
-import CSwiftDashSDK
 
 // MARK: - Network Helper  
 // C enums are imported as structs with RawValue in Swift
 // We'll use the raw values directly
 
 extension SDK {
-    var network: SwiftDashSwiftDashNetwork? {
+    var network: SwiftDashSDK.Network {
         // In a real implementation, we would track the network during initialization
         // For now, return testnet as default
-        return SwiftDashSwiftDashNetwork(rawValue: 1)
+        return dash_sdk_DashSDKNetwork(rawValue: 1) // Testnet
     }
 }
 
@@ -24,7 +23,7 @@ protocol Signer {
 private var globalSignerStorage: Signer?
 
 // C function callbacks that use the global signer
-private let globalSignCallback: SwiftDashSwiftSignCallback = { identityPublicKeyBytes, identityPublicKeyLen, dataBytes, dataLen, resultLenPtr in
+private let globalSignCallback: dash_sdk_IOSSignCallback = { identityPublicKeyBytes, identityPublicKeyLen, dataBytes, dataLen, resultLenPtr in
     guard let identityPublicKeyBytes = identityPublicKeyBytes,
           let dataBytes = dataBytes,
           let resultLenPtr = resultLenPtr,
@@ -45,11 +44,11 @@ private let globalSignCallback: SwiftDashSwiftSignCallback = { identityPublicKey
         result.initialize(from: bytes.bindMemory(to: UInt8.self).baseAddress!, count: signature.count)
     }
     
-    resultLenPtr.pointee = signature.count
+    resultLenPtr.pointee = UInt(signature.count)
     return result
 }
 
-private let globalCanSignCallback: SwiftDashSwiftCanSignCallback = { identityPublicKeyBytes, identityPublicKeyLen in
+private let globalCanSignCallback: dash_sdk_IOSCanSignCallback = { identityPublicKeyBytes, identityPublicKeyLen in
     guard let identityPublicKeyBytes = identityPublicKeyBytes,
           let signer = globalSignerStorage else {
         return false
@@ -62,19 +61,18 @@ private let globalCanSignCallback: SwiftDashSwiftCanSignCallback = { identityPub
 // MARK: - SDK Extensions for the example app
 extension SDK {
     /// Initialize SDK with a custom signer for the example app
-    convenience init(network: SwiftDashSwiftDashNetwork, signer: Signer) throws {
+    convenience init(network: SwiftDashSDK.Network, signer: Signer) throws {
         // Store the signer globally for C callbacks
         globalSignerStorage = signer
         
-        // Create the Swift signer configuration
-        let signerConfig = SwiftDashSwiftDashSigner(
-            sign_callback: globalSignCallback,
-            can_sign_callback: globalCanSignCallback
-        )
+        // Create the signer handle
+        let signerHandle = dash_sdk_signer_create(globalSignCallback, globalCanSignCallback)
         
-        // Create the SDK with the signer
-        // Note: We'll use the test signer for now since the custom signer API
-        // is not fully exposed yet
+        // Initialize the SDK normally
         try self.init(network: network)
+        
+        // TODO: Connect the signer to the SDK instance
+        // The signer handle should be passed to the SDK, but this API may not be exposed yet
+        // For now, we'll rely on the SDK's default behavior
     }
 }

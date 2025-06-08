@@ -14,22 +14,22 @@ let package = Package(
             targets: ["SwiftDashSDK"]),
     ],
     targets: [
-        // System library target for the C bindings
+        // System library target for the rs-sdk-ffi bindings
         .systemLibrary(
-            name: "CSwiftDashSDK",
-            path: "Sources/CSwiftDashSDK"
+            name: "CDashSDKFFI",
+            path: "Sources/CDashSDKFFI"
         ),
         // Swift wrapper target
         .target(
             name: "SwiftDashSDK",
-            dependencies: ["CSwiftDashSDK"],
+            dependencies: ["CDashSDKFFI"],
             path: "Sources/SwiftDashSDK",
             linkerSettings: [
-                .linkedLibrary("swift_sdk", .when(platforms: [.iOS])),
+                .linkedLibrary("rs_sdk_ffi", .when(platforms: [.iOS])),
                 .unsafeFlags([
                     "-L/Users/samuelw/Documents/src/platform/target/aarch64-apple-ios-sim/release",
                     "-Xlinker", "-force_load",
-                    "-Xlinker", "/Users/samuelw/Documents/src/platform/target/aarch64-apple-ios-sim/release/libswift_sdk.a"
+                    "-Xlinker", "/Users/samuelw/Documents/src/platform/target/aarch64-apple-ios-sim/release/librs_sdk_ffi.a"
                 ])
             ]
         ),

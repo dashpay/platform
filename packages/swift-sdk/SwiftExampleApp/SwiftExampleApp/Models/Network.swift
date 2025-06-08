@@ -1,5 +1,5 @@
 import Foundation
-import CSwiftDashSDK
+import SwiftDashSDK
 
 enum Network: String, CaseIterable, Codable {
     case mainnet = "mainnet"
@@ -17,14 +17,14 @@ enum Network: String, CaseIterable, Codable {
         }
     }
     
-    var sdkNetwork: SwiftDashSwiftDashNetwork? {
+    var sdkNetwork: SwiftDashSDK.Network {
         switch self {
         case .mainnet:
-            return SwiftDashSwiftDashNetwork(rawValue: 0) // mainnet
+            return dash_sdk_DashSDKNetwork(rawValue: 0)
         case .testnet:
-            return SwiftDashSwiftDashNetwork(rawValue: 1) // testnet
+            return dash_sdk_DashSDKNetwork(rawValue: 1)
         case .devnet:
-            return SwiftDashSwiftDashNetwork(rawValue: 2) // devnet/regtest
+            return dash_sdk_DashSDKNetwork(rawValue: 2)
         }
     }
     
