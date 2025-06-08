@@ -21,6 +21,7 @@ chrono = { version = "0.4.35", default-features = false, features = [
   "wasmbind",
   "clock",
 ] }
+chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "std",
@@ -297,7 +298,7 @@ extended-document = [
   "data-contract-serde-conversion",
   "data-contract-json-conversion",
 ]
-token-reward-explanations = []
+token-reward-explanations = ["dep:chrono-tz"]
 
 factories = []
 client = ["factories", "state-transitions"]

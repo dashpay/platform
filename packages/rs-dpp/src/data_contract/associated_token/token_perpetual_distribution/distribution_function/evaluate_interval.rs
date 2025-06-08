@@ -6,6 +6,9 @@ use crate::data_contract::associated_token::token_perpetual_distribution::distri
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::ProtocolError;
+use chrono::{Utc, TimeZone};
+#[cfg(feature = "token-reward-explanations")]
+use chrono_tz::Tz;
 
 /// Details of a single evaluation step within an interval
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +29,7 @@ pub struct EvaluationStep {
 
 /// Detailed explanation of an interval evaluation containing all steps and reasoning
 #[derive(Debug, Clone, PartialEq)]
+#[cfg(feature = "token-reward-explanations")]
 pub struct IntervalEvaluationExplanation {
     /// The distribution function that was evaluated
     pub distribution_function: DistributionFunction,
@@ -101,12 +105,54 @@ fn format_token_amount_with_plural(amount: TokenAmount, decimal_offset: u8) -> S
     }
 }
 
+/// Helper function to check if we're dealing with time-based moments
+fn is_time_based(moment: &RewardDistributionMoment) -> bool {
+    matches!(moment, RewardDistributionMoment::TimeBasedMoment(_))
+}
+
+/// Helper function to format timestamp to human-readable date
+#[cfg(feature = "token-reward-explanations")]
+fn format_timestamp_to_date(timestamp_ms: u64, time_zone: &str) -> String {
+    let datetime = Utc.timestamp_millis_opt(timestamp_ms as i64).unwrap();
+    let utc_formatted = datetime
+        .format("%A %B %-d %Y at %-I:%M:%S %p UTC")
+        .to_string();
+
+    // Try to get local time if timezone is provided
+    if time_zone != "UTC" && !time_zone.is_empty() {
+        // Try to parse as a timezone name (e.g., "America/New_York")
+        if let Ok(tz) = time_zone.parse::<Tz>() {
+            let local_datetime = datetime.with_timezone(&tz);
+            let local_formatted = local_datetime.format("%-I:%M:%S %p local time").to_string();
+            let offset = local_datetime.offset().to_string();
+            format!("{} ({}, {})", utc_formatted, local_formatted, offset)
+        } else if let Ok(offset_hours) = time_zone.parse::<f32>() {
+            // Handle numeric offset like "+5.5" for India or "-8" for PST
+            let offset_seconds = (offset_hours * 3600.0) as i32;
+            if let Some(fixed_offset) = chrono::FixedOffset::east_opt(offset_seconds) {
+                let local_datetime = datetime.with_timezone(&fixed_offset);
+                let local_formatted = local_datetime.format("%-I:%M:%S %p local time").to_string();
+                format!("{} ({})", utc_formatted, local_formatted)
+            } else {
+                utc_formatted
+            }
+        } else {
+            // If we can't parse the timezone, just return UTC
+            utc_formatted
+        }
+    } else {
+        utc_formatted
+    }
+}
+
+#[cfg(feature = "token-reward-explanations")]
 impl IntervalEvaluationExplanation {
     /// Returns a short explanation of the evaluation result
     pub fn short_explanation(
         &self,
         decimal_offset: u8,
         platform_version: &PlatformVersion,
+        time_zone: &str,
     ) -> String {
         match &self.distribution_function {
             DistributionFunction::FixedAmount { amount } => {
@@ -164,63 +210,97 @@ impl IntervalEvaluationExplanation {
                             )
                         }
                     }
-                    _ => {
-                        let (unit, current) = match &self.interval_end_included {
-                            RewardDistributionMoment::BlockBasedMoment(block) => {
-                                ("block", block + 1)
+                    _ => match (&self.interval_start_excluded, &self.interval_end_included) {
+                        (
+                            RewardDistributionMoment::TimeBasedMoment(start_time),
+                            RewardDistributionMoment::TimeBasedMoment(end_time),
+                        ) => {
+                            if self.is_first_claim {
+                                format!(
+                                        "This token distributes a fixed amount of {} at each interval. \
+                                        The token contract was registered before {} and we are \
+                                        currently at {}, you have {} {} of rewards{}. \
+                                        {} * {} = {}",
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        format_timestamp_to_date(start_time + 1, time_zone),
+                                        format_timestamp_to_date(end_time + 1, time_zone),
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        self.steps_count,
+                                        amount_str,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
+                            } else {
+                                format!(
+                                        "This token distributes a fixed amount of {} at each interval. \
+                                        The last claim was on {} and we are currently at {}, \
+                                        you have {} {} of rewards{}. {} * {} = {}",
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        format_timestamp_to_date(*start_time, time_zone),
+                                        format_timestamp_to_date(end_time + 1, time_zone),
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        self.steps_count,
+                                        amount_str,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
                             }
-                            RewardDistributionMoment::TimeBasedMoment(time) => {
-                                ("time period", time + 1)
-                            }
-                            _ => ("period", 0),
-                        };
-                        if self.is_first_claim {
-                            format!(
-                                "This token distributes every {} a fixed amount of {}. \
-                                The token contract was registered before {} {} and we are \
-                                currently at {} {}, you have {} {} of rewards{}. \
-                                {} * {} = {}",
-                                unit,
-                                format_token_amount_with_plural(*amount, decimal_offset),
-                                unit,
-                                self.interval_start_excluded.to_u64() + 1,
-                                unit,
-                                current,
-                                self.steps_count,
-                                interval_word,
-                                max_claim_text,
-                                self.steps_count,
-                                amount_str,
-                                format_token_amount_with_plural(self.total_amount, decimal_offset)
-                            )
-                        } else {
-                            format!(
-                                "This token distributes every {} a fixed amount of {}. \
-                                The last claim was for {} {} and we are currently at {} {}, \
-                                you have {} {} of rewards{}. {} * {} = {}",
-                                unit,
-                                format_token_amount_with_plural(*amount, decimal_offset),
-                                unit,
-                                self.interval_start_excluded.to_u64(),
-                                unit,
-                                current,
-                                self.steps_count,
-                                interval_word,
-                                max_claim_text,
-                                self.steps_count,
-                                amount_str,
-                                format_token_amount_with_plural(self.total_amount, decimal_offset)
-                            )
                         }
-                    }
+                        _ => {
+                            let (unit, current) = match &self.interval_end_included {
+                                RewardDistributionMoment::BlockBasedMoment(block) => {
+                                    ("block", block + 1)
+                                }
+                                _ => ("period", 0),
+                            };
+                            if self.is_first_claim {
+                                format!(
+                                    "This token distributes every {} a fixed amount of {}. \
+                                        The token contract was registered before {} {} and we are \
+                                        currently at {} {}, you have {} {} of rewards{}. \
+                                        {} * {} = {}",
+                                    unit,
+                                    format_token_amount_with_plural(*amount, decimal_offset),
+                                    unit,
+                                    self.interval_start_excluded.to_u64() + 1,
+                                    unit,
+                                    current,
+                                    self.steps_count,
+                                    interval_word,
+                                    max_claim_text,
+                                    self.steps_count,
+                                    amount_str,
+                                    format_token_amount_with_plural(
+                                        self.total_amount,
+                                        decimal_offset
+                                    )
+                                )
+                            } else {
+                                format!(
+                                        "This token distributes every {} a fixed amount of {}. \
+                                        The last claim was for {} {} and we are currently at {} {}, \
+                                        you have {} {} of rewards{}. {} * {} = {}",
+                                        unit,
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        unit,
+                                        self.interval_start_excluded.to_u64(),
+                                        unit,
+                                        current,
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        self.steps_count,
+                                        amount_str,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
+                            }
+                        }
+                    },
                 }
             }
             DistributionFunction::Random { min, max } => {
-                let period_unit = match &self.step {
-                    RewardDistributionMoment::EpochBasedMoment(_) => "epoch",
-                    RewardDistributionMoment::BlockBasedMoment(_) => "block",
-                    RewardDistributionMoment::TimeBasedMoment(_) => "time period",
-                };
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
                 let max_claim_text = if self.steps_count
                     == platform_version.system_limits.max_token_redemption_cycles as u64
@@ -230,42 +310,87 @@ impl IntervalEvaluationExplanation {
                     ""
                 };
 
-                if self.is_first_claim {
-                    format!(
-                        "This token distributes a random amount between {} and {} per {}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards. The exact amount is randomly determined \
-                        for each interval, totaling {}",
-                        format_token_amount_with_plural(*min, decimal_offset),
-                        format_token_amount_with_plural(*max, decimal_offset),
-                        period_unit,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
-                } else {
-                    format!(
-                        "This token distributes a random amount between {} and {} per {}. \
-                        The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards. The exact amount is randomly determined \
-                        for each interval, totaling {}",
-                        format_token_amount_with_plural(*min, decimal_offset),
-                        format_token_amount_with_plural(*max, decimal_offset),
-                        period_unit,
-                        period_unit,
-                        self.interval_start_excluded.to_u64(),
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
+                match (&self.interval_start_excluded, &self.interval_end_included) {
+                    (
+                        RewardDistributionMoment::TimeBasedMoment(start_time),
+                        RewardDistributionMoment::TimeBasedMoment(end_time),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token distributes a random amount between {} and {} at each interval. \
+                                The token contract was registered before {} and we are currently at {}, \
+                                you have {} {}{} of rewards. The exact amount is randomly determined \
+                                for each interval, totaling {}",
+                                format_token_amount_with_plural(*min, decimal_offset),
+                                format_token_amount_with_plural(*max, decimal_offset),
+                                format_timestamp_to_date(start_time + 1, time_zone),
+                                format_timestamp_to_date(end_time + 1, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token distributes a random amount between {} and {} at each interval. \
+                                The last claim was on {} and we are currently at {}, \
+                                you have {} {}{} of rewards. The exact amount is randomly determined \
+                                for each interval, totaling {}",
+                                format_token_amount_with_plural(*min, decimal_offset),
+                                format_token_amount_with_plural(*max, decimal_offset),
+                                format_timestamp_to_date(*start_time, time_zone),
+                                format_timestamp_to_date(end_time + 1, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    _ => {
+                        let period_unit = match &self.step {
+                            RewardDistributionMoment::EpochBasedMoment(_) => "epoch",
+                            RewardDistributionMoment::BlockBasedMoment(_) => "block",
+                            _ => "period",
+                        };
+                        if self.is_first_claim {
+                            format!(
+                                "This token distributes a random amount between {} and {} per {}. \
+                                The token contract was registered before {} {} and we are currently at {} {}, \
+                                you have {} {}{} of rewards. The exact amount is randomly determined \
+                                for each interval, totaling {}",
+                                format_token_amount_with_plural(*min, decimal_offset),
+                                format_token_amount_with_plural(*max, decimal_offset),
+                                period_unit,
+                                period_unit,
+                                self.interval_start_excluded.to_u64() + 1,
+                                period_unit,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token distributes a random amount between {} and {} per {}. \
+                                The last claim was for {} {} and we are currently at {} {}, \
+                                you have {} {}{} of rewards. The exact amount is randomly determined \
+                                for each interval, totaling {}",
+                                format_token_amount_with_plural(*min, decimal_offset),
+                                format_token_amount_with_plural(*max, decimal_offset),
+                                period_unit,
+                                period_unit,
+                                self.interval_start_excluded.to_u64(),
+                                period_unit,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -277,15 +402,10 @@ impl IntervalEvaluationExplanation {
                 trailing_distribution_interval_amount,
                 ..
             } => {
-                let period_unit = match &self.step {
-                    RewardDistributionMoment::EpochBasedMoment(_) => "epoch",
-                    RewardDistributionMoment::BlockBasedMoment(_) => "block",
-                    RewardDistributionMoment::TimeBasedMoment(_) => "time period",
-                };
                 let period_unit_plural = match &self.step {
                     RewardDistributionMoment::EpochBasedMoment(_) => "epochs",
                     RewardDistributionMoment::BlockBasedMoment(_) => "blocks",
-                    RewardDistributionMoment::TimeBasedMoment(_) => "time periods",
+                    _ => "intervals",
                 };
 
                 let decrease_percentage = (*decrease_per_interval_numerator as f64
@@ -300,59 +420,178 @@ impl IntervalEvaluationExplanation {
                     ""
                 };
 
-                if self.is_first_claim {
-                    format!(
-                        "This token starts distributing {} and decreases by {:.1}% every {} {}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
-                        per interval. Total rewards: {}",
-                        format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
-                        decrease_percentage,
-                        step_count,
-                        period_unit_plural,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
-                } else {
-                    format!(
-                        "This token starts distributing {} and decreases by {:.1}% every {} {}. \
-                        The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
-                        per interval. Total rewards: {}",
-                        format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
-                        decrease_percentage,
-                        step_count,
-                        period_unit_plural,
-                        period_unit,
-                        self.interval_start_excluded.to_u64(),
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(
-                            *trailing_distribution_interval_amount,
-                            decimal_offset
-                        ),
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
+                match (
+                    &self.interval_start_excluded,
+                    &self.interval_end_included,
+                    &self.step,
+                ) {
+                    (
+                        RewardDistributionMoment::TimeBasedMoment(start_time),
+                        RewardDistributionMoment::TimeBasedMoment(end_time),
+                        RewardDistributionMoment::TimeBasedMoment(_),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} intervals. \
+                                The token contract was registered on {} and we are currently at {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                format_timestamp_to_date(*start_time, time_zone),
+                                format_timestamp_to_date(*end_time, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} intervals. \
+                                The last claim was on {} and we are currently at {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                format_timestamp_to_date(*start_time, time_zone),
+                                format_timestamp_to_date(*end_time, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    (
+                        RewardDistributionMoment::BlockBasedMoment(start_block),
+                        RewardDistributionMoment::BlockBasedMoment(end_block),
+                        RewardDistributionMoment::BlockBasedMoment(_),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} blocks. \
+                                The token contract was registered on block {} and we are currently at block {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                start_block + 1,
+                                end_block + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} blocks. \
+                                The last claim was for block {} and we are currently at block {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                start_block,
+                                end_block + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    (
+                        RewardDistributionMoment::EpochBasedMoment(start_epoch),
+                        RewardDistributionMoment::EpochBasedMoment(end_epoch),
+                        RewardDistributionMoment::EpochBasedMoment(_),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} epochs. \
+                                The token contract was registered during epoch {} and we are currently in epoch {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                start_epoch + 1,
+                                end_epoch + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} epochs. \
+                                The last claim was for epoch {} and we are currently in epoch {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                start_epoch,
+                                end_epoch + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    _ => {
+                        // Fallback for mixed types or unknown types
+                        if self.is_first_claim {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} {}. \
+                                The token contract was registered before interval {} and we are currently at interval {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                period_unit_plural,
+                                self.interval_start_excluded.to_u64() + 1,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token starts distributing {} and decreases by {:.1}% every {} {}. \
+                                The last claim was for interval {} and we are currently at interval {}, \
+                                you have {} {}{} of rewards. After all decreasing steps, it distributes {} \
+                                per interval. Total rewards: {}",
+                                format_token_amount_with_plural(*distribution_start_amount, decimal_offset),
+                                decrease_percentage,
+                                step_count,
+                                period_unit_plural,
+                                self.interval_start_excluded.to_u64(),
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(*trailing_distribution_interval_amount, decimal_offset),
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
                 }
             }
 
             DistributionFunction::Stepwise(steps_map) => {
-                let period_unit = match &self.step {
-                    RewardDistributionMoment::EpochBasedMoment(_) => "epoch",
-                    RewardDistributionMoment::BlockBasedMoment(_) => "block",
-                    RewardDistributionMoment::TimeBasedMoment(_) => "time period",
-                };
-
                 let steps_desc = steps_map
                     .iter()
                     .take(3)
@@ -387,36 +626,133 @@ impl IntervalEvaluationExplanation {
                     ""
                 };
 
-                if self.is_first_claim {
-                    format!(
-                        "This token distributes tokens in predefined steps: {}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
-                        steps_preview,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
-                } else {
-                    format!(
-                        "This token distributes tokens in predefined steps: {}. \
-                        The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
-                        steps_preview,
-                        period_unit,
-                        self.interval_start_excluded.to_u64(),
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
+                match (&self.interval_start_excluded, &self.interval_end_included) {
+                    (
+                        RewardDistributionMoment::TimeBasedMoment(start_time),
+                        RewardDistributionMoment::TimeBasedMoment(end_time),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The token contract was registered before {} and we are currently at {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                format_timestamp_to_date(start_time + 1, time_zone),
+                                format_timestamp_to_date(end_time + 1, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The last claim was on {} and we are currently at {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                format_timestamp_to_date(*start_time, time_zone),
+                                format_timestamp_to_date(end_time + 1, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    (
+                        RewardDistributionMoment::BlockBasedMoment(start_block),
+                        RewardDistributionMoment::BlockBasedMoment(end_block),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The token contract was registered on block {} and we are currently at block {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                start_block + 1,
+                                end_block + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The last claim was for block {} and we are currently at block {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                start_block,
+                                end_block + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    (
+                        RewardDistributionMoment::EpochBasedMoment(start_epoch),
+                        RewardDistributionMoment::EpochBasedMoment(end_epoch),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The token contract was registered during epoch {} and we are currently in epoch {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                start_epoch + 1,
+                                end_epoch + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The last claim was for epoch {} and we are currently in epoch {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                start_epoch,
+                                end_epoch + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    _ => {
+                        // Fallback for mixed types
+                        if self.is_first_claim {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The token contract was registered before interval {} and we are currently at interval {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                self.interval_start_excluded.to_u64() + 1,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token distributes tokens in predefined steps: {}. \
+                                The last claim was for interval {} and we are currently at interval {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                steps_preview,
+                                self.interval_start_excluded.to_u64(),
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -426,12 +762,6 @@ impl IntervalEvaluationExplanation {
                 starting_amount,
                 ..
             } => {
-                let period_unit = match &self.step {
-                    RewardDistributionMoment::EpochBasedMoment(_) => "epoch",
-                    RewardDistributionMoment::BlockBasedMoment(_) => "block",
-                    RewardDistributionMoment::TimeBasedMoment(_) => "time period",
-                };
-
                 let interval_word = pluralize(self.steps_count, "interval", "intervals");
                 let max_claim_text = if self.steps_count
                     == platform_version.system_limits.max_token_redemption_cycles as u64
@@ -447,7 +777,7 @@ impl IntervalEvaluationExplanation {
                     } else {
                         "tokens"
                     };
-                    format!("increases by {}/{} {} ", a, d, token_word)
+                    format!("increases by {}/{} {}", a, d, token_word)
                 } else if *a < 0 {
                     let abs_a = -a;
                     let token_word = if abs_a == 1 && *d == 1 {
@@ -455,45 +785,88 @@ impl IntervalEvaluationExplanation {
                     } else {
                         "tokens"
                     };
-                    format!("decreases by {}/{} {} ", abs_a, d, token_word)
+                    format!("decreases by {}/{} {}", abs_a, d, token_word)
                 } else {
                     "remains constant".to_string()
                 };
 
-                if self.is_first_claim {
-                    format!(
-                        "This token starts at {} and {}per {}. \
-                        The token contract was registered before {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
-                        format_token_amount_with_plural(*starting_amount, decimal_offset),
-                        change_desc,
-                        period_unit,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
-                } else {
-                    format!(
-                        "This token starts at {} and {}per {}. \
-                        The last claim was for {} {} and we are currently at {} {}, \
-                        you have {} {}{} of rewards totaling {}",
-                        format_token_amount_with_plural(*starting_amount, decimal_offset),
-                        change_desc,
-                        period_unit,
-                        period_unit,
-                        self.interval_start_excluded.to_u64(),
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
+                match (&self.interval_start_excluded, &self.interval_end_included) {
+                    (
+                        RewardDistributionMoment::TimeBasedMoment(start_time),
+                        RewardDistributionMoment::TimeBasedMoment(end_time),
+                    ) => {
+                        if self.is_first_claim {
+                            format!(
+                                "This token starts at {} and {} at each interval. \
+                                The token contract was registered before {} and we are currently at {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                format_token_amount_with_plural(*starting_amount, decimal_offset),
+                                change_desc,
+                                format_timestamp_to_date(start_time + 1, time_zone),
+                                format_timestamp_to_date(end_time + 1, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token starts at {} and {} at each interval. \
+                                The last claim was on {} and we are currently at {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                format_token_amount_with_plural(*starting_amount, decimal_offset),
+                                change_desc,
+                                format_timestamp_to_date(*start_time, time_zone),
+                                format_timestamp_to_date(end_time + 1, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
+                    _ => {
+                        let period_unit = match &self.step {
+                            RewardDistributionMoment::EpochBasedMoment(_) => "epoch",
+                            RewardDistributionMoment::BlockBasedMoment(_) => "block",
+                            _ => "interval",
+                        };
+                        if self.is_first_claim {
+                            format!(
+                                "This token starts at {} and {} per {}. \
+                                The token contract was registered before {} {} and we are currently at {} {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                format_token_amount_with_plural(*starting_amount, decimal_offset),
+                                change_desc,
+                                period_unit,
+                                period_unit,
+                                self.interval_start_excluded.to_u64() + 1,
+                                period_unit,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        } else {
+                            format!(
+                                "This token starts at {} and {} per {}. \
+                                The last claim was for {} {} and we are currently at {} {}, \
+                                you have {} {}{} of rewards totaling {}",
+                                format_token_amount_with_plural(*starting_amount, decimal_offset),
+                                change_desc,
+                                period_unit,
+                                period_unit,
+                                self.interval_start_excluded.to_u64(),
+                                period_unit,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -718,35 +1091,79 @@ impl IntervalEvaluationExplanation {
                 };
 
                 if self.is_first_claim {
-                    format!(
-                        "This token starts with high rewards that gradually decrease following an inverted \
-                        logarithmic curve{}. The token contract was registered \
-                        before {} {} and we are currently at {} {}, you have {} {}{} of rewards totaling {}",
-                        base_amount,
-                        period_unit,
-                        self.interval_start_excluded.to_u64() + 1,
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
+                    match &self.interval_start_excluded {
+                        RewardDistributionMoment::TimeBasedMoment(start_time) => {
+                            let current_time = match &self.interval_end_included {
+                                RewardDistributionMoment::TimeBasedMoment(end_time) => end_time + 1,
+                                _ => 0,
+                            };
+                            format!(
+                                "This token starts with high rewards that gradually decrease following an inverted \
+                                logarithmic curve{}. The token contract was registered \
+                                before {} and we are currently at {}, you have {} {}{} of rewards totaling {}",
+                                base_amount,
+                                format_timestamp_to_date(start_time + 1, time_zone),
+                                format_timestamp_to_date(current_time, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                        _ => {
+                            format!(
+                                "This token starts with high rewards that gradually decrease following an inverted \
+                                logarithmic curve{}. The token contract was registered \
+                                before {} {} and we are currently at {} {}, you have {} {}{} of rewards totaling {}",
+                                base_amount,
+                                period_unit,
+                                self.interval_start_excluded.to_u64() + 1,
+                                period_unit,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
                 } else {
-                    format!(
-                        "This token starts with high rewards that gradually decrease following an inverted \
-                        logarithmic curve{}. The last claim was for {} {} and we are \
-                        currently at {} {}, you have {} {}{} of rewards totaling {}",
-                        base_amount,
-                        period_unit,
-                        self.interval_start_excluded.to_u64(),
-                        period_unit,
-                        self.interval_end_included.to_u64() + 1,
-                        self.steps_count,
-                        interval_word,
-                        max_claim_text,
-                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                    )
+                    match &self.interval_start_excluded {
+                        RewardDistributionMoment::TimeBasedMoment(start_time) => {
+                            let current_time = match &self.interval_end_included {
+                                RewardDistributionMoment::TimeBasedMoment(end_time) => end_time + 1,
+                                _ => 0,
+                            };
+                            format!(
+                                "This token starts with high rewards that gradually decrease following an inverted \
+                                logarithmic curve{}. The last claim was on {} and we are \
+                                currently at {}, you have {} {}{} of rewards totaling {}",
+                                base_amount,
+                                format_timestamp_to_date(*start_time, time_zone),
+                                format_timestamp_to_date(current_time, time_zone),
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                        _ => {
+                            format!(
+                                "This token starts with high rewards that gradually decrease following an inverted \
+                                logarithmic curve{}. The last claim was for {} {} and we are \
+                                currently at {} {}, you have {} {}{} of rewards totaling {}",
+                                base_amount,
+                                period_unit,
+                                self.interval_start_excluded.to_u64(),
+                                period_unit,
+                                self.interval_end_included.to_u64() + 1,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1331,7 +1748,7 @@ mod tests {
                            185 * 10000 = 1850000 tokens";
 
             assert_eq!(
-                result.short_explanation(0, PlatformVersion::latest()),
+                result.short_explanation(0, PlatformVersion::latest(), "UTC"),
                 expected
             );
         }
@@ -1361,7 +1778,7 @@ mod tests {
                            intervals of rewards. 186 * 10000 = 1860000 tokens";
 
             assert_eq!(
-                result.short_explanation(0, PlatformVersion::latest()),
+                result.short_explanation(0, PlatformVersion::latest(), "UTC"),
                 expected
             );
         }
@@ -1385,7 +1802,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per epoch."));
             assert!(actual.contains("The token contract was registered before epoch 51"));
             assert!(actual.contains("we are currently at epoch 61"));
@@ -1411,7 +1828,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(actual.contains("The last claim was for epoch 50"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
@@ -1453,7 +1870,7 @@ mod tests {
                 "After all decreasing steps, it distributes 1000 tokens per interval"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1497,7 +1914,7 @@ mod tests {
                 "you have 20 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1542,7 +1959,7 @@ mod tests {
                 "you have 10 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1590,7 +2007,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1638,7 +2055,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1686,7 +2103,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1734,7 +2151,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -1764,7 +2181,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let medium = result.medium_explanation();
             let long = result.long_explanation();
 
@@ -1832,7 +2249,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("you therefore have 1 interval of rewards"),
                 "Expected singular 'interval', got: {}",
@@ -1865,7 +2282,7 @@ mod tests {
                 .unwrap();
 
             // Test with decimal offset of 5
-            let actual = result.short_explanation(5, PlatformVersion::latest());
+            let actual = result.short_explanation(5, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("5.2 tokens"),
                 "Expected '5.2 tokens' with decimal offset 5, got: {}",
@@ -1900,7 +2317,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             // Should say "1 token" not "1 token`s`"
             assert!(
                 actual.contains("a fixed amount of 1 token"),
@@ -1926,7 +2343,7 @@ mod tests {
                 .unwrap();
 
             let actual_decimals =
-                result_with_decimals.short_explanation(6, PlatformVersion::latest());
+                result_with_decimals.short_explanation(6, PlatformVersion::latest(), "UTC");
             assert!(
                 actual_decimals.contains("0.000001 token"),
                 "Expected singular 'token' for fractional amount, got: {}",
@@ -1954,7 +2371,7 @@ mod tests {
                 .unwrap();
 
             // Test with decimal offset of 8 (common for crypto tokens)
-            let actual = result.short_explanation(8, PlatformVersion::latest());
+            let actual = result.short_explanation(8, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("1.23456789 tokens"),
                 "Expected '1.23456789 tokens' with decimal offset 8, got: {}",
@@ -1991,7 +2408,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             // Should say "1 token" not "1 token`s`"
             assert!(
                 actual.contains("a fixed amount of 1 token"),
@@ -2032,7 +2449,7 @@ mod tests {
             assert!(result.evaluation_steps.is_empty()); // No individual steps due to optimization
 
             // Test explanations
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short.contains("fixed amount of 100 tokens"));
             assert!(short.contains("500 tokens"));
 
@@ -2041,7 +2458,7 @@ mod tests {
             assert!(medium.contains("Total Steps Evaluated: 5"));
 
             // Test with is_first_claim = false
-            let short_not_first = result.short_explanation(0, PlatformVersion::latest());
+            let short_not_first = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short_not_first.contains("The last claim was for"));
 
             let long = result.long_explanation();
@@ -2080,7 +2497,7 @@ mod tests {
             assert!(!result.evaluation_steps.is_empty()); // Should have individual steps
 
             // Test that explanations contain function type
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short.contains("starts at 50 tokens"));
 
             let medium = result.medium_explanation();
@@ -2117,7 +2534,7 @@ mod tests {
                 .any(|note| note.contains("Start >= End")));
 
             // Test that empty range still generates explanation
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short.contains("0 tokens"));
         }
 
@@ -2206,7 +2623,7 @@ mod tests {
                 "10 * 5000 = 50000 tokens",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2239,7 +2656,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("you have 1 interval of rewards"),
                 "Expected singular 'interval', got: {}",
@@ -2289,7 +2706,7 @@ mod tests {
                 "After all decreasing steps, it distributes 100 tokens per interval"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2337,7 +2754,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2375,7 +2792,7 @@ mod tests {
                 "186 * 10000 = 1860000 tokens",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2405,7 +2822,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per block."));
             assert!(actual.contains("The token contract was registered before block 51"));
             assert!(actual.contains("we are currently at block 61"));
@@ -2431,7 +2848,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(actual.contains("The last claim was for block 50"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
@@ -2469,7 +2886,7 @@ mod tests {
                 "you have 20 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2514,7 +2931,7 @@ mod tests {
                 "you have 10 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2562,7 +2979,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2610,7 +3027,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2658,7 +3075,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2706,7 +3123,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2754,7 +3171,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2802,7 +3219,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -2832,7 +3249,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let medium = result.medium_explanation();
             let long = result.long_explanation();
 
@@ -2901,7 +3318,7 @@ mod tests {
                 .unwrap();
 
             // Test with decimal offset of 5
-            let actual = result.short_explanation(5, PlatformVersion::latest());
+            let actual = result.short_explanation(5, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("5.2 tokens"),
                 "Expected '5.2 tokens' with decimal offset 5, got: {}",
@@ -2936,7 +3353,7 @@ mod tests {
                 .unwrap();
 
             // Test with decimal offset of 8 (common for crypto tokens)
-            let actual = result.short_explanation(8, PlatformVersion::latest());
+            let actual = result.short_explanation(8, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("1.23456789 tokens"),
                 "Expected '1.23456789 tokens' with decimal offset 8, got: {}",
@@ -2973,7 +3390,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             // Should say "1 token" not "1 token`s`"
             assert!(
                 actual.contains("a fixed amount of 1 token"),
@@ -3007,14 +3424,14 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token distributes every time period a fixed amount of 2500 tokens",
-                "The last claim was for time period 3600",
-                "we are currently at time period 7201",
+                "This token distributes a fixed amount of 2500 tokens",
+                "The last claim was on",
+                "we are currently at",
                 "you have 12 intervals of rewards",
                 "12 * 2500 = 30000 tokens",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3045,7 +3462,7 @@ mod tests {
                 .unwrap();
 
             // Test with decimal offset of 5 - should show "5" not "5.00000"
-            let actual = result.short_explanation(5, PlatformVersion::latest());
+            let actual = result.short_explanation(5, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("5 tokens"),
                 "Expected '5 tokens' without trailing zeros, got: {}",
@@ -3086,13 +3503,13 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts at 1000 tokens and increases by 25/1 tokens per time period",
-                "The token contract was registered before time period 3601",
-                "we are currently at time period 7201",
+                "This token starts at 1000 tokens and increases by 25/1 tokens",
+                "The token contract was registered before",
+                "we are currently at",
                 "you have 12 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3132,12 +3549,12 @@ mod tests {
 
             let expected_contains = vec![
                 "This token distributes tokens in predefined steps: 2000 tokens from interval 0, 1500 tokens from interval 5, 1000 tokens from interval 10, and 1 more step",
-                "The token contract was registered before time period 1801",
-                "we are currently at time period 3601",
+                "The token contract was registered before",
+                "we are currently at",
                 "you have 3 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3168,14 +3585,14 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token distributes every time period a fixed amount of 10000 tokens",
-                "The token contract was registered before time period 7556",
-                "we are currently at time period 7741",
+                "This token distributes a fixed amount of 10000 tokens at each interval",
+                "The token contract was registered before Thursday January 1 1970",
+                "we are currently at Thursday January 1 1970",
                 "you have 185 intervals of rewards",
                 "185 * 10000 = 1850000 tokens",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3205,10 +3622,12 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
-            assert!(actual.starts_with("This token distributes a random amount between 100 tokens and 500 tokens per time period."));
-            assert!(actual.contains("The token contract was registered before time period 51"));
-            assert!(actual.contains("we are currently at time period 61"));
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
+            assert!(actual.starts_with(
+                "This token distributes a random amount between 100 tokens and 500 tokens"
+            ));
+            assert!(actual.contains("The token contract was registered before"));
+            assert!(actual.contains("we are currently at"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
 
@@ -3231,8 +3650,8 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
-            assert!(actual.contains("The last claim was for time period 50"));
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
+            assert!(actual.contains("The last claim was"));
             assert!(actual.contains("you have 10 intervals of rewards"));
         }
 
@@ -3266,14 +3685,14 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts distributing 50000 tokens and decreases by 7.0% every 210000 time periods",
-                "The token contract was registered before time period 1",
-                "we are currently at time period 11",
+                "This token starts distributing 50000 tokens and decreases by 7.0% every 210000 intervals",
+                "The token contract was registered before",
+                "we are currently at",
                 "you have 10 intervals of rewards",
                 "After all decreasing steps, it distributes 1000 tokens per interval"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3314,14 +3733,14 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts distributing 10000 tokens and decreases by 10.0% every 100 time periods",
-                "The last claim was for time period 500",
-                "we are currently at time period 601",
+                "This token starts distributing 10000 tokens and decreases by 10.0% every 100 intervals",
+                "The last claim was",
+                "we are currently at",
                 "you have 10 intervals of rewards",
                 "After all decreasing steps, it distributes 100 tokens per interval"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3365,7 +3784,7 @@ mod tests {
                 "you have 20 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3404,13 +3823,13 @@ mod tests {
                 .unwrap();
 
             let expected_contains = vec![
-                "This token starts at 5000 tokens and decreases by 50/1 tokens per time period",
-                "The last claim was for time period 10",
-                "we are currently at time period 21",
+                "This token starts at 5000 tokens and decreases by 50/1 tokens",
+                "The last claim was",
+                "we are currently at",
                 "you have 10 intervals of rewards",
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3458,7 +3877,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3506,7 +3925,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3554,7 +3973,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3602,7 +4021,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3650,7 +4069,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3698,7 +4117,7 @@ mod tests {
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3741,12 +4160,12 @@ mod tests {
 
             let expected_contains = vec![
                 "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
-                "The token contract was registered before time period 51",
-                "we are currently at time period 61",
+                "The token contract was registered before Thursday January 1 1970",
+                "we are currently at Thursday January 1 1970",
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3789,12 +4208,12 @@ mod tests {
 
             let expected_contains = vec![
                 "This token starts with high rewards that gradually decrease following an inverted logarithmic curve",
-                "The last claim was for time period 50",
-                "we are currently at time period 61",
+                "The last claim was on Thursday January 1 1970",
+                "we are currently at Thursday January 1 1970",
                 "you have 10 intervals of rewards"
             ];
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             for expected_part in expected_contains {
                 assert!(
                     actual.contains(expected_part),
@@ -3824,7 +4243,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let medium = result.medium_explanation();
             let long = result.long_explanation();
 
@@ -3926,7 +4345,7 @@ mod tests {
                 .any(|note| note.contains("Start >= End")));
 
             // Test that empty range still generates explanation
-            let short = result.short_explanation(0, PlatformVersion::latest());
+            let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short.contains("0 tokens"));
         }
 
@@ -3981,7 +4400,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let actual = result.short_explanation(0, PlatformVersion::latest());
+            let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("you have 1 interval of rewards"),
                 "Expected singular 'interval', got: {}",
@@ -4014,7 +4433,7 @@ mod tests {
                 .unwrap();
 
             // Test with decimal offset of 8 (common for crypto tokens)
-            let actual = result.short_explanation(8, PlatformVersion::latest());
+            let actual = result.short_explanation(8, PlatformVersion::latest(), "UTC");
             assert!(
                 actual.contains("1.23456789 tokens"),
                 "Expected '1.23456789 tokens' with decimal offset 8, got: {}",
