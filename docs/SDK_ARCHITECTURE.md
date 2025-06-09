@@ -26,7 +26,7 @@ graph TB
         KOTLIN[kotlin-sdk<br/>Android/JVM SDK]
         JS[js-dash-sdk<br/>JavaScript SDK]
         PYTHON[python-sdk<br/>Python SDK<br/>(Planned)]
-        GO[go-sdk<br/>Go SDK<br/>(Planned)]
+        GO[go-sdk<br/>Go SDK]
     end
     
     subgraph "Applications"
@@ -193,19 +193,39 @@ graph TD
 - **Automation**: Scripts and DevOps tools
 - **Machine Learning**: Data preprocessing for ML pipelines
 
-#### 3.4 Go SDK - Planned
+#### 3.4 Go SDK
 
 ```
 ┌─────────────────────────────────────────┐
-│             go-sdk (Planned)            │
+│               go-sdk                    │
 ├─────────────────────────────────────────┤
 │ • CGO Bindings to rs-sdk-ffi            │
 │ • Idiomatic Go API                      │
-│ • Goroutine Support                     │
-│ • Context-Based Cancellation            │
-│ • Channel-Based Async                   │
+│ • Context Support                       │
+│ • Comprehensive Error Handling          │
+│ • Automatic Memory Management           │
+│ • Full Test Coverage                    │
 └─────────────────────────────────────────┘
 ```
+
+**Architecture:**
+```go
+// Main SDK structure
+sdk := dash.NewSDK(config)
+defer sdk.Close()
+
+// Sub-modules for clean API
+sdk.Identities()   // Identity operations
+sdk.Contracts()    // Data contract operations
+sdk.Documents()    // Document CRUD
+sdk.Tokens()       // Token operations
+```
+
+**Key Features:**
+- **Type Safety**: Strong typing with custom types for IDs
+- **Memory Safety**: Automatic cleanup with finalizers and manual close
+- **Builder Pattern**: Fluent API for complex queries
+- **Test Support**: Mock SDK for offline testing
 
 **Use Cases:**
 - **High-Performance Services**: Low-latency blockchain services
@@ -326,15 +346,15 @@ Each SDK layer provides appropriate error handling:
 
 | Feature | Rust SDK | Swift SDK | Kotlin SDK | Python SDK | Go SDK | JS SDK |
 |---------|----------|-----------|------------|------------|--------|---------|
-| Identity Management | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
-| Data Contracts | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
-| Documents | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
-| Tokens | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Proofs | ✅ | ✅ | ⏳ | ⏳ | ⏳ | 🚧 |
-| State Transitions | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Identity Management | ✅ | ✅ | ⏳ | ⏳ | ✅ | ✅ |
+| Data Contracts | ✅ | ✅ | ⏳ | ⏳ | ✅ | ✅ |
+| Documents | ✅ | ✅ | ⏳ | ⏳ | ✅ | ✅ |
+| Tokens | ✅ | ✅ | ⏳ | ⏳ | ✅ | ⏳ |
+| Proofs | ✅ | ✅ | ⏳ | ⏳ | 🚧 | 🚧 |
+| State Transitions | ✅ | ✅ | ⏳ | ⏳ | 🚧 | ⏳ |
 | Dashpay | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Name Service (DPNS) | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Core Types Support | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Name Service (DPNS) | ⏳ | ⏳ | ⏳ | ⏳ | 🚧 | ⏳ |
+| Core Types Support | ✅ | ✅ | ⏳ | ⏳ | ✅ | ⏳ |
 | Core Blockchain Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 | Core Deterministic Masternode List Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 

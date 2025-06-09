@@ -8,6 +8,7 @@ pub mod purchase;
 pub mod put;
 pub mod queries;
 pub mod replace;
+pub mod set_properties;
 pub mod transfer;
 mod util;
 
@@ -23,6 +24,9 @@ pub use queries::info::dash_sdk_document_get_info;
 pub use queries::{dash_sdk_document_fetch, dash_sdk_document_search, DashSDKDocumentSearchParams};
 pub use replace::{
     dash_sdk_document_replace_on_platform, dash_sdk_document_replace_on_platform_and_wait,
+};
+pub use set_properties::{
+    dash_sdk_document_remove, dash_sdk_document_set, dash_sdk_document_set_properties,
 };
 pub use transfer::{
     dash_sdk_document_transfer_to_identity, dash_sdk_document_transfer_to_identity_and_wait,
