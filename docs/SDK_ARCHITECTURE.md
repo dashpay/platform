@@ -23,8 +23,10 @@ graph TB
     
     subgraph "Language SDKs"
         SWIFT[swift-sdk<br/>iOS/macOS SDK]
-        JAVA[java-sdk<br/>Android/JVM SDK<br/>(Planned)]
+        KOTLIN[kotlin-sdk<br/>Android/JVM SDK]
         JS[js-dash-sdk<br/>JavaScript SDK]
+        PYTHON[python-sdk<br/>Python SDK<br/>(Planned)]
+        GO[go-sdk<br/>Go SDK<br/>(Planned)]
     end
     
     subgraph "Applications"
@@ -32,18 +34,24 @@ graph TB
         ANDROID[Android Apps]
         WEB[Web Apps]
         NODE[Node.js Apps]
+        PYAPPS[Python Apps/<br/>Scripts/Services]
+        GOAPPS[Go Services/<br/>Microservices]
     end
     
     DP --> RS
     RS --> RSFFI
     RS --> WASM
     RSFFI --> SWIFT
-    RSFFI --> JAVA
+    RSFFI --> KOTLIN
+    RSFFI --> PYTHON
+    RSFFI --> GO
     WASM --> JS
     SWIFT --> IOS
-    JAVA --> ANDROID
+    KOTLIN --> ANDROID
     JS --> WEB
     JS --> NODE
+    PYTHON --> PYAPPS
+    GO --> GOAPPS
     
     style RS fill:#f9f,stroke:#333,stroke-width:4px
     style RSFFI fill:#bbf,stroke:#333,stroke-width:2px
@@ -97,7 +105,7 @@ graph LR
     CB --> MS
     MS --> TS
     TS --> EM
-    EM --> SWIFT[Swift/Java]
+    EM --> SWIFT[Swift/Kotlin]
 ```
 
 **Key Features:**
@@ -151,21 +159,61 @@ graph TD
 - **Error Handling**: Swift Error protocol implementation
 - **Async/Await**: Native Swift concurrency support
 
-#### 3.2 Java SDK (Android/JVM) - Planned
+#### 3.2 Kotlin SDK (Android/JVM) - Planned
 
 ```
 ┌─────────────────────────────────────────┐
-│            java-sdk (Planned)           │
+│            kotlin-sdk (Planned)         │
 ├─────────────────────────────────────────┤
 │ • JNI Bindings to rs-sdk-ffi            │
-│ • Java/Kotlin API                       │
+│ • Kotlin-first API                      │
 │ • Android-Specific Features             │
 │ • Coroutine Support                     │
 │ • Type-Safe Builders                    │
 └─────────────────────────────────────────┘
 ```
 
-#### 3.3 JavaScript SDK (js-dash-sdk)
+#### 3.3 Python SDK - Planned
+
+```
+┌─────────────────────────────────────────┐
+│            python-sdk (Planned)         │
+├─────────────────────────────────────────┤
+│ • PyO3 Bindings to rs-sdk-ffi           │
+│ • Pythonic API                          │
+│ • Type Hints Support                    │
+│ • Async/Await Support                   │
+│ • Data Science Integration              │
+└─────────────────────────────────────────┘
+```
+
+**Use Cases:**
+- **Backend Services**: API servers and microservices
+- **Data Analysis**: Blockchain analytics and reporting
+- **Automation**: Scripts and DevOps tools
+- **Machine Learning**: Data preprocessing for ML pipelines
+
+#### 3.4 Go SDK - Planned
+
+```
+┌─────────────────────────────────────────┐
+│             go-sdk (Planned)            │
+├─────────────────────────────────────────┤
+│ • CGO Bindings to rs-sdk-ffi            │
+│ • Idiomatic Go API                      │
+│ • Goroutine Support                     │
+│ • Context-Based Cancellation            │
+│ • Channel-Based Async                   │
+└─────────────────────────────────────────┘
+```
+
+**Use Cases:**
+- **High-Performance Services**: Low-latency blockchain services
+- **Cloud Native**: Kubernetes operators and controllers
+- **Infrastructure**: DevOps tools and monitoring
+- **Concurrent Processing**: High-throughput transaction processing
+
+#### 3.5 JavaScript SDK (js-dash-sdk)
 
 ```mermaid
 graph LR
@@ -223,9 +271,11 @@ The SDK maintains type safety across language boundaries:
 │   Rust Types     │────▶│   C Types       │────▶│  Native Types   │
 │                  │     │                 │     │                 │
 │ • Identity       │     │ • Opaque Ptrs   │     │ • Swift Classes │
-│ • Document       │     │ • C Structs     │     │ • Java Objects  │
-│ • DataContract   │     │ • Error Codes   │     │ • JS Objects    │
-│ • StateTransition│     │ • Callbacks     │     │ • TypeScript    │
+│ • Document       │     │ • C Structs     │     │ • Kotlin Objects│
+│ • DataContract   │     │ • Error Codes   │     │ • Python Objects│
+│ • StateTransition│     │ • Callbacks     │     │ • Go Structs    │
+│                  │     │                 │     │ • JS Objects    │
+│                  │     │                 │     │ • TypeScript    │
 └──────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
@@ -249,13 +299,17 @@ graph TB
         RE[Rust Error]
         CE[C Error Code]
         SE[Swift Error]
-        JE[Java Exception]
+        KE[Kotlin Result]
+        PE[Python Exception]
+        GE[Go Error]
         JSE[JS Error]
     end
     
     RE --> CE
     CE --> SE
-    CE --> JE
+    CE --> KE
+    CE --> PE
+    CE --> GE
     RE --> JSE
 ```
 
@@ -263,23 +317,28 @@ Each SDK layer provides appropriate error handling:
 - **Rust**: Result<T, E> with detailed error types
 - **FFI**: Error codes with error detail retrieval functions
 - **Swift**: Error protocol with associated values
-- **Java**: Checked exceptions with error details
+- **Kotlin**: Sealed classes for type-safe error handling
+- **Python**: Exception hierarchy with error details
+- **Go**: Error interface with wrapped errors
 - **JavaScript**: Error objects with error codes and messages
 
 ## Platform Feature Support Matrix
 
-| Feature | rs-sdk | Swift SDK | Java SDK | JS SDK |
-|---------|--------|-----------|----------|---------|
-| Identity Management | 🚧 | 🚧 | 🚧 | 🚧 |
-| Document CRUD | 🚧 | 🚧 | 🚧 | 🚧 |
-| Data Contracts | 🚧 | 🚧 | 🚧 | 🚧 |
-| Proofs | 🚧 | 🚧 | 🚧 | 🚧 |
-| State Transitions | 🚧 | 🚧 | 🚧 | 🚧 |
-| Name Service (DPNS) | 🚧 | 🚧 | 🚧 | 🚧 |
-| Platform Queries | 🚧 | 🚧 | 🚧 | 🚧 |
-| Core Wallet Support | 🚧 | 🚧 | 🚧 | 🚧 |
+| Feature | Rust SDK | Swift SDK | Kotlin SDK | Python SDK | Go SDK | JS SDK |
+|---------|----------|-----------|------------|------------|--------|---------|
+| Identity Management | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
+| Data Contracts | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
+| Documents | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
+| Tokens | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Proofs | ✅ | ✅ | ⏳ | ⏳ | ⏳ | 🚧 |
+| State Transitions | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Dashpay | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Name Service (DPNS) | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Core Types Support | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Core Blockchain Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
+| Core Deterministic Masternode List Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 
-Legend: ✅ Fully Supported | 🚧 In Development | ❌ Not Supported
+Legend: ✅ Fully Supported | 🚧 In Development | ⏳ Planned | ❌ Not Supported
 
 ## Development Considerations
 
