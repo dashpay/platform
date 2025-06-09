@@ -159,18 +159,51 @@ graph TD
 - **Error Handling**: Swift Error protocol implementation
 - **Async/Await**: Native Swift concurrency support
 
-#### 3.2 Kotlin SDK (Android/JVM) - Planned
+#### 3.2 Kotlin SDK (Android/JVM)
 
+```mermaid
+graph TD
+    subgraph "kotlin-sdk Architecture"
+        API[Kotlin API Layer]
+        MOD[Module Layer]
+        JNA[JNA FFI Wrapper]
+        TYPES[Type System]
+        UTIL[Utilities]
+    end
+    
+    API --> MOD
+    MOD --> JNA
+    TYPES --> JNA
+    JNA --> RSFFI[rs-sdk-ffi]
+    
+    style API fill:#f96,stroke:#333,stroke-width:2px
 ```
-┌─────────────────────────────────────────┐
-│            kotlin-sdk (Planned)         │
-├─────────────────────────────────────────┤
-│ • JNI Bindings to rs-sdk-ffi            │
-│ • Kotlin-first API                      │
-│ • Android-Specific Features             │
-│ • Coroutine Support                     │
-│ • Type-Safe Builders                    │
-└─────────────────────────────────────────┘
+
+**Components:**
+- **Kotlin API Layer**: Idiomatic Kotlin interfaces with coroutine support
+- **Module Layer**: Organized sub-modules (Identities, Contracts, Documents, Tokens)
+- **JNA FFI Wrapper**: Java Native Access bindings to rs-sdk-ffi
+- **Type System**: Kotlin sealed classes and data classes for type safety
+- **Error Handling**: Sealed exception hierarchy for comprehensive error handling
+
+**Key Features:**
+- **Coroutine Support**: All operations are suspend functions for async execution
+- **Type-Safe Builders**: DSL-style builders for queries and operations
+- **Memory Management**: Automatic resource cleanup with `Closeable` interface
+- **Extension Functions**: Convenient extensions for common conversions
+- **Android Compatibility**: Designed to work seamlessly on Android platform
+
+```kotlin
+// Example usage
+val sdk = SDK(config)
+val identity = sdk.identities.fetchByBase58("...")
+val balance = identity?.getBalance()
+
+// Type-safe query builder
+val query = Documents.QueryBuilder()
+    .where("author", "Alice")
+    .whereGreaterThan("timestamp", 1640995200000)
+    .build()
 ```
 
 #### 3.3 Python SDK - Planned
@@ -346,15 +379,15 @@ Each SDK layer provides appropriate error handling:
 
 | Feature | Rust SDK | Swift SDK | Kotlin SDK | Python SDK | Go SDK | JS SDK |
 |---------|----------|-----------|------------|------------|--------|---------|
-| Identity Management | ✅ | ✅ | ⏳ | ⏳ | ✅ | ✅ |
-| Data Contracts | ✅ | ✅ | ⏳ | ⏳ | ✅ | ✅ |
-| Documents | ✅ | ✅ | ⏳ | ⏳ | ✅ | ✅ |
-| Tokens | ✅ | ✅ | ⏳ | ⏳ | ✅ | ⏳ |
-| Proofs | ✅ | ✅ | ⏳ | ⏳ | 🚧 | 🚧 |
-| State Transitions | ✅ | ✅ | ⏳ | ⏳ | 🚧 | ⏳ |
+| Identity Management | ✅ | ✅ | ✅ | ⏳ | ✅ | ✅ |
+| Data Contracts | ✅ | ✅ | ✅ | ⏳ | ✅ | ✅ |
+| Documents | ✅ | ✅ | ✅ | ⏳ | ✅ | ✅ |
+| Tokens | ✅ | ✅ | ✅ | ⏳ | ✅ | ⏳ |
+| Proofs | ✅ | ✅ | 🚧 | ⏳ | 🚧 | 🚧 |
+| State Transitions | ✅ | ✅ | 🚧 | ⏳ | 🚧 | ⏳ |
 | Dashpay | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Name Service (DPNS) | ⏳ | ⏳ | ⏳ | ⏳ | 🚧 | ⏳ |
-| Core Types Support | ✅ | ✅ | ⏳ | ⏳ | ✅ | ⏳ |
+| Name Service (DPNS) | ⏳ | ⏳ | 🚧 | ⏳ | 🚧 | ⏳ |
+| Core Types Support | ✅ | ✅ | ✅ | ⏳ | ✅ | ⏳ |
 | Core Blockchain Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 | Core Deterministic Masternode List Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 
