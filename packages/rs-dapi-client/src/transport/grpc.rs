@@ -311,6 +311,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetFinalizedEpochInfosRequest,
+    platform_proto::GetFinalizedEpochInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_finalized_epoch_infos
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetProtocolVersionUpgradeStateRequest,
     platform_proto::GetProtocolVersionUpgradeStateResponse,
     PlatformGrpcClient,
