@@ -25,8 +25,8 @@ graph TB
         SWIFT[swift-sdk<br/>iOS/macOS SDK]
         KOTLIN[kotlin-sdk<br/>Android/JVM SDK]
         JS[js-dash-sdk<br/>JavaScript SDK]
-        PYTHON[python-sdk<br/>Python SDK<br/>(Planned)]
-        GO[go-sdk<br/>Go SDK<br/>(Planned)]
+        PYTHON[python-sdk<br/>Python SDK]
+        GO[go-sdk<br/>Go SDK]
     end
     
     subgraph "Applications"
