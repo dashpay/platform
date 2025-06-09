@@ -23,7 +23,7 @@ graph TB
     
     subgraph "Language SDKs"
         SWIFT[swift-sdk<br/>iOS/macOS SDK]
-        JAVA[java-sdk<br/>Android/JVM SDK]
+        JAVA[java-sdk<br/>Android/JVM SDK<br/>(Planned)]
         JS[js-dash-sdk<br/>JavaScript SDK]
     end
     
@@ -151,11 +151,11 @@ graph TD
 - **Error Handling**: Swift Error protocol implementation
 - **Async/Await**: Native Swift concurrency support
 
-#### 3.2 Java SDK (Android/JVM)
+#### 3.2 Java SDK (Android/JVM) - Planned
 
 ```
 ┌─────────────────────────────────────────┐
-│            java-sdk                     │
+│            java-sdk (Planned)           │
 ├─────────────────────────────────────────┤
 │ • JNI Bindings to rs-sdk-ffi            │
 │ • Java/Kotlin API                       │
@@ -219,14 +219,14 @@ sequenceDiagram
 The SDK maintains type safety across language boundaries:
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Rust Types    │────▶│   C Types       │────▶│  Native Types   │
-│                 │     │                 │     │                 │
-│ • Identity      │     │ • Opaque Ptrs   │     │ • Swift Classes │
-│ • Document      │     │ • C Structs     │     │ • Java Objects  │
-│ • DataContract  │     │ • Error Codes   │     │ • JS Objects    │
+┌──────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Rust Types     │────▶│   C Types       │────▶│  Native Types   │
+│                  │     │                 │     │                 │
+│ • Identity       │     │ • Opaque Ptrs   │     │ • Swift Classes │
+│ • Document       │     │ • C Structs     │     │ • Java Objects  │
+│ • DataContract   │     │ • Error Codes   │     │ • JS Objects    │
 │ • StateTransition│     │ • Callbacks     │     │ • TypeScript    │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+└──────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
 ## Memory Management Strategy
@@ -270,14 +270,14 @@ Each SDK layer provides appropriate error handling:
 
 | Feature | rs-sdk | Swift SDK | Java SDK | JS SDK |
 |---------|--------|-----------|----------|---------|
-| Identity Management | ✅ | ✅ | ✅ | ✅ |
-| Document CRUD | ✅ | ✅ | ✅ | ✅ |
-| Data Contracts | ✅ | ✅ | ✅ | ✅ |
-| Proofs | ✅ | ✅ | ✅ | ✅ |
-| State Transitions | ✅ | ✅ | ✅ | ✅ |
-| Name Service (DPNS) | ✅ | ✅ | ✅ | ✅ |
-| Platform Queries | ✅ | ✅ | ✅ | ✅ |
-| Wallet Integration | ✅ | 🚧 | 🚧 | ✅ |
+| Identity Management | 🚧 | 🚧 | 🚧 | 🚧 |
+| Document CRUD | 🚧 | 🚧 | 🚧 | 🚧 |
+| Data Contracts | 🚧 | 🚧 | 🚧 | 🚧 |
+| Proofs | 🚧 | 🚧 | 🚧 | 🚧 |
+| State Transitions | 🚧 | 🚧 | 🚧 | 🚧 |
+| Name Service (DPNS) | 🚧 | 🚧 | 🚧 | 🚧 |
+| Platform Queries | 🚧 | 🚧 | 🚧 | 🚧 |
+| Core Wallet Support | 🚧 | 🚧 | 🚧 | 🚧 |
 
 Legend: ✅ Fully Supported | 🚧 In Development | ❌ Not Supported
 
