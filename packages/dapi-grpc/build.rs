@@ -73,7 +73,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 43] = [
+    const VERSIONED_REQUESTS: [&str; 44] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -117,6 +117,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetGroupInfosRequest",
         "GetGroupActionsRequest",
         "GetGroupActionSignersRequest",
+        "GetFinalizedEpochInfosRequest",
     ];
 
     // The following responses are excluded as they don't support proofs:
@@ -127,7 +128,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 41] = [
+    const VERSIONED_RESPONSES: [&str; 42] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -169,6 +170,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetGroupInfosResponse",
         "GetGroupActionsResponse",
         "GetGroupActionSignersResponse",
+        "GetFinalizedEpochInfosResponse",
     ];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");

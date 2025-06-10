@@ -65,6 +65,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_total_credits_in_system: 0,
         verify_upgrade_state: 0,
         verify_upgrade_vote_status: 0,
+        verify_finalized_epoch_infos: 0,
     },
     voting: DriveVerifyVoteMethodVersions {
         verify_masternode_vote: 0,
