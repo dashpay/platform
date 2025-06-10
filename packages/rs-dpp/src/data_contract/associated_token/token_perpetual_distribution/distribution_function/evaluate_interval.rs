@@ -45,8 +45,8 @@ pub struct IntervalEvaluationExplanation {
     pub total_amount: TokenAmount,
     /// Individual evaluation steps with details
     pub evaluation_steps: Vec<EvaluationStep>,
-    /// Whether reward ratios were applied
-    pub reward_ratios_applied: bool,
+    /// Reward ratios that were applied (blocks_proposed, total_blocks_in_epoch)
+    pub reward_ratios_applied: Option<Vec<(u64, u64)>>,
     /// Number of steps calculated
     pub steps_count: u64,
     /// Is this the first claim
@@ -193,40 +193,127 @@ impl IntervalEvaluationExplanation {
                         RewardDistributionMoment::EpochBasedMoment(_),
                     ) => {
                         if self.is_first_claim {
-                            format!(
-                                "This token distributes a fixed amount of {} every epoch. \
-                                The token contract was registered before epoch {} \
-                                and we are currently in epoch {}, the last epoch you can claim \
-                                would be {}, you therefore have {} {} of rewards{}. \
-                                {} × {} = {}",
-                                format_token_amount_with_plural(*amount, decimal_offset),
-                                start_epoch.saturating_add(1),
-                                end_epoch.saturating_add(1),
-                                end_epoch,
-                                self.steps_count,
-                                interval_word,
-                                max_claim_text,
-                                format_number_with_separators(self.steps_count),
-                                amount_str,
-                                format_token_amount_with_plural(self.total_amount, decimal_offset)
-                            )
+                            if let Some(ref ratios) = self.reward_ratios_applied {
+                                if !ratios.is_empty() {
+                                    let (numerator, denominator) = ratios[0];
+                                    format!(
+                                        "This token distributes a fixed amount of {} every epoch. \
+                                        The token contract was registered before epoch {} \
+                                        and we are currently in epoch {}, the last epoch you can claim \
+                                        would be {}, you therefore have {} {} of rewards{}. \
+                                        {} × {} × {}/{} = {}",
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        start_epoch.saturating_add(1),
+                                        end_epoch.saturating_add(1),
+                                        end_epoch,
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        format_number_with_separators(self.steps_count),
+                                        amount_str,
+                                        numerator,
+                                        denominator,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
+                                } else {
+                                    format!(
+                                        "This token distributes a fixed amount of {} every epoch. \
+                                        The token contract was registered before epoch {} \
+                                        and we are currently in epoch {}, the last epoch you can claim \
+                                        would be {}, you therefore have {} {} of rewards{}. \
+                                        {} × {} = {}",
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        start_epoch.saturating_add(1),
+                                        end_epoch.saturating_add(1),
+                                        end_epoch,
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        format_number_with_separators(self.steps_count),
+                                        amount_str,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
+                                }
+                            } else {
+                                format!(
+                                    "This token distributes a fixed amount of {} every epoch. \
+                                    The token contract was registered before epoch {} \
+                                    and we are currently in epoch {}, the last epoch you can claim \
+                                    would be {}, you therefore have {} {} of rewards{}. \
+                                    {} × {} = {}",
+                                    format_token_amount_with_plural(*amount, decimal_offset),
+                                    start_epoch.saturating_add(1),
+                                    end_epoch.saturating_add(1),
+                                    end_epoch,
+                                    self.steps_count,
+                                    interval_word,
+                                    max_claim_text,
+                                    format_number_with_separators(self.steps_count),
+                                    amount_str,
+                                    format_token_amount_with_plural(
+                                        self.total_amount,
+                                        decimal_offset
+                                    )
+                                )
+                            }
                         } else {
-                            format!(
-                                "This token distributes a fixed amount of {} every epoch. \
-                                The last claim was for epoch {} and we are currently in epoch {}, \
-                                the last epoch you can claim would be {}, you therefore have {} \
-                                {} of rewards{}. {} × {} = {}",
-                                format_token_amount_with_plural(*amount, decimal_offset),
-                                start_epoch,
-                                end_epoch.saturating_add(1),
-                                end_epoch,
-                                self.steps_count,
-                                interval_word,
-                                max_claim_text,
-                                self.steps_count,
-                                amount_str,
-                                format_token_amount_with_plural(self.total_amount, decimal_offset)
-                            )
+                            if let Some(ref ratios) = self.reward_ratios_applied {
+                                if !ratios.is_empty() {
+                                    let (numerator, denominator) = ratios[0];
+                                    format!(
+                                        "This token distributes a fixed amount of {} every epoch. \
+                                        The last claim was for epoch {} and we are currently in epoch {}, \
+                                        the last epoch you can claim would be {}, you therefore have {} \
+                                        {} of rewards{}. {} × {} × {}/{} = {}",
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        start_epoch,
+                                        end_epoch.saturating_add(1),
+                                        end_epoch,
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        self.steps_count,
+                                        amount_str,
+                                        numerator,
+                                        denominator,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
+                                } else {
+                                    format!(
+                                        "This token distributes a fixed amount of {} every epoch. \
+                                        The last claim was for epoch {} and we are currently in epoch {}, \
+                                        the last epoch you can claim would be {}, you therefore have {} \
+                                        {} of rewards{}. {} × {} = {}",
+                                        format_token_amount_with_plural(*amount, decimal_offset),
+                                        start_epoch,
+                                        end_epoch.saturating_add(1),
+                                        end_epoch,
+                                        self.steps_count,
+                                        interval_word,
+                                        max_claim_text,
+                                        self.steps_count,
+                                        amount_str,
+                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                    )
+                                }
+                            } else {
+                                format!(
+                                    "This token distributes a fixed amount of {} every epoch. \
+                                    The last claim was for epoch {} and we are currently in epoch {}, \
+                                    the last epoch you can claim would be {}, you therefore have {} \
+                                    {} of rewards{}. {} × {} = {}",
+                                    format_token_amount_with_plural(*amount, decimal_offset),
+                                    start_epoch,
+                                    end_epoch.saturating_add(1),
+                                    end_epoch,
+                                    self.steps_count,
+                                    interval_word,
+                                    max_claim_text,
+                                    self.steps_count,
+                                    amount_str,
+                                    format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                )
+                            }
                         }
                     }
                     _ => match (&self.interval_start_excluded, &self.interval_end_included) {
@@ -1313,8 +1400,16 @@ impl IntervalEvaluationExplanation {
             self.steps_count
         ));
 
-        if self.reward_ratios_applied {
-            explanation.push_str("Reward ratios were applied to adjust base emissions\n");
+        if let Some(ref ratios) = self.reward_ratios_applied {
+            explanation.push_str("Reward ratios were applied to adjust base emissions:\n");
+            if !ratios.is_empty() {
+                for (numerator, denominator) in ratios {
+                    explanation.push_str(&format!(
+                        "  • Ratio applied: {}/{}\n",
+                        numerator, denominator
+                    ));
+                }
+            }
         }
 
         if !self.evaluation_steps.is_empty() {
@@ -1628,7 +1723,7 @@ impl DistributionFunction {
             distribution_start,
             total_amount: 0,
             evaluation_steps: Vec::new(),
-            reward_ratios_applied: false,
+            reward_ratios_applied: None,
             steps_count: 0,
             is_first_claim,
             optimization_notes: Vec::new(),
@@ -1683,12 +1778,13 @@ impl DistributionFunction {
                 interval_end_included,
                 get_epoch_reward_ratio.as_ref(),
             ) {
-                explanation.reward_ratios_applied = true;
                 explanation
                     .optimization_notes
                     .push("Reward ratio applied to FixedAmount calculation".to_string());
 
                 if let Some(ratio) = get_ratio_fn(first_epoch.saturating_add(1)..=last_epoch) {
+                    explanation.reward_ratios_applied =
+                        Some(vec![(ratio.numerator, ratio.denominator)]);
                     explanation.optimization_notes.push(format!(
                         "Applied ratio: {}/{}",
                         ratio.numerator, ratio.denominator
@@ -1735,6 +1831,7 @@ impl DistributionFunction {
         let mut total: u64 = 0;
         let mut current_point = first_step;
         let mut step_index = 1u64;
+        let mut collected_ratios = Vec::new();
 
         while current_point <= last_step {
             let base_amount =
@@ -1745,8 +1842,8 @@ impl DistributionFunction {
                 Some(ref get_ratio_fn),
             ) = (current_point, get_epoch_reward_ratio.as_ref())
             {
-                explanation.reward_ratios_applied = true;
                 if let Some(ratio) = get_ratio_fn(epoch_index..=epoch_index) {
+                    collected_ratios.push((ratio.numerator, ratio.denominator));
                     let adjusted_amount = base_amount
                         .checked_mul(ratio.numerator)
                         .and_then(|v| v.checked_div(ratio.denominator))
@@ -1784,6 +1881,9 @@ impl DistributionFunction {
         }
 
         explanation.total_amount = total;
+        if !collected_ratios.is_empty() {
+            explanation.reward_ratios_applied = Some(collected_ratios);
+        }
         Ok(explanation)
     }
 }
@@ -2468,7 +2568,7 @@ mod tests {
             // Should have 5 steps: 10, 20, 30, 40, 50
             assert_eq!(result.steps_count, 5);
             assert_eq!(result.total_amount, 500); // 100 tokens * 5 steps
-            assert!(!result.reward_ratios_applied);
+            assert_eq!(result.reward_ratios_applied, None);
             assert!(result.evaluation_steps.is_empty()); // No individual steps due to optimization
 
             // Test explanations
@@ -2511,7 +2611,7 @@ mod tests {
                 )
                 .unwrap();
 
-            assert!(!result.reward_ratios_applied);
+            assert_eq!(result.reward_ratios_applied, None);
             assert!(!result.evaluation_steps.is_empty()); // Should have individual steps
 
             // Test that explanations contain function type
@@ -4315,6 +4415,254 @@ mod tests {
                 actual.contains("2 × 1.23456789 = 2.46913578 tokens"),
                 "Expected formatted calculation, got: {}",
                 actual
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "token-reward-explanations")]
+        fn test_fixed_amount_with_reward_ratio() {
+            let dist = DistributionFunction::FixedAmount { amount: 10000 };
+            let start_excluded = RewardDistributionMoment::EpochBasedMoment(7836);
+            let end_included = RewardDistributionMoment::EpochBasedMoment(7842);
+            let step = RewardDistributionMoment::EpochBasedMoment(1);
+            let distribution_start = RewardDistributionMoment::EpochBasedMoment(0);
+
+            // Create a reward ratio function that returns 5/100 ratio (5%)
+            let get_ratio = |_range: RangeInclusive<EpochIndex>| -> Option<RewardRatio> {
+                Some(RewardRatio {
+                    numerator: 5,
+                    denominator: 100,
+                })
+            };
+
+            let result = dist
+                .evaluate_interval_with_explanation(
+                    distribution_start,
+                    start_excluded,
+                    end_included,
+                    step,
+                    Some(get_ratio),
+                    false,
+                )
+                .unwrap();
+
+            // Check that reward ratio was applied
+            assert_eq!(result.reward_ratios_applied, Some(vec![(5, 100)]));
+
+            // Check the total amount: 6 intervals × 10,000 × 5/100 = 3,000
+            assert_eq!(result.total_amount, 3000);
+
+            // Check the short explanation includes the ratio
+            let explanation = result.short_explanation(0, PlatformVersion::latest(), "UTC");
+            assert!(
+                explanation.contains("6 × 10,000 × 5/100 = 3,000 tokens"),
+                "Expected explanation with ratio, got: {}",
+                explanation
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "token-reward-explanations")]
+        fn test_fixed_amount_with_reward_ratio_first_claim() {
+            let dist = DistributionFunction::FixedAmount { amount: 50000 };
+            let start_excluded = RewardDistributionMoment::EpochBasedMoment(100);
+            let end_included = RewardDistributionMoment::EpochBasedMoment(110);
+            let step = RewardDistributionMoment::EpochBasedMoment(1);
+            let distribution_start = RewardDistributionMoment::EpochBasedMoment(0);
+
+            // Create a reward ratio function that returns 20/100 ratio (20%)
+            let get_ratio = |_range: RangeInclusive<EpochIndex>| -> Option<RewardRatio> {
+                Some(RewardRatio {
+                    numerator: 20,
+                    denominator: 100,
+                })
+            };
+
+            let result = dist
+                .evaluate_interval_with_explanation(
+                    distribution_start,
+                    start_excluded,
+                    end_included,
+                    step,
+                    Some(get_ratio),
+                    true, // first claim
+                )
+                .unwrap();
+
+            // Check that reward ratio was applied
+            assert_eq!(result.reward_ratios_applied, Some(vec![(20, 100)]));
+
+            // Check the total amount: 10 intervals × 50,000 × 20/100 = 100,000
+            assert_eq!(result.total_amount, 100000);
+
+            // Check the short explanation includes the ratio
+            let explanation = result.short_explanation(0, PlatformVersion::latest(), "UTC");
+            assert!(
+                explanation.contains("10 × 50,000 × 20/100 = 100,000 tokens"),
+                "Expected explanation with ratio, got: {}",
+                explanation
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "token-reward-explanations")]
+        fn test_detailed_explanation_with_reward_ratio() {
+            let dist = DistributionFunction::FixedAmount { amount: 1000 };
+            let start_excluded = RewardDistributionMoment::EpochBasedMoment(5);
+            let end_included = RewardDistributionMoment::EpochBasedMoment(7);
+            let step = RewardDistributionMoment::EpochBasedMoment(1);
+            let distribution_start = RewardDistributionMoment::EpochBasedMoment(0);
+
+            // Create a reward ratio function
+            let get_ratio = |_range: RangeInclusive<EpochIndex>| -> Option<RewardRatio> {
+                Some(RewardRatio {
+                    numerator: 25,
+                    denominator: 100,
+                })
+            };
+
+            let result = dist
+                .evaluate_interval_with_explanation(
+                    distribution_start,
+                    start_excluded,
+                    end_included,
+                    step,
+                    Some(get_ratio),
+                    false,
+                )
+                .unwrap();
+
+            let detailed = result.detailed_explanation();
+
+            // Check that the detailed explanation mentions reward ratios
+            assert!(
+                detailed.contains("Reward ratios were applied"),
+                "Expected detailed explanation to mention reward ratios"
+            );
+            assert!(
+                detailed.contains("Ratio applied: 25/100"),
+                "Expected detailed explanation to show the ratio"
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "token-reward-explanations")]
+        fn test_multiple_epochs_different_ratios() {
+            // Use Random distribution to avoid the FixedAmount optimization
+            let dist = DistributionFunction::Random {
+                min: 1000,
+                max: 1000,
+            };
+            let start_excluded = RewardDistributionMoment::EpochBasedMoment(0);
+            let end_included = RewardDistributionMoment::EpochBasedMoment(3);
+            let step = RewardDistributionMoment::EpochBasedMoment(1);
+            let distribution_start = RewardDistributionMoment::EpochBasedMoment(0);
+
+            // Create a reward ratio function that returns different ratios for different epochs
+            let get_ratio = |range: RangeInclusive<EpochIndex>| -> Option<RewardRatio> {
+                let epoch = *range.start();
+                match epoch {
+                    1 => Some(RewardRatio {
+                        numerator: 10,
+                        denominator: 100,
+                    }), // 10%
+                    2 => Some(RewardRatio {
+                        numerator: 20,
+                        denominator: 100,
+                    }), // 20%
+                    3 => Some(RewardRatio {
+                        numerator: 30,
+                        denominator: 100,
+                    }), // 30%
+                    _ => None,
+                }
+            };
+
+            let result = dist
+                .evaluate_interval_with_explanation(
+                    distribution_start,
+                    start_excluded,
+                    end_included,
+                    step,
+                    Some(get_ratio),
+                    false,
+                )
+                .unwrap();
+
+            // Check that multiple reward ratios were collected
+            assert_eq!(
+                result.reward_ratios_applied,
+                Some(vec![(10, 100), (20, 100), (30, 100)])
+            );
+
+            // Since Random with min=max=1000 acts like fixed amount
+            // Total: 1000 * 0.1 + 1000 * 0.2 + 1000 * 0.3 = 100 + 200 + 300 = 600
+            assert_eq!(result.total_amount, 600);
+
+            // Check that evaluation steps have the correct ratios
+            assert_eq!(result.evaluation_steps.len(), 3);
+            assert_eq!(
+                result.evaluation_steps[0]
+                    .reward_ratio
+                    .as_ref()
+                    .unwrap()
+                    .numerator,
+                10
+            );
+            assert_eq!(
+                result.evaluation_steps[1]
+                    .reward_ratio
+                    .as_ref()
+                    .unwrap()
+                    .numerator,
+                20
+            );
+            assert_eq!(
+                result.evaluation_steps[2]
+                    .reward_ratio
+                    .as_ref()
+                    .unwrap()
+                    .numerator,
+                30
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "token-reward-explanations")]
+        fn test_no_reward_ratio_applied() {
+            let dist = DistributionFunction::FixedAmount { amount: 5000 };
+            let start_excluded = RewardDistributionMoment::EpochBasedMoment(10);
+            let end_included = RewardDistributionMoment::EpochBasedMoment(15);
+            let step = RewardDistributionMoment::EpochBasedMoment(1);
+            let distribution_start = RewardDistributionMoment::EpochBasedMoment(0);
+
+            let result = dist
+                .evaluate_interval_with_explanation(
+                    distribution_start,
+                    start_excluded,
+                    end_included,
+                    step,
+                    None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                    false,
+                )
+                .unwrap();
+
+            // Check that no reward ratio was applied
+            assert_eq!(result.reward_ratios_applied, None);
+
+            // Check the total amount: 5 intervals × 5,000 = 25,000
+            assert_eq!(result.total_amount, 25000);
+
+            // Check the short explanation doesn't include ratio
+            let explanation = result.short_explanation(0, PlatformVersion::latest(), "UTC");
+            assert!(
+                explanation.contains("5 × 5,000 = 25,000 tokens"),
+                "Expected explanation without ratio, got: {}",
+                explanation
+            );
+            assert!(
+                !explanation.contains("×/"),
+                "Explanation should not contain ratio when none applied"
             );
         }
     }

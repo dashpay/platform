@@ -2,6 +2,7 @@ use std::ops::RangeInclusive;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
+#[cfg(feature = "token-reward-explanations")]
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::evaluate_interval::IntervalEvaluationExplanation;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
