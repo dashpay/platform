@@ -390,6 +390,7 @@ COPY --parents \
     packages/wasm-dpp \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
     packages/check-features \
     /platform/
 
