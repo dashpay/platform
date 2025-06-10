@@ -1,6 +1,11 @@
 use crate::strategy::StrategyRandomness;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::{
+    get_finalized_epoch_infos_request, get_finalized_epoch_infos_response,
+    get_finalized_epoch_infos_response::get_finalized_epoch_infos_response_v0,
+    GetFinalizedEpochInfosRequest,
+};
+use dapi_grpc::platform::v0::{
     get_identity_by_public_key_hash_request, get_identity_by_public_key_hash_response,
     GetIdentityByPublicKeyHashRequest, Proof,
 };
@@ -302,6 +307,7 @@ mod tests {
     use crate::strategy::NetworkStrategy;
 
     use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
+    use dapi_grpc::platform::v0::get_finalized_epoch_infos_request::GetFinalizedEpochInfosRequestV0;
     use dapi_grpc::platform::v0::{get_epochs_info_response, GetEpochsInfoRequest};
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
@@ -722,5 +728,181 @@ mod tests {
 
         assert_eq!(epoch_infos.len(), 1);
         assert_eq!(epoch_infos.first().unwrap().index(), 4);
+    }
+
+    #[test]
+    fn run_chain_prove_finalized_epoch_infos() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let hour_in_ms = 1000 * 60 * 60;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            1000,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+
+        let platform_state = outcome.abci_app.platform.state.load();
+
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+
+        let current_epoch = platform_state.last_committed_block_epoch_ref().index;
+
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected to get current platform version");
+
+        // Test getting finalized epoch infos
+        let request = GetFinalizedEpochInfosRequest {
+            version: Some(get_finalized_epoch_infos_request::Version::V0(
+                GetFinalizedEpochInfosRequestV0 {
+                    start_epoch_index: 0,
+                    start_epoch_index_included: true,
+                    end_epoch_index: current_epoch as u32,
+                    end_epoch_index_included: false,
+                    prove: true,
+                },
+            )),
+        };
+
+        let validation_result = outcome
+            .abci_app
+            .platform
+            .query_finalized_epoch_infos(request, &platform_state, platform_version)
+            .expect("expected query to succeed");
+
+        let response = validation_result.data.expect("expected data");
+
+        match response.version.expect("expected version") {
+            get_finalized_epoch_infos_response::Version::V0(v0) => {
+                match v0.result.expect("expected result") {
+                    get_finalized_epoch_infos_response_v0::Result::Proof(proof) => {
+                        // Verify we got a proof response
+                        assert!(!proof.grovedb_proof.is_empty());
+                        assert!(!proof.quorum_hash.is_empty());
+                        assert!(!proof.signature.is_empty());
+
+                        // Verify the proof
+                        let (root_hash, finalized_epoch_infos) =
+                            Drive::verify_finalized_epoch_infos(
+                                &proof.grovedb_proof,
+                                0,
+                                true,
+                                current_epoch - 1,
+                                false,
+                                platform_version,
+                            )
+                            .expect("expected to verify finalized epoch infos");
+
+                        assert!(!finalized_epoch_infos.is_empty());
+
+                        // All returned epochs should be finalized (< current epoch)
+                        for (epoch_index, _) in &finalized_epoch_infos {
+                            assert!(*epoch_index < current_epoch);
+                        }
+                    }
+                    _ => panic!("expected proof"),
+                }
+            }
+        }
+
+        // Test without proof
+        let request_no_proof = GetFinalizedEpochInfosRequest {
+            version: Some(get_finalized_epoch_infos_request::Version::V0(
+                GetFinalizedEpochInfosRequestV0 {
+                    start_epoch_index: 0,
+                    start_epoch_index_included: true,
+                    end_epoch_index: current_epoch as u32,
+                    end_epoch_index_included: false,
+                    prove: false,
+                },
+            )),
+        };
+
+        let validation_result_no_proof = outcome
+            .abci_app
+            .platform
+            .query_finalized_epoch_infos(request_no_proof, &platform_state, platform_version)
+            .expect("expected query to succeed");
+
+        let response_no_proof = validation_result_no_proof.data.expect("expected data");
+
+        match response_no_proof.version.expect("expected version") {
+            get_finalized_epoch_infos_response::Version::V0(v0) => {
+                match v0.result.expect("expected result") {
+                    get_finalized_epoch_infos_response_v0::Result::Epochs(epochs) => {
+                        // Verify we got epoch data
+                        assert!(!epochs.finalized_epoch_infos.is_empty());
+
+                        // Verify the epochs are in the expected range
+                        for epoch_info in &epochs.finalized_epoch_infos {
+                            assert!(epoch_info.number < current_epoch as u32);
+                            assert!(epoch_info.first_block_height > 0);
+                            assert!(epoch_info.first_core_block_height > 0);
+                            assert!(epoch_info.protocol_version > 0);
+                            assert!(epoch_info.fee_multiplier >= 1.0);
+
+                            // Check that block proposers exist
+                            assert!(
+                                !epoch_info.block_proposers.is_empty(),
+                                "epoch {} should have block proposers",
+                                epoch_info.number
+                            );
+                        }
+                    }
+                    _ => panic!("expected epochs"),
+                }
+            }
+        }
     }
 }

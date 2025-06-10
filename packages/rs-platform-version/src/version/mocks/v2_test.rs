@@ -357,6 +357,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                finalized_epoch_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
             group_queries: DriveAbciQueryGroupVersions {
                 group_info: FeatureVersionBounds {
