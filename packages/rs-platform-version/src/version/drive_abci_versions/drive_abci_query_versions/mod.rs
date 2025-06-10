@@ -90,4 +90,5 @@ pub struct DriveAbciQuerySystemVersions {
     pub partial_status: FeatureVersionBounds,
     pub path_elements: FeatureVersionBounds,
     pub total_credits_in_platform: FeatureVersionBounds,
+    pub finalized_epoch_infos: FeatureVersionBounds,
 }

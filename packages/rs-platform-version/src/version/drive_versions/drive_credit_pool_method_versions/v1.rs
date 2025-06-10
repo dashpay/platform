@@ -11,6 +11,7 @@ pub const CREDIT_POOL_METHOD_VERSIONS_V1: DriveCreditPoolMethodVersions =
             get_epochs_infos: 0,
             get_epochs_protocol_versions: 0,
             prove_epochs_infos: 0,
+            prove_finalized_epoch_infos: 0,
             get_epoch_fee_multiplier: 0,
             get_epoch_processing_credits_for_distribution: 0,
             get_epoch_storage_credits_for_distribution: 0,

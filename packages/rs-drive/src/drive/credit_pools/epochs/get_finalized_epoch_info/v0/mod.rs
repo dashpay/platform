@@ -1,16 +1,12 @@
-use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_FINISHED_EPOCH_INFO;
-use crate::drive::credit_pools::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::QueryItem;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Retrieves finalized epoch information for a given range of epochs.
@@ -76,58 +72,15 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
-        // Compute the start and end keys with the offset.
-        let start_index = start_epoch_index
-            .checked_add(EPOCH_KEY_OFFSET)
-            .ok_or(ProtocolError::Overflow("Stored epoch index too high"))?;
-        let end_index = end_epoch_index
-            .checked_add(EPOCH_KEY_OFFSET)
-            .ok_or(ProtocolError::Overflow("Stored epoch index too high"))?;
-
-        let start_key = start_index.to_be_bytes().to_vec();
-        let end_key = end_index.to_be_bytes().to_vec();
-
-        // Determine if the query should be ascending.
-        let ascending = start_epoch_index <= end_epoch_index;
-
-        // Build the query item based on the range and inclusivity parameters.
-        let query_item = if start_epoch_index == end_epoch_index {
-            // If the start and end are equal, only return a result if both boundaries are included.
-            if start_epoch_index_included && end_epoch_index_included {
-                QueryItem::Key(start_key)
-            } else {
-                // No epochs satisfy the range.
-                return Ok(T::from_iter(std::iter::empty()));
-            }
-        } else if ascending {
-            // Ascending order: start_epoch_index < end_epoch_index.
-            if start_epoch_index_included && end_epoch_index_included {
-                QueryItem::RangeInclusive(start_key..=end_key)
-            } else if start_epoch_index_included && !end_epoch_index_included {
-                QueryItem::Range(start_key..end_key)
-            } else if !start_epoch_index_included && end_epoch_index_included {
-                QueryItem::RangeAfterToInclusive(start_key..=end_key)
-            } else {
-                QueryItem::RangeAfterTo(start_key..end_key)
-            }
-        } else {
-            // Descending order: start_epoch_index > end_epoch_index.
-            if start_epoch_index_included && end_epoch_index_included {
-                QueryItem::RangeInclusive(end_key..=start_key)
-            } else if start_epoch_index_included && !end_epoch_index_included {
-                QueryItem::Range(end_key..start_key)
-            } else if !start_epoch_index_included && end_epoch_index_included {
-                QueryItem::RangeAfterToInclusive(end_key..=start_key)
-            } else {
-                QueryItem::RangeAfterTo(end_key..start_key)
-            }
+        let Some(path_query) = Drive::finalized_epoch_infos_query(
+            start_epoch_index,
+            start_epoch_index_included,
+            end_epoch_index,
+            end_epoch_index_included,
+        )?
+        else {
+            return Ok(T::from_iter(std::iter::empty()));
         };
-
-        // Construct the query.
-        let mut query = Query::new_single_query_item(query_item);
-        query.left_to_right = ascending;
-        query.set_subquery_key(KEY_FINISHED_EPOCH_INFO.to_vec());
-        let path_query = PathQuery::new(pools_vec_path(), SizedQuery::new(query, None, None));
 
         let results = self
             .grove_get_path_query(
