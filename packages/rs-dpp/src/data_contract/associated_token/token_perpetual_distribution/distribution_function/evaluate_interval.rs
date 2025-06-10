@@ -47,8 +47,6 @@ pub struct IntervalEvaluationExplanation {
     pub evaluation_steps: Vec<EvaluationStep>,
     /// Whether reward ratios were applied
     pub reward_ratios_applied: bool,
-    /// Whether the FixedAmount optimization was used
-    pub fixed_amount_optimization_used: bool,
     /// Number of steps calculated
     pub steps_count: u64,
     /// Is this the first claim
@@ -1169,44 +1167,8 @@ impl IntervalEvaluationExplanation {
         }
     }
 
-    /// Returns a medium-length explanation with key details
-    pub fn medium_explanation(&self) -> String {
-        let mut explanation = format!(
-            "Distribution Function: {}\n\
-             Evaluation Range: {} (excluded) to {} (included)\n\
-             Step Size: {}\n\
-             Distribution Start: {}\n\
-             Total Steps Evaluated: {}\n\
-             Final Total Amount: {} tokens\n",
-            self.distribution_function,
-            self.interval_start_excluded,
-            self.interval_end_included,
-            self.step,
-            self.distribution_start,
-            self.steps_count,
-            self.total_amount
-        );
-
-        if self.fixed_amount_optimization_used {
-            explanation.push_str("✓ FixedAmount optimization was used for faster calculation\n");
-        }
-
-        if self.reward_ratios_applied {
-            explanation.push_str("✓ Reward ratios were applied to adjust emissions\n");
-        }
-
-        if !self.optimization_notes.is_empty() {
-            explanation.push_str("Special Conditions:\n");
-            for note in &self.optimization_notes {
-                explanation.push_str(&format!("  • {}\n", note));
-            }
-        }
-
-        explanation
-    }
-
     /// Returns a detailed explanation with all steps and calculations
-    pub fn long_explanation(&self) -> String {
+    pub fn detailed_explanation(&self) -> String {
         let mut explanation = format!(
             "=== Detailed Interval Evaluation Explanation ===\n\n\
              Distribution Function: {}\n\
@@ -1222,7 +1184,10 @@ impl IntervalEvaluationExplanation {
             self.distribution_start
         );
 
-        if self.fixed_amount_optimization_used {
+        if matches!(
+            self.distribution_function,
+            DistributionFunction::FixedAmount { .. }
+        ) {
             explanation.push_str(
                 "OPTIMIZATION: FixedAmount function detected - using fast calculation method\n\
                  Instead of evaluating each step individually, we calculated:\n\
@@ -1267,7 +1232,10 @@ impl IntervalEvaluationExplanation {
 
                 explanation.push_str(&format!(" (Running total: {})\n", step.running_total));
             }
-        } else if self.fixed_amount_optimization_used {
+        } else if matches!(
+            self.distribution_function,
+            DistributionFunction::FixedAmount { .. }
+        ) {
             explanation.push_str("\nNo individual steps shown due to FixedAmount optimization\n");
         }
 
@@ -1289,7 +1257,10 @@ impl IntervalEvaluationExplanation {
     /// - `Some(String)` with the step explanation if the step exists
     /// - `None` if the step index is out of bounds or if individual steps weren't tracked
     pub fn explanation_for_step(&self, step_index: u64) -> Option<String> {
-        if self.fixed_amount_optimization_used {
+        if matches!(
+            self.distribution_function,
+            DistributionFunction::FixedAmount { .. }
+        ) {
             return Some(format!(
                 "Step #{}: This evaluation used FixedAmount optimization.\n\
                  Individual steps were not calculated because the result is simply:\n\
@@ -1554,7 +1525,6 @@ impl DistributionFunction {
             total_amount: 0,
             evaluation_steps: Vec::new(),
             reward_ratios_applied: false,
-            fixed_amount_optimization_used: false,
             steps_count: 0,
             is_first_claim,
             optimization_notes: Vec::new(),
@@ -1587,7 +1557,6 @@ impl DistributionFunction {
             amount: fixed_amount,
         } = self
         {
-            explanation.fixed_amount_optimization_used = true;
             explanation.optimization_notes.push(
                 "FixedAmount distribution: using optimized calculation (amount × steps)"
                     .to_string(),
@@ -2182,20 +2151,13 @@ mod tests {
                 .unwrap();
 
             let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            let medium = result.medium_explanation();
-            let long = result.long_explanation();
+            let long = result.detailed_explanation();
 
             // Short should be a descriptive explanation
             assert!(short.contains("This token"));
 
-            // Medium should be multiple lines but not too long
-            assert!(medium.contains('\n'));
-            assert!(medium.len() > short.len());
-            assert!(medium.len() < long.len());
-
             // Long should be the most detailed
             assert!(long.contains("==="));
-            assert!(long.len() > medium.len());
         }
 
         #[test]
@@ -2444,7 +2406,6 @@ mod tests {
             // Should have 5 steps: 10, 20, 30, 40, 50
             assert_eq!(result.steps_count, 5);
             assert_eq!(result.total_amount, 500); // 100 tokens * 5 steps
-            assert!(result.fixed_amount_optimization_used);
             assert!(!result.reward_ratios_applied);
             assert!(result.evaluation_steps.is_empty()); // No individual steps due to optimization
 
@@ -2453,15 +2414,11 @@ mod tests {
             assert!(short.contains("fixed amount of 100 tokens"));
             assert!(short.contains("500 tokens"));
 
-            let medium = result.medium_explanation();
-            assert!(medium.contains("FixedAmount optimization was used"));
-            assert!(medium.contains("Total Steps Evaluated: 5"));
-
             // Test with is_first_claim = false
             let short_not_first = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short_not_first.contains("The last claim was for"));
 
-            let long = result.long_explanation();
+            let long = result.detailed_explanation();
             assert!(long.contains("OPTIMIZATION: FixedAmount function detected"));
             assert!(long.contains("Total = Fixed Amount × Number of Steps"));
         }
@@ -2492,7 +2449,6 @@ mod tests {
                 )
                 .unwrap();
 
-            assert!(!result.fixed_amount_optimization_used);
             assert!(!result.reward_ratios_applied);
             assert!(!result.evaluation_steps.is_empty()); // Should have individual steps
 
@@ -2500,10 +2456,7 @@ mod tests {
             let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             assert!(short.contains("starts at 50 tokens"));
 
-            let medium = result.medium_explanation();
-            assert!(medium.contains("Linear"));
-
-            let long = result.long_explanation();
+            let long = result.detailed_explanation();
             assert!(long.contains("Step-by-Step Breakdown"));
         }
 
@@ -3250,20 +3203,13 @@ mod tests {
                 .unwrap();
 
             let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            let medium = result.medium_explanation();
-            let long = result.long_explanation();
+            let long = result.detailed_explanation();
 
             // Short should be a descriptive explanation
             assert!(short.contains("This token"));
 
-            // Medium should be multiple lines but not too long
-            assert!(medium.contains('\n'));
-            assert!(medium.len() > short.len());
-            assert!(medium.len() < long.len());
-
             // Long should be the most detailed
             assert!(long.contains("==="));
-            assert!(long.len() > medium.len());
         }
 
         #[test]
@@ -4244,20 +4190,13 @@ mod tests {
                 .unwrap();
 
             let short = result.short_explanation(0, PlatformVersion::latest(), "UTC");
-            let medium = result.medium_explanation();
-            let long = result.long_explanation();
+            let long = result.detailed_explanation();
 
             // Short should be a descriptive explanation
             assert!(short.contains("This token"));
 
-            // Medium should be multiple lines but not too long
-            assert!(medium.contains('\n'));
-            assert!(medium.len() > short.len());
-            assert!(medium.len() < long.len());
-
             // Long should be the most detailed
             assert!(long.contains("==="));
-            assert!(long.len() > medium.len());
         }
 
         #[test]
