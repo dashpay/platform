@@ -36,7 +36,7 @@ where
     ///
     /// * This function may return an `Error::Execution` if the identity balance is not found.
     /// * This function may return an `Error::Drive` if there's an issue with applying drive operations.
-    pub(in crate::execution) fn validate_fees_of_event_v0(
+    pub(super) fn validate_fees_of_event_v0(
         &self,
         event: &ExecutionEvent,
         block_info: &BlockInfo,
