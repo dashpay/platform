@@ -73,11 +73,11 @@ pub enum DashSDKResultDataType {
     /// Binary data with length
     BinaryData = 2,
     /// Identity handle
-    IdentityHandle = 3,
+    ResultIdentityHandle = 3,
     /// Document handle
-    DocumentHandle = 4,
+    ResultDocumentHandle = 4,
     /// Data contract handle
-    DataContractHandle = 5,
+    ResultDataContractHandle = 5,
     /// Map of identity IDs to balances
     IdentityBalanceMap = 6,
 }
@@ -247,9 +247,9 @@ pub enum DashSDKGasFeesPaidBy {
     /// The document owner pays the gas fees
     DocumentOwner = 0,
     /// The contract owner pays the gas fees
-    ContractOwner = 1,
+    GasFeesContractOwner = 1,
     /// Prefer contract owner but fallback to document owner if insufficient balance
-    PreferContractOwner = 2,
+    GasFeesPreferContractOwner = 2,
 }
 
 /// Token payment information for transactions

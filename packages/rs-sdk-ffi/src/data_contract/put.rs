@@ -111,7 +111,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform_and_wait(
             let handle = Box::into_raw(Box::new(confirmed_contract)) as *mut DataContractHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::DataContractHandle,
+                DashSDKResultDataType::ResultDataContractHandle,
             )
         }
         Err(e) => DashSDKResult::error(e.into()),

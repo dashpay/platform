@@ -176,7 +176,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
             let handle = Box::into_raw(Box::new(confirmed_identity)) as *mut IdentityHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::IdentityHandle,
+                DashSDKResultDataType::ResultIdentityHandle,
             )
         }
         Err(e) => DashSDKResult::error(e.into()),
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock_and_w
             let handle = Box::into_raw(Box::new(confirmed_identity)) as *mut IdentityHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::IdentityHandle,
+                DashSDKResultDataType::ResultIdentityHandle,
             )
         }
         Err(e) => DashSDKResult::error(e.into()),

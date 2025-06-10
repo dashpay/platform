@@ -95,7 +95,7 @@ pub enum DashSDKAuthorizedActionTakers {
     /// No one can perform the action
     NoOne = 0,
     /// Only the contract owner can perform the action
-    ContractOwner = 1,
+    AuthorizedContractOwner = 1,
     /// Main group can perform the action
     MainGroup = 2,
     /// A specific identity (requires identity_id to be set)

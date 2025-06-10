@@ -11,6 +11,8 @@ sys_includes = ["stdint.h", "stdbool.h"]
 includes = []
 no_includes = false
 cpp_compat = true
+documentation = true
+documentation_style = "c99"
 
 [defines]
 
@@ -52,6 +54,10 @@ derive_mut_casts = false
 cast_assert_name = "assert"
 must_use = "DASH_SDK_WARN_UNUSED_RESULT"
 
+# Rename all enums to avoid conflicts by prefixing with enum name
+[enum.rename_variants]
+"*" = "{}_{}"
+
 [const]
 allow_static_const = true
 allow_constexpr = false
@@ -60,11 +66,6 @@ sort_by = "name"
 [macro_expansion]
 bitflags = false
 
-documentation = true
-documentation_style = "c99"
-documentation_length = "full"
-line_length = 100
-line_endings = "unix"
-normalize_stdint = true
-use_self = false
-tab_width = 4
+[parse]
+parse_deps = true
+include = []

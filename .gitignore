@@ -51,3 +51,10 @@ xcuserdata/
 # Generated Swift SDK header files
 packages/swift-sdk/Sources/CDashSDKFFI/DashSDKFFI.h
 packages/swift-sdk/generated/DashSDKFFI.h
+
+# Generated Swift SDK files
+packages/swift-sdk/Sources/CDashSDKFFI/librs_sdk_ffi.pc
+packages/swift-sdk/SwiftExampleApp/DashSDK.xcframework/
+
+# rs-sdk-ffi build directory
+packages/rs-sdk-ffi/build/

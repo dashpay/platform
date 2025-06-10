@@ -213,7 +213,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
             let handle = Box::into_raw(Box::new(replaced_document)) as *mut DocumentHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::DocumentHandle,
+                DashSDKResultDataType::ResultDocumentHandle,
             )
         }
         Err(e) => DashSDKResult::error(e.into()),

@@ -93,21 +93,21 @@ public class SDK {
     
     /// Create a new SDK instance
     public init(network: Network) throws {
-        var config = dash_sdk_DashSDKConfig()
+        var config = DashSDKConfig()
         
         // Map network - in C enums, Swift imports them as raw values
         config.network = network
         
         // Set DAPI addresses based on network
         switch network {
-        case dash_sdk_DashSDKNetwork(rawValue: 0): // Mainnet
+        case DashSDKNetwork(rawValue: 0): // Mainnet
             config.dapi_addresses = nil // Use default mainnet addresses
-        case dash_sdk_DashSDKNetwork(rawValue: 1): // Testnet
+        case DashSDKNetwork(rawValue: 1): // Testnet
             // Use the testnet addresses provided by the user
             config.dapi_addresses = nil // Will be set below
-        case dash_sdk_DashSDKNetwork(rawValue: 2): // Devnet
+        case DashSDKNetwork(rawValue: 2): // Devnet
             config.dapi_addresses = nil // Use default devnet addresses
-        case dash_sdk_DashSDKNetwork(rawValue: 3): // Local
+        case DashSDKNetwork(rawValue: 3): // Local
             config.dapi_addresses = nil // Use default local addresses
         default:
             config.dapi_addresses = nil
@@ -118,9 +118,9 @@ public class SDK {
         config.request_timeout_ms = 30000 // 30 seconds
         
         // Create SDK with new FFI
-        let result: dash_sdk_DashSDKResult
-        if network == dash_sdk_DashSDKNetwork(rawValue: 1) { // Testnet
-            result = Self.testnetDAPIAddresses.withCString { addressesCStr -> dash_sdk_DashSDKResult in
+        let result: DashSDKResult
+        if network == DashSDKNetwork(rawValue: 1) { // Testnet
+            result = Self.testnetDAPIAddresses.withCString { addressesCStr -> DashSDKResult in
                 var mutableConfig = config
                 mutableConfig.dapi_addresses = addressesCStr
                 return dash_sdk_create(&mutableConfig)
@@ -200,29 +200,29 @@ public enum SDKError: Error {
     case internalError(String)
     case unknown(String)
     
-    public static func fromDashSDKError(_ error: dash_sdk_DashSDKError) -> SDKError {
+    public static func fromDashSDKError(_ error: DashSDKError) -> SDKError {
         let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
         
         switch error.code {
-        case dash_sdk_DashSDKErrorCode(rawValue: 1): // Invalid parameter
+        case DashSDKErrorCode(rawValue: 1): // Invalid parameter
             return .invalidParameter(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 2): // Invalid state
+        case DashSDKErrorCode(rawValue: 2): // Invalid state
             return .invalidState(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 3): // Network error
+        case DashSDKErrorCode(rawValue: 3): // Network error
             return .networkError(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 4): // Serialization error
+        case DashSDKErrorCode(rawValue: 4): // Serialization error
             return .serializationError(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 5): // Protocol error
+        case DashSDKErrorCode(rawValue: 5): // Protocol error
             return .protocolError(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 6): // Crypto error
+        case DashSDKErrorCode(rawValue: 6): // Crypto error
             return .cryptoError(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 7): // Not found
+        case DashSDKErrorCode(rawValue: 7): // Not found
             return .notFound(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 8): // Timeout
+        case DashSDKErrorCode(rawValue: 8): // Timeout
             return .timeout(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 9): // Not implemented
+        case DashSDKErrorCode(rawValue: 9): // Not implemented
             return .notImplemented(message)
-        case dash_sdk_DashSDKErrorCode(rawValue: 99): // Internal error
+        case DashSDKErrorCode(rawValue: 99): // Internal error
             return .internalError(message)
         default:
             return .unknown(message)
@@ -335,7 +335,7 @@ public class Identities {
                  bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31])
             }
         
-        let result = idArrays.withUnsafeBufferPointer { buffer -> dash_sdk_DashSDKResult in
+        let result = idArrays.withUnsafeBufferPointer { buffer -> DashSDKResult in
             let idsPtr = buffer.baseAddress
             // The handle is already the correct type for the C function
             return dash_sdk_identities_fetch_balances(handle, idsPtr, UInt(ids.count))
@@ -355,7 +355,7 @@ public class Identities {
         }
         
         // Parse the identity balance map
-        let mapPtr = result.data.assumingMemoryBound(to: dash_sdk_DashSDKIdentityBalanceMap.self)
+        let mapPtr = result.data.assumingMemoryBound(to: DashSDKIdentityBalanceMap.self)
         let map = mapPtr.pointee
         
         var balances: [Data: UInt64?] = [:]

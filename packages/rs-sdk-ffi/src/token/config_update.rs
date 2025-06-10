@@ -318,7 +318,7 @@ mod tests {
             bool_value: false,
             identity_id: ptr::null(),
             group_position: 0,
-            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            action_takers: DashSDKAuthorizedActionTakers::AuthorizedContractOwner,
             public_note: ptr::null(),
         }
     }
@@ -568,7 +568,7 @@ mod tests {
             bool_value: false,
             identity_id: identity_id.as_ptr(),
             group_position: 0,
-            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            action_takers: DashSDKAuthorizedActionTakers::AuthorizedContractOwner,
             public_note: ptr::null(),
         };
 
@@ -593,7 +593,7 @@ mod tests {
             bool_value: false,
             identity_id: ptr::null(),
             group_position: 0,
-            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            action_takers: DashSDKAuthorizedActionTakers::AuthorizedContractOwner,
             public_note: public_note.as_ptr(),
         };
 
@@ -614,10 +614,10 @@ mod tests {
             DashSDKAuthorizedActionTakers::NoOne as u32
         );
 
-        params.action_takers = DashSDKAuthorizedActionTakers::ContractOwner;
+        params.action_takers = DashSDKAuthorizedActionTakers::AuthorizedContractOwner;
         assert_eq!(
             params.action_takers as u32,
-            DashSDKAuthorizedActionTakers::ContractOwner as u32
+            DashSDKAuthorizedActionTakers::AuthorizedContractOwner as u32
         );
 
         params.action_takers = DashSDKAuthorizedActionTakers::MainGroup;
@@ -656,7 +656,7 @@ mod tests {
             bool_value: false,
             identity_id: ptr::null(),
             group_position: 0,
-            action_takers: DashSDKAuthorizedActionTakers::ContractOwner,
+            action_takers: DashSDKAuthorizedActionTakers::AuthorizedContractOwner,
             public_note: ptr::null(),
         };
 

@@ -155,7 +155,7 @@ pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock_and_wait(
             let handle = Box::into_raw(Box::new(topped_up_identity)) as *mut IdentityHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::IdentityHandle,
+                DashSDKResultDataType::ResultIdentityHandle,
             )
         }
         Err(e) => DashSDKResult::error(e.into()),

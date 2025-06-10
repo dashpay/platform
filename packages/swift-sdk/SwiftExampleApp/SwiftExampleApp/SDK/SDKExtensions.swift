@@ -9,7 +9,7 @@ extension SDK {
     var network: SwiftDashSDK.Network {
         // In a real implementation, we would track the network during initialization
         // For now, return testnet as default
-        return dash_sdk_DashSDKNetwork(rawValue: 1) // Testnet
+        return DashSDKNetwork(rawValue: 1) // Testnet
     }
 }
 
@@ -23,7 +23,7 @@ protocol Signer {
 private var globalSignerStorage: Signer?
 
 // C function callbacks that use the global signer
-private let globalSignCallback: dash_sdk_IOSSignCallback = { identityPublicKeyBytes, identityPublicKeyLen, dataBytes, dataLen, resultLenPtr in
+private let globalSignCallback: IOSSignCallback = { identityPublicKeyBytes, identityPublicKeyLen, dataBytes, dataLen, resultLenPtr in
     guard let identityPublicKeyBytes = identityPublicKeyBytes,
           let dataBytes = dataBytes,
           let resultLenPtr = resultLenPtr,
@@ -48,7 +48,7 @@ private let globalSignCallback: dash_sdk_IOSSignCallback = { identityPublicKeyBy
     return result
 }
 
-private let globalCanSignCallback: dash_sdk_IOSCanSignCallback = { identityPublicKeyBytes, identityPublicKeyLen in
+private let globalCanSignCallback: IOSCanSignCallback = { identityPublicKeyBytes, identityPublicKeyLen in
     guard let identityPublicKeyBytes = identityPublicKeyBytes,
           let signer = globalSignerStorage else {
         return false

@@ -20,11 +20,11 @@ enum Network: String, CaseIterable, Codable {
     var sdkNetwork: SwiftDashSDK.Network {
         switch self {
         case .mainnet:
-            return dash_sdk_DashSDKNetwork(rawValue: 0)
+            return DashSDKNetwork(rawValue: 0)
         case .testnet:
-            return dash_sdk_DashSDKNetwork(rawValue: 1)
+            return DashSDKNetwork(rawValue: 1)
         case .devnet:
-            return dash_sdk_DashSDKNetwork(rawValue: 2)
+            return DashSDKNetwork(rawValue: 2)
         }
     }
     

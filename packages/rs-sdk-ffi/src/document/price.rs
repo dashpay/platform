@@ -220,7 +220,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
             let handle = Box::into_raw(Box::new(updated_document)) as *mut DocumentHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::DocumentHandle,
+                DashSDKResultDataType::ResultDocumentHandle,
             )
         }
         Err(e) => DashSDKResult::error(e.into()),

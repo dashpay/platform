@@ -16,8 +16,8 @@ use crate::FFIError;
 pub unsafe fn convert_gas_fees_paid_by(ffi_value: DashSDKGasFeesPaidBy) -> GasFeesPaidBy {
     match ffi_value {
         DashSDKGasFeesPaidBy::DocumentOwner => GasFeesPaidBy::DocumentOwner,
-        DashSDKGasFeesPaidBy::ContractOwner => GasFeesPaidBy::ContractOwner,
-        DashSDKGasFeesPaidBy::PreferContractOwner => GasFeesPaidBy::PreferContractOwner,
+        DashSDKGasFeesPaidBy::GasFeesContractOwner => GasFeesPaidBy::ContractOwner,
+        DashSDKGasFeesPaidBy::GasFeesPreferContractOwner => GasFeesPaidBy::PreferContractOwner,
     }
 }
 

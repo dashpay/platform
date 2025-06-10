@@ -60,7 +60,7 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
             let handle = Box::into_raw(Box::new(identity)) as *mut IdentityHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::IdentityHandle,
+                DashSDKResultDataType::ResultIdentityHandle,
             )
         }
         Ok(None) => DashSDKResult::error(DashSDKError::new(
