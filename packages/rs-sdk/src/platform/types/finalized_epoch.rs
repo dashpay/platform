@@ -1,5 +1,5 @@
 //! Finalized epoch related types and helpers
-use crate::platform::{LimitQuery, Query};
+use crate::platform::Query;
 use crate::Error;
 use dapi_grpc::platform::v0::{get_finalized_epoch_infos_request, GetFinalizedEpochInfosRequest};
 use dpp::block::epoch::EpochIndex;
@@ -23,7 +23,7 @@ impl Default for FinalizedEpochQuery {
             start_epoch_index: 0,
             start_epoch_index_included: true,
             end_epoch_index: 0,
-            end_epoch_index_included: false,
+            end_epoch_index_included: true,
         }
     }
 }
@@ -61,13 +61,5 @@ impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
 impl Query<GetFinalizedEpochInfosRequest> for (EpochIndex, EpochIndex) {
     fn query(self, prove: bool) -> Result<GetFinalizedEpochInfosRequest, Error> {
         FinalizedEpochQuery::from(self).query(prove)
-    }
-}
-
-impl Query<GetFinalizedEpochInfosRequest> for LimitQuery<FinalizedEpochQuery> {
-    fn query(self, prove: bool) -> Result<GetFinalizedEpochInfosRequest, Error> {
-        // For finalized epochs, the limit is handled by the range itself
-        // so we just pass through the query
-        self.query.query(prove)
     }
 }
