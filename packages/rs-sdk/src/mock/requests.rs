@@ -9,7 +9,7 @@ use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::{
     bincode,
-    block::extended_epoch_info::ExtendedEpochInfo,
+    block::{extended_epoch_info::ExtendedEpochInfo, finalized_epoch_info::FinalizedEpochInfo},
     dashcore::{hashes::Hash as CoreHash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
@@ -437,6 +437,7 @@ impl_mock_response!(u32);
 impl_mock_response!(u64);
 impl_mock_response!(Vote);
 impl_mock_response!(ExtendedEpochInfo);
+impl_mock_response!(FinalizedEpochInfo);
 impl_mock_response!(ContestedResources);
 impl_mock_response!(IdentityBalanceAndRevision);
 impl_mock_response!(Contenders);

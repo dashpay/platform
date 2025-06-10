@@ -18,7 +18,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
-    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_finalized_epoch_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
 };
 use dapi_grpc::platform::{
@@ -1145,6 +1145,65 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
                 (info.index, Some(v))
             })
             .collect::<ExtendedEpochInfos>();
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((epoch_info.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetFinalizedEpochInfosRequest> for FinalizedEpochInfos {
+    type Request = platform::GetFinalizedEpochInfosRequest;
+    type Response = platform::GetFinalizedEpochInfosResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (
+            start_epoch_index,
+            start_epoch_index_included,
+            end_epoch_index,
+            end_epoch_index_included,
+        ) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_finalized_epoch_infos_request::Version::V0(v0) => (
+                v0.start_epoch_index,
+                v0.start_epoch_index_included,
+                v0.end_epoch_index,
+                v0.end_epoch_index_included,
+            ),
+        };
+
+        let start_epoch_index: EpochIndex = try_u32_to_u16(start_epoch_index)?;
+        let end_epoch_index: EpochIndex = try_u32_to_u16(end_epoch_index)?;
+
+        let (root_hash, epoch_info) = Drive::verify_finalized_epoch_infos(
+            &proof.grovedb_proof,
+            start_epoch_index,
+            start_epoch_index_included,
+            end_epoch_index,
+            end_epoch_index_included,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        let epoch_info = epoch_info
+            .into_iter()
+            .map(|(epoch_index, finalized_epoch_info)| (epoch_index, Some(finalized_epoch_info)))
+            .collect::<FinalizedEpochInfos>();
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
