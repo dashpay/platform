@@ -34,3 +34,6 @@ node_modules
 # Rust build artifacts
 /target
 .gitaipconfig
+
+# gRPC coverage report
+grpc-coverage-report.txt
