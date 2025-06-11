@@ -2,7 +2,7 @@ use crate::fetch::common::setup_logs;
 use dash_sdk::platform::tokens::token_contract_info::TokenContractInfoQuery;
 use dash_sdk::platform::{Fetch, Identifier, Query};
 use dash_sdk::Sdk;
-use drive_proof_verifier::types::token_contract_info::TokenContractInfo;
+use dpp::tokens::contract_info::TokenContractInfo;
 
 #[tokio::test]
 async fn test_token_contract_info_fetch_by_identifier() {

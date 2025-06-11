@@ -1,5 +1,4 @@
 use crate::error::MapGroveDbError;
-use crate::types::token_contract_info::TokenContractInfo;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -8,6 +7,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
+use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 
@@ -53,6 +53,6 @@ impl FromProof<GetTokenContractInfoRequest> for TokenContractInfo {
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
-        Ok((result.map(Into::into), metadata, proof))
+        Ok((result, metadata, proof))
     }
 }
