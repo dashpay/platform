@@ -28,6 +28,7 @@ use drive_proof_verifier::types::groups::GroupActions;
 use drive_proof_verifier::types::identity_token_balance::{
     IdentitiesTokenBalances, IdentityTokenBalances,
 };
+use drive_proof_verifier::types::token_contract_info::TokenContractInfo;
 use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive_proof_verifier::types::{
@@ -384,6 +385,22 @@ impl MockResponse for TokenStatuses {
                 .expect(concat!("decode ", stringify!($name)));
 
         RetrievedValues::from_iter(vec)
+    }
+}
+
+impl MockResponse for TokenContractInfo {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        platform_encode_to_vec(&self.0, BINCODE_CONFIG, sdk.version())
+            .expect("encode TokenContractInfo")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let inner = platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+            .expect("decode TokenContractInfo");
+        TokenContractInfo(inner)
     }
 }
 
