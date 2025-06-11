@@ -11,6 +11,8 @@ pub mod evonode_status;
 pub mod groups;
 /// Identity token balance
 pub mod identity_token_balance;
+/// Token contract info
+pub mod token_contract_info;
 /// Token info
 pub mod token_info;
 /// Token status

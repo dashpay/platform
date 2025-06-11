@@ -1,0 +1,22 @@
+language = "C"
+pragma_once = true
+include_guard = "DASH_SDK_FFI_H"
+autogen_warning = "/* This file is auto-generated. Do not modify manually. */"
+include_version = true
+sys_includes = ["stdint.h", "stdbool.h"]
+cpp_compat = true
+
+[export]
+include = ["dash_sdk_*"]
+prefix = "dash_sdk_"
+
+[fn]
+rename_args = "snake_case"
+prefix = "dash_sdk_"
+
+[struct]
+rename_fields = "snake_case"
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+prefix_with_name = true
