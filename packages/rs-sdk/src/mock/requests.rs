@@ -4,6 +4,7 @@ use dpp::bincode::config::standard;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::data_contract::group::Group;
 use dpp::group::group_action::GroupAction;
+use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -384,6 +385,21 @@ impl MockResponse for TokenStatuses {
                 .expect(concat!("decode ", stringify!($name)));
 
         RetrievedValues::from_iter(vec)
+    }
+}
+
+impl MockResponse for TokenContractInfo {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        platform_encode_to_vec(self, BINCODE_CONFIG, sdk.version())
+            .expect("encode TokenContractInfo")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+            .expect("decode TokenContractInfo")
     }
 }
 
