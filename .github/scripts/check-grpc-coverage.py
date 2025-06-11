@@ -97,12 +97,28 @@ def extract_grpc_queries(proto_file):
         content = f.read()
     
     # Find service Platform block
-    service_match = re.search(r'service\s+Platform\s*{(.*?)^}', content, re.DOTALL | re.MULTILINE)
+    service_match = re.search(r'service\s+Platform\s*\{', content)
     if not service_match:
         print("ERROR: Could not find 'service Platform' in proto file")
         sys.exit(1)
     
-    service_content = service_match.group(1)
+    # Extract service content by counting braces
+    start_pos = service_match.end()
+    brace_count = 1
+    pos = start_pos
+    
+    while pos < len(content) and brace_count > 0:
+        if content[pos] == '{':
+            brace_count += 1
+        elif content[pos] == '}':
+            brace_count -= 1
+        pos += 1
+    
+    if brace_count != 0:
+        print("ERROR: Unmatched braces in service Platform block")
+        sys.exit(1)
+    
+    service_content = content[start_pos:pos-1]
     
     # Extract all rpc methods
     rpc_pattern = r'rpc\s+(\w+)\s*\('
@@ -119,12 +135,11 @@ def check_query_implementation(query_name, sdk_path):
     patterns = QUERY_MAPPINGS.get(query_name, [query_name])
     
     # Search for any of the patterns in the SDK code
-    for root, dirs, files in os.walk(sdk_path):
-        # Skip test directories
-        if 'tests' in root or 'test' in root:
-            continue
+    for root, dirnames, filenames in os.walk(sdk_path):
+        # Remove test directories from traversal
+        dirnames[:] = [d for d in dirnames if d not in {'tests', 'test'}]
             
-        for file in files:
+        for file in filenames:
             if file.endswith('.rs'):
                 file_path = os.path.join(root, file)
                 try:

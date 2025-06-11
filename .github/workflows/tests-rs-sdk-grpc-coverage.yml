@@ -12,7 +12,7 @@ on:
   push:
     branches:
       - master
-      - 'v[0-9]+\.[0-9]+-dev'
+      - 'v*-dev'
     paths:
       - 'packages/rs-sdk/**'
       - 'packages/dapi-grpc/protos/platform/v0/platform.proto'
