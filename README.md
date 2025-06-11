@@ -80,7 +80,7 @@ this repository may be used on the following networks:
 
 ### Looking for support?
 
-For questions and support, please join our [Dash](https://discordapp.com/invite/PXbUxJB)
+For questions and support, please join our [Dash Discord](https://discordapp.com/invite/PXbUxJB)
 
 ### Where are the docs?
 
