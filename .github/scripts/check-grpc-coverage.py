@@ -276,6 +276,13 @@ def main():
     report_lines.append(f"  - Not implemented: {total_not_implemented}")
     report_lines.append(f"  - Excluded: {total_excluded}")
     
+    # List all not implemented queries
+    not_implemented_queries = [q for q, info in known_queries.items() if info.get("status") == "not_implemented"]
+    if not_implemented_queries:
+        report_lines.append(f"\nNot implemented queries:")
+        for query in sorted(not_implemented_queries):
+            report_lines.append(f"  - {query}")
+    
     if missing_new_queries:
         report_lines.append(f"\nMissing NEW queries:")
         for query in missing_new_queries:

@@ -76,7 +76,7 @@ jobs:
           path: grpc-coverage-report.txt
           
       - name: Comment PR
-        if: github.event_name == 'pull_request' && always()
+        if: github.event_name == 'pull_request' && (steps.coverage.outputs.cache_modified == 'true' || steps.coverage.outputs.status == 'failure')
         uses: actions/github-script@v7
         with:
           script: |
