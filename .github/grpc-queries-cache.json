@@ -1,0 +1,147 @@
+{
+  "known_queries": {
+    "broadcastStateTransition": {
+      "status": "excluded",
+      "reason": "Explicitly excluded as per requirement"
+    },
+    "getIdentity": {
+      "status": "implemented"
+    },
+    "getIdentityKeys": {
+      "status": "implemented"
+    },
+    "getIdentitiesContractKeys": {
+      "status": "implemented"
+    },
+    "getIdentityNonce": {
+      "status": "implemented"
+    },
+    "getIdentityContractNonce": {
+      "status": "implemented"
+    },
+    "getIdentityBalance": {
+      "status": "implemented"
+    },
+    "getIdentitiesBalances": {
+      "status": "implemented"
+    },
+    "getIdentityBalanceAndRevision": {
+      "status": "implemented"
+    },
+    "getEvonodesProposedEpochBlocksByIds": {
+      "status": "implemented"
+    },
+    "getEvonodesProposedEpochBlocksByRange": {
+      "status": "implemented"
+    },
+    "getDataContract": {
+      "status": "implemented"
+    },
+    "getDataContractHistory": {
+      "status": "implemented"
+    },
+    "getDataContracts": {
+      "status": "implemented"
+    },
+    "getDocuments": {
+      "status": "implemented"
+    },
+    "getIdentityByPublicKeyHash": {
+      "status": "implemented"
+    },
+    "getIdentityByNonUniquePublicKeyHash": {
+      "status": "implemented"
+    },
+    "waitForStateTransitionResult": {
+      "status": "implemented"
+    },
+    "getProtocolVersionUpgradeState": {
+      "status": "implemented"
+    },
+    "getProtocolVersionUpgradeVoteStatus": {
+      "status": "implemented"
+    },
+    "getEpochsInfo": {
+      "status": "implemented"
+    },
+    "getFinalizedEpochInfos": {
+      "status": "implemented"
+    },
+    "getContestedResources": {
+      "status": "implemented"
+    },
+    "getContestedResourceVoteState": {
+      "status": "implemented"
+    },
+    "getContestedResourceVotersForIdentity": {
+      "status": "implemented"
+    },
+    "getContestedResourceIdentityVotes": {
+      "status": "implemented"
+    },
+    "getVotePollsByEndDate": {
+      "status": "implemented"
+    },
+    "getPrefundedSpecializedBalance": {
+      "status": "implemented"
+    },
+    "getTotalCreditsInPlatform": {
+      "status": "implemented"
+    },
+    "getPathElements": {
+      "status": "implemented"
+    },
+    "getStatus": {
+      "status": "implemented"
+    },
+    "getCurrentQuorumsInfo": {
+      "status": "implemented"
+    },
+    "getIdentityTokenBalances": {
+      "status": "implemented"
+    },
+    "getIdentitiesTokenBalances": {
+      "status": "implemented"
+    },
+    "getIdentityTokenInfos": {
+      "status": "implemented"
+    },
+    "getIdentitiesTokenInfos": {
+      "status": "implemented"
+    },
+    "getTokenStatuses": {
+      "status": "implemented"
+    },
+    "getTokenDirectPurchasePrices": {
+      "status": "implemented"
+    },
+    "getTokenContractInfo": {
+      "status": "not_implemented"
+    },
+    "getTokenPreProgrammedDistributions": {
+      "status": "not_implemented"
+    },
+    "getTokenPerpetualDistributionLastClaim": {
+      "status": "implemented"
+    },
+    "getTokenTotalSupply": {
+      "status": "implemented"
+    },
+    "getGroupInfo": {
+      "status": "implemented"
+    },
+    "getGroupInfos": {
+      "status": "implemented"
+    },
+    "getGroupActions": {
+      "status": "implemented"
+    },
+    "getGroupActionSigners": {
+      "status": "implemented"
+    },
+    "getConsensusParams": {
+      "status": "not_implemented"
+    }
+  },
+  "last_updated": "2025-01-06T00:00:00Z"
+}

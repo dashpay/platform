@@ -606,6 +606,15 @@ impl_transport_request_grpc!(
     get_token_direct_purchase_prices
 );
 
+// rpc getTokenContractInfo(GetTokenContractInfoRequest) returns (GetTokenContractInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenContractInfoRequest,
+    platform_proto::GetTokenContractInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_contract_info
+);
+
 // rpc getTokenPerpetualDistributionLastClaimRequest(GetTokenPerpetualDistributionLastClaimRequest) returns (GetTokenPerpetualDistributionLastClaimResponse);
 impl_transport_request_grpc!(
     platform_proto::GetTokenPerpetualDistributionLastClaimRequest,
