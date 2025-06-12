@@ -256,46 +256,27 @@ impl IntervalEvaluationExplanation {
                                     )
                                 )
                             }
-                        } else {
-                            if let Some(ref ratios) = self.reward_ratios_applied {
-                                if !ratios.is_empty() {
-                                    let (numerator, denominator) = ratios[0];
-                                    format!(
-                                        "This token distributes a fixed amount of {} every epoch. \
-                                        The last claim was for epoch {} and we are currently in epoch {}, \
-                                        the last epoch you can claim would be {}, you therefore have {} \
-                                        {} of rewards{}. {} × {} × {}/{} = {}",
-                                        format_token_amount_with_plural(*amount, decimal_offset),
-                                        start_epoch,
-                                        end_epoch.saturating_add(1),
-                                        end_epoch,
-                                        self.steps_count,
-                                        interval_word,
-                                        max_claim_text,
-                                        self.steps_count,
-                                        amount_str,
-                                        numerator,
-                                        denominator,
-                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                                    )
-                                } else {
-                                    format!(
-                                        "This token distributes a fixed amount of {} every epoch. \
-                                        The last claim was for epoch {} and we are currently in epoch {}, \
-                                        the last epoch you can claim would be {}, you therefore have {} \
-                                        {} of rewards{}. {} × {} = {}",
-                                        format_token_amount_with_plural(*amount, decimal_offset),
-                                        start_epoch,
-                                        end_epoch.saturating_add(1),
-                                        end_epoch,
-                                        self.steps_count,
-                                        interval_word,
-                                        max_claim_text,
-                                        self.steps_count,
-                                        amount_str,
-                                        format_token_amount_with_plural(self.total_amount, decimal_offset)
-                                    )
-                                }
+                        } else if let Some(ref ratios) = self.reward_ratios_applied {
+                            if !ratios.is_empty() {
+                                let (numerator, denominator) = ratios[0];
+                                format!(
+                                    "This token distributes a fixed amount of {} every epoch. \
+                                    The last claim was for epoch {} and we are currently in epoch {}, \
+                                    the last epoch you can claim would be {}, you therefore have {} \
+                                    {} of rewards{}. {} × {} × {}/{} = {}",
+                                    format_token_amount_with_plural(*amount, decimal_offset),
+                                    start_epoch,
+                                    end_epoch.saturating_add(1),
+                                    end_epoch,
+                                    self.steps_count,
+                                    interval_word,
+                                    max_claim_text,
+                                    self.steps_count,
+                                    amount_str,
+                                    numerator,
+                                    denominator,
+                                    format_token_amount_with_plural(self.total_amount, decimal_offset)
+                                )
                             } else {
                                 format!(
                                     "This token distributes a fixed amount of {} every epoch. \
@@ -314,6 +295,23 @@ impl IntervalEvaluationExplanation {
                                     format_token_amount_with_plural(self.total_amount, decimal_offset)
                                 )
                             }
+                        } else {
+                            format!(
+                                "This token distributes a fixed amount of {} every epoch. \
+                                The last claim was for epoch {} and we are currently in epoch {}, \
+                                the last epoch you can claim would be {}, you therefore have {} \
+                                {} of rewards{}. {} × {} = {}",
+                                format_token_amount_with_plural(*amount, decimal_offset),
+                                start_epoch,
+                                end_epoch.saturating_add(1),
+                                end_epoch,
+                                self.steps_count,
+                                interval_word,
+                                max_claim_text,
+                                self.steps_count,
+                                amount_str,
+                                format_token_amount_with_plural(self.total_amount, decimal_offset)
+                            )
                         }
                     }
                     _ => match (&self.interval_start_excluded, &self.interval_end_included) {
@@ -901,23 +899,25 @@ impl IntervalEvaluationExplanation {
                     ""
                 };
 
-                let change_desc = if *a > 0 {
-                    let token_word = if *a == 1 && *d == 1 {
-                        "token"
-                    } else {
-                        "tokens"
-                    };
-                    format!("increases by {}/{} {}", a, d, token_word)
-                } else if *a < 0 {
-                    let abs_a = -a;
-                    let token_word = if abs_a == 1 && *d == 1 {
-                        "token"
-                    } else {
-                        "tokens"
-                    };
-                    format!("decreases by {}/{} {}", abs_a, d, token_word)
-                } else {
-                    "remains constant".to_string()
+                let change_desc = match (*a).cmp(&0) {
+                    std::cmp::Ordering::Greater => {
+                        let token_word = if *a == 1 && *d == 1 {
+                            "token"
+                        } else {
+                            "tokens"
+                        };
+                        format!("increases by {}/{} {}", a, d, token_word)
+                    }
+                    std::cmp::Ordering::Less => {
+                        let abs_a = -a;
+                        let token_word = if abs_a == 1 && *d == 1 {
+                            "token"
+                        } else {
+                            "tokens"
+                        };
+                        format!("decreases by {}/{} {}", abs_a, d, token_word)
+                    }
+                    std::cmp::Ordering::Equal => "remains constant".to_string(),
                 };
 
                 match (&self.interval_start_excluded, &self.interval_end_included) {
