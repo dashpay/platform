@@ -28,8 +28,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 dpp = { path = "../rs-dpp", features = [
   "bls-signatures",
-  #  "document-value-conversion",
-  #  "extended-document",
   "core-types-serialization",
 ], default-features = false }
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }

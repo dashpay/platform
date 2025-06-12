@@ -5,13 +5,13 @@ use std::fmt;
 
 mod encode;
 mod evaluate;
-mod evaluate_interval;
+pub mod evaluate_interval;
 pub mod reward_ratio;
 mod validation;
 
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
 /// The max cycles param is the upper limit of cycles the system can ever support
-/// This is applied to linear distribution.
+/// This is applied to fixed amount distributions.
 /// For all other distributions we use a versioned max cycles contained in the platform version.
 /// That other version is much lower because the calculations for other distributions are more
 /// complex.
