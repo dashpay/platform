@@ -75,7 +75,7 @@ where
                     ))
                 })?;
 
-            // If adding this withdrawal would exceed the limit, stop processing further.
+            // If adding this withdrawal would exceed the limit, stop further processing.
             if potential_total_withdrawal_amount > current_withdrawal_limit {
                 tracing::debug!(
                     "Pooling is limited due to daily withdrawals limit. {} credits left",
