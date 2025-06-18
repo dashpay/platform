@@ -1,11 +1,15 @@
 use std::ops::{Div, RangeInclusive};
+#[cfg(feature = "token-reward-explanations")]
 use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_CYCLES_PARAM};
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+#[cfg(feature = "token-reward-explanations")]
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_CYCLES_PARAM;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::ProtocolError;
+#[cfg(feature = "token-reward-explanations")]
 use chrono::{Utc, TimeZone};
 #[cfg(feature = "token-reward-explanations")]
 use chrono_tz::Tz;

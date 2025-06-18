@@ -7,7 +7,6 @@ mod token_selling_tests {
 
     use super::*;
 
-    use crate::error::Error;
     use dpp::{
         dashcore::secp256k1::hashes::hex::{Case, DisplayHex},
         prelude::{DataContract, Identity, IdentityPublicKey},

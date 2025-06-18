@@ -21,7 +21,7 @@ impl Drive {
             path_query,
             true,
             true,
-            true,
+            false,
             transaction,
             &drive_version.grove_version,
         );
