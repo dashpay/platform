@@ -106,6 +106,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
@@ -128,7 +129,7 @@ mod tests {
 
         let documents = drive
             .fetch_oldest_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                withdrawals_contract::WithdrawalStatus::QUEUED as u8,
                 DEFAULT_QUERY_LIMIT,
                 Some(&transaction),
                 platform_version,
@@ -193,7 +194,7 @@ mod tests {
 
         let documents = drive
             .fetch_oldest_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                withdrawals_contract::WithdrawalStatus::QUEUED as u8,
                 DEFAULT_QUERY_LIMIT,
                 Some(&transaction),
                 platform_version,
@@ -204,7 +205,7 @@ mod tests {
 
         let documents = drive
             .fetch_oldest_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                withdrawals_contract::WithdrawalStatus::POOLED as u8,
                 DEFAULT_QUERY_LIMIT,
                 Some(&transaction),
                 platform_version,
@@ -212,5 +213,167 @@ mod tests {
             .expect("to fetch documents by status");
 
         assert_eq!(documents.len(), 1);
+    }
+
+    #[test]
+    fn test_fetch_oldest_withdrawals_from_testnet_data() {
+        use dpp::document::DocumentV0Getters;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use std::fs;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let transaction = drive.grove.start_transaction();
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+
+        setup_system_data_contract(&drive, &data_contract, Some(&transaction));
+
+        let document_type = data_contract
+            .document_type_for_name(withdrawal::NAME)
+            .expect("expected to get document type");
+
+        // Read the JSON file containing withdrawal documents
+        let json_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/supporting_files/withdrawals_testnet_query_issue.json"
+        );
+        let json_content =
+            fs::read_to_string(json_path).expect("Failed to read withdrawals test data file");
+
+        // Parse the JSON file - it contains multiple JSON objects separated by empty lines
+        let mut queued_count = 0;
+        let documents: Vec<&str> = json_content
+            .split("\n\n")
+            .filter(|s| !s.trim().is_empty())
+            .collect();
+
+        for doc_json in documents {
+            // Parse the document
+            let doc_value: serde_json::Value =
+                serde_json::from_str(doc_json).expect("Failed to parse withdrawal document JSON");
+
+            // Extract required fields
+            let status = doc_value["status"]
+                .as_u64()
+                .expect("status should be a number") as u8;
+
+            // Only insert QUEUED documents (status = 0)
+            if status == withdrawals_contract::WithdrawalStatus::QUEUED as u8 {
+                queued_count += 1;
+
+                // Create a platform_value from the JSON
+                let mut properties = platform_value!({});
+                if let serde_json::Value::Object(map) = &doc_value {
+                    for (key, value) in map {
+                        if !key.starts_with('$') && key != "outputScript" {
+                            // Convert JSON value to platform value
+                            match value {
+                                serde_json::Value::Number(n) => {
+                                    if let Some(u) = n.as_u64() {
+                                        let _ = properties.insert(key.clone(), Value::U64(u));
+                                    } else if let Some(i) = n.as_i64() {
+                                        let _ = properties.insert(key.clone(), Value::I64(i));
+                                    }
+                                }
+                                serde_json::Value::String(s) => {
+                                    let _ = properties.insert(key.clone(), Value::Text(s.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                // Handle outputScript separately (it's base64 encoded)
+                if let Some(output_script_b64) = doc_value["outputScript"].as_str() {
+                    use base64::{engine::general_purpose, Engine as _};
+                    let output_script_bytes = general_purpose::STANDARD
+                        .decode(output_script_b64)
+                        .expect("Failed to decode outputScript");
+                    let _ = properties.insert(
+                        "outputScript".to_string(),
+                        Value::Bytes(output_script_bytes.into()),
+                    );
+                }
+
+                // Extract owner ID
+                let owner_id_str = doc_value["$ownerId"]
+                    .as_str()
+                    .expect("$ownerId should be a string");
+                let owner_id = Identifier::from_string(owner_id_str, Encoding::Base58)
+                    .expect("Failed to parse owner ID");
+
+                // Create the document
+                let document = get_withdrawal_document_fixture(
+                    &data_contract,
+                    owner_id,
+                    properties,
+                    None,
+                    platform_version.protocol_version,
+                )
+                .expect("expected withdrawal document");
+
+                setup_document(
+                    &drive,
+                    &document,
+                    &data_contract,
+                    document_type,
+                    Some(&transaction),
+                );
+            }
+        }
+
+        println!(
+            "Inserted {} QUEUED withdrawal documents from test file",
+            queued_count
+        );
+
+        // Now fetch the oldest queued withdrawal documents with a limit of 4
+        let fetched_documents = drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::QUEUED as u8,
+                4, // Request 4 documents
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("to fetch documents by status");
+
+        // We should get exactly 4 documents back
+        assert_eq!(
+            fetched_documents.len(),
+            4,
+            "Expected to receive exactly 4 withdrawal documents"
+        );
+
+        // Verify they are sorted by updatedAt in ascending order (oldest first)
+        for i in 1..fetched_documents.len() {
+            let prev_updated_at = fetched_documents[i - 1]
+                .updated_at()
+                .expect("Document should have updatedAt");
+            let curr_updated_at = fetched_documents[i]
+                .updated_at()
+                .expect("Document should have updatedAt");
+
+            assert!(
+                prev_updated_at <= curr_updated_at,
+                "Documents should be sorted by updatedAt in ascending order"
+            );
+        }
+
+        // Verify all returned documents have status QUEUED
+        for doc in &fetched_documents {
+            let status: u8 = doc
+                .properties()
+                .get_integer(withdrawal::properties::STATUS)
+                .expect("Document should have status");
+            assert_eq!(
+                status,
+                withdrawals_contract::WithdrawalStatus::QUEUED as u8,
+                "All returned documents should have QUEUED status"
+            );
+        }
     }
 }

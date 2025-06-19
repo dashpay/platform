@@ -42,6 +42,10 @@ where
         )?;
 
         if documents.is_empty() {
+            tracing::debug!(
+                block_info.height,
+                "No queued withdrawal documents found to pool into transactions"
+            );
             return Ok(());
         }
 
@@ -49,6 +53,12 @@ where
         let withdrawals_info = self
             .drive
             .calculate_current_withdrawal_limit(transaction, platform_version)?;
+
+        tracing::trace!(
+            ?withdrawals_info,
+            documents_count = documents.len(),
+            "Calculated withdrawal limit info"
+        );
 
         let current_withdrawal_limit = withdrawals_info.available();
 
@@ -91,6 +101,10 @@ where
         }
 
         if documents_to_process.is_empty() {
+            tracing::debug!(
+                block_info = %block_info,
+                "No withdrawal documents to process"
+            );
             return Ok(());
         }
 
