@@ -6,7 +6,6 @@ use platform_value::{Value, ValueMapHelper};
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
     "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json";
 
-
 pub const PROPERTY_SCHEMA: &str = "$schema";
 
 const SYSTEM_GENERATED_FIELDS: [&str; 9] = [
