@@ -105,6 +105,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
+    use dpp::platform_value;
     use dpp::platform_value::platform_value;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
@@ -244,7 +245,6 @@ mod tests {
             fs::read_to_string(json_path).expect("Failed to read withdrawals test data file");
 
         // Parse the JSON file - it contains multiple JSON objects separated by empty lines
-        let mut queued_count = 0;
         let documents: Vec<&str> = json_content
             .split("\n\n")
             .filter(|s| !s.trim().is_empty())
@@ -260,76 +260,45 @@ mod tests {
                 .as_u64()
                 .expect("status should be a number") as u8;
 
-            // Only insert QUEUED documents (status = 0)
-            if status == withdrawals_contract::WithdrawalStatus::QUEUED as u8 {
-                queued_count += 1;
+            let mut properties: Value = doc_value.clone().into();
 
-                // Create a platform_value from the JSON
-                let mut properties = platform_value!({});
-                if let serde_json::Value::Object(map) = &doc_value {
-                    for (key, value) in map {
-                        if !key.starts_with('$') && key != "outputScript" {
-                            // Convert JSON value to platform value
-                            match value {
-                                serde_json::Value::Number(n) => {
-                                    if let Some(u) = n.as_u64() {
-                                        let _ = properties.insert(key.clone(), Value::U64(u));
-                                    } else if let Some(i) = n.as_i64() {
-                                        let _ = properties.insert(key.clone(), Value::I64(i));
-                                    }
-                                }
-                                serde_json::Value::String(s) => {
-                                    let _ = properties.insert(key.clone(), Value::Text(s.clone()));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-
-                // Handle outputScript separately (it's base64 encoded)
-                if let Some(output_script_b64) = doc_value["outputScript"].as_str() {
-                    use base64::{engine::general_purpose, Engine as _};
-                    let output_script_bytes = general_purpose::STANDARD
-                        .decode(output_script_b64)
-                        .expect("Failed to decode outputScript");
-                    let _ = properties.insert(
-                        "outputScript".to_string(),
-                        Value::Bytes(output_script_bytes.into()),
-                    );
-                }
-
-                // Extract owner ID
-                let owner_id_str = doc_value["$ownerId"]
-                    .as_str()
-                    .expect("$ownerId should be a string");
-                let owner_id = Identifier::from_string(owner_id_str, Encoding::Base58)
-                    .expect("Failed to parse owner ID");
-
-                // Create the document
-                let document = get_withdrawal_document_fixture(
-                    &data_contract,
-                    owner_id,
-                    properties,
-                    None,
-                    platform_version.protocol_version,
-                )
-                .expect("expected withdrawal document");
-
-                setup_document(
-                    &drive,
-                    &document,
-                    &data_contract,
-                    document_type,
-                    Some(&transaction),
+            // Handle outputScript separately (it's base64 encoded)
+            if let Some(output_script_b64) = doc_value["outputScript"].as_str() {
+                use base64::{engine::general_purpose, Engine as _};
+                let output_script_bytes = general_purpose::STANDARD
+                    .decode(output_script_b64)
+                    .expect("Failed to decode outputScript");
+                let _ = properties.insert(
+                    "outputScript".to_string(),
+                    Value::Bytes(output_script_bytes.into()),
                 );
             }
-        }
 
-        println!(
-            "Inserted {} QUEUED withdrawal documents from test file",
-            queued_count
-        );
+            // Extract owner ID
+            let owner_id_str = doc_value["$ownerId"]
+                .as_str()
+                .expect("$ownerId should be a string");
+            let owner_id = Identifier::from_string(owner_id_str, Encoding::Base58)
+                .expect("Failed to parse owner ID");
+
+            // Create the document
+            let document = get_withdrawal_document_fixture(
+                &data_contract,
+                owner_id,
+                properties,
+                None,
+                platform_version.protocol_version,
+            )
+            .expect("expected withdrawal document");
+
+            setup_document(
+                &drive,
+                &document,
+                &data_contract,
+                document_type,
+                Some(&transaction),
+            );
+        }
 
         // Now fetch the oldest queued withdrawal documents with a limit of 4
         let fetched_documents = drive

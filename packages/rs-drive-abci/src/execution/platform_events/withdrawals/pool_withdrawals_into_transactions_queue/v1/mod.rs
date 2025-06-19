@@ -43,7 +43,10 @@ where
 
         if documents.is_empty() {
             tracing::debug!(
-                block_info.height,
+                height = block_info.height,
+                withdrawal_limit = platform_version
+                    .system_limits
+                    .withdrawal_transactions_per_block_limit,
                 "No queued withdrawal documents found to pool into transactions"
             );
             return Ok(());
