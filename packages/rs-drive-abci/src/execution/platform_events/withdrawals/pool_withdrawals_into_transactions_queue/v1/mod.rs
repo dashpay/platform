@@ -49,6 +49,26 @@ where
                     .withdrawal_transactions_per_block_limit,
                 "No queued withdrawal documents found to pool into transactions"
             );
+            let documents_with_higher_limit =
+                self.drive.fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                    300,
+                    transaction,
+                    platform_version,
+                )?;
+            if documents_with_higher_limit.is_empty() {
+                tracing::debug!(
+                    height = block_info.height,
+                    withdrawal_limit = 300,
+                    "No queued withdrawal documents found to pool into transactions even with higher limit"
+                );
+            } else {
+                tracing::debug!(
+                    document_count = documents_with_higher_limit.len(),
+                    withdrawal_limit = 300,
+                    "Queued withdrawal documents with higher limit found",
+                );
+            }
             return Ok(());
         }
 
