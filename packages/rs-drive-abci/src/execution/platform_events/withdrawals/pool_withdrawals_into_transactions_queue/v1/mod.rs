@@ -49,24 +49,51 @@ where
                     .withdrawal_transactions_per_block_limit,
                 "No queued withdrawal documents found to pool into transactions"
             );
-            let documents_with_higher_limit =
-                self.drive.fetch_oldest_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-                    300,
-                    transaction,
-                    platform_version,
-                )?;
-            if documents_with_higher_limit.is_empty() {
+            let all_documents = self
+                .drive
+                .fetch_oldest_withdrawal_documents(transaction, platform_version)?;
+            if all_documents.is_empty() {
                 tracing::debug!(
                     height = block_info.height,
-                    withdrawal_limit = 300,
-                    "No queued withdrawal documents found to pool into transactions even with higher limit"
+                    "No withdrawal documents found at all"
                 );
             } else {
+                // Count documents by status
+                let queued_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::QUEUED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let pooled_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::POOLED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let broadcasted_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::BROADCASTED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let complete_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::COMPLETE as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let expired_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::EXPIRED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let total_documents = queued_count
+                    + pooled_count
+                    + broadcasted_count
+                    + complete_count
+                    + expired_count;
+
                 tracing::debug!(
-                    document_count = documents_with_higher_limit.len(),
-                    withdrawal_limit = 300,
-                    "Queued withdrawal documents with higher limit found",
+                    height = block_info.height,
+                    total_documents,
+                    queued_count,
+                    pooled_count,
+                    broadcasted_count,
+                    complete_count,
+                    expired_count,
+                    "Found withdrawal documents grouped by status"
                 );
             }
             return Ok(());
