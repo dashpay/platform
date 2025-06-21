@@ -39,6 +39,7 @@ impl Drive {
         }
     }
 
+    ///Helper method
     pub fn fetch_oldest_withdrawal_documents(
         &self,
         transaction: TransactionArg,
