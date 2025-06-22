@@ -22,26 +22,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let data_contract_id = withdrawals_contract::ID;
+        let withdrawals_contract = self.cache.system_data_contracts.load_withdrawals();
 
-        let contract_fetch_info = self
-            .get_contract_with_fetch_info_and_fee(
-                data_contract_id.to_buffer(),
-                None,
-                true,
-                transaction,
-                platform_version,
-            )?
-            .1
-            .ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "Can't fetch data contract",
-                ))
-            })?;
-
-        let document_type = contract_fetch_info
-            .contract
-            .document_type_for_name(withdrawal::NAME)?;
+        let document_type = withdrawals_contract.document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -66,7 +49,7 @@ impl Drive {
         );
 
         let drive_query = DriveDocumentQuery {
-            contract: &contract_fetch_info.contract,
+            contract: &withdrawals_contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
