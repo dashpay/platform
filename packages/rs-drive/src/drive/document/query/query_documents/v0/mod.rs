@@ -93,8 +93,14 @@ impl Drive {
             .into_iter()
             .map(|serialized| {
                 Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
+                    .map_err(|e| {
+                        Error::ProtocolWithInfoString(
+                            e,
+                            format!("document bytes are {}", hex::encode(serialized)),
+                        )
+                    })
             })
-            .collect::<Result<Vec<Document>, ProtocolError>>()?;
+            .collect::<Result<Vec<Document>, Error>>()?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = Drive::calculate_fee(
                 None,
