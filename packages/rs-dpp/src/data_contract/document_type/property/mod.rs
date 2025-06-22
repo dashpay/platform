@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-use std::io::{BufReader, Cursor, Read};
+use std::io::{BufRead, BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
 

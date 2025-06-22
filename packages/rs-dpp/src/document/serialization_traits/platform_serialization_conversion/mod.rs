@@ -142,4 +142,60 @@ mod tests {
                 .expect("expected to serialize consume");
         }
     }
+
+    #[test]
+    fn test_withdrawal_deserialization() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/withdrawals/withdrawals-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get withdrawals contract");
+
+        //  Header (65 bytes)
+        //
+        //   - 01 - Document Version (1 byte): Value = 1
+        //   - 0053626cafc76f47062f936c5938190f5f30aac997b8fc22e81c1d9a7f903bd9 - Document ID (32 bytes)
+        //   - fa8696d3f39c518784e53be79ee199e70387f9a7408254de920c1f3779de2856 - Owner ID (32 bytes)
+        //
+        //   Metadata (19 bytes)
+        //
+        //   - 01 - Revision (1 byte): Value = 1
+        //   - 0003 - Bitwise flags (2 bytes): Binary 0000000000000011
+        //     - Bit 0 set: createdAt present
+        //     - Bit 1 set: updatedAt present
+        //   - 0000019782b96d14 - createdAt timestamp (8 bytes): 1750244879636
+        //   - 0000019782b96d14 - updatedAt timestamp (8 bytes): 1750244879636
+        //
+        //   User Properties (42 bytes)
+        //
+        //   - 00 - transactionIndex marker (1 byte): 0 = absent
+        //   - 00 - transactionSignHeight marker (1 byte): 0 = absent
+        //   - 00000002540be400 - amount (8 bytes): 10000000000 duffs (100 DASH)
+        //   - 00000001 - coreFeePerByte (4 bytes): 1 duff/byte
+        //   - 00 - pooling (1 byte): 0 (Never pool)
+        //   - 19 - outputScript length (1 byte varint): 25 bytes
+        //   - 76a9149e3292d2612122d81613fdb893dd36a04df3355588ac - outputScript data (25 bytes)
+        //     - This is a standard Bitcoin P2PKH script:
+        //         - 76 = OP_DUP
+        //       - a9 = OP_HASH160
+        //       - 14 = Push 20 bytes
+        //       - 9e3292d2612122d81613fdb893dd36a04df33555 = recipient's pubkey hash
+        //       - 88 = OP_EQUALVERIFY
+        //       - ac = OP_CHECKSIG
+        //   - 00 - status (1 byte): 0 (QUEUED)
+
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("expected to get profile document type");
+        let serialized_document = hex::decode("010053626cafc76f47062f936c5938190f5f30aac997b8fc22e81c1d9a7f903bd9fa8696d3f39c518784e53be79ee199e70387f9a7408254de920c1f3779de28560100030000019782b96d140000019782b96d14000000000002540be40000000001001976a9149e3292d2612122d81613fdb893dd36a04df3355588ac00").expect("expected document hex bytes");
+
+        let deserialized_document = Document::from_bytes(
+            serialized_document.as_slice(),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to deserialize a document");
+    }
 }

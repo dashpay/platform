@@ -96,7 +96,11 @@ impl Drive {
                     .map_err(|e| {
                         Error::ProtocolWithInfoString(
                             e,
-                            format!("document bytes are {}", hex::encode(serialized)),
+                            format!(
+                                "document bytes are {}, query is using contract {:?}",
+                                hex::encode(serialized),
+                                query.contract
+                            ),
                         )
                     })
             })
