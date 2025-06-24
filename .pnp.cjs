@@ -8644,7 +8644,7 @@ const RAW_RUNTIME_STATE =
           ["chalk", "npm:4.1.2"],\
           ["cron", "npm:2.1.0"],\
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
-          ["diskusage", "npm:1.2.0"],\
+          ["diskusage-ng", "npm:1.0.4"],\
           ["dockerode", "npm:4.0.5"],\
           ["dot", "npm:1.1.3"],\
           ["dotenv", "npm:8.6.0"],\
@@ -9173,14 +9173,11 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
-    ["diskusage", [\
-      ["npm:1.2.0", {\
-        "packageLocation": "./.yarn/unplugged/diskusage-npm-1.2.0-3d0577ad86/node_modules/diskusage/",\
+    ["diskusage-ng", [\
+      ["npm:1.0.4", {\
+        "packageLocation": "./.yarn/cache/diskusage-ng-npm-1.0.4-f8171e5032-b219f4197f.zip/node_modules/diskusage-ng/",\
         "packageDependencies": [\
-          ["diskusage", "npm:1.2.0"],\
-          ["es6-promise", "npm:4.2.8"],\
-          ["nan", "npm:2.20.0"],\
-          ["node-gyp", "npm:10.0.1"]\
+          ["diskusage-ng", "npm:1.0.4"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -14658,14 +14655,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/unplugged/nan-npm-2.17.0-bf36a21d6f/node_modules/nan/",\
         "packageDependencies": [\
           ["nan", "npm:2.17.0"],\
-          ["node-gyp", "npm:10.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:2.20.0", {\
-        "packageLocation": "./.yarn/unplugged/nan-npm-2.20.0-5b5be83e88/node_modules/nan/",\
-        "packageDependencies": [\
-          ["nan", "npm:2.20.0"],\
           ["node-gyp", "npm:10.0.1"]\
         ],\
         "linkType": "HARD"\
