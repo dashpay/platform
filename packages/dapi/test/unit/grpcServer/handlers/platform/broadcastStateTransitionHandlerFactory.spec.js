@@ -194,8 +194,8 @@ describe('broadcastStateTransitionHandlerFactory', () => {
       data: 'tx already exists in cache',
     };
 
-    requestTenderRpcMock.withArgs('unconfirmed_txs').resolves({
-      txs: [stateTransitionFixture.toBuffer().toString('base64')],
+    requestTenderRpcMock.withArgs('unconfirmed_tx').resolves({
+      tx: stateTransitionFixture.toBuffer().toString('base64'),
     });
 
     try {

@@ -76,11 +76,20 @@ function broadcastStateTransitionHandlerFactory(
             .update(stBytes)
             .digest();
 
-          // TODO: Apply search filter to fetch specific state transition
           // Throw an already exist in mempool error if the ST in mempool
-          const unconfirmedTxsResponse = await requestTenderRpc('unconfirmed_txs', { limit: 100 });
+          let unconfirmedTxResponse;
+          try {
+            unconfirmedTxResponse = await requestTenderRpc(
+              'unconfirmed_tx',
+              { hash: `0x${stHash.toString('hex')}` },
+            );
+          } catch (e) {
+            if (typeof e.data !== 'string' || !e.data.includes('not found')) {
+              throw e;
+            }
+          }
 
-          if (unconfirmedTxsResponse?.txs?.includes(stBytes.toString('base64'))) {
+          if (unconfirmedTxResponse?.tx) {
             throw new AlreadyExistsGrpcError('state transition already in mempool');
           }
 

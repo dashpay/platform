@@ -1086,6 +1086,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.5-dev';
+          });
+        return configFile;
+      },
     };
   }
 
