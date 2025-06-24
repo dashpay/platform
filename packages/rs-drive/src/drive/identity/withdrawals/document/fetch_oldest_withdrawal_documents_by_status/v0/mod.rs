@@ -126,10 +126,7 @@ impl Drive {
                 .properties()
                 .get_integer::<u8>(withdrawal::properties::STATUS)
             {
-                documents_by_status
-                    .entry(status)
-                    .or_insert_with(Vec::new)
-                    .push(doc);
+                documents_by_status.entry(status).or_default().push(doc);
             }
         }
 

@@ -162,7 +162,7 @@ pub fn generate_test_masternodes(
 
         for (key, values) in input {
             for value in values {
-                output.entry(value).or_insert_with(Vec::new).push(key);
+                output.entry(value).or_default().push(key);
             }
         }
 
