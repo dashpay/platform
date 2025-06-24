@@ -52,6 +52,15 @@ pub enum ExecutionError {
         known_versions: Vec<FeatureVersion>,
     },
 
+    /// We don't have the required protocol version. Most liekly the platform must be upgraded.
+    #[error("platform protocol version {required} is not supported, max supported is {max_supported}; please upgrade")]
+    ProtocolVersionNotSupported {
+        /// The maximum supported protocol version
+        max_supported: u32,
+        /// Protocol version requested by the network
+        required: u32,
+    },
+
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]
     CorruptedCachedState(String),
