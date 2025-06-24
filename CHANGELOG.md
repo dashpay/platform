@@ -1,3 +1,36 @@
+## [2.0.0-rc.18](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0-rc.18) (2025-06-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** properly use withdrawal system data contract. (#2675)
+
+### Features
+
+* **dpp:** add detailed interval evaluation explanation functionality ([#2662](https://github.com/dashpay/platform/issues/2662))
+* replace diskusage with diskusage-ng for improved functionality ([#2680](https://github.com/dashpay/platform/issues/2680))
+* **sdk:** fetch token contract info ([#2670](https://github.com/dashpay/platform/issues/2670))
+
+
+### Bug Fixes
+
+* **drive-abci:** fixed issue with adding a key with contract bounds ([#2673](https://github.com/dashpay/platform/issues/2673))
+* **platform:** properly use withdrawal system data contract. ([#2675](https://github.com/dashpay/platform/issues/2675))
+
+
+### Continuous Integration
+
+* add gRPC coverage check and cache management ([#2667](https://github.com/dashpay/platform/issues/2667))
+
+
+### Miscellaneous Chores
+
+* **platform:** remove dash devs discord from readme ([#2668](https://github.com/dashpay/platform/issues/2668))
+* **release:** update changelog and bump version to 2.0.0-rc.17 ([#2674](https://github.com/dashpay/platform/issues/2674))
+* remove unused token meta schema and references ([#2677](https://github.com/dashpay/platform/issues/2677))
+* update js dependencies to latest versions ([#2678](https://github.com/dashpay/platform/issues/2678))
+* update minimatch to version 9.0.5 and brace-expansion to version 2.0.2 ([#2672](https://github.com/dashpay/platform/issues/2672))
+
 ## [2.0.0-rc.17](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0-rc.17) (2025-06-18)
 
 
