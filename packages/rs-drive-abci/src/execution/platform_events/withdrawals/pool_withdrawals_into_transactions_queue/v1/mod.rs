@@ -57,7 +57,7 @@ where
                     height = block_info.height,
                     "No withdrawal documents found at all"
                 );
-            } else {
+            } else if tracing::enabled!(tracing::Level::DEBUG) {
                 // Count documents by status
                 let queued_count = all_documents
                     .get(&(withdrawals_contract::WithdrawalStatus::QUEUED as u8))
