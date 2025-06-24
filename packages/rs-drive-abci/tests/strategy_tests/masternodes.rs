@@ -158,11 +158,11 @@ pub fn generate_test_masternodes(
     }
 
     fn invert_btreemap(input: BTreeMap<u32, Vec<u16>>) -> BTreeMap<u16, Vec<u32>> {
-        let mut output = BTreeMap::new();
+        let mut output: BTreeMap<u16, Vec<u32>> = BTreeMap::new();
 
         for (key, values) in input {
             for value in values {
-                output.entry(value).or_insert_with(Vec::new).push(key);
+                output.entry(value).or_default().push(key);
             }
         }
 

@@ -1,4 +1,4 @@
-use crate::data_contract::config::v0::DataContractConfigV0;
+use crate::data_contract::config::v1::DataContractConfigV1;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
@@ -26,7 +26,7 @@ pub struct DataContractInSerializationFormatV1 {
     pub id: Identifier,
 
     /// Internal configuration for the contract.
-    #[serde(default = "DataContractConfigV0::default_with_version")]
+    #[serde(default = "DataContractConfigV1::default_with_version")]
     pub config: DataContractConfig,
 
     /// The version of this data contract.

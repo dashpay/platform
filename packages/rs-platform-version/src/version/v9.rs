@@ -5,7 +5,7 @@ use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v2::DOCUMENT_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_method_versions::v1::DPP_METHOD_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
@@ -29,8 +29,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_9: ProtocolVersion = 9;
 
-/// This version adds token support.
-//todo: make changes
+/// This version adds token support and was for Platform release 2.0.0
 pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_9,
     drive: DRIVE_VERSION_V4, // changed (for data contract insert and update)
@@ -54,7 +53,7 @@ pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V1,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V1,
+        methods: DPP_METHOD_VERSIONS_V2,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,

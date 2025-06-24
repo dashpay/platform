@@ -42,6 +42,60 @@ where
         )?;
 
         if documents.is_empty() {
+            tracing::debug!(
+                height = block_info.height,
+                withdrawal_limit = platform_version
+                    .system_limits
+                    .withdrawal_transactions_per_block_limit,
+                "No queued withdrawal documents found to pool into transactions"
+            );
+            let all_documents = self
+                .drive
+                .fetch_oldest_withdrawal_documents(transaction, platform_version)?;
+            if all_documents.is_empty() {
+                tracing::debug!(
+                    height = block_info.height,
+                    "No withdrawal documents found at all"
+                );
+            } else if tracing::enabled!(tracing::Level::DEBUG) {
+                // Count documents by status
+                let queued_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::QUEUED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let pooled_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::POOLED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let broadcasted_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::BROADCASTED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let complete_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::COMPLETE as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let expired_count = all_documents
+                    .get(&(withdrawals_contract::WithdrawalStatus::EXPIRED as u8))
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                let total_documents = queued_count
+                    + pooled_count
+                    + broadcasted_count
+                    + complete_count
+                    + expired_count;
+
+                tracing::debug!(
+                    height = block_info.height,
+                    total_documents,
+                    queued_count,
+                    pooled_count,
+                    broadcasted_count,
+                    complete_count,
+                    expired_count,
+                    "Found withdrawal documents grouped by status"
+                );
+            }
             return Ok(());
         }
 
@@ -49,6 +103,12 @@ where
         let withdrawals_info = self
             .drive
             .calculate_current_withdrawal_limit(transaction, platform_version)?;
+
+        tracing::trace!(
+            ?withdrawals_info,
+            documents_count = documents.len(),
+            "Calculated withdrawal limit info"
+        );
 
         let current_withdrawal_limit = withdrawals_info.available();
 
@@ -75,7 +135,7 @@ where
                     ))
                 })?;
 
-            // If adding this withdrawal would exceed the limit, stop processing further.
+            // If adding this withdrawal would exceed the limit, stop further processing.
             if potential_total_withdrawal_amount > current_withdrawal_limit {
                 tracing::debug!(
                     "Pooling is limited due to daily withdrawals limit. {} credits left",
@@ -91,6 +151,10 @@ where
         }
 
         if documents_to_process.is_empty() {
+            tracing::debug!(
+                block_info = %block_info,
+                "No withdrawal documents to process"
+            );
             return Ok(());
         }
 
