@@ -40,10 +40,6 @@ lazy_static! {
         "../../../schema/meta_schemas/document/v0/document-meta.json"
     ))
     .unwrap();
-    static ref TOKEN_META_JSON_V0: Value = serde_json::from_str::<Value>(include_str!(
-        "../../../schema/meta_schemas/token/v0/token-meta.json"
-    ))
-    .unwrap();
 
     pub static ref DRAFT_202012_META_SCHEMA: JSONSchema = JSONSchema::options()
         .with_draft(Draft::Draft202012)
@@ -143,57 +139,4 @@ lazy_static! {
         .compile(&DOCUMENT_META_JSON_V0)
         .expect("Invalid data contract schema");
 
-    // Compiled version of token meta schema
-    pub static ref TOKEN_META_SCHEMA_V0: JSONSchema = JSONSchema::options()
-        .with_keyword(
-            "byteArray",
-            |_, _, _| Ok(Box::new(ByteArrayKeyword)),
-        )
-        .with_patterns_regex_engine(RegexEngine::Regex(RegexOptions {
-            size_limit: Some(5 * (1 << 20)),
-            ..Default::default()
-        }))
-        .should_ignore_unknown_formats(false)
-        .should_validate_formats(true)
-        .with_patterns_regex_engine(RegexEngine::Regex(Default::default()))
-        .with_draft(Draft::Draft202012)
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
-            DRAFT202012_APPLICATOR.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/core".to_string(),
-            DRAFT202012_CORE.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
-            DRAFT202012_APPLICATOR.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/unevaluated".to_string(),
-            DRAFT202012_UNEVALUATED.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/validation".to_string(),
-            DRAFT202012_VALIDATION.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/meta-data".to_string(),
-            DRAFT202012_META_DATA.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/format-annotation".to_string(),
-            DRAFT202012_FORMAT_ANNOTATION.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/meta/content".to_string(),
-            DRAFT202012_CONTENT.clone(),
-        )
-        .with_document(
-            "https://json-schema.org/draft/2020-12/schema".to_string(),
-            DRAFT202012.clone(),
-        )
-        .to_owned()
-        .compile(&TOKEN_META_JSON_V0)
-        .expect("Invalid data contract schema");
 }

@@ -1,3 +1,27 @@
+## [2.0.0-rc.17](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0-rc.17) (2025-06-18)
+
+
+### Features
+
+* **dpp:** add detailed interval evaluation explanation functionality ([#2662](https://github.com/dashpay/platform/issues/2662))
+* **sdk:** fetch token contract info ([#2670](https://github.com/dashpay/platform/issues/2670))
+
+
+### Bug Fixes
+
+* **drive-abci:** fixed issue with adding a key with contract bounds ([#2673](https://github.com/dashpay/platform/issues/2673))
+
+
+### Continuous Integration
+
+* add gRPC coverage check and cache management ([#2667](https://github.com/dashpay/platform/issues/2667))
+
+
+### Miscellaneous Chores
+
+* **platform:** remove dash devs discord from readme ([#2668](https://github.com/dashpay/platform/issues/2668))
+* update minimatch to version 9.0.5 and brace-expansion to version 2.0.2 ([#2672](https://github.com/dashpay/platform/issues/2672))
+
 ## [2.0.0-rc.16](https://github.com/dashpay/platform/compare/v2.0.0-rc.14...v2.0.0-rc.16) (2025-06-10)
 
 
