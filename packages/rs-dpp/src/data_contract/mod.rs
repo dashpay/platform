@@ -337,7 +337,6 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let data_contract = load_system_data_contract(Dashpay, platform_version)
             .expect("expected dashpay contract");
-        let platform_version = PlatformVersion::latest();
         let serialized = data_contract
             .serialize_to_bytes_with_platform_version(platform_version)
             .expect("expected to serialize data contract");

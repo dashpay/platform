@@ -1,10 +1,8 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -156,6 +154,7 @@ mod tests {
         setup_document, setup_drive_with_initial_state_structure, setup_system_data_contract,
     };
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::withdrawals_contract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;

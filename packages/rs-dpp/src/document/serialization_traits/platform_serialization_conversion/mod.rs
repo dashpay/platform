@@ -191,7 +191,7 @@ mod tests {
             .expect("expected to get profile document type");
         let serialized_document = hex::decode("010053626cafc76f47062f936c5938190f5f30aac997b8fc22e81c1d9a7f903bd9fa8696d3f39c518784e53be79ee199e70387f9a7408254de920c1f3779de28560100030000019782b96d140000019782b96d14000000000002540be40000000001001976a9149e3292d2612122d81613fdb893dd36a04df3355588ac00").expect("expected document hex bytes");
 
-        let deserialized_document = Document::from_bytes(
+        let _deserialized_document = Document::from_bytes(
             serialized_document.as_slice(),
             document_type,
             platform_version,
