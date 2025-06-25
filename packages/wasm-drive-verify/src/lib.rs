@@ -58,10 +58,10 @@ pub mod token_verification {
 pub mod governance_verification {
     #[cfg(any(feature = "group", feature = "governance", feature = "full"))]
     pub use crate::group::*;
-    
+
     #[cfg(any(feature = "voting", feature = "governance", feature = "full"))]
     pub use crate::voting::*;
-    
+
     #[cfg(any(feature = "system", feature = "governance", feature = "full"))]
     pub use crate::system::*;
 }

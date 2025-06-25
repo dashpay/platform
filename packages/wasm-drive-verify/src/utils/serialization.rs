@@ -1,8 +1,8 @@
-use dpp::identity::Identity;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::Identity;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -25,7 +25,10 @@ pub struct PublicKeyJson {
 
 pub fn identity_to_js_value(identity: Identity) -> Result<JsValue, JsValue> {
     let identity_json = IdentityJson {
-        id: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, identity.id().as_bytes()),
+        id: base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            identity.id().as_bytes(),
+        ),
         balance: identity.balance(),
         revision: identity.revision(),
         public_keys: identity
@@ -36,11 +39,14 @@ pub fn identity_to_js_value(identity: Identity) -> Result<JsValue, JsValue> {
                 purpose: key.purpose() as u8,
                 security_level: key.security_level() as u8,
                 key_type: key.key_type() as u8,
-                data: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, key.data().as_slice()),
+                data: base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    key.data().as_slice(),
+                ),
             })
             .collect(),
     };
-    
+
     serde_wasm_bindgen::to_value(&identity_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize identity: {}", e)))
 }

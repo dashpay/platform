@@ -1,3 +1,4 @@
+use crate::utils::serialization::document_to_js_value;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
@@ -9,7 +10,6 @@ use js_sys::{Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-use crate::utils::serialization::document_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyStartAtDocumentInProofResult {

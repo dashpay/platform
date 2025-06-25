@@ -1,9 +1,9 @@
+use crate::utils::serialization::identity_to_js_value;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
-use crate::utils::serialization::identity_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentityByNonUniquePublicKeyHashResult {

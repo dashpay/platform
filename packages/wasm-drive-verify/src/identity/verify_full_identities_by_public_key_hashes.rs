@@ -1,3 +1,4 @@
+use crate::utils::serialization::identity_to_js_value;
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -5,7 +6,6 @@ use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-use crate::utils::serialization::identity_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentitiesByPublicKeyHashesResult {
