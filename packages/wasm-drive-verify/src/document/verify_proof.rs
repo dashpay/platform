@@ -9,7 +9,7 @@ use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-use wasm_dpp::document::DocumentWasm;
+use crate::utils::serialization::document_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyDocumentProofResult {
@@ -107,9 +107,8 @@ pub fn verify_document_proof(
     // Convert documents to JS array
     let js_array = Array::new();
     for doc in documents {
-        // Convert document to DocumentWasm then to JS
-        let doc_wasm = DocumentWasm::from(doc);
-        let doc_js = JsValue::from(doc_wasm);
+        // Convert document to JS value
+        let doc_js = document_to_js_value(doc)?;
         js_array.push(&doc_js);
     }
 

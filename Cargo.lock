@@ -6132,7 +6132,6 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
- "wasm-dpp",
 ]
 
 [[package]]

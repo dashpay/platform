@@ -3,7 +3,7 @@ use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof
 use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
-use wasm_dpp::identity::IdentityWasm;
+use crate::utils::serialization::identity_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentityByNonUniquePublicKeyHashResult {
@@ -68,10 +68,7 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     let identity_js = match identity_option {
-        Some(identity) => {
-            let identity_wasm: IdentityWasm = identity.into();
-            JsValue::from(identity_wasm)
-        }
+        Some(identity) => identity_to_js_value(identity)?,
         None => JsValue::NULL,
     };
 

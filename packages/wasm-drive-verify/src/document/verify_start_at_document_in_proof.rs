@@ -9,7 +9,7 @@ use js_sys::{Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-use wasm_dpp::document::DocumentWasm;
+use crate::utils::serialization::document_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyStartAtDocumentInProofResult {
@@ -120,9 +120,8 @@ pub fn verify_start_at_document_in_proof(
     // Convert document to JS value
     let document_js = match document_option {
         Some(doc) => {
-            // Convert document to DocumentWasm then to JS
-            let doc_wasm = DocumentWasm::from(doc);
-            JsValue::from(doc_wasm)
+            // Convert document to JS value
+            document_to_js_value(doc)?
         }
         None => JsValue::NULL,
     };

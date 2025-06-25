@@ -5,7 +5,7 @@ use drive::verify::RootHash;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-use wasm_dpp::identity::IdentityWasm;
+use crate::utils::serialization::identity_to_js_value;
 
 #[wasm_bindgen]
 pub struct VerifyFullIdentitiesByPublicKeyHashesResult {
@@ -79,8 +79,7 @@ pub fn verify_full_identities_by_public_key_hashes_vec(
         // Add identity
         match identity_option {
             Some(identity) => {
-                let identity_wasm: IdentityWasm = identity.into();
-                let identity_js = JsValue::from(identity_wasm);
+                let identity_js = identity_to_js_value(identity)?;
                 tuple_array.push(&identity_js);
             }
             None => {
@@ -144,10 +143,7 @@ pub fn verify_full_identities_by_public_key_hashes_map(
         let hex_key = hex::encode(&hash);
 
         let identity_js = match identity_option {
-            Some(identity) => {
-                let identity_wasm: IdentityWasm = identity.into();
-                JsValue::from(identity_wasm)
-            }
+            Some(identity) => identity_to_js_value(identity)?,
             None => JsValue::NULL,
         };
 

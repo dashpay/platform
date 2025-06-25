@@ -2,7 +2,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
-use wasm_dpp::data_contract::DataContractWasm;
+use serde_wasm_bindgen::to_value;
 
 #[wasm_bindgen]
 pub struct VerifyContractResult {
@@ -54,8 +54,8 @@ pub fn verify_contract(
 
     let contract_js = match contract_option {
         Some(contract) => {
-            let contract_wasm = DataContractWasm::from(contract);
-            JsValue::from(contract_wasm)
+            to_value(&contract)
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize contract: {:?}", e)))?
         }
         None => JsValue::NULL,
     };

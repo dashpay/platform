@@ -22,7 +22,9 @@ if ! command -v wasm-bindgen &> /dev/null; then
 fi
 wasm-bindgen ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm \
     --out-dir pkg \
-    --target web
+    --target web \
+    --no-modules-global \
+    --split
 
 # Create proper package.json if it doesn't exist or is incomplete
 if [ ! -f pkg/package.json ] || ! grep -q '"name"' pkg/package.json; then

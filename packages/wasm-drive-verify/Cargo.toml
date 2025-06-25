@@ -11,11 +11,21 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
-dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "system_contracts"] }
-wasm-dpp = { path = "../wasm-dpp" }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "state-transitions", 
+    "system_contracts",
+    "data-contract-serde-conversion",
+    "data-contract-json-conversion",
+    "identity-serde-conversion",
+    "document-serde-conversion",
+    "document-json-conversion",
+    "state-transition-serde-conversion",
+    "vote-serde-conversion",
+    "platform-value-json"
+] }
 
 wasm-bindgen = { version = "0.2.89" }
-serde = { version = "1.0.193", default-features = false, features = ["alloc"] }
+serde = { version = "1.0.193", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde-wasm-bindgen = { version = "0.6.0" }
 js-sys = { version = "0.3.64" }
@@ -29,14 +39,43 @@ bincode = { version = "2.0.0-rc.3" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.39"
-dpp = { path = "../rs-dpp", default-features = false, features = ["state-transitions", "random-public-keys", "random-identities", "random-documents", "system_contracts"] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "state-transitions", 
+    "random-public-keys", 
+    "random-identities", 
+    "random-documents", 
+    "system_contracts",
+    "data-contract-serde-conversion",
+    "data-contract-json-conversion",
+    "identity-serde-conversion",
+    "document-serde-conversion",
+    "document-json-conversion",
+    "state-transition-serde-conversion",
+    "vote-serde-conversion",
+    "platform-value-json"
+] }
 
 
 [features]
-default = ["console_error_panic_hook"]
+default = ["console_error_panic_hook", "full"]
+full = ["identity", "document", "contract", "tokens", "governance", "transitions"]
+identity = []
+document = []
+contract = []
+tokens = []
+governance = ["voting", "group", "system"]
+transitions = []
+voting = []
+group = []
+system = []
 
 [profile.release]
-# Tell `rustc` to optimize for small code size.
+# Optimize for small code size
 opt-level = "z"
 lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+# Reduce debug info
+debug = false
 
