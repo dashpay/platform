@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::{Object, Reflect, Uint8Array};
@@ -61,10 +62,10 @@ pub fn verify_upgrade_vote_status(
     // Convert BTreeMap<[u8; 32], ProtocolVersion> to JS object
     let js_obj = Object::new();
     for (protx_hash, protocol_version) in vote_status_map {
-        let hex_key = hex::encode(&protx_hash);
+        let base58_key = identifier_to_base58(&protx_hash);
         let value = JsValue::from_f64(protocol_version as f64);
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &value)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &value)
             .map_err(|_| JsValue::from_str("Failed to set vote status entry in result object"))?;
     }
 

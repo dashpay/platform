@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
@@ -108,7 +109,7 @@ pub fn verify_token_pre_programmed_distributions_vec(
     })
 }
 
-// BTreeMap variant - returns object with timestamp as key, and each value is an object with identity ID (hex) as key
+// BTreeMap variant - returns object with timestamp as key, and each value is an object with identity ID (base58) as key
 #[wasm_bindgen(js_name = "verifyTokenPreProgrammedDistributionsMap")]
 pub fn verify_token_pre_programmed_distributions_map(
     proof: &Uint8Array,
@@ -168,10 +169,10 @@ pub fn verify_token_pre_programmed_distributions_map(
         let recipients_obj = Object::new();
 
         for (identity_id, amount) in recipients {
-            let hex_key = hex::encode(identity_id.as_slice());
+            let base58_key = identifier_to_base58(&identity_id.to_buffer());
             Reflect::set(
                 &recipients_obj,
-                &JsValue::from_str(&hex_key),
+                &JsValue::from_str(&base58_key),
                 &JsValue::from_f64(amount as f64),
             )
             .map_err(|_| JsValue::from_str("Failed to set recipient amount"))?;

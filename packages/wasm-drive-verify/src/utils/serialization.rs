@@ -25,10 +25,7 @@ pub struct PublicKeyJson {
 
 pub fn identity_to_js_value(identity: Identity) -> Result<JsValue, JsValue> {
     let identity_json = IdentityJson {
-        id: base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            identity.id().as_bytes(),
-        ),
+        id: bs58::encode(identity.id().as_bytes()).into_string(),
         balance: identity.balance(),
         revision: identity.revision(),
         public_keys: identity
@@ -59,4 +56,14 @@ pub fn data_contract_to_js_value(contract: DataContract) -> Result<JsValue, JsVa
 pub fn document_to_js_value(document: Document) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&document)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize document: {}", e)))
+}
+
+/// Convert an identifier (32 bytes) to base58 string representation
+pub fn identifier_to_base58(id: &[u8; 32]) -> String {
+    bs58::encode(id).into_string()
+}
+
+/// Convert any byte slice to base58 string representation
+pub fn bytes_to_base58(bytes: &[u8]) -> String {
+    bs58::encode(bytes).into_string()
 }

@@ -1,3 +1,4 @@
+use crate::utils::serialization::bytes_to_base58;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::proposer_block_count_query::ProposerQueryType;
@@ -84,7 +85,7 @@ pub fn verify_epoch_proposers_by_range_vec(
     })
 }
 
-// BTreeMap variant - returns object with proposer ID (hex) as key
+// BTreeMap variant - returns object with proposer ID (base58) as key
 #[wasm_bindgen(js_name = "verifyEpochProposersByRangeMap")]
 pub fn verify_epoch_proposers_by_range_map(
     proof: &Uint8Array,
@@ -122,14 +123,14 @@ pub fn verify_epoch_proposers_by_range_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (proposer_id, block_count) in proposers_map {
-        let hex_key = hex::encode(&proposer_id);
+        let base58_key = bytes_to_base58(&proposer_id);
 
         Reflect::set(
             &js_obj,
-            &JsValue::from_str(&hex_key),
+            &JsValue::from_str(&base58_key),
             &JsValue::from_f64(block_count as f64),
         )
         .map_err(|_| JsValue::from_str("Failed to set proposer in result object"))?;
@@ -202,7 +203,7 @@ pub fn verify_epoch_proposers_by_ids_vec(
     })
 }
 
-// BTreeMap variant for ByIds query - returns object with proposer ID (hex) as key
+// BTreeMap variant for ByIds query - returns object with proposer ID (base58) as key
 #[wasm_bindgen(js_name = "verifyEpochProposersByIdsMap")]
 pub fn verify_epoch_proposers_by_ids_map(
     proof: &Uint8Array,
@@ -242,14 +243,14 @@ pub fn verify_epoch_proposers_by_ids_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (proposer_id, block_count) in proposers_map {
-        let hex_key = hex::encode(&proposer_id);
+        let base58_key = bytes_to_base58(&proposer_id);
 
         Reflect::set(
             &js_obj,
-            &JsValue::from_str(&hex_key),
+            &JsValue::from_str(&base58_key),
             &JsValue::from_f64(block_count as f64),
         )
         .map_err(|_| JsValue::from_str("Failed to set proposer in result object"))?;

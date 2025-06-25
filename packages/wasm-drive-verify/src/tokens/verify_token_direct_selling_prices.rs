@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::verify::RootHash;
@@ -133,7 +134,7 @@ pub fn verify_token_direct_selling_prices_vec(
     })
 }
 
-// BTreeMap variant - returns object with token ID (hex) as key
+// BTreeMap variant - returns object with token ID (base58) as key
 #[wasm_bindgen(js_name = "verifyTokenDirectSellingPricesMap")]
 pub fn verify_token_direct_selling_prices_map(
     proof: &Uint8Array,
@@ -176,10 +177,10 @@ pub fn verify_token_direct_selling_prices_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (id, price_option) in prices_map {
-        let hex_key = hex::encode(&id);
+        let base58_key = identifier_to_base58(&id);
 
         let price_js = match price_option {
             Some(pricing_schedule) => {
@@ -226,7 +227,7 @@ pub fn verify_token_direct_selling_prices_map(
             None => JsValue::NULL,
         };
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &price_js)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &price_js)
             .map_err(|_| JsValue::from_str("Failed to set price in result object"))?;
     }
 

@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -146,7 +147,7 @@ pub fn verify_identity_votes_given_proof_vec(
     })
 }
 
-// BTreeMap variant - returns object with identifier (hex) as key
+// BTreeMap variant - returns object with identifier (base58) as key
 #[wasm_bindgen(js_name = "verifyIdentityVotesGivenProofMap")]
 pub fn verify_identity_votes_given_proof_map(
     proof: &Uint8Array,
@@ -169,10 +170,10 @@ pub fn verify_identity_votes_given_proof_map(
         .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (identifier, resource_vote) in votes_map {
-        let hex_key = hex::encode(identifier.as_bytes());
+        let base58_key = identifier_to_base58(&identifier.to_buffer());
 
         // Serialize resource vote to CBOR
         let mut vote_bytes = Vec::new();
@@ -180,7 +181,7 @@ pub fn verify_identity_votes_given_proof_map(
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))?;
         let vote_uint8 = Uint8Array::from(&vote_bytes[..]);
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &vote_uint8)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &vote_uint8)
             .map_err(|_| JsValue::from_str("Failed to set vote in result object"))?;
     }
 

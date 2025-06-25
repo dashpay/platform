@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use drive::verify::RootHash;
@@ -111,7 +112,7 @@ pub fn verify_token_infos_for_identity_ids_vec(
     })
 }
 
-// BTreeMap variant - returns object with identity ID (hex) as key
+// BTreeMap variant - returns object with identity ID (base58) as key
 #[wasm_bindgen(js_name = "verifyTokenInfosForIdentityIdsMap")]
 pub fn verify_token_infos_for_identity_ids_map(
     proof: &Uint8Array,
@@ -161,17 +162,17 @@ pub fn verify_token_infos_for_identity_ids_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (id, info_option) in token_infos_map {
-        let hex_key = hex::encode(&id);
+        let base58_key = identifier_to_base58(&id);
 
         let info_js = match info_option {
             Some(info) => convert_token_info_to_js(&info)?,
             None => JsValue::NULL,
         };
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &info_js)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &info_js)
             .map_err(|_| JsValue::from_str("Failed to set token info in result object"))?;
     }
 

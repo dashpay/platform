@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -96,7 +97,7 @@ pub fn verify_identity_balances_for_identity_ids_vec(
     })
 }
 
-// BTreeMap variant - returns object with identity ID (hex) as key
+// BTreeMap variant - returns object with identity ID (base58) as key
 #[wasm_bindgen(js_name = "verifyIdentityBalancesForIdentityIdsMap")]
 pub fn verify_identity_balances_for_identity_ids_map(
     proof: &Uint8Array,
@@ -139,17 +140,17 @@ pub fn verify_identity_balances_for_identity_ids_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (id, balance_option) in balances_map {
-        let hex_key = hex::encode(&id);
+        let base58_key = identifier_to_base58(&id);
 
         let balance_js = match balance_option {
             Some(credits) => JsValue::from_str(&credits.to_string()),
             None => JsValue::NULL,
         };
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &balance_js)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &balance_js)
             .map_err(|_| JsValue::from_str("Failed to set balance in result object"))?;
     }
 

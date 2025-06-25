@@ -1,3 +1,37 @@
+//! # wasm-drive-verify
+//!
+//! WebAssembly bindings for Drive verification functions.
+//!
+//! This crate provides JavaScript/TypeScript bindings for verifying proofs from the Dash Platform.
+//! It's organized into modules for different verification categories, allowing for optimal bundle
+//! sizes through tree-shaking when using ES modules.
+//!
+//! ## Modules
+//!
+//! - **identity** - Verify identities, balances, keys, and related data
+//! - **document** - Verify documents and document queries
+//! - **contract** - Verify data contracts and contract history
+//! - **tokens** - Verify token balances, info, and statuses
+//! - **governance** - Verify voting polls, groups, and system state
+//! - **transitions** - Verify state transition execution
+//!
+//! ## Usage
+//!
+//! ### ES Modules (Recommended)
+//!
+//! Import only what you need for optimal bundle size:
+//!
+//! ```javascript
+//! import { verifyFullIdentityByIdentityId } from 'wasm-drive-verify/identity';
+//!
+//! const result = await verifyFullIdentityByIdentityId(proof, identityId, platformVersion);
+//! ```
+//!
+//! ### Identifier Encoding
+//!
+//! All identifiers (identity IDs, contract IDs, document IDs, etc.) are returned as base58-encoded
+//! strings for consistency and compatibility with the Dash ecosystem.
+
 use wasm_bindgen::prelude::*;
 
 // Core utilities module (always available)

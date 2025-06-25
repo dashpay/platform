@@ -1,3 +1,4 @@
+use crate::utils::serialization::{bytes_to_base58, identifier_to_base58};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::verify::RootHash;
@@ -96,7 +97,7 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_vec(
     })
 }
 
-// BTreeMap variant - returns object with public key hash (hex) as key
+// BTreeMap variant - returns object with public key hash (base58) as key
 #[wasm_bindgen(js_name = "verifyIdentityIdsByUniquePublicKeyHashesMap")]
 pub fn verify_identity_ids_by_unique_public_key_hashes_map(
     proof: &Uint8Array,
@@ -139,20 +140,20 @@ pub fn verify_identity_ids_by_unique_public_key_hashes_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (hash, id_option) in identity_ids_map {
-        let hex_key = hex::encode(&hash);
+        let base58_key = bytes_to_base58(&hash);
 
         let id_js = match id_option {
             Some(id) => {
-                let id_hex = hex::encode(&id);
-                JsValue::from_str(&id_hex)
+                let id_base58 = identifier_to_base58(&id);
+                JsValue::from_str(&id_base58)
             }
             None => JsValue::NULL,
         };
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &id_js)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &id_js)
             .map_err(|_| JsValue::from_str("Failed to set identity ID in result object"))?;
     }
 

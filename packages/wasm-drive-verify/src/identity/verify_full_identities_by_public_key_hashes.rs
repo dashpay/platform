@@ -1,4 +1,4 @@
-use crate::utils::serialization::identity_to_js_value;
+use crate::utils::serialization::{bytes_to_base58, identity_to_js_value};
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -96,7 +96,7 @@ pub fn verify_full_identities_by_public_key_hashes_vec(
     })
 }
 
-// BTreeMap variant - returns object with public key hash (hex) as key
+// BTreeMap variant - returns object with public key hash (base58) as key
 #[wasm_bindgen(js_name = "verifyFullIdentitiesByPublicKeyHashesMap")]
 pub fn verify_full_identities_by_public_key_hashes_map(
     proof: &Uint8Array,
@@ -137,17 +137,17 @@ pub fn verify_full_identities_by_public_key_hashes_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (hash, identity_option) in identities_map {
-        let hex_key = hex::encode(&hash);
+        let base58_key = bytes_to_base58(&hash);
 
         let identity_js = match identity_option {
             Some(identity) => identity_to_js_value(identity)?,
             None => JsValue::NULL,
         };
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &identity_js)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &identity_js)
             .map_err(|_| JsValue::from_str("Failed to set identity in result object"))?;
     }
 

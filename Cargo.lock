@@ -6119,11 +6119,11 @@ version = "1.8.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
+ "bs58",
  "ciborium",
  "console_error_panic_hook",
  "dpp",
  "drive",
- "hex",
  "indexmap 2.7.0",
  "js-sys",
  "nohash-hasher",

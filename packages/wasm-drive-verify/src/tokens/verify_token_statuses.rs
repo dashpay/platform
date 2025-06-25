@@ -1,3 +1,4 @@
+use crate::utils::serialization::identifier_to_base58;
 use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::verify::RootHash;
@@ -102,7 +103,7 @@ pub fn verify_token_statuses_vec(
     })
 }
 
-// BTreeMap variant - returns object with token ID (hex) as key
+// BTreeMap variant - returns object with token ID (base58) as key
 #[wasm_bindgen(js_name = "verifyTokenStatusesMap")]
 pub fn verify_token_statuses_map(
     proof: &Uint8Array,
@@ -145,10 +146,10 @@ pub fn verify_token_statuses_map(
         )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
-    // Convert to JS object with hex keys
+    // Convert to JS object with base58 keys
     let js_obj = Object::new();
     for (id, status_option) in statuses_map {
-        let hex_key = hex::encode(&id);
+        let base58_key = identifier_to_base58(&id);
 
         let status_js = match status_option {
             Some(status) => {
@@ -162,7 +163,7 @@ pub fn verify_token_statuses_map(
             None => JsValue::NULL,
         };
 
-        Reflect::set(&js_obj, &JsValue::from_str(&hex_key), &status_js)
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &status_js)
             .map_err(|_| JsValue::from_str("Failed to set status in result object"))?;
     }
 
