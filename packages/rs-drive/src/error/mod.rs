@@ -67,6 +67,9 @@ pub enum Error {
     ///Cache error
     #[error("contract: {0}")]
     Cache(#[from] CacheError),
+    /// Protocol error
+    #[error("protocol: {0} ({1})")]
+    ProtocolWithInfoString(ProtocolError, String),
 }
 
 impl From<ProtocolDataContractError> for Error {

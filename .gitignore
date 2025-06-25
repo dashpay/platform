@@ -44,6 +44,6 @@ packages/wasm-drive-verify/analysis-results/
 packages/wasm-drive-verify/size-analysis/
 packages/wasm-drive-verify/test-tree-shaking/
 
-# Other SDK build artifacts
-packages/rs-sdk-ffi/
-packages/swift-sdk/
+# gRPC coverage report
+grpc-coverage-report.txt
+

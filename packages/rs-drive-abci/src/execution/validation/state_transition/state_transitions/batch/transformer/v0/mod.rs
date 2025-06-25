@@ -320,7 +320,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             )?
             .1
         else {
-            println!("contract id not found {}", data_contract_id);
             return Ok(ConsensusValidationResult::new_with_error(
                 BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
                     *data_contract_id,

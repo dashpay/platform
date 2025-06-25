@@ -201,6 +201,7 @@ impl ErrorWithCode for BasicError {
             Self::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(_) => 10530,
             Self::IdentityAssetLockStateTransitionReplayError(_) => 10531,
             Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
+            Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,

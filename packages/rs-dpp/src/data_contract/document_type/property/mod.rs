@@ -531,9 +531,10 @@ impl DocumentPropertyType {
         } else {
             let mut value: Vec<u8> = vec![0u8; bytes];
             buf.read_exact(&mut value).map_err(|_| {
-                DataContractError::CorruptedSerialization(
-                    "error reading varint from serialized document".to_string(),
-                )
+                DataContractError::CorruptedSerialization(format!(
+                    "error reading varint of length {} from serialized document",
+                    bytes
+                ))
             })?;
             Ok(value)
         }

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "2.0.0-rc.14",
+  "version": "2.0.0-rc.18",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "lib/index.js",
   "contributors": [
@@ -50,7 +50,7 @@
     "chai-as-promised": "^7.1.1",
     "comment-parser": "^0.7.6",
     "core-js": "^3.33.1",
-    "crypto-browserify": "^3.12.0",
+    "crypto-browserify": "^3.12.1",
     "dirty-chai": "^2.0.1",
     "eslint": "^8.53.0",
     "eslint-config-airbnb-base": "^15.0.0",
