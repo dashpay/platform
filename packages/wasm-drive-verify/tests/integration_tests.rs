@@ -127,7 +127,7 @@ mod contract_integration {
         let contract_id =
             hex_to_uint8array("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
 
-        let result = verify_contract(&mock_proof, false, &contract_id, 1);
+        let result = verify_contract(&mock_proof, None, false, false, &contract_id, 1);
 
         assert!(result.is_ok(), "Should successfully verify contract proof");
         let verified = result.unwrap();

@@ -1,6 +1,6 @@
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen_test::*;
-use wasm_drive_verify::system::verify_elements::verify_elements;
+use wasm_drive_verify::governance_verification::verify_elements::verify_elements;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -16,7 +16,8 @@ fn test_verify_elements_not_implemented() {
     let result = verify_elements(&proof, &path, &keys, platform_version);
     assert!(result.is_err());
 
-    let error_message = result.unwrap_err().as_string().unwrap();
+    let error = result.err().unwrap();
+    let error_message = error.as_string().unwrap();
     assert!(error_message.contains("not available in WASM"));
     assert!(error_message.contains("Element type limitations"));
 }

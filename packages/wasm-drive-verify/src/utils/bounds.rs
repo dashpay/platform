@@ -7,6 +7,7 @@ use wasm_bindgen::JsValue;
 pub const MAX_ARRAY_LENGTH: usize = 10_000;
 
 /// Maximum allowed nested depth for object parsing
+#[allow(dead_code)]
 pub const MAX_NESTED_DEPTH: usize = 100;
 
 /// Maximum allowed keys in an object

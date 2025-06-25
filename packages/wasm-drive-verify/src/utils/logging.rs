@@ -3,8 +3,9 @@
 //! This module provides logging functionality that can be enabled/disabled
 //! at compile time for debugging verification operations.
 
+#![allow(dead_code)]
+
 use wasm_bindgen::prelude::*;
-use web_sys::console;
 
 /// Log levels for structured logging
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -55,30 +56,30 @@ impl LogEntry {
             match self.level {
                 LogLevel::Trace | LogLevel::Debug => {
                     if let Some(ctx) = self.context {
-                        console::debug_3(&prefix.into(), &self.message.into(), &ctx);
+                        web_sys::console::debug_3(&prefix.into(), &self.message.into(), &ctx);
                     } else {
-                        console::debug_2(&prefix.into(), &self.message.into());
+                        web_sys::console::debug_2(&prefix.into(), &self.message.into());
                     }
                 }
                 LogLevel::Info => {
                     if let Some(ctx) = self.context {
-                        console::info_3(&prefix.into(), &self.message.into(), &ctx);
+                        web_sys::console::info_3(&prefix.into(), &self.message.into(), &ctx);
                     } else {
-                        console::info_2(&prefix.into(), &self.message.into());
+                        web_sys::console::info_2(&prefix.into(), &self.message.into());
                     }
                 }
                 LogLevel::Warn => {
                     if let Some(ctx) = self.context {
-                        console::warn_3(&prefix.into(), &self.message.into(), &ctx);
+                        web_sys::console::warn_3(&prefix.into(), &self.message.into(), &ctx);
                     } else {
-                        console::warn_2(&prefix.into(), &self.message.into());
+                        web_sys::console::warn_2(&prefix.into(), &self.message.into());
                     }
                 }
                 LogLevel::Error => {
                     if let Some(ctx) = self.context {
-                        console::error_3(&prefix.into(), &self.message.into(), &ctx);
+                        web_sys::console::error_3(&prefix.into(), &self.message.into(), &ctx);
                     } else {
-                        console::error_2(&prefix.into(), &self.message.into());
+                        web_sys::console::error_2(&prefix.into(), &self.message.into());
                     }
                 }
             }

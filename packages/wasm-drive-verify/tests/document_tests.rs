@@ -3,7 +3,9 @@
 use js_sys::{Object, Uint8Array};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
-use wasm_drive_verify::document_verification::*;
+use wasm_drive_verify::document_verification::verify_document_proof;
+use wasm_drive_verify::document_verification::SingleDocumentDriveQueryWasm;
+use wasm_drive_verify::document_verification::verify_start_at_document_in_proof;
 
 mod common;
 use common::*;
@@ -13,16 +15,27 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[wasm_bindgen_test]
 fn test_verify_proof_invalid_contract_id() {
     let proof = Uint8Array::from(&mock_proof(100)[..]);
-    let invalid_contract_id = Uint8Array::from(&[0u8; 20][..]); // Too short
+    let _invalid_contract_id = Uint8Array::from(&[0u8; 20][..]); // Too short
     let document_type = "test_doc";
     let query = Object::new();
     let platform_version = test_platform_version();
 
-    let result = verify_proof(
+    // Create a mock contract JS value (as CBOR bytes)
+    let contract_js = JsValue::from(Uint8Array::from(&mock_identifier()[..]));
+    let where_clauses = JsValue::from(&query);
+    let order_by = JsValue::NULL;
+    
+    let result = verify_document_proof(
         &proof,
-        &invalid_contract_id,
+        &contract_js,
         document_type,
-        &query,
+        &where_clauses,
+        &order_by,
+        None,  // limit
+        None,  // offset
+        None,  // start_at
+        false, // start_at_included
+        None,  // block_time_ms
         platform_version,
     );
     assert_error_contains(
@@ -39,11 +52,22 @@ fn test_verify_proof_empty_document_type() {
     let query = Object::new();
     let platform_version = test_platform_version();
 
-    let result = verify_proof(
+    // Create a mock contract JS value (as CBOR bytes)
+    let contract_js = JsValue::from(Uint8Array::from(&mock_identifier()[..]));
+    let where_clauses = JsValue::from(&query);
+    let order_by = JsValue::NULL;
+    
+    let result = verify_document_proof(
         &proof,
-        &contract_id,
+        &contract_js,
         document_type,
-        &query,
+        &where_clauses,
+        &order_by,
+        None,  // limit
+        None,  // offset
+        None,  // start_at
+        false, // start_at_included
+        None,  // block_time_ms
         platform_version,
     );
     assert!(result.is_err());
@@ -52,21 +76,25 @@ fn test_verify_proof_empty_document_type() {
 #[wasm_bindgen_test]
 fn test_verify_single_document_invalid_document_id() {
     let proof = Uint8Array::from(&mock_proof(100)[..]);
-    let invalid_document_id = Uint8Array::from(&[0u8; 16][..]); // Too short
-    let contract_id = Uint8Array::from(&mock_identifier()[..]);
-    let document_type = "test_doc";
+    let invalid_document_id = vec![0u8; 16]; // Too short
+    let contract_id = mock_identifier();
+    let document_type = "test_doc".to_string();
     let platform_version = test_platform_version();
 
-    let result = verify_single_document(
-        &proof,
-        &invalid_document_id,
-        &contract_id,
+    // This should fail when creating the query due to invalid document_id length
+    let query_result = SingleDocumentDriveQueryWasm::new(
+        contract_id.to_vec(),
         document_type,
-        platform_version,
+        false, // document_type_keeps_history
+        invalid_document_id,
+        None, // block_time_ms
+        0, // contested_status (NotContested)
     );
+    
+    assert!(query_result.is_err());
     assert_error_contains(
-        &result.map(|_| ()),
-        "Invalid document_id length. Expected 32 bytes",
+        &query_result.map(|_| ()),
+        "document_id must be exactly 32 bytes",
     );
 }
 
@@ -90,12 +118,25 @@ fn test_verify_start_at_document_bounds_check() {
 
     let platform_version = test_platform_version();
 
+    // Create a mock contract JS value (as CBOR bytes)
+    let contract_js = JsValue::from(Uint8Array::from(&mock_identifier()[..]));
+    let order_by = JsValue::NULL;
+    let document_id = Uint8Array::from(&mock_identifier()[..]);
+    
     // Should handle large nested structures gracefully
     let result = verify_start_at_document_in_proof(
         &proof,
-        &contract_id,
+        &contract_js,
         document_type,
         &query,
+        &order_by,
+        None,  // limit
+        None,  // offset
+        None,  // start_at
+        false, // start_at_included
+        None,  // block_time_ms
+        false, // is_proof_subset
+        &document_id,
         platform_version,
     );
     // The actual Drive verification will fail, but parsing should not panic

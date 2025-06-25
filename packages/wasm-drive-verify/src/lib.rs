@@ -34,7 +34,6 @@
 //! All identifiers (identity IDs, contract IDs, document IDs, etc.) are returned as base58-encoded
 //! strings for consistency and compatibility with the Dash ecosystem.
 
-use wasm_bindgen::prelude::*;
 
 // Core utilities module (always available)
 mod utils;
@@ -102,7 +101,9 @@ pub mod transition_verification {
     pub use crate::state_transition::*;
 }
 
-#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(all(target_arch = "wasm32", not(test)))]
 #[wasm_bindgen(start)]
 pub fn main() {
     #[cfg(feature = "console_error_panic_hook")]

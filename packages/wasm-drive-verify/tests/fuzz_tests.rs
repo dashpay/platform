@@ -42,7 +42,7 @@ fn fuzz_array(size: usize, element_generator: impl Fn(usize) -> JsValue) -> Arra
 
 #[wasm_bindgen_test]
 fn fuzz_identity_verification_with_random_inputs() {
-    use wasm_drive_verify::identity_verification::*;
+    use wasm_drive_verify::identity_verification::verify_full_identity_by_identity_id;
 
     // Test with various proof sizes
     for proof_size in [0, 1, 10, 100, 1000, 10000] {
@@ -51,7 +51,7 @@ fn fuzz_identity_verification_with_random_inputs() {
         // Test with valid and invalid identity IDs
         for valid_id in [true, false] {
             let identity_id = fuzz_identifier(valid_id);
-            let result = verify_full_identity_by_identity_id(&proof, &identity_id, 1);
+            let result = verify_full_identity_by_identity_id(&proof, false, &identity_id, 1);
 
             // Should handle gracefully without panic
             match result {
@@ -64,7 +64,7 @@ fn fuzz_identity_verification_with_random_inputs() {
 
 #[wasm_bindgen_test]
 fn fuzz_document_query_with_nested_structures() {
-    use wasm_drive_verify::document_verification::*;
+    use wasm_drive_verify::document_verification::verify_document_proof;
 
     let proof = fuzz_proof(1000);
     let contract_id = fuzz_identifier(true);
@@ -84,14 +84,19 @@ fn fuzz_document_query_with_nested_structures() {
         }
         js_sys::Reflect::set(&query, &JsValue::from_str("where"), &where_array).unwrap();
 
+        // Create a mock contract JS value (as CBOR bytes)
+        let contract_js = JsValue::from(contract_id.clone());
+        let where_clauses = JsValue::from(&query);
+        let order_by = JsValue::NULL;
+        
         // Should handle without panic (may error due to bounds)
-        let _ = verify_proof(&proof, &contract_id, "test_doc", &query, 1);
+        let _ = verify_document_proof(&proof, &contract_js, "test_doc", &where_clauses, &order_by, None, None, None, false, None, 1);
     }
 }
 
 #[wasm_bindgen_test]
 fn fuzz_array_inputs_with_mixed_valid_invalid() {
-    use wasm_drive_verify::identity_verification::*;
+    use wasm_drive_verify::identity_verification::verify_full_identities_by_public_key_hashes_vec;
 
     let proof = fuzz_proof(1000);
 
@@ -113,14 +118,14 @@ fn fuzz_array_inputs_with_mixed_valid_invalid() {
 
 #[wasm_bindgen_test]
 fn fuzz_platform_version_boundaries() {
-    use wasm_drive_verify::identity_verification::*;
+    use wasm_drive_verify::identity_verification::verify_full_identity_by_identity_id;
 
     let proof = fuzz_proof(100);
     let identity_id = fuzz_identifier(true);
 
     // Test with various platform versions
     for version in [0, 1, 100, 1000, u32::MAX / 2, u32::MAX - 1, u32::MAX] {
-        let result = verify_full_identity_by_identity_id(&proof, &identity_id, version);
+        let result = verify_full_identity_by_identity_id(&proof, false, &identity_id, version);
         // Should handle without panic (may error on invalid versions)
         let _ = result;
     }
@@ -128,7 +133,7 @@ fn fuzz_platform_version_boundaries() {
 
 #[wasm_bindgen_test]
 fn fuzz_malformed_cbor_inputs() {
-    use wasm_drive_verify::contract_verification::*;
+    use wasm_drive_verify::contract_verification::verify_contract::verify_contract;
 
     // Generate malformed CBOR-like data
     for i in 0..100 {
@@ -140,13 +145,13 @@ fn fuzz_malformed_cbor_inputs() {
         let contract_id = fuzz_identifier(true);
 
         // Should handle malformed data gracefully
-        let _ = verify_contract(&proof, &contract_id, 1);
+        let _ = verify_contract(&proof, None, false, false, &contract_id, 1);
     }
 }
 
 #[wasm_bindgen_test]
 fn fuzz_unicode_and_special_characters() {
-    use wasm_drive_verify::document_verification::*;
+    use wasm_drive_verify::document_verification::verify_document_proof;
 
     let proof = fuzz_proof(100);
     let contract_id = fuzz_identifier(true);
@@ -167,7 +172,12 @@ fn fuzz_unicode_and_special_characters() {
 
     for doc_type in special_strings {
         let query = Object::new();
+        // Create a mock contract JS value (as CBOR bytes)
+        let contract_js = JsValue::from(contract_id.clone());
+        let where_clauses = JsValue::from(&query);
+        let order_by = JsValue::NULL;
+        
         // Should handle special characters without panic
-        let _ = verify_proof(&proof, &contract_id, doc_type, &query, 1);
+        let _ = verify_document_proof(&proof, &contract_js, doc_type, &where_clauses, &order_by, None, None, None, false, None, 1);
     }
 }

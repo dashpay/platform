@@ -40,7 +40,7 @@ bincode = { version = "2.0.0-rc.3" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.39"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.5", default-features = false, features = [] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions", 
     "random-public-keys", 
@@ -87,6 +87,4 @@ panic = "abort"
 name = "simple_benchmarks"
 harness = false
 required-features = ["full"]
-# Reduce debug info
-debug = false
 
