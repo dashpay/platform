@@ -32,7 +32,10 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::{
-    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    block::{
+        epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo,
+        finalized_epoch_info::FinalizedEpochInfo,
+    },
     dashcore::ProTxHash,
     document::Document,
     identity::KeyID,
@@ -519,6 +522,9 @@ pub type IdentityBalances = RetrievedObjects<Identifier, Credits>;
 
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
+
+/// Collection of finalized epoch information
+pub type FinalizedEpochInfos = RetrievedObjects<EpochIndex, FinalizedEpochInfo>;
 
 /// Results of protocol version upgrade voting.
 ///

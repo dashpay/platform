@@ -311,6 +311,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetFinalizedEpochInfosRequest,
+    platform_proto::GetFinalizedEpochInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_finalized_epoch_infos
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetProtocolVersionUpgradeStateRequest,
     platform_proto::GetProtocolVersionUpgradeStateResponse,
     PlatformGrpcClient,
@@ -596,6 +604,15 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_token_direct_purchase_prices
+);
+
+// rpc getTokenContractInfo(GetTokenContractInfoRequest) returns (GetTokenContractInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenContractInfoRequest,
+    platform_proto::GetTokenContractInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_contract_info
 );
 
 // rpc getTokenPerpetualDistributionLastClaimRequest(GetTokenPerpetualDistributionLastClaimRequest) returns (GetTokenPerpetualDistributionLastClaimResponse);

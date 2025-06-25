@@ -14,6 +14,7 @@ mod token_selling_tests {
     };
     use drive::verify::RootHash;
     use simple_signer::signer::SimpleSigner;
+
     #[test]
     fn test_successful_direct_purchase_single_price() {
         let platform_version = PlatformVersion::latest();
@@ -332,7 +333,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::TokenDirectPurchaseUserPriceTooLow(_)),
                 _
             )]
@@ -571,6 +572,165 @@ mod token_selling_tests {
         }
     }
 
+    #[test]
+    fn test_direct_purchase_from_yourself() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(54321);
+        // Create an identity that will be both seller and buyer
+        let (self_trader, self_trader_signer, self_trader_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
+
+        let single_price = TokenPricingSchedule::SinglePrice(dash_to_credits!(1));
+
+        let mut identity_contract_nonce: u64 = 2;
+        let (contract, token_id) = create_token_with_pricing(
+            platform_version,
+            &mut platform,
+            &self_trader,
+            &self_trader_signer,
+            &self_trader_key,
+            Some(single_price.clone()),
+            &mut identity_contract_nonce,
+        );
+
+        // Set the price
+        let set_price_transition =
+            BatchTransition::new_token_change_direct_purchase_price_transition(
+                token_id,
+                self_trader.id(),
+                contract.id(),
+                0,
+                Some(single_price.clone()),
+                None,
+                None,
+                &self_trader_key,
+                identity_contract_nonce,
+                0,
+                &self_trader_signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+
+        let platform_state = platform.state.load();
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            set_price_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+        );
+
+        // Check initial token balance (should have some tokens as the owner)
+        let initial_token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                self_trader.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // Now purchase tokens from yourself
+        let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
+            token_id,
+            self_trader.id(), // Buyer is the same as seller
+            contract.id(),
+            0,
+            5,                   // Buying 5 tokens
+            dash_to_credits!(5), // Paying for 5 tokens
+            &self_trader_key,
+            identity_contract_nonce + 1,
+            0,
+            &self_trader_signer,
+            platform_version,
+            None,
+        )
+        .unwrap();
+
+        let initial_credit_balance = platform
+            .drive
+            .fetch_identity_balance(self_trader.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch credit balance");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[purchase_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition")],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .validate_token_aggregated_balance(&transaction, platform_version)
+            .expect("expected to validate token aggregated balances");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+        );
+
+        // Check token balance after purchase
+        let final_token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                self_trader.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // Token balance should increase by 5
+        assert_eq!(
+            final_token_balance,
+            initial_token_balance.map(|b| b + 5).or(Some(5))
+        );
+
+        // Check credit balance - should only be reduced by fees, not by the purchase price
+        // (since the money goes back to yourself)
+        let final_credit_balance = platform
+            .drive
+            .fetch_identity_balance(self_trader.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch credit balance");
+
+        // The difference should be just the transaction fees
+        let credit_diff = initial_credit_balance.unwrap() - final_credit_balance.unwrap();
+
+        // Assert that the difference is much less than the purchase price (just fees)
+        assert!(
+            credit_diff < dash_to_credits!(0.01),
+            "Credit difference should only be transaction fees, but was: {}",
+            credit_diff
+        );
+    }
+
     // Helper functions
     //
     // /\_/\
@@ -596,7 +756,7 @@ mod token_selling_tests {
 
     /// Creates a token contract with the given owner identity and configuration, and sets the price.
     fn create_token_with_pricing(
-        platform_version: &dpp::version::PlatformVersion,
+        platform_version: &PlatformVersion,
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seller: &Identity,
         seller_signer: &SimpleSigner,

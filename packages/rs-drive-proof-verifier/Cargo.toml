@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "2.0.0-rc.14"
+version = "2.0.0-rc.18"
 edition = "2021"
 rust-version.workspace = true
 
@@ -28,8 +28,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 dpp = { path = "../rs-dpp", features = [
   "bls-signatures",
-  #  "document-value-conversion",
-  #  "extended-document",
   "core-types-serialization",
 ], default-features = false }
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }

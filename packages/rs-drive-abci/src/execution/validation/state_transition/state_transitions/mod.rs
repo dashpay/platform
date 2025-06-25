@@ -70,6 +70,7 @@ pub(in crate::execution) mod tests {
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use simple_signer::signer::SimpleSigner;
+    use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::ops::Deref;
@@ -86,7 +87,7 @@ pub(in crate::execution) mod tests {
     use dpp::dash_to_credits;
     use dpp::dashcore::{ProTxHash, Txid};
     use dpp::dashcore::hashes::Hash;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
     use dpp::data_contract::{DataContract, GroupContractPosition, TokenContractPosition};
     use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Setters};
@@ -139,6 +140,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -259,7 +261,7 @@ pub(in crate::execution) mod tests {
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
-    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+    ) -> (Identity, SimpleSigner, IdentityPublicKey, IdentityPublicKey) {
         let platform_version = PlatformVersion::latest();
         let mut signer = SimpleSigner::default();
 
@@ -310,7 +312,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to add a new identity");
 
-        (identity, signer, master_key)
+        (identity, signer, critical_public_key, master_key)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -770,6 +772,102 @@ pub(in crate::execution) mod tests {
         }
 
         platform.state.store(Arc::new(platform_state));
+    }
+
+    pub(in crate::execution) enum IdentityTestInfo<'a> {
+        Given {
+            identity: &'a Identity,
+            signer: &'a SimpleSigner,
+            public_key: &'a IdentityPublicKey,
+            identity_nonce: IdentityNonce,
+        },
+        UseSeed(u64),
+        UseRng(&'a mut StdRng),
+    }
+
+    pub(in crate::execution) fn register_contract_from_bytes(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        contract_bytes: Vec<u8>,
+        identity_info: IdentityTestInfo,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        // Deserialize the data contract from bytes
+        let mut data_contract =
+            DataContract::versioned_deserialize(&contract_bytes, false, platform_version)
+                .expect("expected to deserialize data contract");
+
+        // Get identity info based on the enum variant
+        let (identity_cow, signer_cow, key_cow, nonce) = match identity_info {
+            IdentityTestInfo::Given {
+                identity,
+                signer,
+                public_key,
+                identity_nonce,
+            } => (
+                Cow::Borrowed(identity),
+                Cow::Borrowed(signer),
+                Cow::Borrowed(public_key),
+                identity_nonce,
+            ),
+            IdentityTestInfo::UseSeed(seed) => {
+                let (identity, signer, key) = setup_identity(platform, seed, dash_to_credits!(1));
+                (Cow::Owned(identity), Cow::Owned(signer), Cow::Owned(key), 1)
+            }
+            IdentityTestInfo::UseRng(rng) => {
+                let seed = rng.gen();
+                let (identity, signer, key) = setup_identity(platform, seed, dash_to_credits!(1));
+                (Cow::Owned(identity), Cow::Owned(signer), Cow::Owned(key), 1)
+            }
+        };
+
+        let contract_id = DataContract::generate_data_contract_id_v0(identity_cow.id(), nonce);
+
+        data_contract.set_id(contract_id);
+
+        // Create and sign the data contract create transition
+        let state_transition = DataContractCreateTransition::new_from_data_contract(
+            data_contract.clone(),
+            nonce,
+            &identity_cow.as_ref().clone().into_partial_identity_info(),
+            key_cow.id(),
+            signer_cow.as_ref(),
+            platform_version,
+            None,
+        )
+        .expect("expected to create and sign data contract create transition");
+
+        // Serialize the state transition
+        let state_transition_bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[state_transition_bytes],
+                platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let execution_result = processing_result.into_execution_results().remove(0);
+        assert_matches!(execution_result, SuccessfulExecution(..));
+
+        data_contract
     }
 
     pub(in crate::execution) fn create_dpns_name_contest_give_key_info(

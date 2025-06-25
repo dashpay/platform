@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "2.0.0-rc.14"
+version = "2.0.0-rc.18"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -29,7 +29,7 @@ tempfile = "3.3.0"
 hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
-dpp = { path = "../rs-dpp", features = ["abci"] }
+dpp = { path = "../rs-dpp", default-features = false, features = ["abci"] }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
@@ -85,7 +85,7 @@ base64 = "0.22.1"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
-dpp = { path = "../rs-dpp", features = [
+dpp = { path = "../rs-dpp", default-features = false, features = [
   "abci",
   "random-documents",
   "state-transition-signing",

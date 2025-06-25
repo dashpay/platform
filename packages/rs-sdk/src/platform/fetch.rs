@@ -298,3 +298,7 @@ impl Fetch for Vote {
 impl Fetch for RewardDistributionMoment {
     type Request = platform_proto::GetTokenPerpetualDistributionLastClaimRequest;
 }
+
+impl Fetch for dpp::tokens::contract_info::TokenContractInfo {
+    type Request = platform_proto::GetTokenContractInfoRequest;
+}
