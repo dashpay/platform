@@ -35,5 +35,15 @@ node_modules
 /target
 .gitaipconfig
 
+# wasm-drive-verify build artifacts
+packages/wasm-drive-verify/target/
+packages/wasm-drive-verify/wasm/
+packages/wasm-drive-verify/pkg/
+packages/wasm-drive-verify/dist/
+packages/wasm-drive-verify/analysis-results/
+packages/wasm-drive-verify/size-analysis/
+packages/wasm-drive-verify/test-tree-shaking/
+
 # gRPC coverage report
 grpc-coverage-report.txt
+
