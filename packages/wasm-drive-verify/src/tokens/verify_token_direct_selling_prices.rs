@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
@@ -15,8 +16,8 @@ pub struct VerifyTokenDirectSellingPricesResult {
 #[wasm_bindgen]
 impl VerifyTokenDirectSellingPricesResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

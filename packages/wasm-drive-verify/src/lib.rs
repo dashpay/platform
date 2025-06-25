@@ -1,3 +1,5 @@
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+
 //! # wasm-drive-verify
 //!
 //! WebAssembly bindings for Drive verification functions.
@@ -54,13 +56,13 @@ mod contract;
 #[cfg(any(feature = "tokens", feature = "full"))]
 mod tokens;
 
-#[cfg(any(feature = "group", feature = "governance", feature = "full"))]
+#[cfg(any(feature = "governance", feature = "full"))]
 mod group;
 
-#[cfg(any(feature = "voting", feature = "governance", feature = "full"))]
+#[cfg(any(feature = "governance", feature = "full"))]
 mod voting;
 
-#[cfg(any(feature = "system", feature = "governance", feature = "full"))]
+#[cfg(any(feature = "governance", feature = "full"))]
 mod system;
 
 #[cfg(any(feature = "transitions", feature = "full"))]
@@ -90,14 +92,9 @@ pub mod token_verification {
 
 #[cfg(any(feature = "governance", feature = "full"))]
 pub mod governance_verification {
-    #[cfg(any(feature = "group", feature = "governance", feature = "full"))]
     pub use crate::group::*;
-
-    #[cfg(any(feature = "voting", feature = "governance", feature = "full"))]
-    pub use crate::voting::*;
-
-    #[cfg(any(feature = "system", feature = "governance", feature = "full"))]
     pub use crate::system::*;
+    pub use crate::voting::*;
 }
 
 #[cfg(any(feature = "transitions", feature = "full"))]
@@ -105,6 +102,7 @@ pub mod transition_verification {
     pub use crate::state_transition::*;
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub fn main() {
     #[cfg(feature = "console_error_panic_hook")]

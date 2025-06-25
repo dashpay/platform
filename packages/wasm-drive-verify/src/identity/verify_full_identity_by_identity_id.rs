@@ -1,5 +1,8 @@
+use crate::utils::error::{format_error, format_result_error, ErrorCategory};
+use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::logging::{debug, error, PerfLogger};
+use crate::utils::platform_version::get_platform_version_with_validation;
 use crate::utils::serialization::identity_to_js_value;
-use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
@@ -13,8 +16,8 @@ pub struct VerifyFullIdentityByIdentityIdResult {
 #[wasm_bindgen]
 impl VerifyFullIdentityByIdentityIdResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]
@@ -30,15 +33,24 @@ pub fn verify_full_identity_by_identity_id(
     identity_id: &Uint8Array,
     platform_version_number: u32,
 ) -> Result<VerifyFullIdentityByIdentityIdResult, JsValue> {
+    let _perf = PerfLogger::new("identity", "verify_full_identity_by_identity_id");
+
+    debug(
+        "identity",
+        format!(
+            "Verifying identity with proof size: {} bytes",
+            proof.length()
+        ),
+    );
+
     let proof_vec = proof.to_vec();
 
-    let identity_id_bytes: [u8; 32] = identity_id
-        .to_vec()
-        .try_into()
-        .map_err(|_| JsValue::from_str("Invalid identity_id length. Expected 32 bytes."))?;
+    let identity_id_bytes: [u8; 32] = identity_id.to_vec().try_into().map_err(|_e| {
+        error("identity", "Invalid identity_id length");
+        format_error(ErrorCategory::InvalidInput, "identity_id must be 32 bytes")
+    })?;
 
-    let platform_version = PlatformVersion::get(platform_version_number)
-        .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
+    let platform_version = get_platform_version_with_validation(platform_version_number)?;
 
     let (root_hash, identity_option) = Drive::verify_full_identity_by_identity_id(
         &proof_vec,
@@ -46,11 +58,20 @@ pub fn verify_full_identity_by_identity_id(
         identity_id_bytes,
         platform_version,
     )
-    .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
+    .map_err(|e| {
+        error("identity", format!("Verification failed: {:?}", e));
+        format_result_error(ErrorCategory::VerificationError, e)
+    })?;
 
     let identity_js = match identity_option {
-        Some(identity) => identity_to_js_value(identity)?,
-        None => JsValue::NULL,
+        Some(identity) => {
+            debug("identity", "Identity found and verified successfully");
+            identity_to_js_value(identity)?
+        }
+        None => {
+            debug("identity", "No identity found for given ID");
+            JsValue::NULL
+        }
     };
 
     Ok(VerifyFullIdentityByIdentityIdResult {

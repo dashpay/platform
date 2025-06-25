@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::serialization::identity_to_js_value;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
@@ -14,8 +15,8 @@ pub struct VerifyFullIdentityByNonUniquePublicKeyHashResult {
 #[wasm_bindgen]
 impl VerifyFullIdentityByNonUniquePublicKeyHashResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

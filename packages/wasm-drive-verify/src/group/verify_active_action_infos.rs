@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use dpp::group::action_event::GroupActionEvent;
@@ -69,8 +70,8 @@ pub struct VerifyActionInfosInContractResult {
 #[wasm_bindgen]
 impl VerifyActionInfosInContractResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

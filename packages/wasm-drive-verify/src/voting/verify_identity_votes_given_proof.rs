@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -88,8 +89,8 @@ pub struct VerifyIdentityVotesGivenProofResult {
 #[wasm_bindgen]
 impl VerifyIdentityVotesGivenProofResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

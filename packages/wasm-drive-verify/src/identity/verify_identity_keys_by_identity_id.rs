@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use dpp::identity::identity_public_key::IdentityPublicKey;
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
@@ -95,8 +96,8 @@ pub struct VerifyIdentityKeysByIdentityIdResult {
 #[wasm_bindgen]
 impl VerifyIdentityKeysByIdentityIdResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

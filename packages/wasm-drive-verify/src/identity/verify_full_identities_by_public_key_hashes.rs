@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::serialization::{bytes_to_base58, identity_to_js_value};
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
@@ -16,8 +17,8 @@ pub struct VerifyFullIdentitiesByPublicKeyHashesResult {
 #[wasm_bindgen]
 impl VerifyFullIdentitiesByPublicKeyHashesResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
@@ -15,8 +16,8 @@ pub struct VerifyMasternodeVoteResult {
 #[wasm_bindgen]
 impl VerifyMasternodeVoteResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

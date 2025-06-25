@@ -1,5 +1,6 @@
 // Element type is not exposed through drive's verify feature
 // This is a placeholder implementation that demonstrates the limitation
+use crate::utils::getters::VecU8ToUint8Array;
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -12,8 +13,8 @@ pub struct VerifyElementsResult {
 #[wasm_bindgen]
 impl VerifyElementsResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -14,8 +15,8 @@ pub struct VerifyEpochInfosResult {
 #[wasm_bindgen]
 impl VerifyEpochInfosResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

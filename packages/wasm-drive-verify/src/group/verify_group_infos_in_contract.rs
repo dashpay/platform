@@ -1,3 +1,4 @@
+use crate::utils::getters::VecU8ToUint8Array;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
@@ -18,8 +19,8 @@ pub struct VerifyGroupInfosInContractResult {
 #[wasm_bindgen]
 impl VerifyGroupInfosInContractResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

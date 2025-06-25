@@ -1,7 +1,8 @@
+use dpp::version::PlatformVersion;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+use crate::utils::getters::VecU8ToUint8Array;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
-use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
@@ -15,8 +16,8 @@ pub struct VerifyTokenPerpetualDistributionLastPaidTimeResult {
 #[wasm_bindgen]
 impl VerifyTokenPerpetualDistributionLastPaidTimeResult {
     #[wasm_bindgen(getter)]
-    pub fn root_hash(&self) -> Vec<u8> {
-        self.root_hash.clone()
+    pub fn root_hash(&self) -> Uint8Array {
+        self.root_hash.to_uint8array()
     }
 
     #[wasm_bindgen(getter)]

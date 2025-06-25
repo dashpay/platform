@@ -1,3 +1,4 @@
+use crate::utils::error::{format_result_error, ErrorCategory};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -45,17 +46,17 @@ pub fn identity_to_js_value(identity: Identity) -> Result<JsValue, JsValue> {
     };
 
     serde_wasm_bindgen::to_value(&identity_json)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize identity: {}", e)))
+        .map_err(|e| format_result_error(ErrorCategory::ConversionError, e))
 }
 
 pub fn data_contract_to_js_value(contract: DataContract) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&contract)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize contract: {}", e)))
+        .map_err(|e| format_result_error(ErrorCategory::ConversionError, e))
 }
 
 pub fn document_to_js_value(document: Document) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&document)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize document: {}", e)))
+        .map_err(|e| format_result_error(ErrorCategory::ConversionError, e))
 }
 
 /// Convert an identifier (32 bytes) to base58 string representation

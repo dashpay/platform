@@ -6207,8 +6207,10 @@ dependencies = [
  "bs58",
  "ciborium",
  "console_error_panic_hook",
+ "criterion",
  "dpp",
  "drive",
+ "hex",
  "indexmap 2.7.0",
  "js-sys",
  "nohash-hasher",
@@ -6217,6 +6219,7 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]
