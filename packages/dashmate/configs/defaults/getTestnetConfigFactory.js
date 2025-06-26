@@ -118,25 +118,25 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               consensus_params: {
                 block: {
                   max_bytes: '2097152',
-                  max_gas: '57631392000'
+                  max_gas: '57631392000',
                 },
                 evidence: {
                   max_age_num_blocks: '100000',
                   max_age_duration: '172800000000000',
-                  max_bytes: '512000'
+                  max_bytes: '512000',
                 },
                 validator: {
                   pub_key_types: [
-                    'bls12381'
-                  ]
+                    'bls12381',
+                  ],
                 },
                 version: {
                   app_version: '1',
-                  consensus: '0'
+                  consensus: '0',
                 },
                 synchrony: {
                   precision: '500000000',
-                  message_delay: '32000000000'
+                  message_delay: '32000000000',
                 },
                 timeout: {
                   propose: '30000000000',
@@ -144,11 +144,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                   vote: '2000000000',
                   vote_delta: '500000000',
                   commit: '0',
-                  bypass_commit_timeout: false
+                  bypass_commit_timeout: false,
                 },
                 abci: {
-                  recheck_tx: true
-                }
+                  recheck_tx: true,
+                },
               },
             },
           },
