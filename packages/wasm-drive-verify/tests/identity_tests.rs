@@ -52,7 +52,8 @@ fn test_verify_identity_balance_invalid_id() {
     let invalid_id = Uint8Array::from(&[0u8; 31][..]); // One byte short
     let platform_version = test_platform_version();
 
-    let result = verify_identity_balance_for_identity_id(&proof, &invalid_id, false, platform_version);
+    let result =
+        verify_identity_balance_for_identity_id(&proof, &invalid_id, false, platform_version);
     assert_error_contains(
         &result.map(|_| ()),
         "Invalid identity_id length. Expected 32 bytes",
@@ -97,8 +98,7 @@ fn test_verify_identity_nonce_invalid_identity_id() {
     let invalid_identity_id = Uint8Array::from(&[0u8; 16][..]); // Too short
     let platform_version = test_platform_version();
 
-    let result =
-        verify_identity_nonce(&proof, &invalid_identity_id, false, platform_version);
+    let result = verify_identity_nonce(&proof, &invalid_identity_id, false, platform_version);
     assert_error_contains(
         &result.map(|_| ()),
         "Invalid identity_id length. Expected 32 bytes",

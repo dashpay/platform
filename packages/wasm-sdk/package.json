@@ -1,0 +1,47 @@
+{
+  "name": "@dashevo/wasm-sdk",
+  "version": "0.1.0",
+  "description": "Dash Platform WASM SDK for browser environments",
+  "main": "pkg/wasm_sdk.js",
+  "module": "pkg/wasm_sdk.js",
+  "types": "wasm-sdk.d.ts",
+  "files": [
+    "pkg/**/*",
+    "wasm-sdk.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "./build.sh",
+    "build:dev": "wasm-pack build --dev",
+    "build:release": "wasm-pack build --release",
+    "test": "wasm-pack test --headless --chrome",
+    "prepublishOnly": "npm run build:release"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git"
+  },
+  "keywords": [
+    "dash",
+    "platform",
+    "wasm",
+    "sdk",
+    "blockchain",
+    "browser"
+  ],
+  "author": "Dash Core Group",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/master/packages/wasm-sdk",
+  "dependencies": {},
+  "devDependencies": {
+    "wasm-pack": "^0.12.1"
+  },
+  "browser": {
+    "fs": false,
+    "path": false,
+    "crypto": false
+  }
+}

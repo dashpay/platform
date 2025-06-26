@@ -1,14 +1,15 @@
-use dash_sdk::dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dash_sdk::dpp::platform_value::ReplacementType;
-use dash_sdk::dpp::serialization::PlatformDeserializable;
-use dash_sdk::dpp::serialization::ValueConvertible;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::platform_value::ReplacementType;
+use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::ValueConvertible;
 
 use crate::error::to_js_error;
-use dash_sdk::dashcore_rpc::dashcore::hashes::serde::Serialize;
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dash_sdk::dpp::version::PlatformVersion;
-use dash_sdk::platform::{DataContract, Identity};
+use serde::Serialize;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+use dpp::version::PlatformVersion;
+use dpp::data_contract::DataContract;
+use dpp::identity::Identity;
 use platform_value::string_encoding::Encoding;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -55,6 +56,16 @@ impl IdentityWasm {
     // pub fn set_id(&mut self, id: IdentifierWrapper) {
     //     self.inner.set_id(id.into());
     // }
+
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.inner.id().to_string(Encoding::Base58)
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn revision(&self) -> u64 {
+        self.inner.revision()
+    }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
     pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
@@ -163,19 +174,19 @@ impl IdentityWasm {
 
         value
             .replace_at_paths(
-                dash_sdk::dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
+                dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
                 ReplacementType::TextBase58,
             )
             .map_err(|e| e.to_string())?;
 
         // Monkey patch public keys data to be deserializable
         let public_keys = value
-            .get_array_mut_ref(dash_sdk::dpp::identity::property_names::PUBLIC_KEYS)
+            .get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
             .map_err(|e| e.to_string())?;
 
         for key in public_keys.iter_mut() {
             key.replace_at_paths(
-                dash_sdk::dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
+                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
                 ReplacementType::TextBase64,
             )
             .map_err(|e| e.to_string())?;
@@ -293,8 +304,19 @@ impl From<DataContract> for DataContractWasm {
 
 #[wasm_bindgen]
 impl DataContractWasm {
+    #[wasm_bindgen(getter)]
     pub fn id(&self) -> String {
         self.0.id().to_string(Encoding::Base58)
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn version(&self) -> u32 {
+        self.0.version()
+    }
+    
+    #[wasm_bindgen(getter, js_name = ownerId)]
+    pub fn owner_id(&self) -> String {
+        self.0.owner_id().to_string(Encoding::Base58)
     }
 
     #[wasm_bindgen(js_name=toJSON)]

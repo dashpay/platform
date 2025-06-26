@@ -7,7 +7,13 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", default-features = false }
+# Minimal dependencies for WASM compatibility
+dpp = { path = "../rs-dpp", default-features = false, features = ["dash-sdk-features", "bls-signatures"] }
+drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
+platform-version = { path = "../rs-platform-version" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = ["std", "serde", "bincode"], default-features = false, branch = "v0.40-dev" }
+bip39 = { version = "2.0", features = ["std"] }
+secp256k1 = { version = "0.29", default-features = false, features = ["global-context", "alloc"] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [
@@ -17,10 +23,24 @@ web-sys = { version = "0.3.4", features = [
     'HtmlElement',
     'Node',
     'Window',
+    'Request',
+    'RequestInit',
+    'Response',
+    'Headers',
+    'AbortController',
+    'AbortSignal',
+    'Crypto',
+    'SubtleCrypto',
+    'CryptoKey',
+    'WebSocket',
+    'MessageEvent',
+    'Event',
+    'CloseEvent',
+    'Performance',
 ] }
 wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think it's not needed (LKl)
+# drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: Not WASM compatible due to dapi-grpc dependency
 # tonic = { version = "*", features = ["transport"], default-features = false }
 # client = [
 #   "tonic/channel", FAIL
@@ -34,12 +54,42 @@ tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde-wasm-bindgen = { version = "0.6.5" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+base64 = { version = "0.21" }
+sha2 = { version = "0.10" }
+hex = { version = "0.4" }
+gloo-timers = { version = "0.3", features = ["futures"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+# dapi-grpc = { path = "../dapi-grpc" } # Not WASM compatible due to rustls/hyper dependencies
+wasm-drive-verify = { path = "../wasm-drive-verify" }
+js-sys = { version = "0.3.64" }
+uuid = { version = "1.4", features = ["v4", "js"] }
+getrandom = { version = "0.2", features = ["js"] }
+once_cell = { version = "1.19" }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+[features]
+default = ["full"]
+full = ["tokens", "withdrawals", "cache", "proof-verification", "bls-signatures"]
+minimal = []
+tokens = []
+withdrawals = []
+cache = []
+proof-verification = []
+bls-signatures = ["dpp/bls-signatures"]
+wasm = []
 
 [profile.release]
 lto = "fat"
 opt-level = "z"
 panic = "abort"
 debug = false
+strip = "symbols"
+codegen-units = 1
 
 #[package.metadata.wasm-pack.profile.release]
 #wasm-opt = ['-g', '-O'] # -g for profiling

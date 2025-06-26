@@ -88,9 +88,21 @@ fn fuzz_document_query_with_nested_structures() {
         let contract_js = JsValue::from(contract_id.clone());
         let where_clauses = JsValue::from(&query);
         let order_by = JsValue::NULL;
-        
+
         // Should handle without panic (may error due to bounds)
-        let _ = verify_document_proof(&proof, &contract_js, "test_doc", &where_clauses, &order_by, None, None, None, false, None, 1);
+        let _ = verify_document_proof(
+            &proof,
+            &contract_js,
+            "test_doc",
+            &where_clauses,
+            &order_by,
+            None,
+            None,
+            None,
+            false,
+            None,
+            1,
+        );
     }
 }
 
@@ -176,8 +188,20 @@ fn fuzz_unicode_and_special_characters() {
         let contract_js = JsValue::from(contract_id.clone());
         let where_clauses = JsValue::from(&query);
         let order_by = JsValue::NULL;
-        
+
         // Should handle special characters without panic
-        let _ = verify_document_proof(&proof, &contract_js, doc_type, &where_clauses, &order_by, None, None, None, false, None, 1);
+        let _ = verify_document_proof(
+            &proof,
+            &contract_js,
+            doc_type,
+            &where_clauses,
+            &order_by,
+            None,
+            None,
+            None,
+            false,
+            None,
+            1,
+        );
     }
 }
