@@ -35,7 +35,7 @@ yarn test
 # Test specific packages
 yarn test:suite              # Platform test suite
 yarn test:dapi               # DAPI components
-yarn test:sdk                # JavaScript SDK
+yarn test:sdk                # JavaScript SDK (original)
 yarn test:dpp                # Dash Platform Protocol
 yarn test:drive              # Drive storage layer
 yarn test:wallet-lib         # Wallet library
@@ -95,7 +95,7 @@ yarn configure:tests:network
 
 **DPP** (`packages/rs-dpp`, `packages/wasm-dpp`): Dash Platform Protocol implementation that defines data structures and validation rules.
 
-**SDK** (`packages/js-dash-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform.
+**SDK** (`packages/js-dash-sdk-original`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform.
 
 **Dashmate** (`packages/dashmate`): Node management tool for setting up and managing Dash Platform nodes.
 
