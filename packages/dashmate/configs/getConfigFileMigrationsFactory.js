@@ -1093,6 +1093,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
             }
           });
+
+        return configFile;
       },
     };
   }
