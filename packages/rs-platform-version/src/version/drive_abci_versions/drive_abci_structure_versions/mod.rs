@@ -6,6 +6,7 @@ use versioned_feature_core::FeatureVersion;
 pub struct DriveAbciStructureVersions {
     pub platform_state_structure: FeatureVersion,
     pub platform_state_for_saving_structure_default: FeatureVersion,
+    pub reduced_platform_state_for_saving_structure_default: FeatureVersion,
     pub state_transition_execution_context: FeatureVersion,
     pub commit: FeatureVersion,
     pub masternode: FeatureVersion,

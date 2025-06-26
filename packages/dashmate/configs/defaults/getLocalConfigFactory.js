@@ -63,6 +63,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
             metrics: {
               port: 46660,
             },
+            stateSync: {
+              enabled: false,
+            },
           },
           abci: {
             epochTime: 1200,

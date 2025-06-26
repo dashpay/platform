@@ -58,6 +58,7 @@ services:
     logging: *default-logging
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci/db
+      - drive_abci_checkpoints:/var/lib/dash/rs-drive-abci/db-checkpoints
     environment:
       - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:-devnet}
       - CORE_CONSENSUS_JSON_RPC_USERNAME=drive_consensus
@@ -82,6 +83,7 @@ services:
       - INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS:?err}
       - INSTANT_LOCK_QUORUM_ROTATION=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_ROTATION:?err}
       - DB_PATH=/var/lib/dash/rs-drive-abci/db
+      - GROVEDB_LATEST_FILE=/var/lib/dash/rs-drive-abci/db/latest_state
       - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
       - GRPC_BIND_ADDRESS=0.0.0.0:26670
       - PROMETHEUS_BIND_ADDRESS=${PLATFORM_DRIVE_ABCI_METRICS_URL}
@@ -92,6 +94,10 @@ services:
       - GROVEDB_VISUALIZER_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_GROVEDB_VISUALIZER_PORT:?err}
       - PROPOSER_TX_PROCESSING_TIME_LIMIT=${PLATFORM_DRIVE_ABCI_PROPOSER_TX_PROCESSING_TIME_LIMIT}
       - NETWORK=${NETWORK:?err}
+      - CHECKPOINTS_PATH=/var/lib/dash/rs-drive-abci/db-checkpoints
+      - SNAPSHOTS_ENABLED=${PLATFORM_DRIVE_ABCI_STATE_SYNC_SNAPSHOTS_ENABLED:?err}
+      - SNAPSHOTS_FREQUENCY=${PLATFORM_DRIVE_ABCI_STATE_SYNC_SNAPSHOTS_FREQUENCY:?err}
+      - MAX_NUM_SNAPSHOTS=${PLATFORM_DRIVE_ABCI_STATE_SYNC_SNAPSHOTS_MAX_LIMIT:?err}
     stop_grace_period: 30s
     expose:
       - 26658
@@ -226,6 +232,7 @@ services:
 volumes:
   core_data:
   drive_abci_data:
+  drive_abci_checkpoints:
   drive_tenderdash:
 
 networks:

@@ -22,12 +22,15 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciLastBlockInfoStorageMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
+    DriveAbciReducedPlatformStateStorageMethodVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciTokensProcessingMethodVersions,
     DriveAbciVotingMethodVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_state_sync_versions::v1::DRIVE_ABCI_STATE_SYNC_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v3::DRIVE_ABCI_VALIDATION_VERSIONS_V3;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
@@ -50,7 +53,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             engine: DriveAbciEngineMethodVersions {
                 init_chain: 0,
                 check_tx: 0,
-                run_block_proposal: 0,
+                run_block_proposal: 1,
                 finalize_block_proposal: 0,
                 consensus_params_update: 1,
             },
@@ -156,10 +159,19 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 fetch_platform_state: 0,
                 store_platform_state: 0,
             },
+            platform_reduced_state_storage: DriveAbciReducedPlatformStateStorageMethodVersions {
+                fetch_reduced_platform_state: 0,
+                store_reduced_platform_state: 0,
+            },
+            last_block_info_storage: DriveAbciLastBlockInfoStorageMethodVersions {
+                fetch_last_block_info: 0,
+                store_last_block_info: 0,
+            },
         },
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V3,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
+        state_sync: DRIVE_ABCI_STATE_SYNC_VERSIONS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,

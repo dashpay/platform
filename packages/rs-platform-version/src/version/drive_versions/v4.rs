@@ -12,10 +12,12 @@ use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_M
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
     DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveFetchMethodVersions,
-    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
-    DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
-    DriveProveMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveInitializationMethodVersions, DriveLastBlockInfoMethodVersions, DriveMethodVersions,
+    DriveOperationsMethodVersion, DrivePlatformStateMethodVersions,
+    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
+    DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveReducedPlatformStateMethodVersions, DriveSystemEstimationCostsMethodVersions,
+    DriveVersion,
 };
 use grovedb_version::version::v2::GROVE_V2;
 
@@ -100,6 +102,14 @@ pub const DRIVE_VERSION_V4: DriveVersion = DriveVersion {
             empty_prefunded_specialized_balance: 0,
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+        reduced_platform_state: DriveReducedPlatformStateMethodVersions {
+            fetch_reduced_platform_state_bytes: 0,
+            store_reduced_platform_state_bytes: 0,
+        },
+        last_block_info: DriveLastBlockInfoMethodVersions {
+            fetch_last_block_info_bytes: 0,
+            store_last_block_info_bytes: 0,
+        }
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
     grove_version: GROVE_V2,

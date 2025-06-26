@@ -1,4 +1,7 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
+    TransactionalApplication,
+};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
@@ -14,7 +17,10 @@ pub fn finalize_block<'a, A, C>(
     request: proto::RequestFinalizeBlock,
 ) -> Result<proto::ResponseFinalizeBlock, Error>
 where
-    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
+    A: PlatformApplication<C>
+        + SnapshotManagerApplication
+        + TransactionalApplication<'a>
+        + BlockExecutionApplication,
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
@@ -95,6 +101,29 @@ where
     app.platform()
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
+
+    if app.platform().config.abci.state_sync.snapshots_enabled {
+        app.snapshot_manager()
+            .create_snapshot(&app.platform().drive.grove, block_height as i64)
+            .map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedDriveResponse(format!(
+                    "Unable to create snapshot:{}",
+                    e
+                )))
+            })?;
+    }
+
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let platform_state = app.platform().state.load();
+
+        let block_height = platform_state.last_committed_block_height();
+
+        tracing::trace!(
+            block_height,
+            platform_state = ?platform_state,
+            "state_finalize_block"
+        );
+    }
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }

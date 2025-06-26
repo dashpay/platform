@@ -114,7 +114,7 @@ impl TryFrom<&LogLevel> for EnvFilter {
             )
             .expect("should be a valid log specification"),
             LogLevel::Trace => EnvFilter::try_new(
-                "debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,drive_grovedb_operations=off,dpp=trace",
+                "debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,drive_grovedb_operations=off,dpp=trace,h2::codec=info",
             )
             .expect("should be a valid log specification"),
             LogLevel::Paranoid => {

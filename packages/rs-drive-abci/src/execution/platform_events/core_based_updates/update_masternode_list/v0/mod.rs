@@ -36,7 +36,7 @@ where
         platform_state: Option<&PlatformState>,
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
-        is_init_chain: bool,
+        start_from_scratch: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -44,7 +44,9 @@ where
         if let Some(last_committed_block_info) =
             block_platform_state.last_committed_block_info().as_ref()
         {
-            if core_block_height == last_committed_block_info.basic_info().core_height {
+            if !start_from_scratch
+                && core_block_height == last_committed_block_info.basic_info().core_height
+            {
                 tracing::debug!(
                     method = "update_masternode_list_v0",
                     "no update mnl at height {}",
@@ -66,7 +68,7 @@ where
         } = self.update_state_masternode_list_v0(
             block_platform_state,
             core_block_height,
-            is_init_chain,
+            start_from_scratch,
         )?;
 
         self.update_masternode_identities(

@@ -1,7 +1,8 @@
 //! Configuration of ABCI Application server
 
-use crate::utils::from_opt_str_or_number;
+use crate::utils::{from_opt_str_or_number, from_str_or_number};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 // We allow changes in the ABCI configuration, but there should be a social process
 // involved in making this change.
@@ -37,6 +38,10 @@ pub struct AbciConfig {
     /// Maximum time limit (in ms) to process state transitions to prepare proposal
     #[serde(default, deserialize_with = "from_opt_str_or_number")]
     pub proposer_tx_processing_time_limit: Option<u16>,
+
+    /// State sync configuration
+    #[serde(flatten)]
+    pub state_sync: StateSyncAbciConfig,
 }
 
 impl AbciConfig {
@@ -47,10 +52,9 @@ impl AbciConfig {
     pub(crate) fn default_genesis_core_height() -> u32 {
         1
     }
-}
 
-impl Default for AbciConfig {
-    fn default() -> Self {
+    /// Default ABCI configuration for mainnet
+    pub fn default_mainnet() -> Self {
         Self {
             consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
             genesis_height: AbciConfig::default_genesis_height(),
@@ -58,6 +62,99 @@ impl Default for AbciConfig {
             chain_id: "chain_id".to_string(),
             log: Default::default(),
             proposer_tx_processing_time_limit: Default::default(),
+            state_sync: StateSyncAbciConfig::default_mainnet(),
         }
+    }
+
+    /// Default ABCI configuration for local development
+    pub fn default_local() -> Self {
+        Self {
+            consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
+            genesis_height: AbciConfig::default_genesis_height(),
+            genesis_core_height: AbciConfig::default_genesis_core_height(),
+            chain_id: "chain_id".to_string(),
+            log: Default::default(),
+            proposer_tx_processing_time_limit: Default::default(),
+            state_sync: StateSyncAbciConfig::default_local(),
+        }
+    }
+
+    /// Default ABCI configuration for testnet
+    pub fn default_testnet() -> Self {
+        Self {
+            consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
+            genesis_height: AbciConfig::default_genesis_height(),
+            genesis_core_height: AbciConfig::default_genesis_core_height(),
+            chain_id: "chain_id".to_string(),
+            log: Default::default(),
+            proposer_tx_processing_time_limit: Default::default(),
+            state_sync: StateSyncAbciConfig::default_testnet(),
+        }
+    }
+}
+
+impl Default for AbciConfig {
+    fn default() -> Self {
+        Self::default_mainnet()
+    }
+}
+
+/// Configuration for StateSync feature
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StateSyncAbciConfig {
+    /// Enable snapshot
+    #[serde(deserialize_with = "from_str_or_number")]
+    pub snapshots_enabled: bool,
+
+    /// Path to checkpoints
+    pub checkpoints_path: PathBuf,
+
+    /// Frequency of snapshot creation (in blocks)
+    #[serde(deserialize_with = "from_str_or_number")]
+    pub snapshots_frequency: i64,
+
+    /// Maximum number of snapshots to keep
+    #[serde(deserialize_with = "from_str_or_number")]
+    pub max_num_snapshots: usize,
+}
+
+impl Default for StateSyncAbciConfig {
+    fn default() -> Self {
+        Self::default_local()
+    }
+}
+
+#[allow(missing_docs)]
+impl StateSyncAbciConfig {
+    pub fn default_local() -> Self {
+        Self {
+            snapshots_enabled: false,
+            checkpoints_path: Self::default_checkpoints_path(),
+            snapshots_frequency: 5,
+            max_num_snapshots: 5,
+        }
+    }
+
+    pub fn default_testnet() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: Self::default_checkpoints_path(),
+            snapshots_frequency: 5,
+            max_num_snapshots: 5,
+        }
+    }
+
+    pub fn default_mainnet() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: Self::default_checkpoints_path(),
+            snapshots_frequency: 5,
+            max_num_snapshots: 5,
+        }
+    }
+
+    fn default_checkpoints_path() -> PathBuf {
+        PathBuf::from("/var/lib/dash-platform/data/checkpoints")
     }
 }

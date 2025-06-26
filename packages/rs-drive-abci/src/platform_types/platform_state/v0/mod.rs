@@ -1,5 +1,6 @@
 mod old_structures;
 
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
@@ -12,13 +13,14 @@ use dpp::dashcore::hashes::Hash;
 
 use dpp::platform_value::Bytes32;
 
+use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 
 use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use crate::config::PlatformConfig;
@@ -30,6 +32,7 @@ use dpp::fee::default_costs::{
     CachedEpochIndexFeeVersions, CachedEpochIndexFeeVersionsFieldsBeforeVersion4,
     EpochIndexFeeVersionsForStorage,
 };
+use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
 use dpp::version::fee::FeeVersion;
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -114,6 +117,7 @@ impl Debug for PlatformStateV0 {
                 "instant_lock_validating_quorums",
                 &self.instant_lock_validating_quorums,
             )
+            .field("previous_fee_versions", &self.previous_fee_versions)
             .finish()
     }
 }
@@ -249,6 +253,70 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV1 {
                 .map(|(epoch_index, fee_version)| (epoch_index, fee_version.fee_version_number))
                 .collect(),
         })
+    }
+}
+
+impl PlatformStateV0 {
+    /// Convert to a snapshot state
+    pub(super) fn to_snapshot_state(
+        &self,
+        current_block_info: ExtendedBlockInfo,
+        proposed_core_chain_locked_height: u32,
+    ) -> Result<ReducedPlatformStateForSaving, Error> {
+        let quorums = self.validator_sets();
+        let quorum_positions = quorums
+            .into_iter()
+            .map(|(block_hash, _)| (block_hash.to_byte_array().to_vec()))
+            .collect();
+
+        let last_block_info: Option<ExtendedBlockInfo> = self
+            .last_committed_block_info()
+            .clone()
+            .map(|info| filter_extended_block_info(info.clone()));
+        // .ok_or(AbciError::StateSyncInternalError(
+        //     "last_committed_block_info must be set before saving the state for state sync"
+        //         .to_string(),
+        // ))?;
+
+        Ok(ReducedPlatformStateForSaving::V0(
+            ReducedPlatformStateForSavingV0 {
+                current_protocol_version_in_consensus: self.current_protocol_version_in_consensus,
+                next_epoch_protocol_version: self.next_epoch_protocol_version,
+                current_validator_set_quorum_hash: self
+                    .current_validator_set_quorum_hash
+                    .to_byte_array()
+                    .into(),
+                next_validator_set_quorum_hash: self
+                    .next_validator_set_quorum_hash
+                    .map(|quorum_hash| quorum_hash.to_byte_array().into()),
+                previous_fee_versions: self
+                    .previous_fee_versions
+                    .iter()
+                    .map(|(&epoch_index, fee_version)| {
+                        (epoch_index, fee_version.fee_version_number)
+                    })
+                    .collect(),
+                quorum_positions,
+                last_committed_block_info: Some(filter_extended_block_info(current_block_info)), // we assume this is what we committed
+                proposed_core_chain_locked_height,
+            },
+        ))
+    }
+}
+
+/// Remove fields from [ExtendedBlockInfo] that cannot be saved to a snapshot state.
+///
+/// Helper function to remove fields from [ExtendedBlockInfo] that cannot be saved to a snapshot state
+/// because they are not always available (eg. on proposer) and can cause app hash mismatch.
+fn filter_extended_block_info(input: ExtendedBlockInfo) -> ExtendedBlockInfo {
+    match input {
+        ExtendedBlockInfo::V0(v0) => ExtendedBlockInfoV0 {
+            app_hash: Default::default(),      // will be set on restore
+            signature: [0u8; 96],              // we don't have it here, hope it's not needed
+            block_id_hash: Default::default(), // we don't have it here, hope it's not needed
+            ..v0
+        }
+        .into(),
     }
 }
 

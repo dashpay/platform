@@ -1,10 +1,14 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
+    StateSyncApplication, TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -15,23 +19,35 @@ use tenderdash_abci::proto::abci as proto;
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
-/// creating new proposal or finalizing new block.
-pub struct ConsensusAbciApplication<'a, C> {
+/// creating new proposal, finalizing new block, accept a new snapshot and process incoming chunks (state sync)
+/// 'p: 'tx, means that Platform must outlive the transaction
+pub struct ConsensusAbciApplication<'p, C> {
     /// Platform
-    platform: &'a Platform<C>,
+    platform: &'p Platform<C>,
     /// The current GroveDb transaction
-    transaction: RwLock<Option<Transaction<'a>>>,
+    transaction: RwLock<Option<Transaction<'p>>>,
     /// The current block execution context
     block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// The State sync session
+    snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'p>>>,
+    /// The snapshot manager
+    snapshot_manager: SnapshotManager,
 }
 
-impl<'a, C> ConsensusAbciApplication<'a, C> {
+impl<'p, C> ConsensusAbciApplication<'p, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Self {
+    pub fn new(platform: &'p Platform<C>) -> Self {
+        let snapshot_manager = SnapshotManager::new(
+            platform.config.abci.state_sync.checkpoints_path.clone(),
+            platform.config.abci.state_sync.max_num_snapshots,
+            platform.config.abci.state_sync.snapshots_frequency,
+        );
         Self {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            snapshot_fetching_session: Default::default(),
+            snapshot_manager,
         }
     }
 }
@@ -42,20 +58,36 @@ impl<C> PlatformApplication<C> for ConsensusAbciApplication<'_, C> {
     }
 }
 
+impl<C> SnapshotManagerApplication for ConsensusAbciApplication<'_, C> {
+    fn snapshot_manager(&self) -> &SnapshotManager {
+        &self.snapshot_manager
+    }
+}
+
+impl<'p, C> StateSyncApplication<'p, C> for ConsensusAbciApplication<'p, C> {
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>> {
+        &self.snapshot_fetching_session
+    }
+
+    fn platform(&self) -> &'p Platform<C> {
+        self.platform
+    }
+}
+
 impl<C> BlockExecutionApplication for ConsensusAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }
 }
 
-impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
+impl<'p, C> TransactionalApplication<'p> for ConsensusAbciApplication<'p, C> {
     /// create and store a new transaction
     fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
         self.transaction.write().unwrap().replace(transaction);
     }
 
-    fn transaction(&self) -> &RwLock<Option<Transaction<'a>>> {
+    fn transaction(&self) -> &RwLock<Option<Transaction<'p>>> {
         &self.transaction
     }
 
@@ -148,5 +180,19 @@ where
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         handler::verify_vote_extension(self, request).map_err(error_into_exception)
+    }
+
+    fn offer_snapshot(
+        &self,
+        request: proto::RequestOfferSnapshot,
+    ) -> Result<proto::ResponseOfferSnapshot, proto::ResponseException> {
+        handler::offer_snapshot(self, request).map_err(error_into_exception)
+    }
+
+    fn apply_snapshot_chunk(
+        &self,
+        request: proto::RequestApplySnapshotChunk,
+    ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
+        handler::apply_snapshot_chunk(self, request).map_err(error_into_exception)
     }
 }

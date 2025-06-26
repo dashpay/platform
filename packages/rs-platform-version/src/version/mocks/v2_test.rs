@@ -21,6 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
     DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
     DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
+use crate::version::drive_abci_versions::drive_abci_state_sync_versions::v1::DRIVE_ABCI_STATE_SYNC_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
@@ -39,10 +40,12 @@ use crate::version::drive_versions::drive_vote_method_versions::v1::DRIVE_VOTE_M
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
     DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveFetchMethodVersions,
-    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
-    DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
-    DriveProveMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveInitializationMethodVersions, DriveLastBlockInfoMethodVersions, DriveMethodVersions,
+    DriveOperationsMethodVersion, DrivePlatformStateMethodVersions,
+    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
+    DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveReducedPlatformStateMethodVersions, DriveSystemEstimationCostsMethodVersions,
+    DriveVersion,
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
@@ -136,6 +139,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 empty_prefunded_specialized_balance: 0,
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+            reduced_platform_state: DriveReducedPlatformStateMethodVersions {
+                fetch_reduced_platform_state_bytes: 0,
+                store_reduced_platform_state_bytes: 0,
+            },
+            last_block_info: DriveLastBlockInfoMethodVersions {
+                fetch_last_block_info_bytes: 0,
+                store_last_block_info_bytes: 0,
+            }
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -386,6 +397,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
             },
         },
+        state_sync: DRIVE_ABCI_STATE_SYNC_VERSIONS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,

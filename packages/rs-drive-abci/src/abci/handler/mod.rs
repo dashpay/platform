@@ -35,6 +35,7 @@
 //! can only make changes that are backwards compatible. Otherwise new calls must be made instead.
 //!
 
+mod apply_snapshot_chunk;
 mod check_tx;
 mod echo;
 pub mod error;
@@ -42,16 +43,23 @@ mod extend_vote;
 mod finalize_block;
 mod info;
 mod init_chain;
+mod list_snapshots;
+mod load_snapshot_chunk;
+mod offer_snapshot;
 mod prepare_proposal;
 mod process_proposal;
 mod verify_vote_extension;
 
+pub use apply_snapshot_chunk::apply_snapshot_chunk;
 pub use check_tx::check_tx;
 pub use echo::echo;
 pub use extend_vote::extend_vote;
 pub use finalize_block::finalize_block;
 pub use info::info;
 pub use init_chain::init_chain;
+pub use list_snapshots::list_snapshots;
+pub use load_snapshot_chunk::load_snapshot_chunk;
+pub use offer_snapshot::offer_snapshot;
 pub use prepare_proposal::prepare_proposal;
 pub use process_proposal::process_proposal;
 pub use verify_vote_extension::verify_vote_extension;

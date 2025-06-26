@@ -34,7 +34,7 @@ inputs:
     default: "true"
   version:
     description: "sccache version"
-    default: "0.8.2"
+    default: "0.9.1"
     required: false
 outputs:
   env_vars:
