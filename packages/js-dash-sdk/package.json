@@ -1,0 +1,95 @@
+{
+  "name": "dash",
+  "version": "4.0.0-alpha.1",
+  "description": "Modular JavaScript SDK for Dash Platform",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:wasm && npm run build:js",
+    "build:wasm": "cd ../wasm-sdk && wasm-pack build --target web --out-dir ../js-dash-sdk/wasm",
+    "build:js": "rollup -c",
+    "build:types": "tsc --emitDeclarationOnly",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "dash",
+    "platform",
+    "blockchain",
+    "sdk",
+    "wasm"
+  ],
+  "author": "Dash Core Group",
+  "license": "MIT",
+  "dependencies": {
+    "@dashevo/wasm-dpp": "workspace:*",
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.0.1",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.5",
+    "@rollup/plugin-wasm": "^6.2.2",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.5",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "rollup": "^4.9.1",
+    "rollup-plugin-dts": "^6.1.0",
+    "ts-jest": "^29.1.1",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./core": {
+      "import": "./dist/core/index.esm.js",
+      "require": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts"
+    },
+    "./identities": {
+      "import": "./dist/modules/identities/index.esm.js",
+      "require": "./dist/modules/identities/index.js",
+      "types": "./dist/modules/identities/index.d.ts"
+    },
+    "./contracts": {
+      "import": "./dist/modules/contracts/index.esm.js",
+      "require": "./dist/modules/contracts/index.js",
+      "types": "./dist/modules/contracts/index.d.ts"
+    },
+    "./documents": {
+      "import": "./dist/modules/documents/index.esm.js",
+      "require": "./dist/modules/documents/index.js",
+      "types": "./dist/modules/documents/index.d.ts"
+    },
+    "./names": {
+      "import": "./dist/modules/names/index.esm.js",
+      "require": "./dist/modules/names/index.js",
+      "types": "./dist/modules/names/index.d.ts"
+    },
+    "./wallet": {
+      "import": "./dist/modules/wallet/index.esm.js",
+      "require": "./dist/modules/wallet/index.js",
+      "types": "./dist/modules/wallet/index.d.ts"
+    }
+  }
+}

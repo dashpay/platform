@@ -135,9 +135,39 @@ impl ContextProvider for WasmContext {
 
     fn get_token_configuration(
         &self,
-        _token_id: &Identifier,
+        token_id: &Identifier,
     ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, ContextProviderError> {
-        // TODO: Implement token configuration retrieval
-        Ok(None)
+        use dpp::data_contract::associated_token::token_configuration::{TokenConfiguration, TokenConfigurationConventions};
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        
+        // For now, return a default token configuration for any requested token
+        // In a real implementation, this would fetch from the platform or cache
+        
+        // Check if this is a known system contract token
+        let token_config = match token_id.to_string(platform_value::string_encoding::Encoding::Base58) {
+            Ok(id_str) => {
+                // Parse token ID format: <contract_id>.<position>
+                let parts: Vec<&str> = id_str.split('.').collect();
+                if parts.len() == 2 {
+                    let _contract_id = parts[0];
+                    let position = parts[1].parse::<u32>().unwrap_or(0);
+                    
+                    // Create a default token configuration
+                    Some(TokenConfiguration::V0(TokenConfigurationV0 {
+                        base_supply: 1_000_000_000_000, // 1 trillion base units
+                        max_supply: Some(10_000_000_000_000), // 10 trillion max supply
+                        new_tokens_destination_identity: None,
+                        self_destruct_when_empty: false,
+                        transfers_enabled: true,
+                        token_position: position as u16,
+                    }))
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        };
+        
+        Ok(token_config)
     }
 }

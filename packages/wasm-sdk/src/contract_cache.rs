@@ -419,10 +419,131 @@ impl ContractCache {
         }
     }
     
-    fn extract_dependencies(&self, _contract: &DataContract) -> Vec<String> {
-        // TODO: Analyze contract schema for references to other contracts
-        // For now, return empty list
-        vec![]
+    fn extract_dependencies(&self, contract: &DataContract) -> Vec<String> {
+        use platform_value::Value;
+        use std::collections::HashSet;
+        
+        let mut dependencies = HashSet::new();
+        
+        // Get document types based on contract version
+        let document_types = match contract {
+            DataContract::V0(v0) => &v0.document_types,
+            DataContract::V1(v1) => &v1.document_types,
+        };
+        
+        // Analyze each document type for references
+        for (_doc_name, doc_schema) in document_types.iter() {
+            // Convert document schema to Value for analysis
+            if let Ok(schema_value) = doc_schema.to_value() {
+                self.find_contract_references(&schema_value, &mut dependencies);
+            }
+        }
+        
+        // Also check schema definitions ($defs) if present
+        let schema_defs = match contract {
+            DataContract::V0(v0) => &v0.schema_defs,
+            DataContract::V1(v1) => &v1.schema_defs,
+        };
+        
+        if let Some(defs) = schema_defs {
+            if let Ok(defs_value) = defs.to_value() {
+                self.find_contract_references(&defs_value, &mut dependencies);
+            }
+        }
+        
+        dependencies.into_iter().collect()
+    }
+    
+    /// Recursively find contract ID references in a schema
+    fn find_contract_references(&self, value: &Value, dependencies: &mut HashSet<String>) {
+        match value {
+            Value::Map(map) => {
+                for (key, val) in map.iter() {
+                    // Check for $ref pattern pointing to other contracts
+                    if let Value::Text(key_str) = key {
+                        if key_str == "$ref" {
+                            if let Value::Text(ref_str) = val {
+                                // Parse reference format: "#/$defs/<contract_id>/<type>"
+                                // or "<contract_id>#<path>"
+                                if let Some(contract_id) = self.extract_contract_id_from_ref(ref_str) {
+                                    dependencies.insert(contract_id);
+                                }
+                            }
+                        }
+                        
+                        // Check for byteArray contentMediaType references
+                        if key_str == "contentMediaType" {
+                            if let Value::Text(media_type) = val {
+                                if media_type.starts_with("application/x.dash.dpp.identifier") {
+                                    // This field references another contract/document
+                                    // Extract from pattern or sibling properties
+                                    if let Some(Value::Text(pattern)) = map.get(&Value::Text("pattern".to_string())) {
+                                        if let Some(contract_id) = self.extract_contract_id_from_pattern(pattern) {
+                                            dependencies.insert(contract_id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Recurse into nested structures
+                    self.find_contract_references(val, dependencies);
+                }
+            }
+            Value::Array(array) => {
+                for item in array {
+                    self.find_contract_references(item, dependencies);
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    /// Extract contract ID from a $ref string
+    fn extract_contract_id_from_ref(&self, ref_str: &str) -> Option<String> {
+        // Handle external contract references
+        // Format: "<contract_id>#<path>" or "#/$defs/<contract_id>/<type>"
+        if ref_str.contains('#') && !ref_str.starts_with('#') {
+            // External reference: contract_id#path
+            ref_str.split('#').next().map(|s| s.to_string())
+        } else if ref_str.starts_with("#/$defs/") {
+            // Internal reference that might contain contract ID
+            let parts: Vec<&str> = ref_str.trim_start_matches("#/$defs/").split('/').collect();
+            if parts.len() >= 2 {
+                // Check if first part looks like a contract ID (base58 string)
+                let potential_id = parts[0];
+                if potential_id.len() > 20 && potential_id.chars().all(|c| c.is_alphanumeric()) {
+                    Some(potential_id.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+    
+    /// Extract contract ID from a pattern constraint
+    fn extract_contract_id_from_pattern(&self, pattern: &str) -> Option<String> {
+        // Pattern might contain contract ID in format like "^[contract_id]:[document_type]$"
+        if pattern.contains(':') {
+            let parts: Vec<&str> = pattern.trim_start_matches('^').trim_end_matches('$').split(':').collect();
+            if parts.len() >= 2 {
+                let contract_id = parts[0].trim_matches(|c| c == '[' || c == ']');
+                if contract_id.len() > 20 && contract_id.chars().all(|c| c.is_alphanumeric()) {
+                    Some(contract_id.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
     
     fn evict_if_necessary(&self) -> Result<(), JsError> {
