@@ -1100,9 +1100,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(
-                testnet.get('platform.drive.tenderdash.genesis.consensus_params')
-              );
+              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis.consensus_params'));
             }
           });
         return configFile;
