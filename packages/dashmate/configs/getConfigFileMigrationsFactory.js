@@ -1086,15 +1086,23 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      '2.0.0-rc.20': (configFile) => {
+      '2.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.core.miner.mediantime;
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
+          });
+        return configFile;
+      },
+      '2.0.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
             }
           });
-
-        return configFile;
       },
     };
   }
