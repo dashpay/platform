@@ -83,15 +83,23 @@ where
 
             // We should panic if this node is not supported a new protocol version
             let Ok(next_platform_version) = PlatformVersion::get(next_protocol_version) else {
-                panic!(
+                let max_supported = PlatformVersion::latest().protocol_version;
+                tracing::error!(
                     r#"Failed to upgrade the network protocol version {next_protocol_version}.
 
 Please update your software to the latest version: https://docs.dash.org/platform-protocol-upgrade
 
 Your software version: {}, latest supported protocol version: {}."#,
                     env!("CARGO_PKG_VERSION"),
-                    PlatformVersion::latest().protocol_version
+                    max_supported
                 );
+
+                return Ok(ValidationResult::new_with_error(Error::Execution(
+                    ExecutionError::ProtocolVersionNotSupported {
+                        max_supported,
+                        required: next_protocol_version,
+                    },
+                )));
             };
 
             let old_protocol_version = block_platform_state.current_protocol_version_in_consensus();
