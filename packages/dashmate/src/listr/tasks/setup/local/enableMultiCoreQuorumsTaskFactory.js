@@ -10,32 +10,32 @@ import waitForMasternodeProbes from '../../../../core/quorum/waitForMasternodePr
  * @param {generateBlocks} generateBlocks
  * @return {enableCoreQuorumsTask}
  */
-export default function enableCoreQuorumsTaskFactory(generateBlocks) {
+export default function enableMultiCoreQuorumsTaskFactory(generateBlocks) {
   /**
    * @typedef {enableCoreQuorumsTask}
    * @return {Listr}
    */
-  function enableCoreQuorumsTask() {
+  function enableMultiCoreQuorumsTask() {
     const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
 
     return new Listr([
       {
         task: (ctx) => {
-          // Those are default values for the quorum size 3 with all nodes
-          // behaving correctly with "llmq_test" quorum
-          ctx.expectedMembers = 3;
-          ctx.expectedCommitments = 3;
-          ctx.expectedConnections = 2;
-
-          ctx.expectedContributions = 3;
-          ctx.expectedJustifications = 0;
-          ctx.expectedComplaints = 0;
-
           ctx.masternodeCoreServices = ctx.coreServices
             .filter((coreService) => coreService.getConfig().getName() !== 'local_seed');
 
           ctx.masternodeRpcClients = ctx.masternodeCoreServices
             .map((coreService) => coreService.getRpcClient());
+
+          // Those are default values for the quorum size 3 with all nodes
+          // behaving correctly with "llmq_test" quorum
+          ctx.expectedMembers = Math.min(ctx.masternodeCoreServices.length, 3);
+          ctx.expectedCommitments = Math.min(ctx.masternodeCoreServices.length, 3);
+          ctx.expectedConnections = Math.min(ctx.masternodeCoreServices.length, 3) - 1;
+
+          ctx.expectedContributions = Math.min(ctx.masternodeCoreServices.length, 3);
+          ctx.expectedJustifications = 0;
+          ctx.expectedComplaints = 0;
         },
       },
       {
@@ -274,5 +274,5 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
     ]);
   }
 
-  return enableCoreQuorumsTask;
+  return enableMultiCoreQuorumsTask;
 }

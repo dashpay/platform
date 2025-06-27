@@ -93,6 +93,7 @@ export class Client extends EventEmitter {
       'baseBanTime',
       'blockHeadersProviderOptions',
       'blockHeadersProvider',
+      'llmqParamsOverride',
     ].forEach((optionName) => {
       // eslint-disable-next-line
       if (this.options.hasOwnProperty(optionName)) {

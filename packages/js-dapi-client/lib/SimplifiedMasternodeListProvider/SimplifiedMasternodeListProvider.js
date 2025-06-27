@@ -10,6 +10,7 @@ class SimplifiedMasternodeListProvider {
    * @param {object} [options] - Options
    * @param {string} [options.network]
    * @param {string} [options.loggerOptions]
+   * @param {Object} [options.llmqParamsOverride]
    */
   constructor(createStream, options = {}) {
     this.createStream = createStream;
@@ -28,7 +29,7 @@ class SimplifiedMasternodeListProvider {
     /**
      * @type {SimplifiedMNList}
      */
-    this.simplifiedMNList = new SimplifiedMNList(undefined);
+    this.simplifiedMNList = new SimplifiedMNList(null, this.options.llmqParamsOverride || {});
   }
 
   /**
@@ -109,6 +110,7 @@ class SimplifiedMasternodeListProvider {
           simplifiedMNListDiff = new SimplifiedMNListDiff(
             simplifiedMNListDiffObject,
             this.options.network,
+            this.options.llmqParamsOverride || {},
           );
         } catch (e) {
           this.logger.warn(
@@ -138,7 +140,10 @@ class SimplifiedMasternodeListProvider {
         try {
           // Restart list when we receive a full diff
           if (diffCount === 1) {
-            this.simplifiedMNList = new SimplifiedMNList(simplifiedMNListDiff);
+            this.simplifiedMNList = new SimplifiedMNList(
+              simplifiedMNListDiff,
+              this.options.llmqParamsOverride || {},
+            );
           } else {
             this.simplifiedMNList.applyDiff(simplifiedMNListDiff);
           }

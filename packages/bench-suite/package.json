@@ -8,7 +8,7 @@
     "lint": ""
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.22.0",
+    "@dashevo/dashcore-lib": "~0.25.0",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",

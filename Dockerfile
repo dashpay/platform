@@ -420,6 +420,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
+    export TENDERDASH_COMMITISH=d67ea304a4cd1364a3e1a1c27602ecc704d32cea; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
@@ -483,6 +484,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
+    export TENDERDASH_COMMITISH=d67ea304a4cd1364a3e1a1c27602ecc704d32cea; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \

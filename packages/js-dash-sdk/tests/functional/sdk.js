@@ -21,8 +21,14 @@ describe('SDK', function suite() {
   beforeEach(async () => {
     dpnsContractId = Identifier.from(dpnsContractIdString);
 
+    let seeds = null;
+    if (typeof process.env.DAPI_SEED === 'string') {
+      seeds = process.env.DAPI_SEED
+        .split(',');
+    }
+
     const clientOpts = {
-      seeds: process.env.DAPI_SEED.split(','),
+      seeds,
       network: process.env.NETWORK,
       wallet: {
         mnemonic: null,

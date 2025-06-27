@@ -92,10 +92,16 @@ fallbackfee=0.00001
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
-testactivationheight=mn_rr@1000 
+testactivationheight=mn_rr@1000
+maxtimeadjustment=10
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 llmqtestinstantsenddip0024=llmq_test_instantsend
+{{? it.platform.drive.abci.validatorSet.quorum.activeSigners == 1 }} 
+llmqtestparams=1:1
+llmqtestinstantsendparams=1:1
+llmqtestplatformparams=1:1
+{{?}}
 
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnet.name}}
