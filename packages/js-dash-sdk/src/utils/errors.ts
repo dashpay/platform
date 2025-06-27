@@ -27,7 +27,7 @@ export class ValidationError extends DashSDKError {
 }
 
 export class StateTransitionError extends DashSDKError {
-  constructor(message: string, public code?: number) {
+  constructor(message: string, public code: number) {
     super(message);
     this.name = 'StateTransitionError';
   }

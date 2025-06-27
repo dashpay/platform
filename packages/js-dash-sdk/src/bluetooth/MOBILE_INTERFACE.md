@@ -340,8 +340,15 @@ Standard error codes:
 
 ```javascript
 import BleManager from 'react-native-ble-manager';
+import crypto from 'react-native-crypto';
 
 class DashBluetoothService {
+  constructor() {
+    this.sessionKey = null;
+    this.authenticated = false;
+    this.nonce = 0;
+  }
+
   async setupService() {
     // Initialize BLE Manager
     await BleManager.start();
@@ -353,16 +360,19 @@ class DashBluetoothService {
         {
           uuid: '00000001-dash-platform-command-char',
           properties: ['Write'],
-          onWriteRequest: this.handleCommand
+          permissions: ['Write'],
+          onWriteRequest: this.handleCommand.bind(this)
         },
         {
           uuid: '00000002-dash-platform-response-char',
-          properties: ['Notify']
+          properties: ['Notify'],
+          permissions: ['Read']
         },
         {
           uuid: '00000003-dash-platform-status-char',
           properties: ['Read', 'Notify'],
-          onReadRequest: this.handleStatusRead
+          permissions: ['Read'],
+          onReadRequest: this.handleStatusRead.bind(this)
         }
       ]
     });
@@ -376,13 +386,94 @@ class DashBluetoothService {
   
   async handleCommand(data, offset, withoutResponse, callback) {
     try {
-      const message = JSON.parse(data.toString('utf8'));
+      // Decrypt if authenticated
+      let message;
+      if (this.authenticated && this.sessionKey) {
+        const decrypted = await this.decrypt(data);
+        message = JSON.parse(decrypted.toString('utf8'));
+      } else {
+        message = JSON.parse(data.toString('utf8'));
+      }
+      
+      // Validate nonce to prevent replay attacks
+      if (this.authenticated && message.nonce <= this.nonce) {
+        throw new Error('Invalid nonce - possible replay attack');
+      }
+      this.nonce = message.nonce || 0;
+      
+      // Process based on auth state
       const response = await this.processMessage(message);
-      await this.sendResponse(response);
+      
+      // Encrypt response if authenticated
+      if (this.authenticated && this.sessionKey) {
+        const encrypted = await this.encrypt(JSON.stringify(response));
+        await this.sendResponse(encrypted);
+      } else {
+        await this.sendResponse(response);
+      }
+      
       callback(BleManager.RESULT_SUCCESS);
     } catch (error) {
+      console.error('Command handling error:', error);
       callback(BleManager.RESULT_UNLIKELY_ERROR);
     }
+  }
+  
+  async encrypt(data) {
+    // AES-256-GCM encryption with session key
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.sessionKey, iv);
+    const encrypted = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    
+    return Buffer.concat([iv, tag, encrypted]);
+  }
+  
+  async decrypt(data) {
+    // AES-256-GCM decryption
+    const iv = data.slice(0, 12);
+    const tag = data.slice(12, 28);
+    const encrypted = data.slice(28);
+    
+    const decipher = crypto.createDecipheriv('aes-256-gcm', this.sessionKey, iv);
+    decipher.setAuthTag(tag);
+    
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  }
+  
+  async processMessage(message) {
+    // Implement authentication first
+    if (!this.authenticated && message.command !== 'AUTH_START') {
+      return {
+        error: 'AUTH_REQUIRED',
+        message: 'Authentication required'
+      };
+    }
+    
+    switch (message.command) {
+      case 'AUTH_START':
+        return this.handleAuthStart(message);
+      case 'AUTH_COMPLETE':
+        return this.handleAuthComplete(message);
+      // ... other commands
+    }
+  }
+  
+  async handleAuthStart(message) {
+    // Implement ECDH key exchange
+    const keyPair = crypto.generateKeyPairSync('ec', {
+      namedCurve: 'P-256',
+      publicKeyEncoding: { type: 'spki', format: 'der' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'der' }
+    });
+    
+    this.privateKey = keyPair.privateKey;
+    
+    return {
+      command: 'AUTH_CHALLENGE',
+      publicKey: keyPair.publicKey.toString('base64'),
+      challenge: crypto.randomBytes(32).toString('base64')
+    };
   }
 }
 ```

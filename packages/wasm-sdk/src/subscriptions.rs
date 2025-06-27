@@ -10,6 +10,13 @@ use web_sys::{MessageEvent, WebSocket};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// Extract subscription ID from JSON value
+fn extract_subscription_id(msg: &serde_json::Value) -> Result<String, JsError> {
+    msg["id"].as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| JsError::new("Failed to get subscription ID"))
+}
+
 /// WebSocket subscription handle
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -77,8 +84,10 @@ pub fn subscribe_to_identity_balance_updates(
         on_close: None,
     }));
     
+    let subscription_id = extract_subscription_id(&subscribe_msg)?;
+    
     let handle = SubscriptionHandle {
-        id: subscribe_msg["id"].as_str().unwrap().to_string(),
+        id: subscription_id,
         websocket: ws.clone(),
         callbacks: callbacks.clone(),
     };
@@ -88,12 +97,15 @@ pub fn subscribe_to_identity_balance_updates(
         let callbacks = callbacks.clone();
         Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
             if let Ok(text) = e.data().dyn_into::<js_sys::JsString>() {
-                if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&text.as_string().unwrap()) {
+                if let Some(string) = text.as_string() {
+                    if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&string) {
                     if let Some(result) = msg.get("result") {
                         if let Some(callback) = callbacks.borrow().on_message.as_ref() {
-                            let js_result = serde_wasm_bindgen::to_value(result).unwrap();
-                            let _ = callback.call1(&JsValue::null(), &js_result);
+                            if let Ok(js_result) = serde_wasm_bindgen::to_value(result) {
+                                let _ = callback.call1(&JsValue::null(), &js_result);
+                            }
                         }
+                    }
                     }
                 }
             }
@@ -149,8 +161,10 @@ pub fn subscribe_to_data_contract_updates(
         on_close: None,
     }));
     
+    let subscription_id = extract_subscription_id(&subscribe_msg)?;
+    
     let handle = SubscriptionHandle {
-        id: subscribe_msg["id"].as_str().unwrap().to_string(),
+        id: subscription_id,
         websocket: ws.clone(),
         callbacks: callbacks.clone(),
     };
@@ -198,8 +212,10 @@ pub fn subscribe_to_document_updates(
         on_close: None,
     }));
     
+    let subscription_id = extract_subscription_id(&subscribe_msg)?;
+    
     let handle = SubscriptionHandle {
-        id: subscribe_msg["id"].as_str().unwrap().to_string(),
+        id: subscription_id,
         websocket: ws.clone(),
         callbacks: callbacks.clone(),
     };
@@ -235,8 +251,10 @@ pub fn subscribe_to_block_headers(
         on_close: None,
     }));
     
+    let subscription_id = extract_subscription_id(&subscribe_msg)?;
+    
     let handle = SubscriptionHandle {
-        id: subscribe_msg["id"].as_str().unwrap().to_string(),
+        id: subscription_id,
         websocket: ws.clone(),
         callbacks: callbacks.clone(),
     };
@@ -274,8 +292,10 @@ pub fn subscribe_to_state_transition_results(
         on_close: None,
     }));
     
+    let subscription_id = extract_subscription_id(&subscribe_msg)?;
+    
     let handle = SubscriptionHandle {
-        id: subscribe_msg["id"].as_str().unwrap().to_string(),
+        id: subscription_id,
         websocket: ws.clone(),
         callbacks: callbacks.clone(),
     };
@@ -296,7 +316,8 @@ fn setup_websocket_handlers(
         let callbacks = callbacks.clone();
         Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
             if let Ok(text) = e.data().dyn_into::<js_sys::JsString>() {
-                if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&text.as_string().unwrap()) {
+                if let Some(string) = text.as_string() {
+                    if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&string) {
                     // Handle subscription confirmation
                     if msg.get("id").is_some() && msg.get("result").is_some() {
                         // Subscription confirmed

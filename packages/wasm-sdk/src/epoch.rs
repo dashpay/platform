@@ -275,8 +275,8 @@ pub async fn get_evonode_by_pro_tx_hash(
     
     Ok(Evonode {
         pro_tx_hash,
-        owner_address: format!("y{}Owner{}", network.chars().next().unwrap().to_uppercase(), node_index),
-        voting_address: format!("y{}Voting{}", network.chars().next().unwrap().to_uppercase(), node_index),
+        owner_address: format!("y{}Owner{}", network.chars().next().unwrap_or('t').to_uppercase(), node_index),
+        voting_address: format!("y{}Voting{}", network.chars().next().unwrap_or('t').to_uppercase(), node_index),
         is_hpmn,
         platform_p2p_port: 26656 + port_offset,
         platform_http_port: 443,
@@ -402,7 +402,9 @@ pub async fn get_validator_set_changes(
     for i in 0..from_array.length() {
         if let Some(node) = from_array.get(i).dyn_ref::<Object>() {
             if let Ok(hash) = Reflect::get(node, &"proTxHash".into()) {
-                from_hashes.insert(hash.as_string().unwrap_or_default());
+                if let Some(hash_str) = hash.as_string() {
+                    from_hashes.insert(hash_str);
+                }
             }
         }
     }
@@ -410,7 +412,9 @@ pub async fn get_validator_set_changes(
     for i in 0..to_array.length() {
         if let Some(node) = to_array.get(i).dyn_ref::<Object>() {
             if let Ok(hash) = Reflect::get(node, &"proTxHash".into()) {
-                to_hashes.insert(hash.as_string().unwrap_or_default());
+                if let Some(hash_str) = hash.as_string() {
+                    to_hashes.insert(hash_str);
+                }
             }
         }
     }
@@ -463,7 +467,7 @@ pub async fn get_epoch_stats(sdk: &WasmSdk, epoch_index: u32) -> Result<JsValue,
     for i in 0..total_nodes {
         if let Some(node) = evonodes_array.get(i).dyn_ref::<Object>() {
             if let Ok(is_hpmn) = Reflect::get(node, &"isHPMN".into()) {
-                if is_hpmn.as_bool().unwrap_or(false) {
+                if is_hpmn.as_bool().unwrap_or_default() {
                     hpmn_count += 1;
                 }
             }

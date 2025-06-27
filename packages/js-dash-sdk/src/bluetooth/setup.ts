@@ -7,9 +7,28 @@ import { BluetoothProvider } from './BluetoothProvider';
 import { BluetoothWallet } from './BluetoothWallet';
 import { BluetoothConnection } from './BluetoothConnection';
 
+/**
+ * Default timeout for Bluetooth operations
+ */
+export const DEFAULT_BLUETOOTH_TIMEOUT = 30000; // 30 seconds
+
 export interface BluetoothSetupOptions {
+  /**
+   * Require authentication when connecting to device
+   * @default true
+   */
   requireAuthentication?: boolean;
+  
+  /**
+   * Automatically reconnect if connection is lost
+   * @default true
+   */
   autoReconnect?: boolean;
+  
+  /**
+   * Connection timeout in milliseconds
+   * @default 30000 (30 seconds)
+   */
   timeout?: number;
 }
 
@@ -35,7 +54,7 @@ export async function setupBluetoothSDK(
   const provider = new BluetoothProvider({
     requireAuthentication: options.requireAuthentication ?? true,
     autoReconnect: options.autoReconnect ?? true,
-    timeout: options.timeout ?? 30000
+    timeout: options.timeout ?? DEFAULT_BLUETOOTH_TIMEOUT
   });
 
   // Connect to device

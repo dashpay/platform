@@ -240,9 +240,9 @@ impl BatchOptimizer {
         let end = ((batch_index + 1) * self.batch_size).min(total_items);
         
         let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &"start".into(), &start.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"end".into(), &end.into()).unwrap();
-        js_sys::Reflect::set(&obj, &"size".into(), &(end - start).into()).unwrap();
+        let _ = js_sys::Reflect::set(&obj, &"start".into(), &start.into());
+        let _ = js_sys::Reflect::set(&obj, &"end".into(), &end.into());
+        let _ = js_sys::Reflect::set(&obj, &"size".into(), &(end - start).into());
         obj
     }
 }

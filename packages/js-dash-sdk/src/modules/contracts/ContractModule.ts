@@ -1,6 +1,6 @@
 import { SDK } from '../../SDK';
 import { getWasmSdk } from '../../core/WasmLoader';
-import { StateTransitionResult, ProofOptions } from '../../core/types';
+import { StateTransitionResult, ProofOptions, BroadcastOptions } from '../../core/types';
 import {
   DataContract,
   ContractCreateOptions,
@@ -20,6 +20,33 @@ export class ContractModule {
 
   async create(options: ContractCreateOptions): Promise<DataContract> {
     this.ensureInitialized();
+    
+    // Validate input
+    if (!options.ownerId) {
+      throw new Error('Owner ID is required');
+    }
+    
+    if (!options.documentSchemas || Object.keys(options.documentSchemas).length === 0) {
+      throw new Error('At least one document schema is required');
+    }
+    
+    // Validate document schemas
+    for (const [docType, schema] of Object.entries(options.documentSchemas)) {
+      if (!schema.type || schema.type !== 'object') {
+        throw new Error(`Document type '${docType}' must have type 'object'`);
+      }
+      
+      if (!schema.properties || Object.keys(schema.properties).length === 0) {
+        throw new Error(`Document type '${docType}' must have at least one property`);
+      }
+      
+      // Validate property names
+      for (const propName of Object.keys(schema.properties)) {
+        if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(propName)) {
+          throw new Error(`Invalid property name '${propName}' in document type '${docType}'. Must start with letter and contain only alphanumeric and underscore`);
+        }
+      }
+    }
     
     const wasm = getWasmSdk();
     const wasmSdk = this.sdk.getWasmSdk();
@@ -66,7 +93,7 @@ export class ContractModule {
     }
   }
 
-  async publish(contract: DataContract): Promise<StateTransitionResult> {
+  async publish(contract: DataContract, options?: BroadcastOptions): Promise<StateTransitionResult> {
     this.ensureInitialized();
     
     const wasm = getWasmSdk();
@@ -79,10 +106,10 @@ export class ContractModule {
     );
     
     // Sign and broadcast
-    return this.broadcast(transition);
+    return this.broadcast(transition, options);
   }
 
-  async update(contractId: string, options: ContractUpdateOptions): Promise<StateTransitionResult> {
+  async update(contractId: string, options: ContractUpdateOptions, broadcastOptions?: BroadcastOptions): Promise<StateTransitionResult> {
     this.ensureInitialized();
     
     const wasm = getWasmSdk();
@@ -108,7 +135,7 @@ export class ContractModule {
       updatedContract
     );
     
-    return this.broadcast(transition);
+    return this.broadcast(transition, broadcastOptions);
   }
 
   async getHistory(contractId: string, limit?: number, offset?: number): Promise<ContractHistoryEntry[]> {
@@ -169,7 +196,7 @@ export class ContractModule {
     throw new Error(`Contract ${contractId} not confirmed within ${timeout}ms`);
   }
 
-  private async broadcast(transition: any): Promise<StateTransitionResult> {
+  private async broadcast(transition: any, options?: BroadcastOptions): Promise<StateTransitionResult> {
     const wasm = getWasmSdk();
     const wasmSdk = this.sdk.getWasmSdk();
     
@@ -182,7 +209,7 @@ export class ContractModule {
     const result = await wasm.broadcastStateTransition(
       wasmSdk,
       transition,
-      false // skipValidation
+      options?.skipValidation ?? false
     );
     
     return {

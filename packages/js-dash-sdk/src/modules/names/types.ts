@@ -1,21 +1,21 @@
 export interface DPNSName {
-  label: string;
-  normalizedLabel: string;
-  normalizedParentDomainName: string;
-  preorderSalt: Uint8Array;
-  records: DPNSRecord;
-  subdomainRules?: SubdomainRules;
-  ownerId: string;
-  contractId: string;
+  readonly label: string;
+  readonly normalizedLabel: string;
+  readonly normalizedParentDomainName: string;
+  readonly preorderSalt: Uint8Array;
+  readonly records: DPNSRecord;
+  readonly subdomainRules?: SubdomainRules;
+  readonly ownerId: string;
+  readonly dataContractId: string;
 }
 
 export interface DPNSRecord {
-  dashUniqueIdentityId?: string;
-  dashAliasIdentityId?: string;
+  readonly dashUniqueIdentityId?: string;
+  readonly dashAliasIdentityId?: string;
 }
 
 export interface SubdomainRules {
-  allowSubdomains: boolean;
+  readonly allowSubdomains: boolean;
 }
 
 export interface NameRegisterOptions {

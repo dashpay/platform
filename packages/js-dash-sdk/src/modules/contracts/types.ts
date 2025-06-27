@@ -1,7 +1,7 @@
 export interface DataContract {
   id: string;
   ownerId: string;
-  schema: object;
+  schema: Record<string, any>;
   version: number;
   documentSchemas: Record<string, DocumentSchema>;
 }
@@ -24,12 +24,12 @@ export interface Index {
 
 export interface ContractCreateOptions {
   ownerId: string;
-  schema: object;
+  schema: Record<string, any>;
   documentSchemas: Record<string, DocumentSchema>;
 }
 
 export interface ContractUpdateOptions {
-  schema?: object;
+  schema?: Record<string, any>;
   documentSchemas?: Record<string, DocumentSchema>;
 }
 

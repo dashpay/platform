@@ -1,0 +1,127 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run audit daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        run: |
+          cd packages/wasm-sdk
+          cargo audit
+
+      - name: Check for outdated dependencies
+        run: |
+          cd packages/wasm-sdk
+          cargo install cargo-outdated
+          cargo outdated --exit-code 1 || true
+
+      - name: License check
+        run: |
+          cd packages/wasm-sdk
+          cargo install cargo-license
+          cargo license
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v3
+        with:
+          # Fail on critical vulnerabilities
+          fail-on-severity: critical
+          # Check licenses
+          license-check: true
+          # Allowed licenses (matches audit.toml)
+          allow-licenses: MIT, Apache-2.0, BSD-3-Clause, ISC
+
+  wasm-specific-checks:
+    name: WASM-Specific Security Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust with WASM target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Check for unsafe code
+        run: |
+          cd packages/wasm-sdk
+          cargo install cargo-geiger
+          cargo geiger --all-features
+
+      - name: Check WASM binary size
+        run: |
+          cd packages/wasm-sdk
+          wasm-pack build --release
+          echo "WASM binary size:"
+          ls -lh pkg/*_bg.wasm
+
+      - name: Scan for common vulnerabilities
+        run: |
+          cd packages/wasm-sdk
+          # Check for common security anti-patterns
+          # Using ripgrep for pattern matching
+          
+          echo "Checking for potential security issues..."
+          
+          # Check for unwrap() calls (should use proper error handling)
+          echo "Checking for unwrap() calls..."
+          rg "\.unwrap\(\)" --type rust || echo "No unwrap() calls found ✓"
+          
+          # Check for panic! usage
+          echo "Checking for panic! macros..."
+          rg "panic!\(" --type rust || echo "No panic! macros found ✓"
+          
+          # Check for unsafe blocks
+          echo "Checking for unsafe blocks..."
+          rg "unsafe\s*\{" --type rust || echo "No unsafe blocks found ✓"
+          
+          # Check for hard-coded secrets
+          echo "Checking for potential secrets..."
+          rg -i "(password|secret|api_key|private_key)\s*=\s*\"" --type rust || echo "No hard-coded secrets found ✓"

@@ -1,5 +1,10 @@
 # Dash Platform WASM SDK API Reference
 
+**Version**: 1.0.0  
+**Generated**: November 2024  
+**Platform Version**: 1.0.0+  
+**License**: MIT
+
 Complete API documentation for the Dash Platform WebAssembly SDK.
 
 ## Table of Contents

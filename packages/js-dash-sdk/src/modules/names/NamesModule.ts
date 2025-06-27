@@ -133,7 +133,7 @@ export class NamesModule {
       records: doc.data.records,
       subdomainRules: doc.data.subdomainRules,
       ownerId: doc.ownerId,
-      contractId: doc.dataContractId
+      dataContractId: doc.dataContractId
     };
   }
 
@@ -164,7 +164,7 @@ export class NamesModule {
       records: doc.data.records,
       subdomainRules: doc.data.subdomainRules,
       ownerId: doc.ownerId,
-      contractId: doc.dataContractId
+      dataContractId: doc.dataContractId
     }));
   }
 
@@ -205,7 +205,7 @@ export class NamesModule {
       records: doc.data.records,
       subdomainRules: doc.data.subdomainRules,
       ownerId: doc.ownerId,
-      contractId: doc.dataContractId
+      dataContractId: doc.dataContractId
     }));
   }
 

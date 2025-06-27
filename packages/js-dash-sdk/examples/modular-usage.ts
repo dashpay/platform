@@ -32,15 +32,34 @@ async function main() {
     
     if (identity) {
       console.log(`Identity balance: ${identity.balance}`);
+    } else {
+      console.log('Identity not found');
     }
 
     // Work with names
     const name = await names.resolve('alice');
     if (name) {
       console.log(`Name owner: ${name.ownerId}`);
+    } else {
+      console.log('Name not found');
     }
-  } catch (error) {
-    console.error('Error:', error);
+  } catch (error: any) {
+    // Handle specific error types
+    if (error.name === 'NetworkError') {
+      console.error('Network error: Check your connection');
+    } else if (error.name === 'NotFoundError') {
+      console.error('Resource not found:', error.message);
+    } else if (error.name === 'InitializationError') {
+      console.error('Failed to initialize SDK:', error.message);
+    } else {
+      console.error('Unexpected error:', error.message || error);
+    }
+    
+    // In production, you might want to:
+    // - Send errors to monitoring service
+    // - Show user-friendly error messages
+    // - Implement retry logic for transient errors
+    process.exit(1);
   }
 
   // Clean up

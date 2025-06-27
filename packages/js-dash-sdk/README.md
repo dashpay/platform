@@ -4,7 +4,7 @@ A modular JavaScript/TypeScript SDK for interacting with Dash Platform, built on
 
 ## Features
 
-- 🚀 **WebAssembly-based** - Built on top of the Rust implementation for maximum performance
+- 🚀 **WebAssembly based** - Built on top of the Rust implementation for maximum performance
 - 📦 **Modular architecture** - Import only what you need for smaller bundle sizes
 - 🔒 **Type-safe** - Full TypeScript support with comprehensive type definitions
 - 🌐 **Multiple connectivity options** - Web service, Bluetooth, centralized service with automatic fallback

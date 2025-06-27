@@ -30,18 +30,12 @@ export class DocumentModule {
     const wasm = getWasmSdk();
     const wasmSdk = this.sdk.getWasmSdk();
     
-    // Validate contract exists
-    const contractModule = await import('../contracts/ContractModule');
-    const contract = await new contractModule.ContractModule(this.sdk).get(dataContractId);
-    
-    if (!contract) {
-      throw new Error(`Data contract ${dataContractId} not found`);
-    }
+    // Validate contract exists using shared validator
+    const { validateContract, validateDocumentType } = await import('../shared/ContractValidator');
+    const contract = await validateContract(this.sdk, dataContractId);
     
     // Validate document type exists in contract
-    if (!contract.documentSchemas[type]) {
-      throw new Error(`Document type '${type}' not found in contract`);
-    }
+    validateDocumentType(contract, type);
     
     // Create document
     const document = await wasm.createDocument(

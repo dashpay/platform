@@ -134,7 +134,7 @@ async function readOnlyExample() {
   console.log(`  Domains with linked identities: ${complexQuery.length}`);
 
   // 10. Using the Web Service Provider for Quorum Keys
-  if (provider.getCapabilities && provider.getCapabilities().includes('quorum_keys')) {
+  if (provider.getCapabilities?.().includes('quorum_keys')) {
     console.log('\nQuorum Information:');
     try {
       const quorumKeys = await provider.getQuorumKeys();

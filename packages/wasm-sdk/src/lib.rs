@@ -29,6 +29,7 @@ pub mod signer;
 pub mod serializer;
 pub mod state_transitions;
 pub mod subscriptions;
+pub mod subscriptions_v2;
 pub mod token;
 pub mod verify;
 pub mod verify_bridge;

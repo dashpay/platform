@@ -383,7 +383,7 @@ impl ContractCache {
             
             // Sort by score and suggest top contracts
             let mut sorted_scores: Vec<_> = scores.into_iter().collect();
-            sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             
             for (contract_id, _score) in sorted_scores.iter().take(10) {
                 if !self.is_contract_cached(contract_id) {

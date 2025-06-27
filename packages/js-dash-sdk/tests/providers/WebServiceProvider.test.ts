@@ -256,18 +256,36 @@ describe('WebServiceProvider', () => {
 
   describe('timeout handling', () => {
     it('should timeout long requests', async () => {
-      // Mock fetch that never resolves
-      (global.fetch as jest.Mock).mockImplementationOnce(() => 
-        new Promise(() => {}) // Never resolves
-      );
+      jest.useFakeTimers();
+      
+      // Mock fetch that resolves after timeout
+      let fetchResolve: (value: any) => void;
+      const fetchPromise = new Promise((resolve) => {
+        fetchResolve = resolve;
+      });
+      
+      (global.fetch as jest.Mock).mockImplementationOnce(() => fetchPromise);
 
       const provider = new WebServiceProvider({
         timeout: 100 // 100ms timeout
       });
 
-      // This should timeout
-      await expect(provider.getLatestPlatformBlockHeight())
-        .rejects.toThrow();
+      // Start the request
+      const requestPromise = provider.getLatestPlatformBlockHeight();
+      
+      // Advance timers past timeout
+      jest.advanceTimersByTime(150);
+      
+      // Should reject with timeout error
+      await expect(requestPromise).rejects.toThrow('aborted');
+      
+      // Clean up - resolve the fetch to avoid hanging promise
+      fetchResolve!({
+        ok: true,
+        json: async () => ({ platform: { blockHeight: 123 } })
+      });
+      
+      jest.useRealTimers();
     });
   });
 });

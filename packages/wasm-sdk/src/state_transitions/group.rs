@@ -85,7 +85,7 @@ fn parse_group_info_from_js(js_obj: &JsValue) -> Result<GroupStateTransitionInfo
     let is_proposer = Reflect::get(obj, &"isProposer".into())
         .map_err(|_| JsError::new("Failed to get isProposer"))?
         .as_bool()
-        .unwrap_or(false);
+        .unwrap_or_default();
     
     let info = if is_proposer {
         GroupStateTransitionInfo {

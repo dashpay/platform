@@ -19,6 +19,8 @@ export async function loadWasmSdk(): Promise<any> {
       wasmSdkModule = wasm;
     } catch (error) {
       console.error('Failed to load WASM SDK:', error);
+      // Reset promise on failure to allow retry
+      initPromise = null;
       throw new Error('Failed to initialize WASM SDK. Please ensure WASM is supported in your environment.');
     }
   })();

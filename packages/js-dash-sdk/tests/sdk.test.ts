@@ -56,6 +56,22 @@ describe('SDK', () => {
       expect(apps.app1.contractId).toBe('id1');
       expect(apps.app2.contractId).toBe('id2');
     });
+
+    it('should handle duplicate app registration', () => {
+      const appDef1 = { contractId: 'id1' };
+      const appDef2 = { contractId: 'id2' };
+      
+      sdk.registerApp('testapp', appDef1);
+      expect(sdk.getApp('testapp')).toEqual(appDef1);
+      
+      // Register same app name with different definition
+      sdk.registerApp('testapp', appDef2);
+      expect(sdk.getApp('testapp')).toEqual(appDef2);
+      
+      // Should have replaced, not added
+      const apps = sdk.getApps();
+      expect(Object.keys(apps)).toHaveLength(1);
+    });
   });
 
   describe('event emitter', () => {

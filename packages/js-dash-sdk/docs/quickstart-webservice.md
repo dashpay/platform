@@ -98,16 +98,26 @@ const sdk = createSDK({
 ## Error Handling
 
 ```typescript
+import { NetworkError, TimeoutError } from '@dashpay/dash-sdk/utils/errors';
+
 try {
   const quorumKeys = await provider.getQuorumKeys();
   // Process quorum keys
 } catch (error) {
-  if (error.message.includes('HTTP')) {
+  if (error instanceof NetworkError) {
     console.error('Network error:', error.message);
-  } else if (error.message.includes('timeout')) {
-    console.error('Request timed out');
+    // Retry with exponential backoff
+  } else if (error instanceof TimeoutError) {
+    console.error('Request timed out:', error.message);
+    // Consider increasing timeout or retrying
+  } else if (error.code === 'ECONNREFUSED') {
+    console.error('Service unavailable - check endpoint');
+  } else if (error.status >= 500) {
+    console.error('Server error - try again later');
+  } else if (error.status >= 400) {
+    console.error('Client error - check request parameters');
   } else {
-    console.error('Unknown error:', error);
+    console.error('Unexpected error:', error);
   }
 }
 ```

@@ -91,6 +91,16 @@ debug = false
 strip = "symbols"
 codegen-units = 1
 
+# Test configuration for wasm-bindgen-test
+[[test]]
+name = "web"
+path = "tests/web.rs"
+
+# Security features
+[profile.release.package."*"]
+opt-level = "z"
+strip = "symbols"
+
 #[package.metadata.wasm-pack.profile.release]
 #wasm-opt = ['-g', '-O'] # -g for profiling
 #  -Oz -Oz -g

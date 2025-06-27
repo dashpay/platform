@@ -96,7 +96,7 @@ export class StateTransitionBroadcaster {
           true // prove
         );
         
-        if (result && result.metadata) {
+        if (result?.metadata) {
           return {
             stateTransition: result.stateTransition,
             metadata: result.metadata
@@ -124,7 +124,7 @@ export class StateTransitionBroadcaster {
     } catch (error: any) {
       throw new StateTransitionError(
         `Validation failed: ${error.message}`,
-        error.code
+        error.code || 0
       );
     }
   }

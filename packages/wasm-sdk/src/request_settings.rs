@@ -289,21 +289,20 @@ pub async fn execute_with_retry(
 async fn sleep_ms(ms: u32) {
     let promise = js_sys::Promise::new(&mut |resolve, _| {
         let closure = Closure::once(move || {
-            resolve.call0(&JsValue::undefined()).unwrap();
+            let _ = resolve.call0(&JsValue::undefined());
         });
         
-        web_sys::window()
-            .unwrap()
-            .set_timeout_with_callback_and_timeout_and_arguments_0(
+        if let Some(window) = web_sys::window() {
+            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                 closure.as_ref().unchecked_ref(),
                 ms as i32,
-            )
-            .unwrap();
+            );
+        }
         
         closure.forget();
     });
     
-    JsFuture::from(promise).await.unwrap();
+    let _ = JsFuture::from(promise).await;
 }
 
 /// Builder for creating customized request settings

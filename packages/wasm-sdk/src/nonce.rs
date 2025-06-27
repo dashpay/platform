@@ -99,7 +99,7 @@ pub fn check_identity_nonce_cache(
     
     let current_time = Date::now();
     let cache = get_identity_nonce_cache();
-    let cache_guard = cache.lock().unwrap();
+    let cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     
     if let Some(entry) = cache_guard.get(&identifier) {
         if current_time - entry.last_fetch_time_ms < DEFAULT_CACHE_STALE_TIME_MS {
@@ -124,7 +124,7 @@ pub fn update_identity_nonce_cache(
     
     let current_time = Date::now();
     let cache = get_identity_nonce_cache();
-    let mut cache_guard = cache.lock().unwrap();
+    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     
     cache_guard.insert(identifier, NonceCacheEntry {
         nonce,
@@ -154,7 +154,7 @@ pub fn check_identity_contract_nonce_cache(
     
     let current_time = Date::now();
     let cache = get_contract_nonce_cache();
-    let cache_guard = cache.lock().unwrap();
+    let cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     let cache_key = (identity_identifier, contract_identifier);
     
     if let Some(entry) = cache_guard.get(&cache_key) {
@@ -187,7 +187,7 @@ pub fn update_identity_contract_nonce_cache(
     
     let current_time = Date::now();
     let cache = get_contract_nonce_cache();
-    let mut cache_guard = cache.lock().unwrap();
+    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     let cache_key = (identity_identifier, contract_identifier);
     
     cache_guard.insert(cache_key, NonceCacheEntry {
@@ -213,7 +213,7 @@ pub fn increment_identity_nonce_cache(
     let increment_by = increment.unwrap_or(1) as u64;
     let current_time = Date::now();
     let cache = get_identity_nonce_cache();
-    let mut cache_guard = cache.lock().unwrap();
+    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     
     let new_nonce = if let Some(entry) = cache_guard.get_mut(&identifier) {
         entry.nonce = entry.nonce.saturating_add(increment_by);
@@ -249,7 +249,7 @@ pub fn increment_identity_contract_nonce_cache(
     let increment_by = increment.unwrap_or(1) as u64;
     let current_time = Date::now();
     let cache = get_contract_nonce_cache();
-    let mut cache_guard = cache.lock().unwrap();
+    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     let cache_key = (identity_identifier, contract_identifier);
     
     let new_nonce = if let Some(entry) = cache_guard.get_mut(&cache_key) {
@@ -268,7 +268,7 @@ pub fn increment_identity_contract_nonce_cache(
 #[wasm_bindgen(js_name = clearIdentityNonceCache)]
 pub fn clear_identity_nonce_cache() {
     let cache = get_identity_nonce_cache();
-    let mut cache_guard = cache.lock().unwrap();
+    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     cache_guard.clear();
 }
 
@@ -276,6 +276,6 @@ pub fn clear_identity_nonce_cache() {
 #[wasm_bindgen(js_name = clearIdentityContractNonceCache)]
 pub fn clear_identity_contract_nonce_cache() {
     let cache = get_contract_nonce_cache();
-    let mut cache_guard = cache.lock().unwrap();
+    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     cache_guard.clear();
 }

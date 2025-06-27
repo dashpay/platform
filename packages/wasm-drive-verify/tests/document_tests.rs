@@ -15,13 +15,13 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[wasm_bindgen_test]
 fn test_verify_proof_invalid_contract_id() {
     let proof = Uint8Array::from(&mock_proof(100)[..]);
-    let _invalid_contract_id = Uint8Array::from(&[0u8; 20][..]); // Too short
+    let invalid_contract_id = Uint8Array::from(&[0u8; 20][..]); // Too short
     let document_type = "test_doc";
     let query = Object::new();
     let platform_version = test_platform_version();
 
-    // Create a mock contract JS value (as CBOR bytes)
-    let contract_js = JsValue::from(Uint8Array::from(&mock_identifier()[..]));
+    // Use the invalid contract ID in the test
+    let contract_js = JsValue::from(invalid_contract_id);
     let where_clauses = JsValue::from(&query);
     let order_by = JsValue::NULL;
 

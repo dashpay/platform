@@ -123,11 +123,26 @@ Test on:
 
 ### Recommended Headers
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://*.dash.org;
+# Content Security Policy - Allow WASM execution and necessary connections
+Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://*.dash.org wss://*.dash.org; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:
+
+# Prevent MIME type sniffing
 X-Content-Type-Options: nosniff
+
+# Prevent clickjacking - use SAMEORIGIN if embedding is needed
 X-Frame-Options: DENY
+
+# Enable XSS protection for legacy browsers
 X-XSS-Protection: 1; mode=block
+
+# Control referrer information
 Referrer-Policy: strict-origin-when-cross-origin
+
+# Force HTTPS (add in production)
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# Restrict browser features
+Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
 ```
 
 ### WASM MIME Type

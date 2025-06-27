@@ -46,6 +46,22 @@ async fn test_invalid_network() {
     
     let invalid_sdk = WasmSdk::new("invalid_network".to_string(), None);
     assert!(invalid_sdk.is_err(), "Should fail with invalid network");
+    
+    // Test empty network string
+    let empty_network_sdk = WasmSdk::new("".to_string(), None);
+    assert!(empty_network_sdk.is_err(), "Should fail with empty network string");
+    
+    // Test network with spaces
+    let space_network_sdk = WasmSdk::new("test net".to_string(), None);
+    assert!(space_network_sdk.is_err(), "Should fail with network containing spaces");
+    
+    // Test case sensitivity
+    let uppercase_sdk = WasmSdk::new("TESTNET".to_string(), None);
+    assert!(uppercase_sdk.is_err(), "Should fail with uppercase network name");
+    
+    // Test network with special characters
+    let special_char_sdk = WasmSdk::new("test-net!".to_string(), None);
+    assert!(special_char_sdk.is_err(), "Should fail with special characters in network name");
 }
 
 #[wasm_bindgen_test]
