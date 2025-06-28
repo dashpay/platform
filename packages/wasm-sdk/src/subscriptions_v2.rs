@@ -4,15 +4,14 @@
 //! blockchain events and state changes through WebSocket connections,
 //! with proper cleanup to prevent memory leaks.
 
-use js_sys::{Array, Function, Object, Reflect};
+use js_sys::Function;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket, CloseEvent};
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::collections::HashMap;
 
-/// Global registry to track active subscriptions and their closures
+// Global registry to track active subscriptions and their closures
 thread_local! {
     static ACTIVE_SUBSCRIPTIONS: RefCell<HashMap<String, SubscriptionData>> = RefCell::new(HashMap::new());
 }

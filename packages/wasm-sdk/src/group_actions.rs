@@ -315,7 +315,7 @@ pub fn create_group(
     group_type: &str,
     threshold: u32,
     initial_members: Array,
-    identity_nonce: u64,
+    _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
     let _creator = Identifier::from_string(
@@ -391,7 +391,7 @@ pub fn add_group_member(
     new_member_id: &str,
     role: &str,
     permissions: Array,
-    identity_nonce: u64,
+    _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
     let _group = Identifier::from_string(
@@ -467,7 +467,7 @@ pub fn remove_group_member(
     group_id: &str,
     admin_id: &str,
     member_id: &str,
-    identity_nonce: u64,
+    _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
     let _group = Identifier::from_string(
@@ -525,7 +525,7 @@ pub fn create_group_proposal(
     action_type: &str,
     action_data: Vec<u8>,
     duration_hours: u32,
-    identity_nonce: u64,
+    _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
     let _group = Identifier::from_string(
@@ -606,7 +606,7 @@ pub fn vote_on_proposal(
     voter_id: &str,
     approve: bool,
     comment: Option<String>,
-    identity_nonce: u64,
+    _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
     let _proposal = Identifier::from_string(
@@ -668,7 +668,7 @@ pub fn vote_on_proposal(
 pub fn execute_proposal(
     proposal_id: &str,
     executor_id: &str,
-    identity_nonce: u64,
+    _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
     let _proposal = Identifier::from_string(

@@ -509,7 +509,7 @@ pub async fn fetch_vote_results(
         .unwrap_or(0);
     
     // Different polls have different voting patterns
-    let (yes_ratio, no_ratio, abstain_ratio) = match poll_index % 5 {
+    let (yes_ratio, no_ratio, _abstain_ratio) = match poll_index % 5 {
         0 => (0.65, 0.25, 0.10), // Likely to pass
         1 => (0.45, 0.45, 0.10), // Contentious
         2 => (0.80, 0.15, 0.05), // Strong support
@@ -542,7 +542,7 @@ pub async fn fetch_vote_results(
 /// Check if identity has voted
 #[wasm_bindgen(js_name = hasVoted)]
 pub async fn has_voted(
-    sdk: &WasmSdk,
+    _sdk: &WasmSdk,
     voter_id: &str,
     poll_id: &str,
 ) -> Result<bool, JsError> {
@@ -809,7 +809,7 @@ pub fn create_vote_poll(
 /// Get voting power for an identity
 #[wasm_bindgen(js_name = getVotingPower)]
 pub async fn get_voting_power(
-    sdk: &WasmSdk,
+    _sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<u32, JsError> {
     let identifier = Identifier::from_string(

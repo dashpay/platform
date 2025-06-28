@@ -3,19 +3,16 @@
 //! This module provides WASM bindings for group-related state transitions.
 //! Groups are used for collaborative actions like multi-sig operations, DAOs, etc.
 
-use crate::error::to_js_error;
-use dpp::data_contract::group::{Group, GroupMemberPower};
-use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
+use dpp::group::GroupStateTransitionInfo;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformSerializable, PlatformDeserializable};
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_event::TokenEvent;
-use js_sys::{Array, Object, Reflect, Uint8Array};
+use js_sys::{Array, Object, Reflect};
 use platform_value::string_encoding::Encoding;
 use wasm_bindgen::prelude::*;
-use serde_json;
 
 /// Group action types for JavaScript
 #[wasm_bindgen]
@@ -222,7 +219,6 @@ fn deserialize_group_action_event(event_bytes: &[u8]) -> Result<GroupActionEvent
                 }
                 let id_bytes: [u8; 32] = event_bytes[pos..pos+32].try_into()
                     .map_err(|_| JsError::new("Failed to parse recipient ID"))?;
-                pos += 32;
                 Identifier::from_bytes(&id_bytes)
                     .map_err(|e| JsError::new(&format!("Invalid recipient ID: {}", e)))?
             } else {
@@ -248,8 +244,12 @@ fn deserialize_group_action_event(event_bytes: &[u8]) -> Result<GroupActionEvent
                 .map_err(|_| JsError::new("Failed to parse amount bytes"))?;
             let amount = u64::from_le_bytes(amount_bytes);
             
+            // TODO: Parse recipient identifier from event bytes
+            let recipient = dpp::prelude::Identifier::default();
+            
             Ok(GroupActionEvent::TokenEvent(TokenEvent::Mint(
                 amount,
+                recipient,
                 None, // note
             )))
         },
@@ -262,8 +262,12 @@ fn deserialize_group_action_event(event_bytes: &[u8]) -> Result<GroupActionEvent
                 .map_err(|_| JsError::new("Failed to parse amount bytes"))?;
             let amount = u64::from_le_bytes(amount_bytes);
             
+            // TODO: Parse burn-from identifier from event bytes
+            let burn_from = dpp::prelude::Identifier::default();
+            
             Ok(GroupActionEvent::TokenEvent(TokenEvent::Burn(
                 amount,
+                burn_from,
                 None, // note
             )))
         },
@@ -298,7 +302,7 @@ pub fn create_group_action(
     let group_action = GroupAction::V0(action);
     
     group_action.serialize_to_bytes()
-        .map_err(to_js_error)
+        .map_err(|e| JsError::new(&format!("Failed to serialize group action: {}", e)))
 }
 
 /// Add group info to a state transition
@@ -312,19 +316,19 @@ pub fn add_group_info_to_state_transition(
         .map_err(|e| JsError::new(&format!("Failed to deserialize state transition: {}", e)))?;
     
     // Parse group info
-    let info = parse_group_info_from_js(&group_info)?;
+    let _info = parse_group_info_from_js(&group_info)?;
     
     // Add group info to the state transition
     // Note: This is a simplified version. In reality, different state transition types
     // handle group info differently
     match &mut state_transition {
-        StateTransition::DataContractUpdate(st) => {
+        StateTransition::DataContractUpdate(_st) => {
             // DataContractUpdate supports group info
             // Note: The actual API to set group info on transitions may vary
             // This is a placeholder until the exact API is available
             return Err(JsError::new("Group info for DataContractUpdate requires platform support"));
         }
-        StateTransition::Batch(st) => {
+        StateTransition::Batch(_st) => {
             // Batch transitions can have group info for certain document operations
             // Note: The actual API to set group info on transitions may vary
             // This is a placeholder until the exact API is available
@@ -367,7 +371,7 @@ pub fn create_group_member(
     identity_id: &str,
     power: u16,
 ) -> Result<JsValue, JsError> {
-    let id = Identifier::from_string(identity_id, Encoding::Base58)
+    let _id = Identifier::from_string(identity_id, Encoding::Base58)
         .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
     
     let obj = Object::new();
@@ -524,40 +528,46 @@ pub fn deserialize_group_event(event_bytes: &[u8]) -> Result<JsValue, JsError> {
     // Convert to JavaScript object
     let obj = Object::new();
     
-    match event {
-        GroupActionEvent::TokenEvent(token_event) => {
-            Reflect::set(&obj, &"type".into(), &"token".into())
+    let GroupActionEvent::TokenEvent(token_event) = event;
+    
+    Reflect::set(&obj, &"type".into(), &"token".into())
+        .map_err(|_| JsError::new("Failed to set event type"))?;
+    
+    match token_event {
+        TokenEvent::Transfer(sender_id, _recipient_note, _sender_note, _recipient_note2, amount) => {
+            Reflect::set(&obj, &"eventType".into(), &"transfer".into())
                 .map_err(|_| JsError::new("Failed to set event type"))?;
-            
-            match token_event {
-                TokenEvent::Transfer(sender_id, recipient_note, sender_note, recipient_note2, amount) => {
-                    Reflect::set(&obj, &"eventType".into(), &"transfer".into())
-                        .map_err(|_| JsError::new("Failed to set event type"))?;
-                    Reflect::set(&obj, &"senderId".into(), &sender_id.to_string(Encoding::Base58).into())
-                        .map_err(|_| JsError::new("Failed to set sender ID"))?;
-                    Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
-                        .map_err(|_| JsError::new("Failed to set amount"))?;
-                },
-                TokenEvent::Mint(amount, note) => {
-                    Reflect::set(&obj, &"eventType".into(), &"mint".into())
-                        .map_err(|_| JsError::new("Failed to set event type"))?;
-                    Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
-                        .map_err(|_| JsError::new("Failed to set amount"))?;
-                },
-                TokenEvent::Burn(amount, note) => {
-                    Reflect::set(&obj, &"eventType".into(), &"burn".into())
-                        .map_err(|_| JsError::new("Failed to set event type"))?;
-                    Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
-                        .map_err(|_| JsError::new("Failed to set amount"))?;
-                },
-                _ => {
-                    Reflect::set(&obj, &"eventType".into(), &"unknown".into())
-                        .map_err(|_| JsError::new("Failed to set event type"))?;
-                }
+            Reflect::set(&obj, &"senderId".into(), &sender_id.to_string(Encoding::Base58).into())
+                .map_err(|_| JsError::new("Failed to set sender ID"))?;
+            Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
+                .map_err(|_| JsError::new("Failed to set amount"))?;
+        },
+        TokenEvent::Mint(amount, recipient, note) => {
+            Reflect::set(&obj, &"eventType".into(), &"mint".into())
+                .map_err(|_| JsError::new("Failed to set event type"))?;
+            Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
+                .map_err(|_| JsError::new("Failed to set amount"))?;
+            Reflect::set(&obj, &"recipient".into(), &recipient.to_string(platform_value::string_encoding::Encoding::Base58).into())
+                .map_err(|_| JsError::new("Failed to set recipient"))?;
+            if let Some(note_text) = note {
+                Reflect::set(&obj, &"note".into(), &note_text.into())
+                    .map_err(|_| JsError::new("Failed to set note"))?;
+            }
+        },
+        TokenEvent::Burn(amount, burn_from, note) => {
+            Reflect::set(&obj, &"eventType".into(), &"burn".into())
+                .map_err(|_| JsError::new("Failed to set event type"))?;
+            Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
+                .map_err(|_| JsError::new("Failed to set amount"))?;
+            Reflect::set(&obj, &"burnFrom".into(), &burn_from.to_string(platform_value::string_encoding::Encoding::Base58).into())
+                .map_err(|_| JsError::new("Failed to set burn from"))?;
+            if let Some(note_text) = note {
+                Reflect::set(&obj, &"note".into(), &note_text.into())
+                    .map_err(|_| JsError::new("Failed to set note"))?;
             }
         },
         _ => {
-            Reflect::set(&obj, &"type".into(), &"unknown".into())
+            Reflect::set(&obj, &"eventType".into(), &"unknown".into())
                 .map_err(|_| JsError::new("Failed to set event type"))?;
         }
     }

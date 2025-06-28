@@ -4,11 +4,10 @@
 //! It acts as a bridge between JavaScript and the native DPP state transition types.
 
 use dpp::state_transition::StateTransition;
-use dpp::serialization::{PlatformSerializable, PlatformDeserializable, Signable};
+use dpp::serialization::Signable;
 use platform_version::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
 use web_sys::js_sys::{Object, Reflect, Uint8Array};
-use serde_wasm_bindgen;
 
 // Import accessor traits
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;

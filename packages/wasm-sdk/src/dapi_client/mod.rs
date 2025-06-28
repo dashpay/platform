@@ -11,10 +11,8 @@ pub mod endpoints;
 pub mod error;
 
 use crate::error::to_js_error;
-use js_sys::{Array, Object, Promise, Reflect};
+use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub use transport::{Transport, TransportConfig};
@@ -254,8 +252,8 @@ impl DapiClient {
     #[wasm_bindgen(js_name = subscribeToStateTransitions)]
     pub async fn subscribe_to_state_transitions(
         &self,
-        query: JsValue,
-        callback: js_sys::Function,
+        _query: JsValue,
+        _callback: js_sys::Function,
     ) -> Result<JsValue, JsError> {
         // Create subscription handle
         let handle = Object::new();

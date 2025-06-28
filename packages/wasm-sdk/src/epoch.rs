@@ -2,9 +2,7 @@
 //!
 //! This module provides functionality for working with epochs and evonodes in Dash Platform
 
-use crate::error::to_js_error;
 use crate::sdk::WasmSdk;
-use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;

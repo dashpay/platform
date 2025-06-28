@@ -130,7 +130,6 @@ pub fn create_withdrawal_transition(
         return Err(JsError::new("Output script cannot be empty"));
     }
 
-    use dpp::state_transition::StateTransition;
     
     // Create withdrawal state transition
     let mut st_bytes = Vec::new();
@@ -188,8 +187,6 @@ pub async fn get_withdrawal_status(
     let _options = options.unwrap_or_default();
 
     // Query withdrawal document from the platform
-    use crate::dapi_client::{DapiClient, DapiClientConfig};
-    use crate::sdk::WasmSdk;
     
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
@@ -444,8 +441,8 @@ fn create_output_script_from_address(address: &str) -> Result<Vec<u8>, JsError> 
     let addr = Address::from_str(address)
         .map_err(|e| JsError::new(&format!("Invalid address: {}", e)))?;
     
-    // Get the script pubkey
-    let script = addr.script_pubkey();
+    // Assume the network and get the script pubkey
+    let script = addr.assume_checked().script_pubkey();
     
     Ok(script.to_bytes())
 }

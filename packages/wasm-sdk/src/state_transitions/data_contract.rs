@@ -3,15 +3,11 @@
 //! This module provides WASM bindings for data contract-related state transitions including:
 //! - Data contract creation and updates
 
-use crate::error::to_js_error;
 use dpp::data_contract::DataContract;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-use dpp::data_contract::config::DataContractConfig;
-use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use dpp::version::{PlatformVersion, FeatureVersion};
+use dpp::data_contract::accessors::v0::DataContractV0Setters;
+use dpp::version::PlatformVersion;
 use dpp::version::TryFromPlatformVersioned;
-use platform_version::TryFromPlatformVersioned as TryFromPlatformVersionedTrait;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use dpp::serialization::PlatformSerializable;

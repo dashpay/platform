@@ -7,8 +7,8 @@ use dpp::identity::state_transition::asset_lock_proof::{
 };
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::Identifier;
-use dashcore::{OutPoint, Transaction, InstantLock};
-use dashcore::consensus::{deserialize, Decodable, Encodable};
+use dpp::dashcore::{OutPoint, Transaction, InstantLock};
+use dpp::dashcore::consensus::{deserialize, Encodable};
 use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -82,6 +82,7 @@ impl AssetLockProof {
     pub fn transaction(&self) -> Result<Vec<u8>, JsError> {
         match &self.inner {
             DppAssetLockProof::Instant(proof) => {
+                // Serialize transaction to bytes using dashcore consensus encoding
                 let mut buf = Vec::new();
                 proof.transaction.consensus_encode(&mut buf)
                     .map_err(|e| JsError::new(&format!("Failed to serialize transaction: {}", e)))?;
@@ -104,6 +105,7 @@ impl AssetLockProof {
     pub fn instant_lock(&self) -> Result<Option<Vec<u8>>, JsError> {
         match &self.inner {
             DppAssetLockProof::Instant(proof) => {
+                // Serialize instant lock to bytes using dashcore consensus encoding
                 let mut buf = Vec::new();
                 proof.instant_lock.consensus_encode(&mut buf)
                     .map_err(|e| JsError::new(&format!("Failed to serialize instant lock: {}", e)))?;
@@ -180,6 +182,7 @@ impl AssetLockProof {
         match &self.inner {
             DppAssetLockProof::Instant(proof) => {
                 // Serialize transaction
+                // Serialize transaction to bytes using dashcore consensus encoding
                 let mut tx_bytes = Vec::new();
                 proof.transaction.consensus_encode(&mut tx_bytes)
                     .map_err(|e| JsError::new(&format!("Failed to serialize transaction: {}", e)))?;
@@ -188,6 +191,7 @@ impl AssetLockProof {
                     .map_err(|_| JsError::new("Failed to set transaction"))?;
                 
                 // Serialize instant lock
+                // Serialize instant lock to bytes using dashcore consensus encoding
                 let mut lock_bytes = Vec::new();
                 proof.instant_lock.consensus_encode(&mut lock_bytes)
                     .map_err(|e| JsError::new(&format!("Failed to serialize instant lock: {}", e)))?;
@@ -274,7 +278,7 @@ pub fn calculate_credits_from_proof(
 pub fn create_out_point(tx_id: &str, output_index: u32) -> Result<Vec<u8>, JsError> {
     use std::str::FromStr;
     
-    let txid = dashcore::Txid::from_str(tx_id)
+    let txid = dpp::dashcore::Txid::from_str(tx_id)
         .map_err(|e| JsError::new(&format!("Invalid transaction ID: {}", e)))?;
     
     let out_point = OutPoint::new(txid, output_index);

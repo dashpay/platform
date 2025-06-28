@@ -3,7 +3,6 @@
 //! This module provides an internal cache system for contracts, tokens, and quorum keys
 //! to optimize performance and reduce network requests.
 
-use dpp::prelude::Identifier;
 use js_sys::{Date, Object, Reflect};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

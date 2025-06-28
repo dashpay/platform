@@ -36,7 +36,7 @@ pub fn bls_private_key_to_public_key(private_key: &[u8]) -> Result<Uint8Array, J
         
         // Get public key
         let public_key = secret_key.public_key();
-        let public_key_bytes = public_key.to_compressed();
+        let public_key_bytes = public_key.0.to_compressed().to_vec();
         
         Ok(Uint8Array::from(&public_key_bytes[..]))
     }
@@ -60,8 +60,9 @@ pub fn bls_sign(data: &[u8], private_key: &[u8]) -> Result<Uint8Array, JsError> 
             .map_err(|e| JsError::new(&format!("Invalid private key: {}", e)))?;
         
         // Sign the data
-        let sig = secret_key.sign(SignatureSchemes::Basic, data);
-        let signature_bytes = sig.to_compressed();
+        let sig = secret_key.sign(SignatureSchemes::Basic, data)
+            .map_err(|e| JsError::new(&format!("Failed to sign: {}", e)))?;
+        let signature_bytes = sig.as_raw_value().to_compressed().to_vec();
         
         Ok(Uint8Array::from(&signature_bytes[..]))
     }
@@ -91,15 +92,15 @@ pub fn bls_verify(signature: &[u8], data: &[u8], public_key: &[u8]) -> Result<bo
         let signature_96_bytes: [u8; 96] = signature.try_into()
             .map_err(|_| JsError::new("Signature must be exactly 96 bytes"))?;
         
-        let sig = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature_96_bytes) {
-            Some(s) => Signature::<Bls12381G2Impl>::ProofOfPossession(s),
-            None => return Ok(false),
-        };
+        let g2_element = <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature_96_bytes)
+            .into_option()
+            .ok_or_else(|| JsError::new("Invalid signature format"))?;
+        let sig = Signature::<Bls12381G2Impl>::Basic(g2_element);
         
         // Verify the signature
-        let result = pk.verify(&sig, data);
+        let result = sig.verify(&pk, data);
         
-        Ok(result)
+        Ok(result.is_ok())
     }
     #[cfg(not(feature = "bls-signatures"))]
     {

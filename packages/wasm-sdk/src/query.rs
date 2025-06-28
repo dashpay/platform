@@ -13,7 +13,6 @@
 use platform_value::Identifier;
 use js_sys::{Array, Object, Reflect};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 /// Query by identifier

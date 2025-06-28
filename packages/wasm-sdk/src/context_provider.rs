@@ -137,7 +137,7 @@ impl ContextProvider for WasmContext {
         &self,
         token_id: &Identifier,
     ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, ContextProviderError> {
-        use dpp::data_contract::associated_token::token_configuration::{TokenConfiguration, TokenConfigurationConventions};
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         
         // For now, return a default token configuration for any requested token
@@ -145,27 +145,149 @@ impl ContextProvider for WasmContext {
         
         // Check if this is a known system contract token
         let token_config = match token_id.to_string(platform_value::string_encoding::Encoding::Base58) {
-            Ok(id_str) => {
+            id_str => {
                 // Parse token ID format: <contract_id>.<position>
                 let parts: Vec<&str> = id_str.split('.').collect();
                 if parts.len() == 2 {
                     let _contract_id = parts[0];
-                    let position = parts[1].parse::<u32>().unwrap_or(0);
+                    let _position = parts[1].parse::<u32>().unwrap_or(0);
                     
                     // Create a default token configuration
+                    // Import the rules we need to construct manually
+                    use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+                    use dpp::data_contract::change_control_rules::ChangeControlRules;
+                    use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+                    use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+                    use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
+                    use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
+                    use dpp::data_contract::associated_token::token_marketplace_rules::TokenMarketplaceRules;
+                    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+                    use dpp::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+                    use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+                    use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+                    
                     Some(TokenConfiguration::V0(TokenConfigurationV0 {
                         base_supply: 1_000_000_000_000, // 1 trillion base units
                         max_supply: Some(10_000_000_000_000), // 10 trillion max supply
-                        new_tokens_destination_identity: None,
-                        self_destruct_when_empty: false,
-                        transfers_enabled: true,
-                        token_position: position as u16,
+                        conventions: TokenConfigurationConvention::V0(Default::default()),
+                        conventions_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        keeps_history: TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+                            keeps_transfer_history: true,
+                            keeps_freezing_history: true,
+                            keeps_minting_history: true,
+                            keeps_burning_history: true,
+                            keeps_direct_pricing_history: true,
+                            keeps_direct_purchase_history: true,
+                        }),
+                        start_as_paused: false,
+                        allow_transfer_to_frozen_balance: true,
+                        max_supply_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        distribution_rules: TokenDistributionRules::V0(TokenDistributionRulesV0 {
+                            perpetual_distribution: None,
+                            perpetual_distribution_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            }),
+                            pre_programmed_distribution: None,
+                            new_tokens_destination_identity: None,
+                            new_tokens_destination_identity_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            }),
+                            minting_allow_choosing_destination: true,
+                            minting_allow_choosing_destination_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            }),
+                            change_direct_purchase_pricing_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            }),
+                        }),
+                        marketplace_rules: TokenMarketplaceRules::V0(TokenMarketplaceRulesV0 {
+                            trade_mode: TokenTradeMode::NotTradeable,
+                            trade_mode_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            }),
+                        }),
+                        manual_minting_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        manual_burning_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        freeze_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        unfreeze_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        destroy_frozen_funds_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        emergency_action_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        main_control_group: None,
+                        main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
+                        description: None,
                     }))
                 } else {
                     None
                 }
             }
-            Err(_) => None,
         };
         
         Ok(token_config)

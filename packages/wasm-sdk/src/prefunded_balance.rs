@@ -8,7 +8,6 @@ use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
 use js_sys::{Array, Date, Object, Reflect};
 use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
 
 /// Balance type for specialized purposes
 #[wasm_bindgen]
@@ -628,7 +627,7 @@ pub async fn check_prefunded_balance(
 pub async fn fetch_balance_allocations(
     sdk: &WasmSdk,
     identity_id: &str,
-    balance_type: Option<String>,
+    _balance_type: Option<String>,
     active_only: bool,
 ) -> Result<Array, JsError> {
     let _sdk = sdk;
@@ -699,8 +698,8 @@ pub async fn fetch_balance_allocations(
             
             let balance_type = match balance_type_str.as_str() {
                 "voting" => BalanceType::Voting,
-                "masternode" => BalanceType::Masternode,
-                "evolution" => BalanceType::Evolution,
+                "masternode" => BalanceType::Staking,
+                "evolution" => BalanceType::Reserved,
                 _ => BalanceType::Voting,
             };
             

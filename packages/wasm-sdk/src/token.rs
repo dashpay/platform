@@ -2,7 +2,6 @@
 //!
 //! This module provides functionality for token operations in Dash Platform
 
-use crate::error::to_js_error;
 use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -702,7 +701,6 @@ pub async fn get_contract_tokens(
     let _sdk = sdk;
 
     // Simulate token list for a contract
-    let network = sdk.network();
     let contract_bytes = _contract_identifier.as_bytes();
     let mut hash = 0u32;
     for &byte in contract_bytes.iter() {
@@ -805,7 +803,7 @@ pub async fn get_token_holders(
     let end = std::cmp::min(offset + limit, total_holders);
     
     for i in offset..end {
-        let holder_hash = hash.wrapping_add(i * 1000);
+        let _holder_hash = hash.wrapping_add(i * 1000);
         let balance = match i {
             0 => 1000000.0, // Top holder
             1..=10 => 100000.0 / (i as f64),
@@ -1034,7 +1032,7 @@ pub fn create_batch_token_transfer(
 /// Monitor token events
 #[wasm_bindgen(js_name = monitorTokenEvents)]
 pub async fn monitor_token_events(
-    sdk: &WasmSdk,
+    _sdk: &WasmSdk,
     token_id: &str,
     event_types: Option<Array>,
     callback: js_sys::Function,

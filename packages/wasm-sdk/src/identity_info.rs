@@ -7,7 +7,6 @@ use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
 use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
 
 /// Identity balance information
 #[wasm_bindgen]
@@ -143,9 +142,9 @@ impl IdentityInfo {
     }
 }
 
-/// Fetch identity balance
-#[wasm_bindgen(js_name = fetchIdentityBalance)]
-pub async fn fetch_identity_balance(
+/// Fetch identity balance details
+#[wasm_bindgen(js_name = fetchIdentityBalanceDetails)]
+pub async fn fetch_identity_balance_details(
     sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<IdentityBalance, JsError> {
@@ -244,7 +243,7 @@ pub async fn fetch_identity_info(
     identity_id: &str,
 ) -> Result<IdentityInfo, JsError> {
     // Fetch both balance and revision
-    let balance = fetch_identity_balance(sdk, identity_id).await?;
+    let balance = fetch_identity_balance_details(sdk, identity_id).await?;
     let revision = fetch_identity_revision(sdk, identity_id).await?;
 
     Ok(IdentityInfo {
@@ -335,7 +334,7 @@ pub async fn check_identity_balance(
     required_amount: u64,
     use_unconfirmed: bool,
 ) -> Result<bool, JsError> {
-    let balance = fetch_identity_balance(sdk, identity_id).await?;
+    let balance = fetch_identity_balance_details(sdk, identity_id).await?;
     
     if use_unconfirmed {
         Ok(balance.total >= required_amount)
@@ -396,9 +395,7 @@ pub async fn monitor_identity_balance(
     use gloo_timers::callback::Interval;
     use wasm_bindgen_futures::spawn_local;
     
-    let interval_ms = interval
-        .as_f64()
-        .ok_or_else(|| JsError::new("Invalid interval"))?;
+    let interval_ms = interval as f64;
     
     if interval_ms <= 0.0 {
         return Err(JsError::new("Interval must be positive"));
@@ -410,7 +407,7 @@ pub async fn monitor_identity_balance(
     let handle_clone = handle.clone();
     
     // Initial fetch
-    let balance = fetch_identity_balance(sdk, identity_id).await?;
+    let balance = fetch_identity_balance_details(sdk, identity_id).await?;
     let this = JsValue::null();
     callback.call1(&this, &balance.to_object()?)
         .map_err(|e| JsError::new(&format!("Callback failed: {:?}", e)))?;
@@ -431,7 +428,7 @@ pub async fn monitor_identity_balance(
             }
             
             // Fetch balance
-            match fetch_identity_balance(&sdk_inner, &id_inner).await {
+            match fetch_identity_balance_details(&sdk_inner, &id_inner).await {
                 Ok(balance) => {
                     if let Ok(balance_obj) = balance.to_object() {
                         let this = JsValue::null();
@@ -519,7 +516,7 @@ pub async fn fetch_identity_credits_in_dash(
     sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<f64, JsError> {
-    let balance = fetch_identity_balance(sdk, identity_id).await?;
+    let balance = fetch_identity_balance_details(sdk, identity_id).await?;
     
     // Convert credits to Dash (1 Dash = 100,000,000 credits)
     let dash_amount = balance.confirmed as f64 / 100_000_000.0;

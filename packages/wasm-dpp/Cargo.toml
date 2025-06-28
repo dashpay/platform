@@ -58,7 +58,8 @@ async-trait = "0.1.59"
 bincode = { version = "=2.0.0-rc.3" }
 
 [profile.release]
-lto = true
+# Temporarily disable LTO for WASM compatibility
+# lto = true
 opt-level = 'z'
 
 [package.metadata.cargo-machete]

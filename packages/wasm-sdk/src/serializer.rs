@@ -3,10 +3,12 @@
 //! This module provides serialization and deserialization functions for platform
 //! requests and responses. JavaScript will handle the actual network transport.
 
-use dpp::prelude::*;
 use js_sys::Uint8Array;
 use platform_value::Identifier;
 use wasm_bindgen::prelude::*;
+use dpp::serialization::{PlatformDeserializable, PlatformLimitDeserializableFromVersionedStructure};
+use dpp::identity::Identity;
+use crate::dpp::IdentityWasm;
 
 /// Serialize a GetIdentity request
 #[wasm_bindgen(js_name = serializeGetIdentityRequest)]
@@ -37,10 +39,6 @@ pub fn serialize_get_identity_request(
 pub fn deserialize_get_identity_response(
     response_bytes: &Uint8Array,
 ) -> Result<JsValue, JsError> {
-    use crate::dpp::IdentityWasm;
-    use dpp::identity::Identity;
-    use dpp::serialization::PlatformDeserializable;
-    
     let bytes = response_bytes.to_vec();
     
     // Try to parse as JSON response first (from DAPI)
@@ -58,8 +56,7 @@ pub fn deserialize_get_identity_response(
     }
     
     // If not JSON, try to deserialize as raw identity bytes
-    let platform_version = platform_version::version::PlatformVersion::latest();
-    match Identity::deserialize_from_bytes(&bytes) {
+    match Identity::deserialize_from_bytes_no_limit(&bytes) {
         Ok(identity) => {
             let identity_wasm = IdentityWasm::from(identity);
             // Convert to JSON and then to JS value
@@ -105,7 +102,6 @@ pub fn deserialize_get_data_contract_response(
 ) -> Result<JsValue, JsError> {
     use crate::dpp::DataContractWasm;
     use dpp::data_contract::DataContract;
-    use dpp::serialization::PlatformLimitDeserializableFromVersionedStructure;
     
     let bytes = response_bytes.to_vec();
     
@@ -125,7 +121,7 @@ pub fn deserialize_get_data_contract_response(
     
     // If not JSON, try to deserialize as raw contract bytes
     let platform_version = platform_version::version::PlatformVersion::latest();
-    match DataContract::versioned_limit_deserialize(&bytes, platform_version) {
+    match DataContract::versioned_limit_deserialize(&bytes, &platform_version) {
         Ok(contract) => {
             let contract_wasm = DataContractWasm::from(contract);
             // Convert to JSON and then to JS value
@@ -401,7 +397,6 @@ pub fn prepare_state_transition_for_broadcast(
     state_transition_bytes: &Uint8Array,
 ) -> Result<JsValue, JsError> {
     use dpp::state_transition::StateTransition;
-    use dpp::serialization::PlatformDeserializable;
     use crate::state_transitions::serialization::calculate_state_transition_id;
     
     let bytes = state_transition_bytes.to_vec();
@@ -432,7 +427,6 @@ pub fn get_required_signatures_for_state_transition(
     state_transition_bytes: &Uint8Array,
 ) -> Result<JsValue, JsError> {
     use dpp::state_transition::StateTransition;
-    use dpp::serialization::PlatformDeserializable;
     
     let bytes = state_transition_bytes.to_vec();
     let platform_version = platform_version::version::PlatformVersion::latest();

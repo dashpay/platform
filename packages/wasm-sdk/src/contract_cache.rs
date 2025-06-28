@@ -3,18 +3,19 @@
 //! This module provides an optimized caching layer specifically for data contracts,
 //! with support for versioning, lazy loading, and intelligent cache management.
 
-use crate::cache::{Cache, WasmCacheManager};
+use crate::cache::WasmCacheManager;
 use crate::error::to_js_error;
 use dpp::data_contract::DataContract;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::serialization::{
     PlatformLimitDeserializableFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
 use js_sys::{Array, Date, Object, Reflect};
-use platform_value::Identifier;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use wasm_bindgen::prelude::*;
 
@@ -96,7 +97,7 @@ struct ContractMetadata {
 /// Cached contract entry
 #[derive(Clone)]
 struct CachedContract {
-    contract: DataContract,
+    _contract: DataContract,
     metadata: ContractMetadata,
     raw_bytes: Vec<u8>,
     cached_at: f64,
@@ -163,7 +164,7 @@ impl ContractCache {
 
         // Create cache entry
         let entry = CachedContract {
-            contract,
+            _contract: contract,
             metadata,
             raw_bytes: contract_bytes.to_vec(),
             cached_at: Date::now(),
@@ -420,9 +421,6 @@ impl ContractCache {
     }
     
     fn extract_dependencies(&self, contract: &DataContract) -> Vec<String> {
-        use platform_value::Value;
-        use std::collections::HashSet;
-        
         let mut dependencies = HashSet::new();
         
         // Get document types based on contract version
@@ -432,24 +430,14 @@ impl ContractCache {
         };
         
         // Analyze each document type for references
-        for (_doc_name, doc_schema) in document_types.iter() {
+        for (_doc_name, doc_type) in document_types.iter() {
             // Convert document schema to Value for analysis
-            if let Ok(schema_value) = doc_schema.to_value() {
-                self.find_contract_references(&schema_value, &mut dependencies);
-            }
+            let schema = doc_type.schema();
+            self.find_contract_references(schema, &mut dependencies);
         }
         
-        // Also check schema definitions ($defs) if present
-        let schema_defs = match contract {
-            DataContract::V0(v0) => &v0.schema_defs,
-            DataContract::V1(v1) => &v1.schema_defs,
-        };
-        
-        if let Some(defs) = schema_defs {
-            if let Ok(defs_value) = defs.to_value() {
-                self.find_contract_references(&defs_value, &mut dependencies);
-            }
-        }
+        // Note: Schema definitions ($defs) are not directly accessible in the current API
+        // They would be embedded within document type schemas
         
         dependencies.into_iter().collect()
     }
@@ -477,9 +465,17 @@ impl ContractCache {
                                 if media_type.starts_with("application/x.dash.dpp.identifier") {
                                     // This field references another contract/document
                                     // Extract from pattern or sibling properties
-                                    if let Some(Value::Text(pattern)) = map.get(&Value::Text("pattern".to_string())) {
-                                        if let Some(contract_id) = self.extract_contract_id_from_pattern(pattern) {
-                                            dependencies.insert(contract_id);
+                                    // Look for pattern field in the same map
+                                    for (pattern_key, pattern_val) in map.iter() {
+                                        if let Value::Text(pattern_key_str) = pattern_key {
+                                            if pattern_key_str == "pattern" {
+                                                if let Value::Text(pattern) = pattern_val {
+                                                    if let Some(contract_id) = self.extract_contract_id_from_pattern(pattern) {
+                                                        dependencies.insert(contract_id);
+                                                    }
+                                                }
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -604,8 +600,8 @@ pub fn create_contract_cache(config: Option<ContractCacheConfig>) -> ContractCac
 /// Integration with WasmCacheManager
 #[wasm_bindgen(js_name = integrateContractCache)]
 pub fn integrate_contract_cache(
-    cache_manager: &WasmCacheManager,
-    contract_cache: &ContractCache,
+    _cache_manager: &WasmCacheManager,
+    _contract_cache: &ContractCache,
 ) -> Result<(), JsError> {
     // This function would integrate the specialized contract cache
     // with the general cache manager for unified cache management

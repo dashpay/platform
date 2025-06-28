@@ -188,13 +188,10 @@ impl MemoryOptimizer {
 /// Optimize Uint8Array conversions
 #[wasm_bindgen(js_name = optimizeUint8Array)]
 pub fn optimize_uint8_array(data: &[u8]) -> js_sys::Uint8Array {
-    // Use zero-copy conversion when possible
-    unsafe {
-        // Create a view directly into WASM memory
-        let array = js_sys::Uint8Array::new_with_length(data.len() as u32);
-        array.copy_from(data);
-        array
-    }
+    // Create a view directly into WASM memory
+    let array = js_sys::Uint8Array::new_with_length(data.len() as u32);
+    array.copy_from(data);
+    array
 }
 
 /// Batch operations optimizer
@@ -262,7 +259,8 @@ pub fn init_string_cache() {
 #[wasm_bindgen(js_name = internString)]
 pub fn intern_string(s: &str) -> String {
     unsafe {
-        if let Some(cache) = &mut STRING_CACHE {
+        let cache_ptr = &raw mut STRING_CACHE;
+        if let Some(cache) = (*cache_ptr).as_mut() {
             if let Some(existing) = cache.get(s) {
                 return existing.clone();
             }
@@ -279,7 +277,8 @@ pub fn intern_string(s: &str) -> String {
 #[wasm_bindgen(js_name = clearStringCache)]
 pub fn clear_string_cache() {
     unsafe {
-        if let Some(cache) = &mut STRING_CACHE {
+        let cache_ptr = &raw mut STRING_CACHE;
+        if let Some(cache) = (*cache_ptr).as_mut() {
             cache.clear();
         }
     }

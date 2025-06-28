@@ -14,7 +14,6 @@ use dpp::identity::Identity;
 use dpp::prelude::DataContract;
 // use dpp::document::Document; // Currently unused
 use platform_value::Identifier;
-use platform_version::version::LATEST_PLATFORM_VERSION;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use js_sys;
@@ -63,6 +62,7 @@ impl FetchOptions {
 }
 
 /// Fetch trait for retrieving data from Platform
+#[allow(async_fn_in_trait)]
 pub trait Fetch {
     /// Fetch an identity by ID
     async fn fetch_identity(&self, id: String, options: Option<FetchOptions>) -> Result<IdentityWasm, JsError>;
@@ -261,7 +261,7 @@ impl Fetch for WasmSdk {
                     
                     if let Some(proof_str) = proof_value.as_string() {
                         use base64::Engine;
-                        let proof_bytes = base64::engine::general_purpose::STANDARD
+                        let _proof_bytes = base64::engine::general_purpose::STANDARD
                             .decode(proof_str)
                             .map_err(|e| JsError::new(&format!("Failed to decode proof: {}", e)))?;
                         

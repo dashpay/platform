@@ -4,7 +4,6 @@
 //! This is useful for faster queries when proof verification is not required.
 
 use crate::dapi_client::{DapiClient, DapiClientConfig};
-use crate::error::to_js_error;
 use crate::fetch::FetchOptions;
 use crate::sdk::WasmSdk;
 use platform_value::Identifier;
@@ -19,7 +18,7 @@ pub async fn fetch_identity_unproved(
     identity_id: &str,
     options: Option<FetchOptions>,
 ) -> Result<JsValue, JsError> {
-    let identifier = Identifier::from_string(
+    let _identifier = Identifier::from_string(
         identity_id,
         platform_value::string_encoding::Encoding::Base58,
     )
@@ -51,7 +50,7 @@ pub async fn fetch_data_contract_unproved(
     contract_id: &str,
     options: Option<FetchOptions>,
 ) -> Result<JsValue, JsError> {
-    let identifier = Identifier::from_string(
+    let _identifier = Identifier::from_string(
         contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )
@@ -88,7 +87,7 @@ pub async fn fetch_documents_unproved(
     start_at: Option<Vec<u8>>,
     options: Option<FetchOptions>,
 ) -> Result<JsValue, JsError> {
-    let contract_identifier = Identifier::from_string(
+    let _contract_identifier = Identifier::from_string(
         contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )

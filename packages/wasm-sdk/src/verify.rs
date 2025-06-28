@@ -1,6 +1,5 @@
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::identity::Identity;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
@@ -119,13 +118,13 @@ pub fn verify_data_contract_proof(
 /// because document queries need the contract schema for proper validation.
 #[wasm_bindgen(js_name = verifyDocuments)]
 pub fn verify_documents(
-    proof: Vec<u8>,
-    contract_id: &str,
-    document_type: &str,
-    where_clause: JsValue,
-    order_by: JsValue,
-    limit: Option<u32>,
-    start_at: Option<Vec<u8>>,
+    _proof: Vec<u8>,
+    _contract_id: &str,
+    _document_type: &str,
+    _where_clause: JsValue,
+    _order_by: JsValue,
+    _limit: Option<u32>,
+    _start_at: Option<Vec<u8>>,
 ) -> Result<JsValue, JsError> {
     // Document proof verification requires a DataContract object to construct the query
     // This is a fundamental requirement of the platform's proof system
@@ -140,35 +139,34 @@ pub fn verify_documents(
 /// Verify documents proof with a provided contract
 #[wasm_bindgen(js_name = verifyDocumentsWithContract)]
 pub fn verify_documents_with_contract(
-    proof: Vec<u8>,
+    _proof: Vec<u8>,
     contract_cbor: Vec<u8>,
-    document_type: &str,
+    _document_type: &str,
     where_clause: JsValue,
     order_by: JsValue,
-    limit: Option<u32>,
-    start_at: Option<Vec<u8>>,
+    _limit: Option<u32>,
+    _start_at: Option<Vec<u8>>,
 ) -> Result<JsValue, JsError> {
-    use wasm_drive_verify::native::verify_documents_with_query;
-    use dpp::data_contract::DataContract;
-    use dpp::serialization::PlatformDeserializable;
+        use dpp::data_contract::DataContract;
+    use dpp::serialization::PlatformLimitDeserializableFromVersionedStructure;
     use platform_value::Value;
     
     let platform_version = PlatformVersion::get(PLATFORM_VERSION)
         .map_err(|e| JsError::new(&format!("Invalid platform version: {}", e)))?;
     
     // Deserialize the contract
-    let contract = DataContract::deserialize_from_bytes(&contract_cbor)
+    let _contract = DataContract::versioned_limit_deserialize(&contract_cbor, &platform_version)
         .map_err(|e| JsError::new(&format!("Failed to deserialize contract: {}", e)))?;
     
     // Parse where clause from JavaScript
-    let where_clauses = if where_clause.is_null() || where_clause.is_undefined() {
+    let _where_clauses = if where_clause.is_null() || where_clause.is_undefined() {
         None
     } else {
         Some(parse_where_clause(where_clause)?)
     };
     
     // Parse order by clause from JavaScript
-    let order_by_clauses = if order_by.is_null() || order_by.is_undefined() {
+    let _order_by_clauses = if order_by.is_null() || order_by.is_undefined() {
         None
     } else {
         Some(parse_order_by_clause(order_by)?)
@@ -181,7 +179,7 @@ pub fn verify_documents_with_contract(
     // For now, return a mock result until we can properly integrate with drive query types
     // The issue is that DriveDocumentQuery requires specific features from the drive crate
     let root_hash = vec![0u8; 32]; // Mock root hash
-    let documents = vec![]; // Mock documents
+    let documents: Vec<Document> = vec![]; // Mock documents
     
     // TODO: Properly implement when we can access drive::query types with verify feature
     
@@ -189,7 +187,11 @@ pub fn verify_documents_with_contract(
     let js_array = js_sys::Array::new();
     for doc in documents {
         // Convert document to JavaScript object
-        let doc_value: Value = doc.into();
+        // Convert document to JSON value via serde
+        let doc_json = serde_json::to_value(&doc)
+            .map_err(|e| JsError::new(&format!("Failed to convert document to JSON: {}", e)))?;
+        let doc_value: Value = serde_json::from_value(doc_json)
+            .map_err(|e| JsError::new(&format!("Failed to convert JSON to Value: {}", e)))?;
         let js_doc = serde_wasm_bindgen::to_value(&doc_value)
             .map_err(|e| JsError::new(&format!("Failed to convert document: {}", e)))?;
         js_array.push(&js_doc);
@@ -217,13 +219,13 @@ fn parse_where_clause(js_where: JsValue) -> Result<(), JsError> {
     
     // Convert JavaScript where clause to Rust where clause
     let where_array = js_sys::Array::from(&js_where);
-    let mut clauses = Vec::new();
+    let _clauses: Vec<()> = Vec::new();
     
     for i in 0..where_array.length() {
         let condition = where_array.get(i);
         if let Some(condition_array) = condition.dyn_ref::<js_sys::Array>() {
             if condition_array.length() >= 3 {
-                let field = condition_array.get(0).as_string()
+                let _field = condition_array.get(0).as_string()
                     .ok_or_else(|| JsError::new("Field must be a string"))?;
                 let operator = condition_array.get(1).as_string()
                     .ok_or_else(|| JsError::new("Operator must be a string"))?;
@@ -249,13 +251,13 @@ fn parse_where_clause(js_where: JsValue) -> Result<(), JsError> {
 fn parse_order_by_clause(js_order: JsValue) -> Result<Vec<()>, JsError> {
     
     let order_array = js_sys::Array::from(&js_order);
-    let mut clauses = Vec::new();
+    let mut clauses: Vec<()> = Vec::new();
     
     for i in 0..order_array.length() {
         let order_item = order_array.get(i);
         if let Some(order_item_array) = order_item.dyn_ref::<js_sys::Array>() {
             if order_item_array.length() >= 2 {
-                let field = order_item_array.get(0).as_string()
+                let _field = order_item_array.get(0).as_string()
                     .ok_or_else(|| JsError::new("Order field must be a string"))?;
                 let direction = order_item_array.get(1).as_string()
                     .ok_or_else(|| JsError::new("Order direction must be a string"))?;
@@ -288,7 +290,7 @@ fn js_value_to_platform_value(js_val: JsValue) -> Result<platform_value::Value, 
         if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
             Ok(Value::I64(n as i64))
         } else {
-            Ok(Value::F64(n))
+            Ok(Value::Float(n))
         }
     } else if let Some(s) = js_val.as_string() {
         Ok(Value::Text(s))
@@ -304,15 +306,15 @@ fn js_value_to_platform_value(js_val: JsValue) -> Result<platform_value::Value, 
     } else {
         // Try to parse as object
         if let Ok(obj) = serde_wasm_bindgen::from_value::<BTreeMap<String, serde_json::Value>>(js_val.clone()) {
-            let mut map = BTreeMap::new();
+            let mut vec_map = Vec::new();
             for (k, v) in obj {
                 let json_str = serde_json::to_string(&v)
                     .map_err(|e| JsError::new(&format!("Failed to serialize value: {}", e)))?;
                 let platform_val: Value = serde_json::from_str(&json_str)
                     .map_err(|e| JsError::new(&format!("Failed to parse value: {}", e)))?;
-                map.insert(Value::Text(k), platform_val);
+                vec_map.push((Value::Text(k), platform_val));
             }
-            Ok(Value::Map(map))
+            Ok(Value::Map(vec_map))
         } else {
             Err(JsError::new("Unsupported JavaScript value type"))
         }

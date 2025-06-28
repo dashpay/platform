@@ -5,24 +5,19 @@
 //! - Identity top-up operations
 //! - Identity updates (adding/removing keys, etc.)
 
-use crate::error::to_js_error;
-use dpp::serialization::PlatformDeserializable;
-use dpp::identity::{Identity, IdentityV0, KeyID};
-use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::KeyID;
 use dpp::identity::identity_public_key::{IdentityPublicKey, v0::IdentityPublicKeyV0};
-use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::prelude::{AssetLockProof, Identifier};
+use dpp::prelude::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::StateTransition;
-use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use web_sys::js_sys::{Number, Uint8Array, Object, Reflect, Array};
 
@@ -70,7 +65,7 @@ pub fn create_identity(
     // Serialize the transition
     StateTransition::IdentityCreate(transition)
         .serialize_to_bytes()
-        .map_err(to_js_error)
+        .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
         .map(|bytes| Uint8Array::from(bytes.as_slice()))
 }
 
@@ -103,7 +98,7 @@ pub fn topup_identity(
     // Serialize the transition
     StateTransition::IdentityTopUp(transition)
         .serialize_to_bytes()
-        .map_err(to_js_error)
+        .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
         .map(|bytes| Uint8Array::from(bytes.as_slice()))
 }
 
@@ -171,7 +166,7 @@ pub fn update_identity(
     // Serialize the transition
     StateTransition::IdentityUpdate(transition)
         .serialize_to_bytes()
-        .map_err(to_js_error)
+        .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
         .map(|bytes| Uint8Array::from(bytes.as_slice()))
 }
 
@@ -272,7 +267,7 @@ impl IdentityTransitionBuilder {
         // Serialize the transition
         StateTransition::IdentityCreate(transition)
             .serialize_to_bytes()
-            .map_err(to_js_error)
+            .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
             .map(|bytes| Uint8Array::from(bytes.as_slice()))
     }
 
@@ -301,7 +296,7 @@ impl IdentityTransitionBuilder {
         // Serialize the transition
         StateTransition::IdentityTopUp(transition)
             .serialize_to_bytes()
-            .map_err(to_js_error)
+            .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
             .map(|bytes| Uint8Array::from(bytes.as_slice()))
     }
 
@@ -351,7 +346,7 @@ impl IdentityTransitionBuilder {
         // Serialize the transition
         StateTransition::IdentityUpdate(transition)
             .serialize_to_bytes()
-            .map_err(to_js_error)
+            .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
             .map(|bytes| Uint8Array::from(bytes.as_slice()))
     }
 }
@@ -629,7 +624,7 @@ pub fn create_basic_identity(
     // Serialize the transition
     StateTransition::IdentityCreate(transition)
         .serialize_to_bytes()
-        .map_err(to_js_error)
+        .map_err(|e| JsError::new(&format!("Failed to serialize transition: {}", e)))
         .map(|bytes| Uint8Array::from(bytes.as_slice()))
 }
 

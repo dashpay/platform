@@ -9,15 +9,15 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Object, Reflect};
 
 #[wasm_bindgen]
-pub struct FetchOptions {
+pub struct FetchManyOptions {
     prove: bool,
 }
 
 #[wasm_bindgen]
-impl FetchOptions {
+impl FetchManyOptions {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> FetchOptions {
-        FetchOptions { prove: true }
+    pub fn new() -> FetchManyOptions {
+        FetchManyOptions { prove: true }
     }
 
     #[wasm_bindgen(js_name = setProve)]
@@ -53,9 +53,9 @@ impl FetchManyResponse {
 pub async fn fetch_identities(
     sdk: &WasmSdk,
     identity_ids: Vec<String>,
-    options: Option<FetchOptions>,
+    options: Option<FetchManyOptions>,
 ) -> Result<FetchManyResponse, JsError> {
-    let opts = options.unwrap_or_else(FetchOptions::new);
+    let opts = options.unwrap_or_else(FetchManyOptions::new);
     let items = Object::new();
     
     // Create DAPI client
@@ -107,9 +107,9 @@ pub async fn fetch_identities(
 pub async fn fetch_data_contracts(
     sdk: &WasmSdk,
     contract_ids: Vec<String>,
-    options: Option<FetchOptions>,
+    options: Option<FetchManyOptions>,
 ) -> Result<FetchManyResponse, JsError> {
-    let opts = options.unwrap_or_else(FetchOptions::new);
+    let opts = options.unwrap_or_else(FetchManyOptions::new);
     let items = Object::new();
     
     // Create DAPI client
@@ -160,7 +160,7 @@ pub async fn fetch_data_contracts(
 #[wasm_bindgen]
 pub struct DocumentQueryOptions {
     contract_id: String,
-    document_type: String,
+    _document_type: String,
     where_clause: JsValue,
     order_by: JsValue,
     limit: Option<u32>,
@@ -174,7 +174,7 @@ impl DocumentQueryOptions {
     pub fn new(contract_id: String, document_type: String) -> DocumentQueryOptions {
         DocumentQueryOptions {
             contract_id,
-            document_type,
+            _document_type: document_type,
             where_clause: JsValue::NULL,
             order_by: JsValue::NULL,
             limit: None,
@@ -212,14 +212,14 @@ impl DocumentQueryOptions {
 /// Fetch multiple documents based on query criteria
 #[wasm_bindgen]
 pub async fn fetch_documents(
-    sdk: &WasmSdk,
+    _sdk: &WasmSdk,
     query_options: DocumentQueryOptions,
-    options: Option<FetchOptions>,
+    options: Option<FetchManyOptions>,
 ) -> Result<FetchManyResponse, JsError> {
-    let opts = options.unwrap_or_else(FetchOptions::new);
+    let _opts = options.unwrap_or_else(FetchManyOptions::new);
     
     // Convert query options to platform query
-    let contract_id = Identifier::from_string(
+    let _contract_id = Identifier::from_string(
         &query_options.contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )

@@ -2,7 +2,6 @@
 //!
 //! This module provides error types and conversion utilities for WASM bindings.
 
-use dpp::ProtocolError;
 use std::fmt::Display;
 use wasm_bindgen::prelude::*;
 

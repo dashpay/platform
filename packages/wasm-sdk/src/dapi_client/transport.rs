@@ -4,8 +4,7 @@
 //! browser and Node.js environments without gRPC dependencies.
 
 use super::error::DapiClientError;
-use js_sys::{Object, Promise, Reflect};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::Duration;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -106,10 +105,10 @@ impl Transport {
             .map_err(|e| DapiClientError::Serialization(e.to_string()))?;
 
         // Create request options
-        let mut opts = RequestInit::new();
-        opts.method("POST");
-        opts.headers(&headers);
-        opts.body(Some(&body.into()));
+        let opts = RequestInit::new();
+        opts.set_method("POST");
+        opts.set_headers(&headers);
+        opts.set_body(&body.into());
 
         // Create request
         let request = Request::new_with_str_and_init(&url, &opts)
@@ -122,7 +121,7 @@ impl Transport {
         let abort_controller = web_sys::AbortController::new()
             .map_err(|_| DapiClientError::Transport("Failed to create abort controller".to_string()))?;
         
-        opts.signal(Some(&abort_controller.signal()));
+        opts.set_signal(Some(&abort_controller.signal()));
 
         // Set timeout
         let timeout_ms = self.config.timeout.as_millis() as i32;

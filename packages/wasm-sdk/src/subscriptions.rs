@@ -3,7 +3,7 @@
 //! This module provides real-time subscription functionality for monitoring
 //! blockchain events and state changes through WebSocket connections.
 
-use js_sys::{Array, Function, Object, Reflect};
+use js_sys::Function;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
@@ -23,7 +23,7 @@ fn extract_subscription_id(msg: &serde_json::Value) -> Result<String, JsError> {
 pub struct SubscriptionHandle {
     id: String,
     websocket: WebSocket,
-    callbacks: Rc<RefCell<SubscriptionCallbacks>>,
+    _callbacks: Rc<RefCell<SubscriptionCallbacks>>,
 }
 
 struct SubscriptionCallbacks {
@@ -89,7 +89,7 @@ pub fn subscribe_to_identity_balance_updates(
     let handle = SubscriptionHandle {
         id: subscription_id,
         websocket: ws.clone(),
-        callbacks: callbacks.clone(),
+        _callbacks: callbacks.clone(),
     };
     
     // Setup message handler
@@ -166,7 +166,7 @@ pub fn subscribe_to_data_contract_updates(
     let handle = SubscriptionHandle {
         id: subscription_id,
         websocket: ws.clone(),
-        callbacks: callbacks.clone(),
+        _callbacks: callbacks.clone(),
     };
     
     setup_websocket_handlers(&ws, callbacks, &subscribe_msg)?;
@@ -217,7 +217,7 @@ pub fn subscribe_to_document_updates(
     let handle = SubscriptionHandle {
         id: subscription_id,
         websocket: ws.clone(),
-        callbacks: callbacks.clone(),
+        _callbacks: callbacks.clone(),
     };
     
     setup_websocket_handlers(&ws, callbacks, &subscribe_msg)?;
@@ -256,7 +256,7 @@ pub fn subscribe_to_block_headers(
     let handle = SubscriptionHandle {
         id: subscription_id,
         websocket: ws.clone(),
-        callbacks: callbacks.clone(),
+        _callbacks: callbacks.clone(),
     };
     
     setup_websocket_handlers(&ws, callbacks, &subscribe_msg)?;
@@ -297,7 +297,7 @@ pub fn subscribe_to_state_transition_results(
     let handle = SubscriptionHandle {
         id: subscription_id,
         websocket: ws.clone(),
-        callbacks: callbacks.clone(),
+        _callbacks: callbacks.clone(),
     };
     
     setup_websocket_handlers(&ws, callbacks, &subscribe_msg)?;
@@ -318,17 +318,18 @@ fn setup_websocket_handlers(
             if let Ok(text) = e.data().dyn_into::<js_sys::JsString>() {
                 if let Some(string) = text.as_string() {
                     if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&string) {
-                    // Handle subscription confirmation
-                    if msg.get("id").is_some() && msg.get("result").is_some() {
-                        // Subscription confirmed
-                        return;
-                    }
-                    
-                    // Handle subscription update
-                    if let Some(params) = msg.get("params") {
-                        if let Some(callback) = callbacks.borrow().on_message.as_ref() {
-                            let js_params = serde_wasm_bindgen::to_value(params).unwrap();
-                            let _ = callback.call1(&JsValue::null(), &js_params);
+                        // Handle subscription confirmation
+                        if msg.get("id").is_some() && msg.get("result").is_some() {
+                            // Subscription confirmed
+                            return;
+                        }
+                        
+                        // Handle subscription update
+                        if let Some(params) = msg.get("params") {
+                            if let Some(callback) = callbacks.borrow().on_message.as_ref() {
+                                let js_params = serde_wasm_bindgen::to_value(params).unwrap();
+                                let _ = callback.call1(&JsValue::null(), &js_params);
+                            }
                         }
                     }
                 }

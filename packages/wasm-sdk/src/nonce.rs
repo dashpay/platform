@@ -2,13 +2,11 @@
 //!
 //! This module provides functionality for managing identity nonces and identity contract nonces.
 
-use crate::error::to_js_error;
-use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
-use web_sys::js_sys::{Date, Object, Reflect};
+use web_sys::js_sys::Date;
 
 /// Options for fetching nonces
 #[wasm_bindgen]
@@ -266,16 +264,18 @@ pub fn increment_identity_contract_nonce_cache(
 
 /// Clear identity nonce cache
 #[wasm_bindgen(js_name = clearIdentityNonceCache)]
-pub fn clear_identity_nonce_cache() {
+pub fn clear_identity_nonce_cache() -> Result<(), JsError> {
     let cache = get_identity_nonce_cache();
     let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     cache_guard.clear();
+    Ok(())
 }
 
 /// Clear identity contract nonce cache
 #[wasm_bindgen(js_name = clearIdentityContractNonceCache)]
-pub fn clear_identity_contract_nonce_cache() {
+pub fn clear_identity_contract_nonce_cache() -> Result<(), JsError> {
     let cache = get_contract_nonce_cache();
     let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     cache_guard.clear();
+    Ok(())
 }

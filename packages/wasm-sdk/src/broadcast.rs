@@ -2,8 +2,7 @@
 //!
 //! This module provides WASM bindings for broadcasting state transitions to the platform.
 
-use crate::sdk::WasmSdk;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionLike};
 use dpp::serialization::PlatformDeserializable;
 use wasm_bindgen::prelude::*;
 use web_sys::js_sys::{Object, Reflect, Uint8Array};
@@ -150,7 +149,7 @@ pub fn validate_state_transition(
     }
     
     // Try to deserialize and validate
-    let platform_version = dpp::version::PlatformVersion::get(platform_version)
+    let _platform_version = dpp::version::PlatformVersion::get(platform_version)
         .map_err(|e| JsError::new(&format!("Invalid platform version: {}", e)))?;
     
     let state_transition = StateTransition::deserialize_from_bytes(&bytes)
@@ -182,8 +181,8 @@ pub fn validate_state_transition(
         StateTransition::DataContractUpdate(_) => {
             // Validate contract update
         }
-        StateTransition::DocumentsBatch(_) => {
-            // Validate documents batch size
+        StateTransition::Batch(_) => {
+            // Validate batch size
         }
         StateTransition::MasternodeVote(_) => {
             // Validate vote parameters
@@ -192,15 +191,15 @@ pub fn validate_state_transition(
     
     // Check if state transition is signed (has signature)
     let is_signed = match &state_transition {
-        StateTransition::IdentityCreate(st) => st.signature().is_some(),
-        StateTransition::IdentityUpdate(st) => st.signature().is_some(),
-        StateTransition::IdentityTopUp(st) => st.signature().is_some(),
-        StateTransition::IdentityCreditWithdrawal(st) => st.signature().is_some(),
-        StateTransition::IdentityCreditTransfer(st) => st.signature().is_some(),
-        StateTransition::DataContractCreate(st) => st.signature().is_some(),
-        StateTransition::DataContractUpdate(st) => st.signature().is_some(),
-        StateTransition::DocumentsBatch(st) => st.signature().is_some(),
-        StateTransition::MasternodeVote(st) => st.signature().is_some(),
+        StateTransition::IdentityCreate(st) => !st.signature().is_empty(),
+        StateTransition::IdentityUpdate(st) => !st.signature().is_empty(),
+        StateTransition::IdentityTopUp(st) => !st.signature().is_empty(),
+        StateTransition::IdentityCreditWithdrawal(st) => !st.signature().is_empty(),
+        StateTransition::IdentityCreditTransfer(st) => !st.signature().is_empty(),
+        StateTransition::DataContractCreate(st) => !st.signature().is_empty(),
+        StateTransition::DataContractUpdate(st) => !st.signature().is_empty(),
+        StateTransition::Batch(st) => !st.signature().is_empty(),
+        StateTransition::MasternodeVote(st) => !st.signature().is_empty(),
     };
     
     if !is_signed {
@@ -222,7 +221,7 @@ pub fn validate_state_transition(
         StateTransition::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
         StateTransition::DataContractCreate(_) => "DataContractCreate",
         StateTransition::DataContractUpdate(_) => "DataContractUpdate",
-        StateTransition::DocumentsBatch(_) => "DocumentsBatch",
+        StateTransition::Batch(_) => "Batch",
         StateTransition::MasternodeVote(_) => "MasternodeVote",
     };
     

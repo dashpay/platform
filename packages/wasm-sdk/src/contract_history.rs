@@ -7,7 +7,6 @@ use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
 use js_sys::{Array, Date, Object, Reflect};
 use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
 
 /// Contract version information
 #[wasm_bindgen]
@@ -719,7 +718,7 @@ pub async fn monitor_contract_updates(
     let contract_id_clone = contract_id.to_string();
     let callback_clone = callback.clone();
     let handle_clone = handle.clone();
-    let mut last_version = current_version;
+    let _last_version = current_version;
     
     // Initial check
     spawn_local({
@@ -736,12 +735,10 @@ pub async fn monitor_contract_updates(
                         let _ = Reflect::set(&update_info, &"currentVersion".into(), &current_version.into());
                         
                         // Try to get the latest version
-                        if let Ok(contract_resp) = crate::dapi_client::DapiClient::new(
-                            crate::dapi_client::DapiClientConfig::new(sdk.network())
-                        ).map(|client| {
-                            client.get_data_contract(id_inner.clone(), false)
-                        }) {
-                            if let Ok(resp) = contract_resp.await {
+                        if let Ok(client) = crate::dapi_client::DapiClient::new(
+                            crate::dapi_client::DapiClientConfig::new(sdk_inner.network())
+                        ) {
+                            if let Ok(resp) = client.get_data_contract(id_inner.clone(), false).await {
                                 if let Ok(version) = js_sys::Reflect::get(&resp, &"version".into()) {
                                     let _ = Reflect::set(&update_info, &"latestVersion".into(), &version);
                                 }

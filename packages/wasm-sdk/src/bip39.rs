@@ -60,7 +60,7 @@ pub enum MnemonicStrength {
 #[wasm_bindgen]
 pub struct Mnemonic {
     inner: Bip39Mnemonic,
-    language: Language,
+    _language: Language,
 }
 
 #[wasm_bindgen]
@@ -84,7 +84,7 @@ impl Mnemonic {
         let inner = Bip39Mnemonic::from_entropy(&entropy)
             .map_err(|e| JsError::new(&format!("Failed to create mnemonic: {}", e)))?;
         
-        Ok(Mnemonic { inner, language: lang })
+        Ok(Mnemonic { inner, _language: lang })
     }
     
     /// Create a mnemonic from an existing phrase
@@ -98,7 +98,7 @@ impl Mnemonic {
         let inner = Bip39Mnemonic::parse_in(lang, phrase)
             .map_err(|e| JsError::new(&format!("Invalid mnemonic phrase: {}", e)))?;
         
-        Ok(Mnemonic { inner, language: lang })
+        Ok(Mnemonic { inner, _language: lang })
     }
     
     /// Create a mnemonic from entropy
@@ -112,7 +112,7 @@ impl Mnemonic {
         let inner = Bip39Mnemonic::from_entropy(entropy)
             .map_err(|e| JsError::new(&format!("Invalid entropy: {}", e)))?;
         
-        Ok(Mnemonic { inner, language: lang })
+        Ok(Mnemonic { inner, _language: lang })
     }
     
     /// Get the mnemonic phrase as a string
@@ -124,7 +124,7 @@ impl Mnemonic {
     /// Get the mnemonic words as an array
     #[wasm_bindgen(getter)]
     pub fn words(&self) -> Array {
-        let words = self.inner.word_iter().map(|w| JsValue::from_str(w));
+        let words = self.inner.words().map(|w| JsValue::from_str(w));
         words.collect()
     }
     

@@ -1,6 +1,5 @@
 //! DAPI endpoint management
 
-use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 /// Endpoint health status

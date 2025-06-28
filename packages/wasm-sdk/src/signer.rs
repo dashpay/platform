@@ -3,12 +3,10 @@
 //! This module provides signing capabilities for state transitions in a browser environment.
 //! It supports both BLS and ECDSA signatures.
 
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
-use dpp::BlsModule;
-use js_sys::{Array, Object, Promise, Reflect, Uint8Array};
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use web_sys::CryptoKey;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -26,7 +24,7 @@ pub struct WasmSigner {
 struct PrivateKeyInfo {
     private_key: Vec<u8>,
     key_type: KeyType,
-    purpose: Purpose,
+    _purpose: Purpose,
 }
 
 #[wasm_bindgen]
@@ -86,7 +84,7 @@ impl WasmSigner {
             PrivateKeyInfo {
                 private_key,
                 key_type,
-                purpose,
+                _purpose: purpose,
             },
         );
 
@@ -469,37 +467,3 @@ fn validate_mnemonic(mnemonic: &str) -> Result<(), JsError> {
     Ok(())
 }
 
-/// Generate mnemonic words
-fn generate_mnemonic_words(word_count: u32) -> Result<Vec<String>, JsError> {
-    // Simplified BIP39 wordlist (first few words for demonstration)
-    // In production, use the full 2048-word BIP39 wordlist
-    let sample_words = vec![
-        "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract",
-        "absurd", "abuse", "access", "accident", "account", "accuse", "achieve", "acid",
-        "acoustic", "acquire", "across", "act", "action", "actor", "actress", "actual",
-        "adapt", "add", "addict", "address", "adjust", "admit", "adult", "advance",
-        "advice", "aerobic", "affair", "afford", "afraid", "again", "age", "agent",
-        "agree", "ahead", "aim", "air", "airport", "aisle", "alarm", "album",
-        "alcohol", "alert", "alien", "all", "alley", "allow", "almost", "alone",
-        "alpha", "already", "also", "alter", "always", "amateur", "amazing", "among",
-        "amount", "amused", "analyst", "anchor", "ancient", "anger", "angle", "angry",
-        "animal", "ankle", "announce", "annual", "another", "answer", "antenna", "antique",
-        "anxiety", "any", "apart", "apology", "appear", "apple", "approve", "april",
-        "arch", "arctic", "area", "arena", "argue", "arm", "armed", "armor",
-        "army", "around", "arrange", "arrest", "arrive", "arrow", "art", "artefact",
-        "artist", "artwork", "ask", "aspect", "assault", "asset", "assist", "assume",
-        "asthma", "athlete", "atom", "attack", "attend", "attitude", "attract", "auction",
-        "audit", "august", "aunt", "author", "auto", "autumn", "average", "avocado",
-        "avoid", "awake", "aware", "away", "awesome", "awful", "awkward", "axis",
-    ];
-    
-    // Generate random indices (in production, use proper cryptographic randomness)
-    let mut words = Vec::new();
-    for i in 0..word_count {
-        // Simple deterministic selection for now
-        let index = ((i * 7 + 13) % sample_words.len() as u32) as usize;
-        words.push(sample_words[index].to_string());
-    }
-    
-    Ok(words)
-}
