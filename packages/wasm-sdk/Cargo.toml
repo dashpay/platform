@@ -50,7 +50,8 @@ wasm-bindgen-futures = { version = "0.4.49" }
 #   "tonic/tls-webpki-roots",
 #   "platform",
 # ]
-tracing-wasm = { version = "0.2.1" }
+# Temporarily disable tracing-wasm due to LTO issues
+# tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde-wasm-bindgen = { version = "0.6.5" }
@@ -84,7 +85,8 @@ bls-signatures = ["dpp/bls-signatures"]
 wasm = []
 
 [profile.release]
-lto = "fat"
+# Temporarily disable LTO for WASM compatibility
+# lto = "fat"
 opt-level = "z"
 panic = "abort"
 debug = false

@@ -63,7 +63,7 @@ export class BluetoothConnection extends EventEmitter<BluetoothEvents> {
 
     try {
       // Request device with Dash service
-      const device = await navigator.bluetooth.requestDevice({
+      const device = await navigator.bluetooth!.requestDevice({
         filters: [
           { services: [DASH_BLUETOOTH_SERVICE_UUID] }
         ],

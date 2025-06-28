@@ -8,6 +8,9 @@ import {
 import { CentralizedProvider } from './core/CentralizedProvider';
 import { loadWasmSdk, getWasmSdk } from './core/WasmLoader';
 
+// Re-export types for external use
+export type { SDKOptions, Network, ContextProvider, AppDefinition };
+
 export class SDK extends EventEmitter {
   private options: SDKOptions;
   private contextProvider: ContextProvider;
