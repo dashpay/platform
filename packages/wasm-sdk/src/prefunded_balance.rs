@@ -197,12 +197,20 @@ impl BalanceAllocation {
             .map_err(|_| JsError::new("Failed to set identity ID"))?;
         Reflect::set(&obj, &"balanceType".into(), &self.balance_type_str().into())
             .map_err(|_| JsError::new("Failed to set balance type"))?;
-        Reflect::set(&obj, &"allocatedAmount".into(), &self.allocated_amount.into())
-            .map_err(|_| JsError::new("Failed to set allocated amount"))?;
+        Reflect::set(
+            &obj,
+            &"allocatedAmount".into(),
+            &self.allocated_amount.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set allocated amount"))?;
         Reflect::set(&obj, &"usedAmount".into(), &self.used_amount.into())
             .map_err(|_| JsError::new("Failed to set used amount"))?;
-        Reflect::set(&obj, &"availableAmount".into(), &self.get_available_amount().into())
-            .map_err(|_| JsError::new("Failed to set available amount"))?;
+        Reflect::set(
+            &obj,
+            &"availableAmount".into(),
+            &self.get_available_amount().into(),
+        )
+        .map_err(|_| JsError::new("Failed to set available amount"))?;
         Reflect::set(&obj, &"allocatedAt".into(), &self.allocated_at.into())
             .map_err(|_| JsError::new("Failed to set allocated at"))?;
         if let Some(expires) = self.expires_at {
@@ -245,16 +253,16 @@ pub fn create_prefunded_balance(
 
     // Create prefunded balance state transition
     let mut st_bytes = Vec::new();
-    
+
     // State transition type (0x0C = PrefundedSpecializedBalance)
     st_bytes.push(0x0C);
-    
+
     // Protocol version
     st_bytes.push(0x01);
-    
+
     // Identity ID (32 bytes)
     st_bytes.extend_from_slice(&_identifier.to_buffer());
-    
+
     // Balance type (1 byte)
     st_bytes.push(match balance_type_enum {
         BalanceType::Voting => 0x01,
@@ -264,10 +272,10 @@ pub fn create_prefunded_balance(
         BalanceType::Reward => 0x05,
         BalanceType::Custom => 0x06,
     });
-    
+
     // Amount (8 bytes, little-endian)
     st_bytes.extend_from_slice(&amount.to_le_bytes());
-    
+
     // Purpose length (varint)
     if purpose.len() < 253 {
         st_bytes.push(purpose.len() as u8);
@@ -275,10 +283,10 @@ pub fn create_prefunded_balance(
         st_bytes.push(253);
         st_bytes.extend_from_slice(&(purpose.len() as u16).to_le_bytes());
     }
-    
+
     // Purpose string
     st_bytes.extend_from_slice(purpose.as_bytes());
-    
+
     // Lock duration (0 for no lock, otherwise 8 bytes)
     if let Some(lock) = lock_until {
         st_bytes.push(1); // Has lock
@@ -286,13 +294,13 @@ pub fn create_prefunded_balance(
     } else {
         st_bytes.push(0); // No lock
     }
-    
+
     // Nonce (8 bytes, little-endian)
     st_bytes.extend_from_slice(&identity_nonce.to_le_bytes());
-    
+
     // Signature public key ID (4 bytes, little-endian)
     st_bytes.extend_from_slice(&signature_public_key_id.to_le_bytes());
-    
+
     // Note: Signature will be added by the signing process
 
     Ok(st_bytes)
@@ -328,22 +336,22 @@ pub fn transfer_prefunded_balance(
         "reward" => BalanceType::Reward,
         _ => BalanceType::Custom,
     };
-    
+
     // Create transfer state transition
     let mut st_bytes = Vec::new();
-    
+
     // State transition type (0x0D = TransferPrefundedSpecializedBalance)
     st_bytes.push(0x0D);
-    
+
     // Protocol version
     st_bytes.push(0x01);
-    
+
     // From Identity ID (32 bytes)
     st_bytes.extend_from_slice(&_from.to_buffer());
-    
+
     // To Identity ID (32 bytes)
     st_bytes.extend_from_slice(&_to.to_buffer());
-    
+
     // Balance type (1 byte)
     st_bytes.push(match balance_type_enum {
         BalanceType::Voting => 0x01,
@@ -353,13 +361,13 @@ pub fn transfer_prefunded_balance(
         BalanceType::Reward => 0x05,
         BalanceType::Custom => 0x06,
     });
-    
+
     // Amount (8 bytes, little-endian)
     st_bytes.extend_from_slice(&amount.to_le_bytes());
-    
+
     // Nonce (8 bytes, little-endian)
     st_bytes.extend_from_slice(&identity_nonce.to_le_bytes());
-    
+
     // Signature public key ID (4 bytes, little-endian)
     st_bytes.extend_from_slice(&signature_public_key_id.to_le_bytes());
 
@@ -390,19 +398,19 @@ pub fn use_prefunded_balance(
         "reward" => BalanceType::Reward,
         _ => BalanceType::Custom,
     };
-    
+
     // Create usage state transition
     let mut st_bytes = Vec::new();
-    
+
     // State transition type (0x0E = UsePrefundedSpecializedBalance)
     st_bytes.push(0x0E);
-    
+
     // Protocol version
     st_bytes.push(0x01);
-    
+
     // Identity ID (32 bytes)
     st_bytes.extend_from_slice(&_identifier.to_buffer());
-    
+
     // Balance type (1 byte)
     st_bytes.push(match balance_type_enum {
         BalanceType::Voting => 0x01,
@@ -412,10 +420,10 @@ pub fn use_prefunded_balance(
         BalanceType::Reward => 0x05,
         BalanceType::Custom => 0x06,
     });
-    
+
     // Amount (8 bytes, little-endian)
     st_bytes.extend_from_slice(&amount.to_le_bytes());
-    
+
     // Purpose length (varint)
     if purpose.len() < 253 {
         st_bytes.push(purpose.len() as u8);
@@ -423,13 +431,13 @@ pub fn use_prefunded_balance(
         st_bytes.push(253);
         st_bytes.extend_from_slice(&(purpose.len() as u16).to_le_bytes());
     }
-    
+
     // Purpose string
     st_bytes.extend_from_slice(purpose.as_bytes());
-    
+
     // Nonce (8 bytes, little-endian)
     st_bytes.extend_from_slice(&identity_nonce.to_le_bytes());
-    
+
     // Signature public key ID (4 bytes, little-endian)
     st_bytes.extend_from_slice(&signature_public_key_id.to_le_bytes());
 
@@ -458,19 +466,19 @@ pub fn release_prefunded_balance(
         "reward" => BalanceType::Reward,
         _ => BalanceType::Custom,
     };
-    
+
     // Create release state transition
     let mut st_bytes = Vec::new();
-    
+
     // State transition type (0x0F = ReleasePrefundedSpecializedBalance)
     st_bytes.push(0x0F);
-    
+
     // Protocol version
     st_bytes.push(0x01);
-    
+
     // Identity ID (32 bytes)
     st_bytes.extend_from_slice(&_identifier.to_buffer());
-    
+
     // Balance type (1 byte)
     st_bytes.push(match balance_type_enum {
         BalanceType::Voting => 0x01,
@@ -480,10 +488,10 @@ pub fn release_prefunded_balance(
         BalanceType::Reward => 0x05,
         BalanceType::Custom => 0x06,
     });
-    
+
     // Nonce (8 bytes, little-endian)
     st_bytes.extend_from_slice(&identity_nonce.to_le_bytes());
-    
+
     // Signature public key ID (4 bytes, little-endian)
     st_bytes.extend_from_slice(&signature_public_key_id.to_le_bytes());
 
@@ -492,10 +500,7 @@ pub fn release_prefunded_balance(
 
 /// Fetch prefunded balances for identity
 #[wasm_bindgen(js_name = fetchPrefundedBalances)]
-pub async fn fetch_prefunded_balances(
-    sdk: &WasmSdk,
-    identity_id: &str,
-) -> Result<Array, JsError> {
+pub async fn fetch_prefunded_balances(sdk: &WasmSdk, identity_id: &str) -> Result<Array, JsError> {
     let _identifier = Identifier::from_string(
         identity_id,
         platform_value::string_encoding::Encoding::Base58,
@@ -505,7 +510,7 @@ pub async fn fetch_prefunded_balances(
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Request prefunded balances
     let request = serde_json::json!({
         "method": "getPrefundedBalances",
@@ -513,12 +518,14 @@ pub async fn fetch_prefunded_balances(
             "identityId": identity_id,
         }
     });
-    
-    let response = client.raw_request("/platform/v1/prefunded-balances", &request).await?;
-    
+
+    let response = client
+        .raw_request("/platform/v1/prefunded-balances", &request)
+        .await?;
+
     // Parse response
     let balances = Array::new();
-    
+
     if let Ok(balances_data) = serde_wasm_bindgen::from_value::<Vec<serde_json::Value>>(response) {
         for balance_data in balances_data {
             if let Ok(balance_obj) = parse_balance_from_json(&balance_data) {
@@ -534,7 +541,7 @@ pub async fn fetch_prefunded_balances(
             purpose: "Voting power for governance".to_string(),
             can_withdraw: false,
         };
-        
+
         let staking_balance = PrefundedBalance {
             balance_type: BalanceType::Staking,
             amount: 500000,
@@ -542,11 +549,11 @@ pub async fn fetch_prefunded_balances(
             purpose: "Staked for masternode collateral".to_string(),
             can_withdraw: true,
         };
-        
+
         balances.push(&voting_balance.to_object()?);
         balances.push(&staking_balance.to_object()?);
     }
-    
+
     Ok(balances)
 }
 
@@ -566,7 +573,7 @@ pub async fn get_prefunded_balance(
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Request specific balance
     let request = serde_json::json!({
         "method": "getPrefundedBalance",
@@ -575,16 +582,18 @@ pub async fn get_prefunded_balance(
             "balanceType": balance_type,
         }
     });
-    
-    let response = client.raw_request("/platform/v1/prefunded-balance", &request).await?;
-    
+
+    let response = client
+        .raw_request("/platform/v1/prefunded-balance", &request)
+        .await?;
+
     // Parse response
     if let Ok(balance_data) = serde_wasm_bindgen::from_value::<serde_json::Value>(response) {
         if !balance_data.is_null() {
             return Ok(Some(parse_balance_from_response(&balance_data)?));
         }
     }
-    
+
     // Default mock response if no data
     match balance_type.to_lowercase().as_str() {
         "voting" => Ok(Some(PrefundedBalance {
@@ -614,7 +623,7 @@ pub async fn check_prefunded_balance(
     required_amount: u64,
 ) -> Result<bool, JsError> {
     let balance = get_prefunded_balance(sdk, identity_id, balance_type).await?;
-    
+
     if let Some(bal) = balance {
         Ok(bal.amount >= required_amount && !bal.is_locked())
     } else {
@@ -639,70 +648,69 @@ pub async fn fetch_balance_allocations(
 
     // Fetch balance allocations from platform
     use crate::dapi_client::{DapiClient, DapiClientConfig};
-    
+
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Query for balance allocation documents
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    let identity_condition = js_sys::Array::of3(
-        &"identityId".into(),
-        &"==".into(),
-        &identity_id.into()
-    );
+    let identity_condition =
+        js_sys::Array::of3(&"identityId".into(), &"==".into(), &identity_id.into());
     where_clause.push(&identity_condition);
-    
+
     if active_only {
         // Only get non-expired allocations
         let expires_condition = js_sys::Array::of3(
             &"expiresAt".into(),
             &">".into(),
-            &(Date::now() as u64).into()
+            &(Date::now() as u64).into(),
         );
         where_clause.push(&expires_condition);
     }
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &100.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     // Query the balance allocations contract
     let allocations_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System balance allocations contract
-    let documents = client.get_documents(
-        allocations_contract_id.to_string(),
-        "balanceAllocation".to_string(),
-        query.into(),
-        JsValue::null(),
-        100,
-        None,
-        false
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            allocations_contract_id.to_string(),
+            "balanceAllocation".to_string(),
+            query.into(),
+            JsValue::null(),
+            100,
+            None,
+            false,
+        )
+        .await?;
+
     // Parse and return the allocations
     let allocations = Array::new();
-    
+
     if let Some(docs_array) = js_sys::Reflect::get(&documents, &"documents".into())
         .map_err(|_| JsError::new("Failed to get documents from response"))?
-        .dyn_ref::<js_sys::Array>() {
-        
+        .dyn_ref::<js_sys::Array>()
+    {
         for i in 0..docs_array.length() {
             let doc = docs_array.get(i);
-            
+
             // Convert document to BalanceAllocation
             let balance_type_str = js_sys::Reflect::get(&doc, &"balanceType".into())
                 .map_err(|_| JsError::new("Failed to get balance type"))?
                 .as_string()
                 .unwrap_or_else(|| "voting".to_string());
-            
+
             let balance_type = match balance_type_str.as_str() {
                 "voting" => BalanceType::Voting,
                 "masternode" => BalanceType::Staking,
                 "evolution" => BalanceType::Reserved,
                 _ => BalanceType::Voting,
             };
-            
+
             let allocation = BalanceAllocation {
                 identity_id: identity_id.to_string(),
                 balance_type,
@@ -723,11 +731,11 @@ pub async fn fetch_balance_allocations(
                     .and_then(|v| v.as_f64())
                     .map(|v| v as u64),
             };
-            
+
             allocations.push(&allocation.to_object()?);
         }
     }
-    
+
     Ok(allocations)
 }
 
@@ -751,8 +759,14 @@ pub async fn monitor_prefunded_balance(
 
     // Create monitor handle
     let handle = Object::new();
-    Reflect::set(&handle, &"identityId".into(), &identifier.to_string(platform_value::string_encoding::Encoding::Base58).into())
-        .map_err(|_| JsError::new("Failed to set identity ID"))?;
+    Reflect::set(
+        &handle,
+        &"identityId".into(),
+        &identifier
+            .to_string(platform_value::string_encoding::Encoding::Base58)
+            .into(),
+    )
+    .map_err(|_| JsError::new("Failed to set identity ID"))?;
     Reflect::set(&handle, &"balanceType".into(), &balance_type.into())
         .map_err(|_| JsError::new("Failed to set balance type"))?;
     Reflect::set(&handle, &"interval".into(), &interval.into())
@@ -763,20 +777,21 @@ pub async fn monitor_prefunded_balance(
     // Set up interval monitoring using gloo-timers
     use gloo_timers::callback::Interval;
     use wasm_bindgen_futures::spawn_local;
-    
+
     let sdk_clone = sdk.clone();
     let identity_id_clone = identity_id.to_string();
     let balance_type_clone = balance_type.to_string();
     let callback_clone = callback.clone();
     let handle_clone = handle.clone();
-    
+
     // Initial fetch
     if let Some(balance) = get_prefunded_balance(sdk, identity_id, balance_type).await? {
         let this = JsValue::null();
-        callback.call1(&this, &balance.to_object()?)
+        callback
+            .call1(&this, &balance.to_object()?)
             .map_err(|e| JsError::new(&format!("Callback failed: {:?}", e)))?;
     }
-    
+
     // Set up interval
     let _interval_handle = Interval::new(interval as u32, move || {
         let sdk_inner = sdk_clone.clone();
@@ -784,7 +799,7 @@ pub async fn monitor_prefunded_balance(
         let bt_inner = balance_type_clone.clone();
         let cb_inner = callback_clone.clone();
         let handle_inner = handle_clone.clone();
-        
+
         spawn_local(async move {
             // Check if still active
             if let Ok(active) = Reflect::get(&handle_inner, &"active".into()) {
@@ -792,7 +807,7 @@ pub async fn monitor_prefunded_balance(
                     return;
                 }
             }
-            
+
             // Fetch balance
             match get_prefunded_balance(&sdk_inner, &id_inner, &bt_inner).await {
                 Ok(Some(balance)) => {
@@ -805,12 +820,15 @@ pub async fn monitor_prefunded_balance(
                     // No balance found
                 }
                 Err(e) => {
-                    web_sys::console::error_1(&JsValue::from_str(&format!("Monitor error: {:?}", e)));
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "Monitor error: {:?}",
+                        e
+                    )));
                 }
             }
         });
     });
-    
+
     // Store interval handle for cleanup
     Reflect::set(&handle, &"_intervalHandle".into(), &JsValue::from_f64(0.0))
         .map_err(|_| JsError::new("Failed to store interval handle"))?;
@@ -820,10 +838,11 @@ pub async fn monitor_prefunded_balance(
 
 // Helper function to parse balance from JSON response
 fn parse_balance_from_json(data: &serde_json::Value) -> Result<JsValue, JsError> {
-    let balance_type_str = data.get("balanceType")
+    let balance_type_str = data
+        .get("balanceType")
         .and_then(|v| v.as_str())
         .unwrap_or("custom");
-    
+
     let balance_type = match balance_type_str.to_lowercase().as_str() {
         "voting" => BalanceType::Voting,
         "staking" => BalanceType::Staking,
@@ -832,32 +851,32 @@ fn parse_balance_from_json(data: &serde_json::Value) -> Result<JsValue, JsError>
         "reward" => BalanceType::Reward,
         _ => BalanceType::Custom,
     };
-    
+
     let balance = PrefundedBalance {
         balance_type,
-        amount: data.get("amount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        locked_until: data.get("lockedUntil")
-            .and_then(|v| v.as_u64()),
-        purpose: data.get("purpose")
+        amount: data.get("amount").and_then(|v| v.as_u64()).unwrap_or(0),
+        locked_until: data.get("lockedUntil").and_then(|v| v.as_u64()),
+        purpose: data
+            .get("purpose")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        can_withdraw: data.get("canWithdraw")
+        can_withdraw: data
+            .get("canWithdraw")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
     };
-    
+
     balance.to_object()
 }
 
 // Helper function to parse balance from response
 fn parse_balance_from_response(data: &serde_json::Value) -> Result<PrefundedBalance, JsError> {
-    let balance_type_str = data.get("balanceType")
+    let balance_type_str = data
+        .get("balanceType")
         .and_then(|v| v.as_str())
         .unwrap_or("custom");
-    
+
     let balance_type = match balance_type_str.to_lowercase().as_str() {
         "voting" => BalanceType::Voting,
         "staking" => BalanceType::Staking,
@@ -866,19 +885,18 @@ fn parse_balance_from_response(data: &serde_json::Value) -> Result<PrefundedBala
         "reward" => BalanceType::Reward,
         _ => BalanceType::Custom,
     };
-    
+
     Ok(PrefundedBalance {
         balance_type,
-        amount: data.get("amount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        locked_until: data.get("lockedUntil")
-            .and_then(|v| v.as_u64()),
-        purpose: data.get("purpose")
+        amount: data.get("amount").and_then(|v| v.as_u64()).unwrap_or(0),
+        locked_until: data.get("lockedUntil").and_then(|v| v.as_u64()),
+        purpose: data
+            .get("purpose")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        can_withdraw: data.get("canWithdraw")
+        can_withdraw: data
+            .get("canWithdraw")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
     })

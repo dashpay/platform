@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::time::Duration;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request, RequestInit, Response, Headers};
+use web_sys::{Headers, Request, RequestInit, Response};
 
 /// Transport configuration
 #[derive(Clone)]
@@ -36,7 +36,9 @@ impl Transport {
     /// Get the current endpoint
     pub fn get_current_endpoint(&self) -> String {
         let index = self.current_endpoint_index.get();
-        self.config.endpoints.get(index)
+        self.config
+            .endpoints
+            .get(index)
             .cloned()
             .unwrap_or_else(|| self.config.endpoints[0].clone())
     }
@@ -55,11 +57,11 @@ impl Transport {
         payload: &T,
     ) -> Result<JsValue, DapiClientError> {
         let mut last_error = None;
-        
+
         // Try each endpoint with retries
         for _ in 0..self.config.endpoints.len() {
             let endpoint = self.get_current_endpoint();
-            
+
             // Try retries on current endpoint
             for attempt in 0..=self.config.retries {
                 match self.make_single_request(&endpoint, path, payload).await {
@@ -74,14 +76,13 @@ impl Transport {
                     }
                 }
             }
-            
+
             // Rotate to next endpoint after all retries failed
             self.rotate_endpoint();
         }
 
-        Err(last_error.unwrap_or_else(|| 
-            DapiClientError::Transport("All endpoints failed".to_string())
-        ))
+        Err(last_error
+            .unwrap_or_else(|| DapiClientError::Transport("All endpoints failed".to_string())))
     }
 
     /// Make a single HTTP request
@@ -96,8 +97,9 @@ impl Transport {
         // Create headers
         let headers = Headers::new()
             .map_err(|_| DapiClientError::Transport("Failed to create headers".to_string()))?;
-        
-        headers.set("Content-Type", "application/json")
+
+        headers
+            .set("Content-Type", "application/json")
             .map_err(|_| DapiClientError::Transport("Failed to set content type".to_string()))?;
 
         // Serialize payload
@@ -117,21 +119,26 @@ impl Transport {
         // Add timeout using AbortController
         let window = web_sys::window()
             .ok_or_else(|| DapiClientError::Transport("No window object".to_string()))?;
-        
-        let abort_controller = web_sys::AbortController::new()
-            .map_err(|_| DapiClientError::Transport("Failed to create abort controller".to_string()))?;
-        
+
+        let abort_controller = web_sys::AbortController::new().map_err(|_| {
+            DapiClientError::Transport("Failed to create abort controller".to_string())
+        })?;
+
         opts.set_signal(Some(&abort_controller.signal()));
 
         // Set timeout
         let timeout_ms = self.config.timeout.as_millis() as i32;
         let abort_controller_clone = abort_controller.clone();
-        let timeout_handle = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-            &Closure::<dyn Fn()>::new(move || {
-                abort_controller_clone.abort();
-            }).into_js_value().unchecked_into(),
-            timeout_ms,
-        ).map_err(|_| DapiClientError::Transport("Failed to set timeout".to_string()))?;
+        let timeout_handle = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                &Closure::<dyn Fn()>::new(move || {
+                    abort_controller_clone.abort();
+                })
+                .into_js_value()
+                .unchecked_into(),
+                timeout_ms,
+            )
+            .map_err(|_| DapiClientError::Transport("Failed to set timeout".to_string()))?;
 
         // Make the request
         let response_promise = window.fetch_with_request(&request);
@@ -143,35 +150,40 @@ impl Transport {
         // Handle response
         match response_result {
             Ok(response_value) => {
-                let response: Response = response_value.dyn_into()
+                let response: Response = response_value
+                    .dyn_into()
                     .map_err(|_| DapiClientError::Transport("Invalid response type".to_string()))?;
 
                 if response.ok() {
-                    let json_promise = response.json()
-                        .map_err(|_| DapiClientError::Transport("Failed to get JSON".to_string()))?;
-                    
-                    let json_value = JsFuture::from(json_promise).await
-                        .map_err(|e| DapiClientError::Response(format!("Failed to parse JSON: {:?}", e)))?;
+                    let json_promise = response.json().map_err(|_| {
+                        DapiClientError::Transport("Failed to get JSON".to_string())
+                    })?;
+
+                    let json_value = JsFuture::from(json_promise).await.map_err(|e| {
+                        DapiClientError::Response(format!("Failed to parse JSON: {:?}", e))
+                    })?;
 
                     Ok(json_value)
                 } else {
                     let status = response.status();
                     let status_text = response.status_text();
-                    
+
                     // Try to get error body
                     if let Ok(text_promise) = response.text() {
                         if let Ok(error_text) = JsFuture::from(text_promise).await {
                             if let Some(text) = error_text.as_string() {
-                                return Err(DapiClientError::Response(
-                                    format!("HTTP {}: {} - {}", status, status_text, text)
-                                ));
+                                return Err(DapiClientError::Response(format!(
+                                    "HTTP {}: {} - {}",
+                                    status, status_text, text
+                                )));
                             }
                         }
                     }
-                    
-                    Err(DapiClientError::Response(
-                        format!("HTTP {}: {}", status, status_text)
-                    ))
+
+                    Err(DapiClientError::Response(format!(
+                        "HTTP {}: {}",
+                        status, status_text
+                    )))
                 }
             }
             Err(e) => {
@@ -182,8 +194,11 @@ impl Transport {
                         return Err(DapiClientError::Timeout);
                     }
                 }
-                
-                Err(DapiClientError::Transport(format!("Request failed: {:?}", e)))
+
+                Err(DapiClientError::Transport(format!(
+                    "Request failed: {:?}",
+                    e
+                )))
             }
         }
     }

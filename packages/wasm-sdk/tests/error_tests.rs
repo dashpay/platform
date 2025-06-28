@@ -11,12 +11,15 @@ fn test_error_creation() {
     let network_error = WasmError::new(ErrorCategory::Network, "Network connection failed");
     assert_eq!(network_error.category(), "Network");
     assert_eq!(network_error.message(), "Network connection failed");
-    
+
     let validation_error = WasmError::new(ErrorCategory::Validation, "Invalid input");
     assert_eq!(validation_error.category(), "Validation");
     assert_eq!(validation_error.message(), "Invalid input");
-    
-    let proof_error = WasmError::new(ErrorCategory::ProofVerification, "Proof verification failed");
+
+    let proof_error = WasmError::new(
+        ErrorCategory::ProofVerification,
+        "Proof verification failed",
+    );
     assert_eq!(proof_error.category(), "ProofVerification");
     assert_eq!(proof_error.message(), "Proof verification failed");
 }
@@ -42,7 +45,7 @@ fn test_all_error_categories() {
         (ErrorCategory::Contract, "Contract"),
         (ErrorCategory::Unknown, "Unknown"),
     ];
-    
+
     for (category, expected_str) in categories {
         let error = WasmError::new(category, "Test message");
         assert_eq!(error.category(), expected_str);

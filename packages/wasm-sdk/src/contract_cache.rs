@@ -5,12 +5,11 @@
 
 use crate::cache::WasmCacheManager;
 use crate::error::to_js_error;
-use dpp::data_contract::DataContract;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::DataContract;
 use dpp::serialization::{
-    PlatformLimitDeserializableFromVersionedStructure,
-    PlatformSerializableWithPlatformVersion,
+    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
 use js_sys::{Array, Date, Object, Reflect};
 use platform_value::Value;
@@ -146,14 +145,18 @@ impl ContractCache {
         let contract = DataContract::versioned_limit_deserialize(contract_bytes, platform_version)
             .map_err(|e| JsError::new(&format!("Failed to deserialize contract: {}", e)))?;
 
-        let contract_id = contract.id().to_string(platform_value::string_encoding::Encoding::Base58);
+        let contract_id = contract
+            .id()
+            .to_string(platform_value::string_encoding::Encoding::Base58);
         let version = contract.version();
-        
+
         // Create metadata
         let metadata = ContractMetadata {
             id: contract_id.clone(),
             version,
-            owner_id: contract.owner_id().to_string(platform_value::string_encoding::Encoding::Base58),
+            owner_id: contract
+                .owner_id()
+                .to_string(platform_value::string_encoding::Encoding::Base58),
             schema_hash: self.calculate_schema_hash(&contract)?,
             document_types: self.get_document_types(&contract),
             last_accessed: Date::now(),
@@ -182,7 +185,8 @@ impl ContractCache {
         // Update version index
         if self.config.cache_history {
             if let Ok(mut index) = self.version_index.write() {
-                index.entry(contract_id.clone())
+                index
+                    .entry(contract_id.clone())
                     .or_insert_with(Vec::new)
                     .push(version);
             }
@@ -205,10 +209,10 @@ impl ContractCache {
                     cache.remove(contract_id);
                     return None;
                 }
-                
+
                 entry.update_access();
                 self.record_access(contract_id);
-                
+
                 return Some(entry.raw_bytes.clone());
             }
         }
@@ -225,32 +229,48 @@ impl ContractCache {
                     .map_err(|_| JsError::new("Failed to set id"))?;
                 Reflect::set(&obj, &"version".into(), &entry.metadata.version.into())
                     .map_err(|_| JsError::new("Failed to set version"))?;
-                Reflect::set(&obj, &"ownerId".into(), &entry.metadata.owner_id.clone().into())
-                    .map_err(|_| JsError::new("Failed to set ownerId"))?;
-                Reflect::set(&obj, &"schemaHash".into(), &entry.metadata.schema_hash.clone().into())
-                    .map_err(|_| JsError::new("Failed to set schemaHash"))?;
-                
+                Reflect::set(
+                    &obj,
+                    &"ownerId".into(),
+                    &entry.metadata.owner_id.clone().into(),
+                )
+                .map_err(|_| JsError::new("Failed to set ownerId"))?;
+                Reflect::set(
+                    &obj,
+                    &"schemaHash".into(),
+                    &entry.metadata.schema_hash.clone().into(),
+                )
+                .map_err(|_| JsError::new("Failed to set schemaHash"))?;
+
                 let doc_types = Array::new();
                 for doc_type in &entry.metadata.document_types {
                     doc_types.push(&doc_type.into());
                 }
                 Reflect::set(&obj, &"documentTypes".into(), &doc_types)
                     .map_err(|_| JsError::new("Failed to set documentTypes"))?;
-                
-                Reflect::set(&obj, &"lastAccessed".into(), &entry.metadata.last_accessed.into())
-                    .map_err(|_| JsError::new("Failed to set lastAccessed"))?;
-                Reflect::set(&obj, &"accessCount".into(), &entry.metadata.access_count.into())
-                    .map_err(|_| JsError::new("Failed to set accessCount"))?;
+
+                Reflect::set(
+                    &obj,
+                    &"lastAccessed".into(),
+                    &entry.metadata.last_accessed.into(),
+                )
+                .map_err(|_| JsError::new("Failed to set lastAccessed"))?;
+                Reflect::set(
+                    &obj,
+                    &"accessCount".into(),
+                    &entry.metadata.access_count.into(),
+                )
+                .map_err(|_| JsError::new("Failed to set accessCount"))?;
                 Reflect::set(&obj, &"sizeBytes".into(), &entry.metadata.size_bytes.into())
                     .map_err(|_| JsError::new("Failed to set sizeBytes"))?;
-                
+
                 let deps = Array::new();
                 for dep in &entry.metadata.dependencies {
                     deps.push(&dep.into());
                 }
                 Reflect::set(&obj, &"dependencies".into(), &deps)
                     .map_err(|_| JsError::new("Failed to set dependencies"))?;
-                
+
                 return Ok(obj.into());
             }
         }
@@ -286,44 +306,60 @@ impl ContractCache {
     #[wasm_bindgen(js_name = getCacheStats)]
     pub fn get_cache_stats(&self) -> Result<JsValue, JsError> {
         let stats = Object::new();
-        
+
         if let Ok(cache) = self.contracts.read() {
             let total_contracts = cache.len();
             let total_size: usize = cache.values().map(|e| e.metadata.size_bytes).sum();
             let avg_access_count: f64 = if total_contracts > 0 {
-                cache.values().map(|e| e.metadata.access_count as f64).sum::<f64>() / total_contracts as f64
+                cache
+                    .values()
+                    .map(|e| e.metadata.access_count as f64)
+                    .sum::<f64>()
+                    / total_contracts as f64
             } else {
                 0.0
             };
-            
+
             Reflect::set(&stats, &"totalContracts".into(), &total_contracts.into())
                 .map_err(|_| JsError::new("Failed to set totalContracts"))?;
             Reflect::set(&stats, &"totalSizeBytes".into(), &total_size.into())
                 .map_err(|_| JsError::new("Failed to set totalSizeBytes"))?;
-            Reflect::set(&stats, &"averageAccessCount".into(), &avg_access_count.into())
-                .map_err(|_| JsError::new("Failed to set averageAccessCount"))?;
-            Reflect::set(&stats, &"maxContracts".into(), &self.config.max_contracts.into())
-                .map_err(|_| JsError::new("Failed to set maxContracts"))?;
+            Reflect::set(
+                &stats,
+                &"averageAccessCount".into(),
+                &avg_access_count.into(),
+            )
+            .map_err(|_| JsError::new("Failed to set averageAccessCount"))?;
+            Reflect::set(
+                &stats,
+                &"maxContracts".into(),
+                &self.config.max_contracts.into(),
+            )
+            .map_err(|_| JsError::new("Failed to set maxContracts"))?;
             Reflect::set(&stats, &"ttlMs".into(), &self.config.ttl_ms.into())
                 .map_err(|_| JsError::new("Failed to set ttlMs"))?;
-            
+
             // Most accessed contracts
             let mut contracts: Vec<_> = cache.values().collect();
             contracts.sort_by(|a, b| b.metadata.access_count.cmp(&a.metadata.access_count));
-            
+
             let most_accessed = Array::new();
             for entry in contracts.iter().take(5) {
                 let obj = Object::new();
                 Reflect::set(&obj, &"id".into(), &entry.metadata.id.clone().into())
                     .map_err(|_| JsError::new("Failed to set id in stats"))?;
-                Reflect::set(&obj, &"accessCount".into(), &entry.metadata.access_count.into())
-                    .map_err(|_| JsError::new("Failed to set accessCount in stats"))?;
+                Reflect::set(
+                    &obj,
+                    &"accessCount".into(),
+                    &entry.metadata.access_count.into(),
+                )
+                .map_err(|_| JsError::new("Failed to set accessCount in stats"))?;
                 most_accessed.push(&obj);
             }
             Reflect::set(&stats, &"mostAccessed".into(), &most_accessed)
                 .map_err(|_| JsError::new("Failed to set mostAccessed"))?;
         }
-        
+
         Ok(stats.into())
     }
 
@@ -354,7 +390,7 @@ impl ContractCache {
                 .filter(|(_, entry)| entry.is_expired())
                 .map(|(id, _)| id.clone())
                 .collect();
-            
+
             for id in expired_ids {
                 cache.remove(&id);
                 removed += 1;
@@ -367,11 +403,11 @@ impl ContractCache {
     #[wasm_bindgen(js_name = getPreloadSuggestions)]
     pub fn get_preload_suggestions(&self) -> Array {
         let suggestions = Array::new();
-        
+
         if let Ok(patterns) = self.access_patterns.read() {
             // Analyze access patterns to suggest contracts to preload
             let mut scores: HashMap<String, f64> = HashMap::new();
-            
+
             for (contract_id, timestamps) in patterns.iter() {
                 if timestamps.len() >= 2 {
                     // Calculate access frequency
@@ -381,67 +417,69 @@ impl ContractCache {
                     scores.insert(contract_id.clone(), score);
                 }
             }
-            
+
             // Sort by score and suggest top contracts
             let mut sorted_scores: Vec<_> = scores.into_iter().collect();
-            sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            
+            sorted_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
             for (contract_id, _score) in sorted_scores.iter().take(10) {
                 if !self.is_contract_cached(contract_id) {
                     suggestions.push(&contract_id.into());
                 }
             }
         }
-        
+
         suggestions
     }
 
     // Private helper methods
-    
+
     fn calculate_schema_hash(&self, contract: &DataContract) -> Result<String, JsError> {
-        use sha2::{Sha256, Digest};
         use platform_version::version::LATEST_PLATFORM_VERSION;
+        use sha2::{Digest, Sha256};
         let platform_version = &LATEST_PLATFORM_VERSION;
-        
-        let schema_bytes = contract.serialize_to_bytes_with_platform_version(platform_version)
+
+        let schema_bytes = contract
+            .serialize_to_bytes_with_platform_version(platform_version)
             .map_err(to_js_error)?;
-        
+
         let mut hasher = Sha256::new();
         hasher.update(&schema_bytes);
         let result = hasher.finalize();
-        
+
         Ok(hex::encode(result))
     }
-    
+
     fn get_document_types(&self, contract: &DataContract) -> Vec<String> {
         match contract {
             DataContract::V0(v0) => v0.document_types.keys().cloned().collect(),
             DataContract::V1(v1) => v1.document_types.keys().cloned().collect(),
         }
     }
-    
+
     fn extract_dependencies(&self, contract: &DataContract) -> Vec<String> {
         let mut dependencies = HashSet::new();
-        
+
         // Get document types based on contract version
         let document_types = match contract {
             DataContract::V0(v0) => &v0.document_types,
             DataContract::V1(v1) => &v1.document_types,
         };
-        
+
         // Analyze each document type for references
         for (_doc_name, doc_type) in document_types.iter() {
             // Convert document schema to Value for analysis
             let schema = doc_type.schema();
             self.find_contract_references(schema, &mut dependencies);
         }
-        
+
         // Note: Schema definitions ($defs) are not directly accessible in the current API
         // They would be embedded within document type schemas
-        
+
         dependencies.into_iter().collect()
     }
-    
+
     /// Recursively find contract ID references in a schema
     fn find_contract_references(&self, value: &Value, dependencies: &mut HashSet<String>) {
         match value {
@@ -453,12 +491,14 @@ impl ContractCache {
                             if let Value::Text(ref_str) = val {
                                 // Parse reference format: "#/$defs/<contract_id>/<type>"
                                 // or "<contract_id>#<path>"
-                                if let Some(contract_id) = self.extract_contract_id_from_ref(ref_str) {
+                                if let Some(contract_id) =
+                                    self.extract_contract_id_from_ref(ref_str)
+                                {
                                     dependencies.insert(contract_id);
                                 }
                             }
                         }
-                        
+
                         // Check for byteArray contentMediaType references
                         if key_str == "contentMediaType" {
                             if let Value::Text(media_type) = val {
@@ -470,7 +510,9 @@ impl ContractCache {
                                         if let Value::Text(pattern_key_str) = pattern_key {
                                             if pattern_key_str == "pattern" {
                                                 if let Value::Text(pattern) = pattern_val {
-                                                    if let Some(contract_id) = self.extract_contract_id_from_pattern(pattern) {
+                                                    if let Some(contract_id) = self
+                                                        .extract_contract_id_from_pattern(pattern)
+                                                    {
                                                         dependencies.insert(contract_id);
                                                     }
                                                 }
@@ -482,7 +524,7 @@ impl ContractCache {
                             }
                         }
                     }
-                    
+
                     // Recurse into nested structures
                     self.find_contract_references(val, dependencies);
                 }
@@ -495,7 +537,7 @@ impl ContractCache {
             _ => {}
         }
     }
-    
+
     /// Extract contract ID from a $ref string
     fn extract_contract_id_from_ref(&self, ref_str: &str) -> Option<String> {
         // Handle external contract references
@@ -521,12 +563,16 @@ impl ContractCache {
             None
         }
     }
-    
+
     /// Extract contract ID from a pattern constraint
     fn extract_contract_id_from_pattern(&self, pattern: &str) -> Option<String> {
         // Pattern might contain contract ID in format like "^[contract_id]:[document_type]$"
         if pattern.contains(':') {
-            let parts: Vec<&str> = pattern.trim_start_matches('^').trim_end_matches('$').split(':').collect();
+            let parts: Vec<&str> = pattern
+                .trim_start_matches('^')
+                .trim_end_matches('$')
+                .split(':')
+                .collect();
             if parts.len() >= 2 {
                 let contract_id = parts[0].trim_matches(|c| c == '[' || c == ']');
                 if contract_id.len() > 20 && contract_id.chars().all(|c| c.is_alphanumeric()) {
@@ -541,7 +587,7 @@ impl ContractCache {
             None
         }
     }
-    
+
     fn evict_if_necessary(&self) -> Result<(), JsError> {
         if let Ok(mut cache) = self.contracts.write() {
             if cache.len() >= self.config.max_contracts {
@@ -550,7 +596,7 @@ impl ContractCache {
                     .iter()
                     .min_by_key(|(_, entry)| entry.metadata.last_accessed as i64)
                     .map(|(id, _)| id.clone());
-                
+
                 if let Some(id) = lru_id {
                     cache.remove(&id);
                 }
@@ -558,14 +604,14 @@ impl ContractCache {
         }
         Ok(())
     }
-    
+
     fn record_access(&self, contract_id: &str) {
         if let Ok(mut patterns) = self.access_patterns.write() {
             patterns
                 .entry(contract_id.to_string())
                 .or_insert_with(Vec::new)
                 .push(Date::now());
-            
+
             // Keep only recent accesses (last 100)
             if let Some(timestamps) = patterns.get_mut(contract_id) {
                 if timestamps.len() > 100 {
@@ -574,7 +620,7 @@ impl ContractCache {
             }
         }
     }
-    
+
     fn queue_dependencies_for_preload(&self, contract_id: &str) -> Result<(), JsError> {
         if let Ok(cache) = self.contracts.read() {
             if let Some(entry) = cache.get(contract_id) {
@@ -605,7 +651,7 @@ pub fn integrate_contract_cache(
 ) -> Result<(), JsError> {
     // This function would integrate the specialized contract cache
     // with the general cache manager for unified cache management
-    
+
     // For now, just return success
     Ok(())
 }

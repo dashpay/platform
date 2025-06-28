@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use dpp::{
+    data_contract::DataContract,
     prelude::CoreBlockHeight,
     util::vec::{decode_hex, encode_hex},
-    data_contract::DataContract,
 };
 use platform_value::Identifier;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -27,19 +27,22 @@ pub trait ContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError>;
-    
+
     fn get_data_contract(
         &self,
         id: &Identifier,
         platform_version: &dpp::version::PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
-    
+
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
-    
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-    ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, ContextProviderError>;
+    ) -> Result<
+        Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>,
+        ContextProviderError,
+    >;
 }
 
 #[wasm_bindgen]
@@ -130,44 +133,49 @@ impl ContextProvider for WasmContext {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         // Return testnet activation height for now
-        Ok(1) 
+        Ok(1)
     }
 
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
-    ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, ContextProviderError> {
-        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    ) -> Result<
+        Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>,
+        ContextProviderError,
+    > {
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
-        
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+
         // For now, return a default token configuration for any requested token
         // In a real implementation, this would fetch from the platform or cache
-        
+
         // Check if this is a known system contract token
-        let token_config = match token_id.to_string(platform_value::string_encoding::Encoding::Base58) {
+        let token_config = match token_id
+            .to_string(platform_value::string_encoding::Encoding::Base58)
+        {
             id_str => {
                 // Parse token ID format: <contract_id>.<position>
                 let parts: Vec<&str> = id_str.split('.').collect();
                 if parts.len() == 2 {
                     let _contract_id = parts[0];
                     let _position = parts[1].parse::<u32>().unwrap_or(0);
-                    
+
                     // Create a default token configuration
                     // Import the rules we need to construct manually
-                    use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
-                    use dpp::data_contract::change_control_rules::ChangeControlRules;
+                    use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
                     use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
                     use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+                    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+                    use dpp::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
                     use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
                     use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
                     use dpp::data_contract::associated_token::token_marketplace_rules::TokenMarketplaceRules;
-                    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
-                    use dpp::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
-                    use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
                     use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
-                    
+                    use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+                    use dpp::data_contract::change_control_rules::ChangeControlRules;
+
                     Some(TokenConfiguration::V0(TokenConfigurationV0 {
-                        base_supply: 1_000_000_000_000, // 1 trillion base units
+                        base_supply: 1_000_000_000_000,       // 1 trillion base units
                         max_supply: Some(10_000_000_000_000), // 10 trillion max supply
                         conventions: TokenConfigurationConvention::V0(Default::default()),
                         conventions_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
@@ -196,37 +204,45 @@ impl ContextProvider for WasmContext {
                         }),
                         distribution_rules: TokenDistributionRules::V0(TokenDistributionRulesV0 {
                             perpetual_distribution: None,
-                            perpetual_distribution_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
-                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                                admin_action_takers: AuthorizedActionTakers::NoOne,
-                                changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_admin_action_takers_to_no_one_allowed: false,
-                                self_changing_admin_action_takers_allowed: false,
-                            }),
+                            perpetual_distribution_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
                             pre_programmed_distribution: None,
                             new_tokens_destination_identity: None,
-                            new_tokens_destination_identity_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
-                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                                admin_action_takers: AuthorizedActionTakers::NoOne,
-                                changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_admin_action_takers_to_no_one_allowed: false,
-                                self_changing_admin_action_takers_allowed: false,
-                            }),
+                            new_tokens_destination_identity_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
                             minting_allow_choosing_destination: true,
-                            minting_allow_choosing_destination_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
-                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                                admin_action_takers: AuthorizedActionTakers::NoOne,
-                                changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_admin_action_takers_to_no_one_allowed: false,
-                                self_changing_admin_action_takers_allowed: false,
-                            }),
-                            change_direct_purchase_pricing_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
-                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                                admin_action_takers: AuthorizedActionTakers::NoOne,
-                                changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_admin_action_takers_to_no_one_allowed: false,
-                                self_changing_admin_action_takers_allowed: false,
-                            }),
+                            minting_allow_choosing_destination_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
+                            change_direct_purchase_pricing_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
                         }),
                         marketplace_rules: TokenMarketplaceRules::V0(TokenMarketplaceRulesV0 {
                             trade_mode: TokenTradeMode::NotTradeable,
@@ -289,7 +305,7 @@ impl ContextProvider for WasmContext {
                 }
             }
         };
-        
+
         Ok(token_config)
     }
 }

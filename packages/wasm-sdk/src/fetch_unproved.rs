@@ -6,8 +6,8 @@
 use crate::dapi_client::{DapiClient, DapiClientConfig};
 use crate::fetch::FetchOptions;
 use crate::sdk::WasmSdk;
-use platform_value::Identifier;
 use js_sys::{Object, Reflect};
+use platform_value::Identifier;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -25,7 +25,7 @@ pub async fn fetch_identity_unproved(
     .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
 
     let options = options.unwrap_or_default();
-    
+
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     if let Some(timeout) = options.timeout {
@@ -34,12 +34,12 @@ pub async fn fetch_identity_unproved(
     if let Some(retries) = options.retries {
         client_config.clone().set_retries(retries);
     }
-    
+
     let client = DapiClient::new(client_config)?;
-    
+
     // Fetch identity without proof
     let response = client.get_identity(identity_id.to_string(), false).await?;
-    
+
     Ok(response)
 }
 
@@ -57,7 +57,7 @@ pub async fn fetch_data_contract_unproved(
     .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
 
     let options = options.unwrap_or_default();
-    
+
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     if let Some(timeout) = options.timeout {
@@ -66,12 +66,14 @@ pub async fn fetch_data_contract_unproved(
     if let Some(retries) = options.retries {
         client_config.clone().set_retries(retries);
     }
-    
+
     let client = DapiClient::new(client_config)?;
-    
+
     // Fetch data contract without proof
-    let response = client.get_data_contract(contract_id.to_string(), false).await?;
-    
+    let response = client
+        .get_data_contract(contract_id.to_string(), false)
+        .await?;
+
     Ok(response)
 }
 
@@ -94,7 +96,7 @@ pub async fn fetch_documents_unproved(
     .map_err(|e| JsError::new(&format!("Invalid contract identifier: {}", e)))?;
 
     let options = options.unwrap_or_default();
-    
+
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     if let Some(timeout) = options.timeout {
@@ -103,26 +105,28 @@ pub async fn fetch_documents_unproved(
     if let Some(retries) = options.retries {
         client_config.clone().set_retries(retries);
     }
-    
+
     let client = DapiClient::new(client_config)?;
-    
+
     // Convert start_at to base64 string if present
     let start_after = start_at.map(|bytes| {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD.encode(bytes)
     });
-    
+
     // Fetch documents without proof
-    let response = client.get_documents(
-        contract_id.to_string(),
-        document_type.to_string(),
-        where_clause,
-        order_by,
-        limit.unwrap_or(100),
-        start_after,
-        false,
-    ).await?;
-    
+    let response = client
+        .get_documents(
+            contract_id.to_string(),
+            document_type.to_string(),
+            where_clause,
+            order_by,
+            limit.unwrap_or(100),
+            start_after,
+            false,
+        )
+        .await?;
+
     Ok(response)
 }
 
@@ -147,12 +151,12 @@ pub async fn fetch_identity_by_key_unproved(
     if let Some(retries) = _options.retries {
         client_config.clone().set_retries(retries);
     }
-    
+
     let client = DapiClient::new(client_config)?;
-    
+
     // Convert public key hash to hex string for query
     let hash_hex = hex::encode(&public_key_hash);
-    
+
     // Query identities by public key hash
     // This requires querying the identity index by public key hash
     let query = Object::new();
@@ -160,27 +164,29 @@ pub async fn fetch_identity_by_key_unproved(
     let condition = js_sys::Array::of3(
         &"publicKeyHashes".into(),
         &"contains".into(),
-        &hash_hex.into()
+        &hash_hex.into(),
     );
     where_clause.push(&condition);
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &100.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     // Query the identities contract for identities with this public key hash
     let identities_contract_id = "11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c"; // System identities contract
-    let response = client.get_documents(
-        identities_contract_id.to_string(),
-        "identity".to_string(),
-        query.into(),
-        JsValue::null(),
-        100,
-        None,
-        false, // unproved
-    ).await?;
-    
+    let response = client
+        .get_documents(
+            identities_contract_id.to_string(),
+            "identity".to_string(),
+            query.into(),
+            JsValue::null(),
+            100,
+            None,
+            false, // unproved
+        )
+        .await?;
+
     Ok(response)
 }
 
@@ -216,63 +222,59 @@ pub async fn fetch_data_contract_history_unproved(
     if let Some(retries) = _options.retries {
         client_config.clone().set_retries(retries);
     }
-    
+
     let client = DapiClient::new(client_config)?;
-    
+
     // Query contract history documents
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    
+
     // Add contract ID condition
-    let contract_condition = js_sys::Array::of3(
-        &"contractId".into(),
-        &"==".into(),
-        &contract_id.into()
-    );
+    let contract_condition =
+        js_sys::Array::of3(&"contractId".into(), &"==".into(), &contract_id.into());
     where_clause.push(&contract_condition);
-    
+
     // Add timestamp condition if provided
     if let Some(start_ms) = start_at_ms {
-        let timestamp_condition = js_sys::Array::of3(
-            &"updatedAt".into(),
-            &">=".into(),
-            &start_ms.into()
-        );
+        let timestamp_condition =
+            js_sys::Array::of3(&"updatedAt".into(), &">=".into(), &start_ms.into());
         where_clause.push(&timestamp_condition);
     }
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
-    
+
     // Order by timestamp descending
     let order_by = js_sys::Array::of2(
         &js_sys::Array::of2(&"updatedAt".into(), &"desc".into()),
-        &js_sys::Array::of2(&"$id".into(), &"asc".into())
+        &js_sys::Array::of2(&"$id".into(), &"asc".into()),
     );
     Reflect::set(&query, &"orderBy".into(), &order_by)
         .map_err(|_| JsError::new("Failed to set orderBy"))?;
-    
+
     // Set limit and offset
     Reflect::set(&query, &"limit".into(), &_limit.unwrap_or(100).into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     if let Some(offset_val) = _offset {
         Reflect::set(&query, &"startAt".into(), &offset_val.into())
             .map_err(|_| JsError::new("Failed to set offset"))?;
     }
-    
+
     // Query the contract history from system contract
     let history_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System contract history contract
-    let documents = client.get_documents(
-        history_contract_id.to_string(),
-        "contractHistory".to_string(),
-        query.into(),
-        JsValue::null(),
-        _limit.unwrap_or(100),
-        None,
-        false, // unproved
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            history_contract_id.to_string(),
+            "contractHistory".to_string(),
+            query.into(),
+            JsValue::null(),
+            _limit.unwrap_or(100),
+            None,
+            false, // unproved
+        )
+        .await?;
+
     // Build response with history array
     let response = Object::new();
     Reflect::set(&response, &"history".into(), &documents)
@@ -296,7 +298,7 @@ pub async fn fetch_batch_unproved(
 
     for i in 0..requests_array.length() {
         let request = requests_array.get(i);
-        
+
         // Parse request type
         let request_type = Reflect::get(&request, &"type".into())
             .map_err(|_| JsError::new("Failed to get request type"))?
@@ -309,7 +311,7 @@ pub async fn fetch_batch_unproved(
                     .map_err(|_| JsError::new("Failed to get identity ID"))?
                     .as_string()
                     .ok_or_else(|| JsError::new("Identity ID must be a string"))?;
-                
+
                 fetch_identity_unproved(sdk, &id, options.clone()).await?
             }
             "dataContract" => {
@@ -317,10 +319,15 @@ pub async fn fetch_batch_unproved(
                     .map_err(|_| JsError::new("Failed to get contract ID"))?
                     .as_string()
                     .ok_or_else(|| JsError::new("Contract ID must be a string"))?;
-                
+
                 fetch_data_contract_unproved(sdk, &id, options.clone()).await?
             }
-            _ => return Err(JsError::new(&format!("Unknown request type: {}", request_type))),
+            _ => {
+                return Err(JsError::new(&format!(
+                    "Unknown request type: {}",
+                    request_type
+                )))
+            }
         };
 
         results.push(&result);

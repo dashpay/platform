@@ -109,7 +109,8 @@ impl RequestSettings {
             return self.initial_retry_delay_ms;
         }
 
-        let delay = self.initial_retry_delay_ms as f64 * self.backoff_multiplier.powi(attempt as i32);
+        let delay =
+            self.initial_retry_delay_ms as f64 * self.backoff_multiplier.powi(attempt as i32);
         delay.min(self.max_retry_delay_ms as f64) as u32
     }
 
@@ -119,26 +120,50 @@ impl RequestSettings {
         let obj = Object::new();
         Reflect::set(&obj, &"maxRetries".into(), &self.max_retries.into())
             .map_err(|_| JsError::new("Failed to set max retries"))?;
-        Reflect::set(&obj, &"initialRetryDelayMs".into(), &self.initial_retry_delay_ms.into())
-            .map_err(|_| JsError::new("Failed to set initial retry delay"))?;
-        Reflect::set(&obj, &"maxRetryDelayMs".into(), &self.max_retry_delay_ms.into())
-            .map_err(|_| JsError::new("Failed to set max retry delay"))?;
-        Reflect::set(&obj, &"backoffMultiplier".into(), &self.backoff_multiplier.into())
-            .map_err(|_| JsError::new("Failed to set backoff multiplier"))?;
+        Reflect::set(
+            &obj,
+            &"initialRetryDelayMs".into(),
+            &self.initial_retry_delay_ms.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set initial retry delay"))?;
+        Reflect::set(
+            &obj,
+            &"maxRetryDelayMs".into(),
+            &self.max_retry_delay_ms.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max retry delay"))?;
+        Reflect::set(
+            &obj,
+            &"backoffMultiplier".into(),
+            &self.backoff_multiplier.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set backoff multiplier"))?;
         Reflect::set(&obj, &"timeoutMs".into(), &self.timeout_ms.into())
             .map_err(|_| JsError::new("Failed to set timeout"))?;
-        Reflect::set(&obj, &"useExponentialBackoff".into(), &self.use_exponential_backoff.into())
-            .map_err(|_| JsError::new("Failed to set exponential backoff"))?;
-        Reflect::set(&obj, &"retryOnTimeout".into(), &self.retry_on_timeout.into())
-            .map_err(|_| JsError::new("Failed to set retry on timeout"))?;
-        Reflect::set(&obj, &"retryOnNetworkError".into(), &self.retry_on_network_error.into())
-            .map_err(|_| JsError::new("Failed to set retry on network error"))?;
-        
+        Reflect::set(
+            &obj,
+            &"useExponentialBackoff".into(),
+            &self.use_exponential_backoff.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set exponential backoff"))?;
+        Reflect::set(
+            &obj,
+            &"retryOnTimeout".into(),
+            &self.retry_on_timeout.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set retry on timeout"))?;
+        Reflect::set(
+            &obj,
+            &"retryOnNetworkError".into(),
+            &self.retry_on_network_error.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set retry on network error"))?;
+
         if let Some(ref headers) = self.custom_headers {
             Reflect::set(&obj, &"customHeaders".into(), headers)
                 .map_err(|_| JsError::new("Failed to set custom headers"))?;
         }
-        
+
         Ok(obj.into())
     }
 }
@@ -250,15 +275,17 @@ pub async fn execute_with_retry(
 ) -> Result<JsValue, JsError> {
     let mut retry_handler = RetryHandler::new(settings.clone());
     let this = JsValue::null();
-    
+
     loop {
         // Call the request function
-        let result = request_fn.call0(&this)
+        let result = request_fn
+            .call0(&this)
             .map_err(|e| JsError::new(&format!("Failed to call request function: {:?}", e)))?;
-        
+
         // Check if it's a promise
         if js_sys::Promise::is_type_of(&result) {
-            let promise = result.dyn_into::<Promise>()
+            let promise = result
+                .dyn_into::<Promise>()
                 .map_err(|_| JsError::new("Failed to convert to Promise"))?;
             match JsFuture::from(promise).await {
                 Ok(value) => return Ok(value),
@@ -266,7 +293,7 @@ pub async fn execute_with_retry(
                     if !retry_handler.should_retry(&error) {
                         return Err(JsError::new(&format!("Request failed: {:?}", error)));
                     }
-                    
+
                     // Wait before retrying
                     let delay = retry_handler.get_next_retry_delay();
                     sleep_ms(delay).await;
@@ -277,7 +304,7 @@ pub async fn execute_with_retry(
             // Not a promise, return directly
             return Ok(result);
         }
-        
+
         // Check overall timeout
         if retry_handler.is_timeout_exceeded() {
             return Err(JsError::new("Overall timeout exceeded"));
@@ -291,17 +318,17 @@ async fn sleep_ms(ms: u32) {
         let closure = Closure::once(move || {
             let _ = resolve.call0(&JsValue::undefined());
         });
-        
+
         if let Some(window) = web_sys::window() {
             let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                 closure.as_ref().unchecked_ref(),
                 ms as i32,
             );
         }
-        
+
         closure.forget();
     });
-    
+
     let _ = JsFuture::from(promise).await;
 }
 

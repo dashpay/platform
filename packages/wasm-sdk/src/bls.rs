@@ -8,7 +8,9 @@ use web_sys::js_sys::Uint8Array;
 // use crate::error::to_js_error; // Currently unused
 
 #[cfg(feature = "bls-signatures")]
-use dpp::bls_signatures::{Bls12381G2Impl, Pairing, PublicKey, SecretKey, Signature, SignatureSchemes};
+use dpp::bls_signatures::{
+    Bls12381G2Impl, Pairing, PublicKey, SecretKey, Signature, SignatureSchemes,
+};
 
 /// Generate a BLS private key
 #[wasm_bindgen(js_name = generateBlsPrivateKey)]
@@ -17,7 +19,7 @@ pub fn generate_bls_private_key() -> Result<Uint8Array, JsError> {
     let mut private_key = [0u8; 32];
     getrandom::getrandom(&mut private_key)
         .map_err(|e| JsError::new(&format!("Failed to generate random bytes: {}", e)))?;
-    
+
     Ok(Uint8Array::from(&private_key[..]))
 }
 
@@ -29,15 +31,15 @@ pub fn bls_private_key_to_public_key(private_key: &[u8]) -> Result<Uint8Array, J
         if private_key.len() != 32 {
             return Err(JsError::new("Private key must be 32 bytes"));
         }
-        
+
         // Convert private key bytes to SecretKey
         let secret_key = SecretKey::<Bls12381G2Impl>::try_from(private_key)
             .map_err(|e| JsError::new(&format!("Invalid private key: {}", e)))?;
-        
+
         // Get public key
         let public_key = secret_key.public_key();
         let public_key_bytes = public_key.0.to_compressed().to_vec();
-        
+
         Ok(Uint8Array::from(&public_key_bytes[..]))
     }
     #[cfg(not(feature = "bls-signatures"))]
@@ -54,16 +56,17 @@ pub fn bls_sign(data: &[u8], private_key: &[u8]) -> Result<Uint8Array, JsError> 
         if private_key.len() != 32 {
             return Err(JsError::new("Private key must be 32 bytes"));
         }
-        
+
         // Convert private key to SecretKey
         let secret_key = SecretKey::<Bls12381G2Impl>::try_from(private_key)
             .map_err(|e| JsError::new(&format!("Invalid private key: {}", e)))?;
-        
+
         // Sign the data
-        let sig = secret_key.sign(SignatureSchemes::Basic, data)
+        let sig = secret_key
+            .sign(SignatureSchemes::Basic, data)
             .map_err(|e| JsError::new(&format!("Failed to sign: {}", e)))?;
         let signature_bytes = sig.as_raw_value().to_compressed().to_vec();
-        
+
         Ok(Uint8Array::from(&signature_bytes[..]))
     }
     #[cfg(not(feature = "bls-signatures"))]
@@ -83,23 +86,25 @@ pub fn bls_verify(signature: &[u8], data: &[u8], public_key: &[u8]) -> Result<bo
         if public_key.len() != 48 {
             return Err(JsError::new("Public key must be 48 bytes"));
         }
-        
+
         // Parse public key
         let pk = PublicKey::<Bls12381G2Impl>::try_from(public_key)
             .map_err(|e| JsError::new(&format!("Invalid public key: {}", e)))?;
-        
+
         // Parse signature
-        let signature_96_bytes: [u8; 96] = signature.try_into()
+        let signature_96_bytes: [u8; 96] = signature
+            .try_into()
             .map_err(|_| JsError::new("Signature must be exactly 96 bytes"))?;
-        
-        let g2_element = <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature_96_bytes)
-            .into_option()
-            .ok_or_else(|| JsError::new("Invalid signature format"))?;
+
+        let g2_element =
+            <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature_96_bytes)
+                .into_option()
+                .ok_or_else(|| JsError::new("Invalid signature format"))?;
         let sig = Signature::<Bls12381G2Impl>::Basic(g2_element);
-        
+
         // Verify the signature
         let result = sig.verify(&pk, data);
-        
+
         Ok(result.is_ok())
     }
     #[cfg(not(feature = "bls-signatures"))]
@@ -116,10 +121,10 @@ pub fn validate_bls_public_key(public_key: &[u8]) -> Result<bool, JsError> {
         if public_key.len() != 48 {
             return Ok(false);
         }
-        
+
         // Try to parse the public key
         let result = PublicKey::<Bls12381G2Impl>::try_from(public_key).is_ok();
-        
+
         Ok(result)
     }
     #[cfg(not(feature = "bls-signatures"))]
@@ -135,13 +140,15 @@ pub fn bls_aggregate_signatures(signatures: JsValue) -> Result<Uint8Array, JsErr
     {
         // Parse signatures from JavaScript array
         let signatures = if signatures.is_array() {
-            let array = signatures.dyn_ref::<js_sys::Array>()
+            let array = signatures
+                .dyn_ref::<js_sys::Array>()
                 .ok_or_else(|| JsError::new("Expected an array of signatures"))?;
-            
+
             let mut sigs = Vec::new();
             for i in 0..array.length() {
                 let sig_value = array.get(i);
-                let sig_array = sig_value.dyn_ref::<Uint8Array>()
+                let sig_array = sig_value
+                    .dyn_ref::<Uint8Array>()
                     .ok_or_else(|| JsError::new("Signature must be a Uint8Array"))?;
                 sigs.push(sig_array.to_vec());
             }
@@ -149,14 +156,16 @@ pub fn bls_aggregate_signatures(signatures: JsValue) -> Result<Uint8Array, JsErr
         } else {
             return Err(JsError::new("signatures must be an array"));
         };
-        
+
         if signatures.is_empty() {
             return Err(JsError::new("At least one signature is required"));
         }
-        
+
         // For now, we don't have direct access to signature aggregation in DPP
         // This would require exposing more BLS functionality
-        Err(JsError::new("BLS signature aggregation not yet implemented"))
+        Err(JsError::new(
+            "BLS signature aggregation not yet implemented",
+        ))
     }
     #[cfg(not(feature = "bls-signatures"))]
     {
@@ -205,7 +214,7 @@ pub fn get_bls_private_key_size() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_bls_sizes() {
         assert_eq!(get_bls_signature_size(), 96);

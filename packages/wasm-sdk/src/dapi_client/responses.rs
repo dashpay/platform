@@ -1,7 +1,7 @@
 //! Response types for DAPI client
 
-use serde::{Deserialize, Serialize};
 use super::types::*;
+use serde::{Deserialize, Serialize};
 
 /// Broadcast response
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -21,7 +21,8 @@ pub struct EndpointManager {
 impl EndpointManager {
     /// Create a new endpoint manager
     pub fn new(urls: Vec<String>) -> Self {
-        let endpoints = urls.into_iter()
+        let endpoints = urls
+            .into_iter()
             .map(|url| EndpointHealth {
                 url,
                 is_healthy: true,
@@ -39,7 +40,8 @@ impl EndpointManager {
 
     /// Get the next healthy endpoint
     pub fn get_next_endpoint(&self) -> Option<&str> {
-        self.endpoints.iter()
+        self.endpoints
+            .iter()
             .find(|ep| ep.is_healthy)
             .map(|ep| ep.url.as_str())
     }
@@ -61,12 +63,12 @@ impl EndpointManager {
             endpoint.consecutive_failures = 0;
             endpoint.is_healthy = true;
             endpoint.last_check = Instant::now();
-            
+
             // Update average latency
             if let Some(avg) = endpoint.average_latency {
                 // Simple moving average
                 endpoint.average_latency = Some(Duration::from_millis(
-                    ((avg.as_millis() * 4 + latency.as_millis()) / 5) as u64
+                    ((avg.as_millis() * 4 + latency.as_millis()) / 5) as u64,
                 ));
             } else {
                 endpoint.average_latency = Some(latency);
@@ -77,13 +79,13 @@ impl EndpointManager {
     /// Get all endpoints sorted by health and latency
     pub fn get_sorted_endpoints(&self) -> Vec<&str> {
         let mut sorted: Vec<_> = self.endpoints.iter().collect();
-        
+
         sorted.sort_by(|a, b| {
             // First sort by health
             if a.is_healthy != b.is_healthy {
                 return b.is_healthy.cmp(&a.is_healthy);
             }
-            
+
             // Then by latency
             match (a.average_latency, b.average_latency) {
                 (Some(a_lat), Some(b_lat)) => a_lat.cmp(&b_lat),
@@ -92,14 +94,14 @@ impl EndpointManager {
                 (None, None) => std::cmp::Ordering::Equal,
             }
         });
-        
+
         sorted.into_iter().map(|ep| ep.url.as_str()).collect()
     }
 
     /// Check if health checks are needed
     pub fn needs_health_check(&self) -> bool {
-        self.endpoints.iter().any(|ep| {
-            !ep.is_healthy && ep.last_check.elapsed() > self.health_check_interval
-        })
+        self.endpoints
+            .iter()
+            .any(|ep| !ep.is_healthy && ep.last_check.elapsed() > self.health_check_interval)
     }
 }

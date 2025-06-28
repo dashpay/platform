@@ -64,71 +64,78 @@ struct NonceCacheEntry {
 }
 
 /// Global cache for identity nonces
-static IDENTITY_NONCE_CACHE: std::sync::OnceLock<Arc<Mutex<HashMap<Identifier, NonceCacheEntry>>>> = 
+static IDENTITY_NONCE_CACHE: std::sync::OnceLock<Arc<Mutex<HashMap<Identifier, NonceCacheEntry>>>> =
     std::sync::OnceLock::new();
 
 /// Global cache for identity contract nonces
-static CONTRACT_NONCE_CACHE: std::sync::OnceLock<Arc<Mutex<HashMap<(Identifier, Identifier), NonceCacheEntry>>>> = 
-    std::sync::OnceLock::new();
+static CONTRACT_NONCE_CACHE: std::sync::OnceLock<
+    Arc<Mutex<HashMap<(Identifier, Identifier), NonceCacheEntry>>>,
+> = std::sync::OnceLock::new();
 
 /// Default cache staleness time (5 seconds)
 const DEFAULT_CACHE_STALE_TIME_MS: f64 = 5000.0;
 
 /// Get the identity nonce cache
 fn get_identity_nonce_cache() -> Arc<Mutex<HashMap<Identifier, NonceCacheEntry>>> {
-    IDENTITY_NONCE_CACHE.get_or_init(|| Arc::new(Mutex::new(HashMap::new()))).clone()
+    IDENTITY_NONCE_CACHE
+        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+        .clone()
 }
 
 /// Get the contract nonce cache
 fn get_contract_nonce_cache() -> Arc<Mutex<HashMap<(Identifier, Identifier), NonceCacheEntry>>> {
-    CONTRACT_NONCE_CACHE.get_or_init(|| Arc::new(Mutex::new(HashMap::new()))).clone()
+    CONTRACT_NONCE_CACHE
+        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+        .clone()
 }
 
 /// Check if identity nonce is cached and fresh
 #[wasm_bindgen(js_name = checkIdentityNonceCache)]
-pub fn check_identity_nonce_cache(
-    identity_id: &str,
-) -> Result<Option<u64>, JsError> {
+pub fn check_identity_nonce_cache(identity_id: &str) -> Result<Option<u64>, JsError> {
     let identifier = Identifier::from_string(
         identity_id,
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let current_time = Date::now();
     let cache = get_identity_nonce_cache();
-    let cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
-    
+    let cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+
     if let Some(entry) = cache_guard.get(&identifier) {
         if current_time - entry.last_fetch_time_ms < DEFAULT_CACHE_STALE_TIME_MS {
             return Ok(Some(entry.nonce));
         }
     }
-    
+
     Ok(None)
 }
 
 /// Update identity nonce cache
 #[wasm_bindgen(js_name = updateIdentityNonceCache)]
-pub fn update_identity_nonce_cache(
-    identity_id: &str,
-    nonce: u64,
-) -> Result<(), JsError> {
+pub fn update_identity_nonce_cache(identity_id: &str, nonce: u64) -> Result<(), JsError> {
     let identifier = Identifier::from_string(
         identity_id,
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let current_time = Date::now();
     let cache = get_identity_nonce_cache();
-    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
-    
-    cache_guard.insert(identifier, NonceCacheEntry {
-        nonce,
-        last_fetch_time_ms: current_time,
-    });
-    
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+
+    cache_guard.insert(
+        identifier,
+        NonceCacheEntry {
+            nonce,
+            last_fetch_time_ms: current_time,
+        },
+    );
+
     Ok(())
 }
 
@@ -143,24 +150,26 @@ pub fn check_identity_contract_nonce_cache(
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let contract_identifier = Identifier::from_string(
         contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
-    
+
     let current_time = Date::now();
     let cache = get_contract_nonce_cache();
-    let cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+    let cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     let cache_key = (identity_identifier, contract_identifier);
-    
+
     if let Some(entry) = cache_guard.get(&cache_key) {
         if current_time - entry.last_fetch_time_ms < DEFAULT_CACHE_STALE_TIME_MS {
             return Ok(Some(entry.nonce));
         }
     }
-    
+
     Ok(None)
 }
 
@@ -176,23 +185,28 @@ pub fn update_identity_contract_nonce_cache(
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let contract_identifier = Identifier::from_string(
         contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
-    
+
     let current_time = Date::now();
     let cache = get_contract_nonce_cache();
-    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     let cache_key = (identity_identifier, contract_identifier);
-    
-    cache_guard.insert(cache_key, NonceCacheEntry {
-        nonce,
-        last_fetch_time_ms: current_time,
-    });
-    
+
+    cache_guard.insert(
+        cache_key,
+        NonceCacheEntry {
+            nonce,
+            last_fetch_time_ms: current_time,
+        },
+    );
+
     Ok(())
 }
 
@@ -207,21 +221,25 @@ pub fn increment_identity_nonce_cache(
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let increment_by = increment.unwrap_or(1) as u64;
     let current_time = Date::now();
     let cache = get_identity_nonce_cache();
-    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
-    
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+
     let new_nonce = if let Some(entry) = cache_guard.get_mut(&identifier) {
         entry.nonce = entry.nonce.saturating_add(increment_by);
         entry.last_fetch_time_ms = current_time;
         entry.nonce
     } else {
         // If not in cache, return 0 and let JavaScript fetch it
-        return Err(JsError::new("Nonce not in cache, please fetch from network first"));
+        return Err(JsError::new(
+            "Nonce not in cache, please fetch from network first",
+        ));
     };
-    
+
     Ok(new_nonce)
 }
 
@@ -237,28 +255,32 @@ pub fn increment_identity_contract_nonce_cache(
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let contract_identifier = Identifier::from_string(
         contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
-    
+
     let increment_by = increment.unwrap_or(1) as u64;
     let current_time = Date::now();
     let cache = get_contract_nonce_cache();
-    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     let cache_key = (identity_identifier, contract_identifier);
-    
+
     let new_nonce = if let Some(entry) = cache_guard.get_mut(&cache_key) {
         entry.nonce = entry.nonce.saturating_add(increment_by);
         entry.last_fetch_time_ms = current_time;
         entry.nonce
     } else {
         // If not in cache, return error and let JavaScript fetch it
-        return Err(JsError::new("Nonce not in cache, please fetch from network first"));
+        return Err(JsError::new(
+            "Nonce not in cache, please fetch from network first",
+        ));
     };
-    
+
     Ok(new_nonce)
 }
 
@@ -266,7 +288,9 @@ pub fn increment_identity_contract_nonce_cache(
 #[wasm_bindgen(js_name = clearIdentityNonceCache)]
 pub fn clear_identity_nonce_cache() -> Result<(), JsError> {
     let cache = get_identity_nonce_cache();
-    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     cache_guard.clear();
     Ok(())
 }
@@ -275,7 +299,9 @@ pub fn clear_identity_nonce_cache() -> Result<(), JsError> {
 #[wasm_bindgen(js_name = clearIdentityContractNonceCache)]
 pub fn clear_identity_contract_nonce_cache() -> Result<(), JsError> {
     let cache = get_contract_nonce_cache();
-    let mut cache_guard = cache.lock().map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|e| JsError::new(&format!("Failed to acquire cache lock: {}", e)))?;
     cache_guard.clear();
     Ok(())
 }

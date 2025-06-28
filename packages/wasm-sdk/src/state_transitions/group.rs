@@ -3,11 +3,11 @@
 //! This module provides WASM bindings for group-related state transitions.
 //! Groups are used for collaborative actions like multi-sig operations, DAOs, etc.
 
-use dpp::group::GroupStateTransitionInfo;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
+use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::Identifier;
-use dpp::serialization::{PlatformSerializable, PlatformDeserializable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_event::TokenEvent;
 use js_sys::{Array, Object, Reflect};
@@ -45,45 +45,55 @@ pub fn create_group_state_transition_info(
             action_is_proposer: true,
         }
     } else {
-        let action_id = action_id
-            .ok_or_else(|| JsError::new("action_id is required when not proposer"))?;
+        let action_id =
+            action_id.ok_or_else(|| JsError::new("action_id is required when not proposer"))?;
         let id = Identifier::from_string(&action_id, Encoding::Base58)
             .map_err(|e| JsError::new(&format!("Invalid action ID: {}", e)))?;
-        
+
         GroupStateTransitionInfo {
             group_contract_position,
             action_id: id,
             action_is_proposer: false,
         }
     };
-    
+
     // Convert to JS object
     let obj = Object::new();
-    Reflect::set(&obj, &"groupContractPosition".into(), &info.group_contract_position.into())
-        .map_err(|_| JsError::new("Failed to set groupContractPosition"))?;
-    Reflect::set(&obj, &"actionId".into(), &info.action_id.to_string(Encoding::Base58).into())
-        .map_err(|_| JsError::new("Failed to set actionId"))?;
+    Reflect::set(
+        &obj,
+        &"groupContractPosition".into(),
+        &info.group_contract_position.into(),
+    )
+    .map_err(|_| JsError::new("Failed to set groupContractPosition"))?;
+    Reflect::set(
+        &obj,
+        &"actionId".into(),
+        &info.action_id.to_string(Encoding::Base58).into(),
+    )
+    .map_err(|_| JsError::new("Failed to set actionId"))?;
     Reflect::set(&obj, &"isProposer".into(), &info.action_is_proposer.into())
         .map_err(|_| JsError::new("Failed to set isProposer"))?;
-    
+
     Ok(obj.into())
 }
 
 /// Parse group info from a JavaScript object
 fn parse_group_info_from_js(js_obj: &JsValue) -> Result<GroupStateTransitionInfo, JsError> {
-    let obj = js_obj.dyn_ref::<Object>()
+    let obj = js_obj
+        .dyn_ref::<Object>()
         .ok_or_else(|| JsError::new("Expected a group info object"))?;
-    
+
     let group_contract_position = Reflect::get(obj, &"groupContractPosition".into())
         .map_err(|_| JsError::new("Failed to get groupContractPosition"))?
         .as_f64()
-        .ok_or_else(|| JsError::new("groupContractPosition must be a number"))? as u16;
-    
+        .ok_or_else(|| JsError::new("groupContractPosition must be a number"))?
+        as u16;
+
     let is_proposer = Reflect::get(obj, &"isProposer".into())
         .map_err(|_| JsError::new("Failed to get isProposer"))?
         .as_bool()
         .unwrap_or_default();
-    
+
     let info = if is_proposer {
         GroupStateTransitionInfo {
             group_contract_position,
@@ -95,17 +105,17 @@ fn parse_group_info_from_js(js_obj: &JsValue) -> Result<GroupStateTransitionInfo
             .map_err(|_| JsError::new("Failed to get actionId"))?
             .as_string()
             .ok_or_else(|| JsError::new("actionId must be a string"))?;
-        
+
         let action_id = Identifier::from_string(&action_id_str, Encoding::Base58)
             .map_err(|e| JsError::new(&format!("Invalid action ID: {}", e)))?;
-        
+
         GroupStateTransitionInfo {
             group_contract_position,
             action_id,
             action_is_proposer: false,
         }
     };
-    
+
     Ok(info)
 }
 
@@ -120,9 +130,9 @@ pub fn create_token_event_bytes(
 ) -> Result<Vec<u8>, JsError> {
     // This is a simplified version - in reality, TokenEvent has more complex structure
     // based on the event type. This would need to be expanded based on actual DPP implementation
-    
+
     let mut event_bytes = Vec::new();
-    
+
     // Event type byte
     let type_byte = match event_type {
         "transfer" => 0u8,
@@ -133,10 +143,10 @@ pub fn create_token_event_bytes(
         _ => return Err(JsError::new(&format!("Unknown event type: {}", event_type))),
     };
     event_bytes.push(type_byte);
-    
+
     // Token position
     event_bytes.push(token_position);
-    
+
     // Amount (if applicable)
     if let Some(amt) = amount {
         event_bytes.push(1); // Has amount flag
@@ -145,7 +155,7 @@ pub fn create_token_event_bytes(
     } else {
         event_bytes.push(0); // No amount
     }
-    
+
     // Recipient (if applicable)
     if let Some(recipient) = recipient_id {
         event_bytes.push(1); // Has recipient flag
@@ -155,7 +165,7 @@ pub fn create_token_event_bytes(
     } else {
         event_bytes.push(0); // No recipient
     }
-    
+
     // Note (if applicable)
     if let Some(note_text) = note {
         event_bytes.push(1); // Has note flag
@@ -165,7 +175,7 @@ pub fn create_token_event_bytes(
     } else {
         event_bytes.push(0); // No note
     }
-    
+
     Ok(event_bytes)
 }
 
@@ -174,103 +184,106 @@ fn deserialize_group_action_event(event_bytes: &[u8]) -> Result<GroupActionEvent
     if event_bytes.is_empty() {
         return Err(JsError::new("Event bytes cannot be empty"));
     }
-    
+
     let event_type = event_bytes[0];
     let mut pos = 1;
-    
+
     match event_type {
-        0 => { // Transfer
+        0 => {
+            // Transfer
             // Parse token position
             if pos >= event_bytes.len() {
                 return Err(JsError::new("Missing token position"));
             }
             let _token_position = event_bytes[pos];
             pos += 1;
-            
+
             // Parse amount flag and amount
             if pos >= event_bytes.len() {
                 return Err(JsError::new("Missing amount flag"));
             }
             let has_amount = event_bytes[pos] != 0;
             pos += 1;
-            
+
             let amount = if has_amount {
                 if pos + 8 > event_bytes.len() {
                     return Err(JsError::new("Insufficient bytes for amount"));
                 }
-                let amount_bytes: [u8; 8] = event_bytes[pos..pos+8].try_into()
+                let amount_bytes: [u8; 8] = event_bytes[pos..pos + 8]
+                    .try_into()
                     .map_err(|_| JsError::new("Failed to parse amount bytes"))?;
                 pos += 8;
                 u64::from_le_bytes(amount_bytes)
             } else {
                 return Err(JsError::new("Transfer event requires amount"));
             };
-            
+
             // Parse recipient flag and recipient
             if pos >= event_bytes.len() {
                 return Err(JsError::new("Missing recipient flag"));
             }
             let has_recipient = event_bytes[pos] != 0;
             pos += 1;
-            
+
             let recipient_id = if has_recipient {
                 if pos + 32 > event_bytes.len() {
                     return Err(JsError::new("Insufficient bytes for recipient ID"));
                 }
-                let id_bytes: [u8; 32] = event_bytes[pos..pos+32].try_into()
+                let id_bytes: [u8; 32] = event_bytes[pos..pos + 32]
+                    .try_into()
                     .map_err(|_| JsError::new("Failed to parse recipient ID"))?;
                 Identifier::from_bytes(&id_bytes)
                     .map_err(|e| JsError::new(&format!("Invalid recipient ID: {}", e)))?
             } else {
                 return Err(JsError::new("Transfer event requires recipient"));
             };
-            
+
             // For now, create a basic transfer event
             // In production, this would parse additional fields like notes
             Ok(GroupActionEvent::TokenEvent(TokenEvent::Transfer(
-                recipient_id,  // sender_identity_id (using recipient as placeholder)
-                None,          // recipient_note
-                None,          // sender_note_recipient_identity_id_amount
-                None,          // recipient_note_recipient_identity_id_amount
+                recipient_id, // sender_identity_id (using recipient as placeholder)
+                None,         // recipient_note
+                None,         // sender_note_recipient_identity_id_amount
+                None,         // recipient_note_recipient_identity_id_amount
                 amount,
             )))
-        },
-        1 => { // Mint
+        }
+        1 => {
+            // Mint
             // Parse amount
             if pos + 8 > event_bytes.len() {
                 return Err(JsError::new("Insufficient bytes for mint amount"));
             }
-            let amount_bytes: [u8; 8] = event_bytes[pos..pos+8].try_into()
+            let amount_bytes: [u8; 8] = event_bytes[pos..pos + 8]
+                .try_into()
                 .map_err(|_| JsError::new("Failed to parse amount bytes"))?;
             let amount = u64::from_le_bytes(amount_bytes);
-            
+
             // TODO: Parse recipient identifier from event bytes
             let recipient = dpp::prelude::Identifier::default();
-            
+
             Ok(GroupActionEvent::TokenEvent(TokenEvent::Mint(
-                amount,
-                recipient,
-                None, // note
+                amount, recipient, None, // note
             )))
-        },
-        2 => { // Burn
+        }
+        2 => {
+            // Burn
             // Parse amount
             if pos + 8 > event_bytes.len() {
                 return Err(JsError::new("Insufficient bytes for burn amount"));
             }
-            let amount_bytes: [u8; 8] = event_bytes[pos..pos+8].try_into()
+            let amount_bytes: [u8; 8] = event_bytes[pos..pos + 8]
+                .try_into()
                 .map_err(|_| JsError::new("Failed to parse amount bytes"))?;
             let amount = u64::from_le_bytes(amount_bytes);
-            
+
             // TODO: Parse burn-from identifier from event bytes
             let burn_from = dpp::prelude::Identifier::default();
-            
+
             Ok(GroupActionEvent::TokenEvent(TokenEvent::Burn(
-                amount,
-                burn_from,
-                None, // note
+                amount, burn_from, None, // note
             )))
-        },
+        }
         _ => Err(JsError::new(&format!("Unknown event type: {}", event_type))),
     }
 }
@@ -285,23 +298,24 @@ pub fn create_group_action(
 ) -> Result<Vec<u8>, JsError> {
     let contract_id = Identifier::from_string(contract_id, Encoding::Base58)
         .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
-    
+
     let proposer_id = Identifier::from_string(proposer_id, Encoding::Base58)
         .map_err(|e| JsError::new(&format!("Invalid proposer ID: {}", e)))?;
-    
+
     // Deserialize event_bytes into GroupActionEvent
     let event = deserialize_group_action_event(event_bytes)?;
-    
+
     let action = dpp::group::group_action::v0::GroupActionV0 {
         contract_id,
         proposer_id,
         token_contract_position: token_position,
         event,
     };
-    
+
     let group_action = GroupAction::V0(action);
-    
-    group_action.serialize_to_bytes()
+
+    group_action
+        .serialize_to_bytes()
         .map_err(|e| JsError::new(&format!("Failed to serialize group action: {}", e)))
 }
 
@@ -314,10 +328,10 @@ pub fn add_group_info_to_state_transition(
     // Parse the state transition
     let mut state_transition = StateTransition::deserialize_from_bytes(state_transition_bytes)
         .map_err(|e| JsError::new(&format!("Failed to deserialize state transition: {}", e)))?;
-    
+
     // Parse group info
     let _info = parse_group_info_from_js(&group_info)?;
-    
+
     // Add group info to the state transition
     // Note: This is a simplified version. In reality, different state transition types
     // handle group info differently
@@ -326,16 +340,22 @@ pub fn add_group_info_to_state_transition(
             // DataContractUpdate supports group info
             // Note: The actual API to set group info on transitions may vary
             // This is a placeholder until the exact API is available
-            return Err(JsError::new("Group info for DataContractUpdate requires platform support"));
+            return Err(JsError::new(
+                "Group info for DataContractUpdate requires platform support",
+            ));
         }
         StateTransition::Batch(_st) => {
             // Batch transitions can have group info for certain document operations
             // Note: The actual API to set group info on transitions may vary
             // This is a placeholder until the exact API is available
-            return Err(JsError::new("Group info for Batch transitions requires platform support"));
+            return Err(JsError::new(
+                "Group info for Batch transitions requires platform support",
+            ));
         }
         _ => {
-            return Err(JsError::new("This state transition type does not support group info"));
+            return Err(JsError::new(
+                "This state transition type does not support group info",
+            ));
         }
     }
 }
@@ -347,7 +367,7 @@ pub fn get_group_info_from_state_transition(
 ) -> Result<JsValue, JsError> {
     let state_transition = StateTransition::deserialize_from_bytes(state_transition_bytes)
         .map_err(|e| JsError::new(&format!("Failed to deserialize state transition: {}", e)))?;
-    
+
     // Extract group info based on transition type
     // Note: This is a simplified version
     match &state_transition {
@@ -359,27 +379,22 @@ pub fn get_group_info_from_state_transition(
             // TODO: Get group info from the transition when the API is available
             Ok(JsValue::null())
         }
-        _ => {
-            Ok(JsValue::null())
-        }
+        _ => Ok(JsValue::null()),
     }
 }
 
 /// Create a group member structure
 #[wasm_bindgen(js_name = createGroupMember)]
-pub fn create_group_member(
-    identity_id: &str,
-    power: u16,
-) -> Result<JsValue, JsError> {
+pub fn create_group_member(identity_id: &str, power: u16) -> Result<JsValue, JsError> {
     let _id = Identifier::from_string(identity_id, Encoding::Base58)
         .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+
     let obj = Object::new();
     Reflect::set(&obj, &"identityId".into(), &identity_id.into())
         .map_err(|_| JsError::new("Failed to set identityId"))?;
     Reflect::set(&obj, &"power".into(), &power.into())
         .map_err(|_| JsError::new("Failed to set power"))?;
-    
+
     Ok(obj.into())
 }
 
@@ -390,49 +405,52 @@ pub fn validate_group_config(
     required_power: u16,
     member_power_limit: Option<u16>,
 ) -> Result<JsValue, JsError> {
-    let members_array = members.dyn_ref::<Array>()
+    let members_array = members
+        .dyn_ref::<Array>()
         .ok_or_else(|| JsError::new("members must be an array"))?;
-    
+
     let mut total_power = 0u32;
     let mut member_count = 0;
     let power_limit = member_power_limit.unwrap_or(u16::MAX);
-    
+
     for i in 0..members_array.length() {
         let member = members_array.get(i);
-        let member_obj = member.dyn_ref::<Object>()
+        let member_obj = member
+            .dyn_ref::<Object>()
             .ok_or_else(|| JsError::new("Each member must be an object"))?;
-        
+
         let power = Reflect::get(member_obj, &"power".into())
             .map_err(|_| JsError::new("Failed to get member power"))?
             .as_f64()
-            .ok_or_else(|| JsError::new("Member power must be a number"))? as u16;
-        
+            .ok_or_else(|| JsError::new("Member power must be a number"))?
+            as u16;
+
         if power == 0 {
             return Err(JsError::new("Member power cannot be zero"));
         }
-        
+
         if power > power_limit {
             return Err(JsError::new(&format!(
                 "Member power {} exceeds limit {}",
                 power, power_limit
             )));
         }
-        
+
         total_power += power as u32;
         member_count += 1;
     }
-    
+
     if member_count == 0 {
         return Err(JsError::new("Group must have at least one member"));
     }
-    
+
     if total_power < required_power as u32 {
         return Err(JsError::new(&format!(
             "Total power {} is less than required power {}",
             total_power, required_power
         )));
     }
-    
+
     // Return validation result
     let result = Object::new();
     Reflect::set(&result, &"valid".into(), &true.into())
@@ -441,9 +459,13 @@ pub fn validate_group_config(
         .map_err(|_| JsError::new("Failed to set totalPower"))?;
     Reflect::set(&result, &"memberCount".into(), &member_count.into())
         .map_err(|_| JsError::new("Failed to set memberCount"))?;
-    Reflect::set(&result, &"hasRequiredPower".into(), &(total_power >= required_power as u32).into())
-        .map_err(|_| JsError::new("Failed to set hasRequiredPower"))?;
-    
+    Reflect::set(
+        &result,
+        &"hasRequiredPower".into(),
+        &(total_power >= required_power as u32).into(),
+    )
+    .map_err(|_| JsError::new("Failed to set hasRequiredPower"))?;
+
     Ok(result.into())
 }
 
@@ -453,42 +475,57 @@ pub fn calculate_group_action_approval(
     approvals: JsValue,
     required_power: u16,
 ) -> Result<JsValue, JsError> {
-    let approvals_array = approvals.dyn_ref::<Array>()
+    let approvals_array = approvals
+        .dyn_ref::<Array>()
         .ok_or_else(|| JsError::new("approvals must be an array"))?;
-    
+
     let mut total_approval_power = 0u32;
     let mut approval_count = 0;
-    
+
     for i in 0..approvals_array.length() {
         let approval = approvals_array.get(i);
-        let approval_obj = approval.dyn_ref::<Object>()
+        let approval_obj = approval
+            .dyn_ref::<Object>()
             .ok_or_else(|| JsError::new("Each approval must be an object"))?;
-        
+
         let power = Reflect::get(approval_obj, &"power".into())
             .map_err(|_| JsError::new("Failed to get approval power"))?
             .as_f64()
-            .ok_or_else(|| JsError::new("Approval power must be a number"))? as u16;
-        
+            .ok_or_else(|| JsError::new("Approval power must be a number"))?
+            as u16;
+
         total_approval_power += power as u32;
         approval_count += 1;
     }
-    
+
     let is_approved = total_approval_power >= required_power as u32;
-    
+
     // Return result
     let result = Object::new();
     Reflect::set(&result, &"approved".into(), &is_approved.into())
         .map_err(|_| JsError::new("Failed to set approved"))?;
-    Reflect::set(&result, &"totalApprovalPower".into(), &total_approval_power.into())
-        .map_err(|_| JsError::new("Failed to set totalApprovalPower"))?;
+    Reflect::set(
+        &result,
+        &"totalApprovalPower".into(),
+        &total_approval_power.into(),
+    )
+    .map_err(|_| JsError::new("Failed to set totalApprovalPower"))?;
     Reflect::set(&result, &"requiredPower".into(), &required_power.into())
         .map_err(|_| JsError::new("Failed to set requiredPower"))?;
     Reflect::set(&result, &"approvalCount".into(), &approval_count.into())
         .map_err(|_| JsError::new("Failed to set approvalCount"))?;
-    Reflect::set(&result, &"remainingPower".into(), 
-        &(if is_approved { 0 } else { (required_power as u32) - total_approval_power }).into())
-        .map_err(|_| JsError::new("Failed to set remainingPower"))?;
-    
+    Reflect::set(
+        &result,
+        &"remainingPower".into(),
+        &(if is_approved {
+            0
+        } else {
+            (required_power as u32) - total_approval_power
+        })
+        .into(),
+    )
+    .map_err(|_| JsError::new("Failed to set remainingPower"))?;
+
     Ok(result.into())
 }
 
@@ -502,21 +539,21 @@ pub fn create_group_configuration(
 ) -> Result<JsValue, JsError> {
     // Validate the configuration first
     validate_group_config(members.clone(), required_power, member_power_limit)?;
-    
+
     let config = Object::new();
     Reflect::set(&config, &"position".into(), &position.into())
         .map_err(|_| JsError::new("Failed to set position"))?;
     Reflect::set(&config, &"requiredPower".into(), &required_power.into())
         .map_err(|_| JsError::new("Failed to set requiredPower"))?;
-    
+
     if let Some(limit) = member_power_limit {
         Reflect::set(&config, &"memberPowerLimit".into(), &limit.into())
             .map_err(|_| JsError::new("Failed to set memberPowerLimit"))?;
     }
-    
+
     Reflect::set(&config, &"members".into(), &members)
         .map_err(|_| JsError::new("Failed to set members"))?;
-    
+
     Ok(config.into())
 }
 
@@ -524,113 +561,145 @@ pub fn create_group_configuration(
 #[wasm_bindgen(js_name = deserializeGroupEvent)]
 pub fn deserialize_group_event(event_bytes: &[u8]) -> Result<JsValue, JsError> {
     let event = deserialize_group_action_event(event_bytes)?;
-    
+
     // Convert to JavaScript object
     let obj = Object::new();
-    
+
     let GroupActionEvent::TokenEvent(token_event) = event;
-    
+
     Reflect::set(&obj, &"type".into(), &"token".into())
         .map_err(|_| JsError::new("Failed to set event type"))?;
-    
+
     match token_event {
-        TokenEvent::Transfer(sender_id, _recipient_note, _sender_note, _recipient_note2, amount) => {
+        TokenEvent::Transfer(
+            sender_id,
+            _recipient_note,
+            _sender_note,
+            _recipient_note2,
+            amount,
+        ) => {
             Reflect::set(&obj, &"eventType".into(), &"transfer".into())
                 .map_err(|_| JsError::new("Failed to set event type"))?;
-            Reflect::set(&obj, &"senderId".into(), &sender_id.to_string(Encoding::Base58).into())
-                .map_err(|_| JsError::new("Failed to set sender ID"))?;
+            Reflect::set(
+                &obj,
+                &"senderId".into(),
+                &sender_id.to_string(Encoding::Base58).into(),
+            )
+            .map_err(|_| JsError::new("Failed to set sender ID"))?;
             Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
                 .map_err(|_| JsError::new("Failed to set amount"))?;
-        },
+        }
         TokenEvent::Mint(amount, recipient, note) => {
             Reflect::set(&obj, &"eventType".into(), &"mint".into())
                 .map_err(|_| JsError::new("Failed to set event type"))?;
             Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
                 .map_err(|_| JsError::new("Failed to set amount"))?;
-            Reflect::set(&obj, &"recipient".into(), &recipient.to_string(platform_value::string_encoding::Encoding::Base58).into())
-                .map_err(|_| JsError::new("Failed to set recipient"))?;
+            Reflect::set(
+                &obj,
+                &"recipient".into(),
+                &recipient
+                    .to_string(platform_value::string_encoding::Encoding::Base58)
+                    .into(),
+            )
+            .map_err(|_| JsError::new("Failed to set recipient"))?;
             if let Some(note_text) = note {
                 Reflect::set(&obj, &"note".into(), &note_text.into())
                     .map_err(|_| JsError::new("Failed to set note"))?;
             }
-        },
+        }
         TokenEvent::Burn(amount, burn_from, note) => {
             Reflect::set(&obj, &"eventType".into(), &"burn".into())
                 .map_err(|_| JsError::new("Failed to set event type"))?;
             Reflect::set(&obj, &"amount".into(), &(amount as f64).into())
                 .map_err(|_| JsError::new("Failed to set amount"))?;
-            Reflect::set(&obj, &"burnFrom".into(), &burn_from.to_string(platform_value::string_encoding::Encoding::Base58).into())
-                .map_err(|_| JsError::new("Failed to set burn from"))?;
+            Reflect::set(
+                &obj,
+                &"burnFrom".into(),
+                &burn_from
+                    .to_string(platform_value::string_encoding::Encoding::Base58)
+                    .into(),
+            )
+            .map_err(|_| JsError::new("Failed to set burn from"))?;
             if let Some(note_text) = note {
                 Reflect::set(&obj, &"note".into(), &note_text.into())
                     .map_err(|_| JsError::new("Failed to set note"))?;
             }
-        },
+        }
         _ => {
             Reflect::set(&obj, &"eventType".into(), &"unknown".into())
                 .map_err(|_| JsError::new("Failed to set event type"))?;
         }
     }
-    
+
     Ok(obj.into())
 }
 
 /// Serialize a group event from JavaScript object
-#[wasm_bindgen(js_name = serializeGroupEvent)]  
+#[wasm_bindgen(js_name = serializeGroupEvent)]
 pub fn serialize_group_event(event_obj: JsValue) -> Result<Vec<u8>, JsError> {
-    let obj = event_obj.dyn_ref::<Object>()
+    let obj = event_obj
+        .dyn_ref::<Object>()
         .ok_or_else(|| JsError::new("Event must be an object"))?;
-    
+
     let event_type = Reflect::get(obj, &"eventType".into())
         .map_err(|_| JsError::new("Failed to get eventType"))?
         .as_string()
         .ok_or_else(|| JsError::new("eventType must be a string"))?;
-    
+
     match event_type.as_str() {
         "transfer" => {
             let token_position = Reflect::get(obj, &"tokenPosition".into())
                 .map_err(|_| JsError::new("Failed to get tokenPosition"))?
                 .as_f64()
-                .ok_or_else(|| JsError::new("tokenPosition must be a number"))? as u8;
-                
+                .ok_or_else(|| JsError::new("tokenPosition must be a number"))?
+                as u8;
+
             let amount = Reflect::get(obj, &"amount".into())
                 .map_err(|_| JsError::new("Failed to get amount"))?
                 .as_f64()
                 .ok_or_else(|| JsError::new("amount must be a number"))?;
-                
+
             let recipient_id = Reflect::get(obj, &"recipientId".into())
                 .map_err(|_| JsError::new("Failed to get recipientId"))?
                 .as_string()
                 .ok_or_else(|| JsError::new("recipientId must be a string"))?;
-            
-            create_token_event_bytes("transfer", token_position, Some(amount), Some(recipient_id), None)
-        },
+
+            create_token_event_bytes(
+                "transfer",
+                token_position,
+                Some(amount),
+                Some(recipient_id),
+                None,
+            )
+        }
         "mint" => {
             let token_position = Reflect::get(obj, &"tokenPosition".into())
                 .map_err(|_| JsError::new("Failed to get tokenPosition"))?
                 .as_f64()
-                .ok_or_else(|| JsError::new("tokenPosition must be a number"))? as u8;
-                
+                .ok_or_else(|| JsError::new("tokenPosition must be a number"))?
+                as u8;
+
             let amount = Reflect::get(obj, &"amount".into())
                 .map_err(|_| JsError::new("Failed to get amount"))?
                 .as_f64()
                 .ok_or_else(|| JsError::new("amount must be a number"))?;
-            
+
             create_token_event_bytes("mint", token_position, Some(amount), None, None)
-        },
+        }
         "burn" => {
             let token_position = Reflect::get(obj, &"tokenPosition".into())
                 .map_err(|_| JsError::new("Failed to get tokenPosition"))?
                 .as_f64()
-                .ok_or_else(|| JsError::new("tokenPosition must be a number"))? as u8;
-                
+                .ok_or_else(|| JsError::new("tokenPosition must be a number"))?
+                as u8;
+
             let amount = Reflect::get(obj, &"amount".into())
                 .map_err(|_| JsError::new("Failed to get amount"))?
                 .as_f64()
                 .ok_or_else(|| JsError::new("amount must be a number"))?;
-            
+
             create_token_event_bytes("burn", token_position, Some(amount), None, None)
-        },
+        }
         _ => Err(JsError::new(&format!("Unknown event type: {}", event_type))),
     }
 }
@@ -638,16 +707,17 @@ pub fn serialize_group_event(event_obj: JsValue) -> Result<Vec<u8>, JsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_group_state_transition_info() {
         // Test proposer info
         let info = create_group_state_transition_info(1, None, true).unwrap();
         assert!(!info.is_null());
-        
+
         // Test non-proposer info
         let action_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S3Qdq";
-        let info = create_group_state_transition_info(2, Some(action_id.to_string()), false).unwrap();
+        let info =
+            create_group_state_transition_info(2, Some(action_id.to_string()), false).unwrap();
         assert!(!info.is_null());
     }
 }

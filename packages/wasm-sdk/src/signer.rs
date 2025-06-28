@@ -6,10 +6,10 @@
 use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect, Uint8Array};
-use web_sys::CryptoKey;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
+use web_sys::CryptoKey;
 
 /// Signer interface for WASM
 #[wasm_bindgen]
@@ -46,7 +46,7 @@ impl WasmSigner {
             platform_value::string_encoding::Encoding::Base58,
         )
         .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-        
+
         self.identity_id = Some(id);
         Ok(())
     }
@@ -99,15 +99,10 @@ impl WasmSigner {
 
     /// Sign data with a specific key
     #[wasm_bindgen(js_name = signData)]
-    pub async fn sign_data(
-        &self,
-        data: Vec<u8>,
-        public_key_id: u32,
-    ) -> Result<Vec<u8>, JsError> {
-        let key_info = self
-            .private_keys
-            .get(&public_key_id)
-            .ok_or_else(|| JsError::new(&format!("Private key not found for ID: {}", public_key_id)))?;
+    pub async fn sign_data(&self, data: Vec<u8>, public_key_id: u32) -> Result<Vec<u8>, JsError> {
+        let key_info = self.private_keys.get(&public_key_id).ok_or_else(|| {
+            JsError::new(&format!("Private key not found for ID: {}", public_key_id))
+        })?;
 
         match key_info.key_type {
             KeyType::ECDSA_SECP256K1 => {
@@ -128,14 +123,14 @@ impl WasmSigner {
     /// Sign data using ECDSA
     async fn sign_ecdsa(&self, data: &[u8], private_key: &[u8]) -> Result<Vec<u8>, JsError> {
         // Use Web Crypto API for ECDSA signing
-        let window = web_sys::window()
-            .ok_or_else(|| JsError::new("Window not available"))?;
-        
-        let crypto = window.crypto()
+        let window = web_sys::window().ok_or_else(|| JsError::new("Window not available"))?;
+
+        let crypto = window
+            .crypto()
             .map_err(|_| JsError::new("Crypto not available"))?;
-        
+
         let subtle = crypto.subtle();
-        
+
         // Import the private key
         let key_data = Uint8Array::from(private_key);
         let algorithm = Object::new();
@@ -143,45 +138,46 @@ impl WasmSigner {
             .map_err(|_| JsError::new("Failed to set algorithm name"))?;
         Reflect::set(&algorithm, &"namedCurve".into(), &"P-256".into())
             .map_err(|_| JsError::new("Failed to set named curve"))?;
-        
-        let key_promise = subtle.import_key_with_object(
-            "raw",
-            &key_data,
-            &algorithm,
-            false,
-            &Array::of1(&"sign".into()),
-        )
-        .map_err(|_| JsError::new("Failed to import key"))?;
-        
-        let key = JsFuture::from(key_promise).await
+
+        let key_promise = subtle
+            .import_key_with_object(
+                "raw",
+                &key_data,
+                &algorithm,
+                false,
+                &Array::of1(&"sign".into()),
+            )
+            .map_err(|_| JsError::new("Failed to import key"))?;
+
+        let key = JsFuture::from(key_promise)
+            .await
             .map_err(|e| JsError::new(&format!("Failed to import key: {:?}", e)))?;
-        
+
         // Sign the data
         let sign_algorithm = Object::new();
         Reflect::set(&sign_algorithm, &"name".into(), &"ECDSA".into())
             .map_err(|_| JsError::new("Failed to set sign algorithm"))?;
         Reflect::set(&sign_algorithm, &"hash".into(), &"SHA-256".into())
             .map_err(|_| JsError::new("Failed to set hash algorithm"))?;
-        
+
         let data_array = Uint8Array::from(data);
-        let crypto_key = key.dyn_ref::<CryptoKey>()
+        let crypto_key = key
+            .dyn_ref::<CryptoKey>()
             .ok_or_else(|| JsError::new("Invalid crypto key"))?;
-        
-        let signature_promise = subtle.sign_with_object_and_u8_array(
-            &sign_algorithm,
-            crypto_key,
-            &data_array.to_vec(),
-        )
-        .map_err(|_| JsError::new("Failed to sign data"))?;
-        
-        let signature = JsFuture::from(signature_promise).await
+
+        let signature_promise = subtle
+            .sign_with_object_and_u8_array(&sign_algorithm, crypto_key, &data_array.to_vec())
+            .map_err(|_| JsError::new("Failed to sign data"))?;
+
+        let signature = JsFuture::from(signature_promise)
+            .await
             .map_err(|e| JsError::new(&format!("Failed to sign: {:?}", e)))?;
-        
+
         // Convert signature to Vec<u8>
         let signature_array = Uint8Array::new(&signature);
         let mut signature_vec = vec![0; signature_array.length() as usize];
         signature_array.copy_to(&mut signature_vec);
-        
+
         Ok(signature_vec)
     }
 
@@ -246,14 +242,14 @@ impl BrowserSigner {
         key_type: &str,
         public_key_id: u32,
     ) -> Result<JsValue, JsError> {
-        let window = web_sys::window()
-            .ok_or_else(|| JsError::new("Window not available"))?;
-        
-        let crypto = window.crypto()
+        let window = web_sys::window().ok_or_else(|| JsError::new("Window not available"))?;
+
+        let crypto = window
+            .crypto()
             .map_err(|_| JsError::new("Crypto not available"))?;
-        
+
         let subtle = crypto.subtle();
-        
+
         let algorithm = match key_type {
             "ECDSA_SECP256K1" => {
                 let algo = Object::new();
@@ -265,29 +261,30 @@ impl BrowserSigner {
             }
             _ => return Err(JsError::new(&format!("Unsupported key type: {}", key_type))),
         };
-        
+
         let usages = Array::of2(&"sign".into(), &"verify".into());
-        
-        let key_pair_promise = subtle.generate_key_with_object(
-            &algorithm,
-            true, // extractable
-            &usages,
-        )
-        .map_err(|_| JsError::new("Failed to generate key pair"))?;
-        
-        let key_pair = JsFuture::from(key_pair_promise).await
+
+        let key_pair_promise = subtle
+            .generate_key_with_object(
+                &algorithm, true, // extractable
+                &usages,
+            )
+            .map_err(|_| JsError::new("Failed to generate key pair"))?;
+
+        let key_pair = JsFuture::from(key_pair_promise)
+            .await
             .map_err(|e| JsError::new(&format!("Failed to generate key pair: {:?}", e)))?;
-        
+
         // Store the private key
         let private_key = Reflect::get(&key_pair, &"privateKey".into())
             .map_err(|_| JsError::new("Failed to get private key"))?;
-        
+
         self.crypto_keys.insert(public_key_id, private_key);
-        
+
         // Return the public key
         let public_key = Reflect::get(&key_pair, &"publicKey".into())
             .map_err(|_| JsError::new("Failed to get public key"))?;
-        
+
         Ok(public_key)
     }
 
@@ -302,41 +299,40 @@ impl BrowserSigner {
             .crypto_keys
             .get(&public_key_id)
             .ok_or_else(|| JsError::new(&format!("Key not found for ID: {}", public_key_id)))?;
-        
-        let window = web_sys::window()
-            .ok_or_else(|| JsError::new("Window not available"))?;
-        
-        let crypto = window.crypto()
+
+        let window = web_sys::window().ok_or_else(|| JsError::new("Window not available"))?;
+
+        let crypto = window
+            .crypto()
             .map_err(|_| JsError::new("Crypto not available"))?;
-        
+
         let subtle = crypto.subtle();
-        
+
         let algorithm = Object::new();
         Reflect::set(&algorithm, &"name".into(), &"ECDSA".into())
             .map_err(|_| JsError::new("Failed to set algorithm"))?;
         Reflect::set(&algorithm, &"hash".into(), &"SHA-256".into())
             .map_err(|_| JsError::new("Failed to set hash"))?;
-        
+
         let data_array = Uint8Array::from(&data[..]);
-        
-        let crypto_key = key.dyn_ref::<CryptoKey>()
+
+        let crypto_key = key
+            .dyn_ref::<CryptoKey>()
             .ok_or_else(|| JsError::new("Invalid crypto key"))?;
-        
-        let signature_promise = subtle.sign_with_object_and_u8_array(
-            &algorithm,
-            crypto_key,
-            &data_array.to_vec(),
-        )
-        .map_err(|_| JsError::new("Failed to sign data"))?;
-        
-        let signature = JsFuture::from(signature_promise).await
+
+        let signature_promise = subtle
+            .sign_with_object_and_u8_array(&algorithm, crypto_key, &data_array.to_vec())
+            .map_err(|_| JsError::new("Failed to sign data"))?;
+
+        let signature = JsFuture::from(signature_promise)
+            .await
             .map_err(|e| JsError::new(&format!("Failed to sign: {:?}", e)))?;
-        
+
         // Convert to Vec<u8>
         let signature_array = Uint8Array::new(&signature);
         let mut signature_vec = vec![0; signature_array.length() as usize];
         signature_array.copy_to(&mut signature_vec);
-        
+
         Ok(signature_vec)
     }
 }
@@ -357,12 +353,12 @@ impl HDSigner {
     pub fn new(mnemonic: &str, derivation_path: &str) -> Result<HDSigner, JsError> {
         // Validate mnemonic
         validate_mnemonic(mnemonic)?;
-        
+
         // Validate derivation path format
         if !derivation_path.starts_with("m/") {
             return Err(JsError::new("Derivation path must start with 'm/'"));
         }
-        
+
         Ok(HDSigner {
             mnemonic: mnemonic.to_string(),
             derivation_path: derivation_path.to_string(),
@@ -374,12 +370,16 @@ impl HDSigner {
     pub fn generate_mnemonic(word_count: u32) -> Result<String, JsError> {
         let word_count = match word_count {
             12 | 15 | 18 | 21 | 24 => word_count,
-            _ => return Err(JsError::new("Invalid word count. Use 12, 15, 18, 21, or 24")),
+            _ => {
+                return Err(JsError::new(
+                    "Invalid word count. Use 12, 15, 18, 21, or 24",
+                ))
+            }
         };
-        
+
         // Generate mnemonic using proper BIP39 implementation
-        use crate::bip39::{MnemonicStrength, generate_mnemonic};
-        
+        use crate::bip39::{generate_mnemonic, MnemonicStrength};
+
         let strength = match word_count {
             12 => MnemonicStrength::Words12,
             15 => MnemonicStrength::Words15,
@@ -388,7 +388,7 @@ impl HDSigner {
             24 => MnemonicStrength::Words24,
             _ => return Err(JsError::new("Invalid word count")),
         };
-        
+
         generate_mnemonic(Some(strength), None)
     }
 
@@ -397,20 +397,20 @@ impl HDSigner {
     pub fn derive_key(&self, index: u32) -> Result<Vec<u8>, JsError> {
         // Derive HD key at specified index
         // In production, this would use proper BIP32 derivation
-        
+
         // For now, create a deterministic key based on mnemonic and index
         use hex::encode;
         let seed_material = format!("{}-{}-{}", self.mnemonic, self.derivation_path, index);
-        
+
         // Create a 32-byte key using a simple hash (in production, use proper KDF)
         let mut key = [0u8; 32];
         let hash = encode(seed_material.as_bytes());
         let hash_bytes = hash.as_bytes();
-        
+
         for (i, byte) in key.iter_mut().enumerate() {
             *byte = hash_bytes.get(i % hash_bytes.len()).copied().unwrap_or(0);
         }
-        
+
         Ok(key.to_vec())
     }
 
@@ -424,7 +424,7 @@ impl HDSigner {
 /// Validate a BIP39 mnemonic phrase
 fn validate_mnemonic(mnemonic: &str) -> Result<(), JsError> {
     let words: Vec<&str> = mnemonic.split_whitespace().collect();
-    
+
     // Check word count
     let valid_counts = [12, 15, 18, 21, 24];
     if !valid_counts.contains(&words.len()) {
@@ -433,13 +433,13 @@ fn validate_mnemonic(mnemonic: &str) -> Result<(), JsError> {
             words.len()
         )));
     }
-    
+
     // Check that all words are lowercase and contain only a-z
     for word in &words {
         if word.is_empty() {
             return Err(JsError::new("Empty word in mnemonic"));
         }
-        
+
         for ch in word.chars() {
             if !ch.is_ascii_lowercase() {
                 return Err(JsError::new(&format!(
@@ -448,7 +448,7 @@ fn validate_mnemonic(mnemonic: &str) -> Result<(), JsError> {
                 )));
             }
         }
-        
+
         // Check word length (BIP39 words are typically 3-8 characters)
         if word.len() < 3 || word.len() > 8 {
             return Err(JsError::new(&format!(
@@ -457,13 +457,14 @@ fn validate_mnemonic(mnemonic: &str) -> Result<(), JsError> {
             )));
         }
     }
-    
+
     // Now we can use the proper BIP39 validation
     use crate::bip39::WordListLanguage;
     if !crate::bip39::validate_mnemonic(&mnemonic, Some(WordListLanguage::English)) {
-        return Err(JsError::new("Invalid mnemonic phrase - failed BIP39 validation"));
+        return Err(JsError::new(
+            "Invalid mnemonic phrase - failed BIP39 validation",
+        ));
     }
-    
+
     Ok(())
 }
-

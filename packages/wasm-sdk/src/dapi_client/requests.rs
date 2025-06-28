@@ -86,7 +86,10 @@ pub struct SubscribeToStateTransitionsRequest {
 /// State transition query
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateTransitionQuery {
-    #[serde(rename = "stateTransitionTypes", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "stateTransitionTypes",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub state_transition_types: Option<Vec<String>>,
     #[serde(rename = "identityIds", skip_serializing_if = "Option::is_none")]
     pub identity_ids: Option<Vec<String>>,
@@ -96,8 +99,8 @@ pub struct StateTransitionQuery {
 
 /// Custom base64 serialization for binary data
 mod base64 {
-    use serde::{Deserialize, Deserializer, Serializer};
     use base64::Engine;
+    use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
     where

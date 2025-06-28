@@ -8,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::RwLock;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::{closure::Closure, JsCast};
 use web_sys::window;
 
 /// Cache entry with timestamp for TTL management
@@ -46,7 +46,7 @@ impl<T: Clone> Cache<T> {
     pub fn new(default_ttl_ms: f64) -> Self {
         Self::with_size_limit(default_ttl_ms, 1000) // Default max size of 1000 entries
     }
-    
+
     pub fn with_size_limit(default_ttl_ms: f64, max_size: usize) -> Self {
         Self {
             storage: Arc::new(RwLock::new(HashMap::new())),
@@ -59,7 +59,7 @@ impl<T: Clone> Cache<T> {
     pub fn get(&self, key: &str) -> Option<T> {
         let storage = self.storage.read().ok()?;
         let entry = storage.get(key)?;
-        
+
         if entry.is_expired() {
             drop(storage);
             self.remove(key);
@@ -90,12 +90,12 @@ impl<T: Clone> Cache<T> {
                     break;
                 }
             }
-            
+
             // Remove key from LRU if it already exists
             if let Some(pos) = lru.iter().position(|k| k == &key) {
                 lru.remove(pos);
             }
-            
+
             // Insert new entry and update LRU
             storage.insert(key.clone(), CacheEntry::new(value, ttl_ms));
             lru.push_back(key);
@@ -132,7 +132,7 @@ impl<T: Clone> Cache<T> {
                     true
                 }
             });
-            
+
             // Remove expired keys from LRU
             for expired_key in expired_keys {
                 if let Some(pos) = lru.iter().position(|k| k == &expired_key) {
@@ -173,12 +173,12 @@ struct CacheMaxSizes {
 impl Default for CacheMaxSizes {
     fn default() -> Self {
         Self {
-            contracts: 100,      // Max 100 contracts
-            identities: 500,     // Max 500 identities
-            documents: 1000,     // Max 1000 documents
-            tokens: 200,         // Max 200 token infos
-            quorum_keys: 50,     // Max 50 quorum key sets
-            metadata: 100,       // Max 100 metadata entries
+            contracts: 100,  // Max 100 contracts
+            identities: 500, // Max 500 identities
+            documents: 1000, // Max 1000 documents
+            tokens: 200,     // Max 200 token infos
+            quorum_keys: 50, // Max 50 quorum key sets
+            metadata: 100,   // Max 100 metadata entries
         }
     }
 }
@@ -190,19 +190,19 @@ impl WasmCacheManager {
     pub fn new() -> WasmCacheManager {
         let max_sizes = CacheMaxSizes::default();
         let mut manager = WasmCacheManager {
-            contracts: Cache::with_size_limit(3600000.0, max_sizes.contracts),      // 1 hour
-            identities: Cache::with_size_limit(300000.0, max_sizes.identities),    // 5 minutes
-            documents: Cache::with_size_limit(60000.0, max_sizes.documents),       // 1 minute
-            tokens: Cache::with_size_limit(300000.0, max_sizes.tokens),           // 5 minutes
+            contracts: Cache::with_size_limit(3600000.0, max_sizes.contracts), // 1 hour
+            identities: Cache::with_size_limit(300000.0, max_sizes.identities), // 5 minutes
+            documents: Cache::with_size_limit(60000.0, max_sizes.documents),   // 1 minute
+            tokens: Cache::with_size_limit(300000.0, max_sizes.tokens),        // 5 minutes
             quorum_keys: Cache::with_size_limit(3600000.0, max_sizes.quorum_keys), // 1 hour
-            metadata: Cache::with_size_limit(30000.0, max_sizes.metadata),        // 30 seconds
+            metadata: Cache::with_size_limit(30000.0, max_sizes.metadata),     // 30 seconds
             max_sizes,
             cleanup_interval_handle: None,
         };
-        
+
         // Start automatic cleanup every 5 minutes
         manager.start_auto_cleanup(300000); // 5 minutes
-        
+
         manager
     }
 
@@ -224,7 +224,7 @@ impl WasmCacheManager {
         self.quorum_keys = Cache::with_size_limit(quorum_keys_ttl, self.max_sizes.quorum_keys);
         self.metadata = Cache::with_size_limit(metadata_ttl, self.max_sizes.metadata);
     }
-    
+
     /// Set custom size limits for each cache type
     #[wasm_bindgen(js_name = setMaxSizes)]
     pub fn set_max_sizes(
@@ -244,7 +244,7 @@ impl WasmCacheManager {
             quorum_keys: quorum_keys_max,
             metadata: metadata_max,
         };
-        
+
         // Recreate caches with new size limits
         let contracts_ttl = self.contracts.default_ttl_ms;
         let identities_ttl = self.identities.default_ttl_ms;
@@ -252,7 +252,7 @@ impl WasmCacheManager {
         let tokens_ttl = self.tokens.default_ttl_ms;
         let quorum_keys_ttl = self.quorum_keys.default_ttl_ms;
         let metadata_ttl = self.metadata.default_ttl_ms;
-        
+
         self.contracts = Cache::with_size_limit(contracts_ttl, contracts_max);
         self.identities = Cache::with_size_limit(identities_ttl, identities_max);
         self.documents = Cache::with_size_limit(documents_ttl, documents_max);
@@ -375,7 +375,7 @@ impl WasmCacheManager {
     #[wasm_bindgen(js_name = getStats)]
     pub fn get_stats(&self) -> Result<JsValue, JsError> {
         let stats = Object::new();
-        
+
         Reflect::set(&stats, &"contracts".into(), &self.contracts.size().into())
             .map_err(|_| JsError::new("Failed to set contracts size"))?;
         Reflect::set(&stats, &"identities".into(), &self.identities.size().into())
@@ -384,44 +384,72 @@ impl WasmCacheManager {
             .map_err(|_| JsError::new("Failed to set documents size"))?;
         Reflect::set(&stats, &"tokens".into(), &self.tokens.size().into())
             .map_err(|_| JsError::new("Failed to set tokens size"))?;
-        Reflect::set(&stats, &"quorumKeys".into(), &self.quorum_keys.size().into())
-            .map_err(|_| JsError::new("Failed to set quorum keys size"))?;
+        Reflect::set(
+            &stats,
+            &"quorumKeys".into(),
+            &self.quorum_keys.size().into(),
+        )
+        .map_err(|_| JsError::new("Failed to set quorum keys size"))?;
         Reflect::set(&stats, &"metadata".into(), &self.metadata.size().into())
             .map_err(|_| JsError::new("Failed to set metadata size"))?;
-        
-        let total_size = self.contracts.size() + 
-                        self.identities.size() + 
-                        self.documents.size() + 
-                        self.tokens.size() + 
-                        self.quorum_keys.size() + 
-                        self.metadata.size();
-        
+
+        let total_size = self.contracts.size()
+            + self.identities.size()
+            + self.documents.size()
+            + self.tokens.size()
+            + self.quorum_keys.size()
+            + self.metadata.size();
+
         Reflect::set(&stats, &"totalEntries".into(), &total_size.into())
             .map_err(|_| JsError::new("Failed to set total entries"))?;
-        
+
         // Add max sizes
-        Reflect::set(&stats, &"maxContracts".into(), &(self.max_sizes.contracts as u32).into())
-            .map_err(|_| JsError::new("Failed to set max contracts"))?;
-        Reflect::set(&stats, &"maxIdentities".into(), &(self.max_sizes.identities as u32).into())
-            .map_err(|_| JsError::new("Failed to set max identities"))?;
-        Reflect::set(&stats, &"maxDocuments".into(), &(self.max_sizes.documents as u32).into())
-            .map_err(|_| JsError::new("Failed to set max documents"))?;
-        Reflect::set(&stats, &"maxTokens".into(), &(self.max_sizes.tokens as u32).into())
-            .map_err(|_| JsError::new("Failed to set max tokens"))?;
-        Reflect::set(&stats, &"maxQuorumKeys".into(), &(self.max_sizes.quorum_keys as u32).into())
-            .map_err(|_| JsError::new("Failed to set max quorum keys"))?;
-        Reflect::set(&stats, &"maxMetadata".into(), &(self.max_sizes.metadata as u32).into())
-            .map_err(|_| JsError::new("Failed to set max metadata"))?;
-        
+        Reflect::set(
+            &stats,
+            &"maxContracts".into(),
+            &(self.max_sizes.contracts as u32).into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max contracts"))?;
+        Reflect::set(
+            &stats,
+            &"maxIdentities".into(),
+            &(self.max_sizes.identities as u32).into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max identities"))?;
+        Reflect::set(
+            &stats,
+            &"maxDocuments".into(),
+            &(self.max_sizes.documents as u32).into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max documents"))?;
+        Reflect::set(
+            &stats,
+            &"maxTokens".into(),
+            &(self.max_sizes.tokens as u32).into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max tokens"))?;
+        Reflect::set(
+            &stats,
+            &"maxQuorumKeys".into(),
+            &(self.max_sizes.quorum_keys as u32).into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max quorum keys"))?;
+        Reflect::set(
+            &stats,
+            &"maxMetadata".into(),
+            &(self.max_sizes.metadata as u32).into(),
+        )
+        .map_err(|_| JsError::new("Failed to set max metadata"))?;
+
         Ok(stats.into())
     }
-    
+
     /// Start automatic cleanup with specified interval in milliseconds
     #[wasm_bindgen(js_name = startAutoCleanup)]
     pub fn start_auto_cleanup(&mut self, interval_ms: u32) {
         // Stop existing cleanup if any
         self.stop_auto_cleanup();
-        
+
         // Create a closure that can be called repeatedly
         let cleanup_fn = {
             let contracts = self.contracts.clone();
@@ -430,7 +458,7 @@ impl WasmCacheManager {
             let tokens = self.tokens.clone();
             let quorum_keys = self.quorum_keys.clone();
             let metadata = self.metadata.clone();
-            
+
             Closure::<dyn Fn()>::new(move || {
                 contracts.cleanup_expired();
                 identities.cleanup_expired();
@@ -440,7 +468,7 @@ impl WasmCacheManager {
                 metadata.cleanup_expired();
             })
         };
-        
+
         // Set up interval
         if let Some(window) = window() {
             if let Ok(handle) = window.set_interval_with_callback_and_timeout_and_arguments_0(
@@ -450,11 +478,11 @@ impl WasmCacheManager {
                 self.cleanup_interval_handle = Some(handle);
             }
         }
-        
+
         // Keep the closure alive
         cleanup_fn.forget();
     }
-    
+
     /// Stop automatic cleanup
     #[wasm_bindgen(js_name = stopAutoCleanup)]
     pub fn stop_auto_cleanup(&mut self) {
@@ -481,7 +509,11 @@ impl Drop for WasmCacheManager {
 }
 
 /// Create a cache key for documents
-pub fn create_document_cache_key(contract_id: &str, document_type: &str, document_id: &str) -> String {
+pub fn create_document_cache_key(
+    contract_id: &str,
+    document_type: &str,
+    document_id: &str,
+) -> String {
     format!("{}_{}_{}", contract_id, document_type, document_id)
 }
 

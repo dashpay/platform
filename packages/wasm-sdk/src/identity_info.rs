@@ -86,8 +86,12 @@ impl IdentityRevision {
             .map_err(|_| JsError::new("Failed to set revision"))?;
         Reflect::set(&obj, &"updatedAt".into(), &self.updated_at.into())
             .map_err(|_| JsError::new("Failed to set updated at"))?;
-        Reflect::set(&obj, &"publicKeysCount".into(), &self.public_keys_count.into())
-            .map_err(|_| JsError::new("Failed to set public keys count"))?;
+        Reflect::set(
+            &obj,
+            &"publicKeysCount".into(),
+            &self.public_keys_count.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set public keys count"))?;
         Ok(obj.into())
     }
 }
@@ -157,7 +161,7 @@ pub async fn fetch_identity_balance_details(
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Request identity balance
     let request = serde_json::json!({
         "method": "getIdentityBalance",
@@ -165,18 +169,22 @@ pub async fn fetch_identity_balance_details(
             "identityId": identity_id,
         }
     });
-    
-    let response = client.raw_request("/platform/v1/identity/balance", &request).await?;
-    
+
+    let response = client
+        .raw_request("/platform/v1/identity/balance", &request)
+        .await?;
+
     // Parse response
     if let Ok(balance_data) = serde_wasm_bindgen::from_value::<serde_json::Value>(response) {
-        let confirmed = balance_data.get("confirmed")
+        let confirmed = balance_data
+            .get("confirmed")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let unconfirmed = balance_data.get("unconfirmed")
+        let unconfirmed = balance_data
+            .get("unconfirmed")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        
+
         Ok(IdentityBalance {
             confirmed,
             unconfirmed,
@@ -207,20 +215,22 @@ pub async fn fetch_identity_revision(
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Fetch identity to get revision info
     let response = client.get_identity(identity_id.to_string(), false).await?;
-    
+
     // Parse response
     if let Ok(identity_data) = serde_wasm_bindgen::from_value::<serde_json::Value>(response) {
-        let revision = identity_data.get("revision")
+        let revision = identity_data
+            .get("revision")
             .and_then(|v| v.as_u64())
             .unwrap_or(1);
-        let public_keys_count = identity_data.get("publicKeys")
+        let public_keys_count = identity_data
+            .get("publicKeys")
             .and_then(|v| v.as_array())
             .map(|arr| arr.len() as u32)
             .unwrap_or(0);
-        
+
         Ok(IdentityRevision {
             revision,
             updated_at: js_sys::Date::now() as u64,
@@ -271,34 +281,38 @@ pub async fn fetch_identity_balance_history(
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Request balance history
     let mut params = serde_json::json!({
         "identityId": identity_id,
         "limit": limit.unwrap_or(100),
     });
-    
+
     if let Some(from) = from_timestamp {
         params["fromTimestamp"] = serde_json::json!(from as u64);
     }
     if let Some(to) = to_timestamp {
         params["toTimestamp"] = serde_json::json!(to as u64);
     }
-    
+
     let request = serde_json::json!({
         "method": "getIdentityBalanceHistory",
         "params": params,
     });
-    
-    let response = client.raw_request("/platform/v1/identity/balance/history", &request).await?;
-    
+
+    let response = client
+        .raw_request("/platform/v1/identity/balance/history", &request)
+        .await?;
+
     // Parse response
-    if let Ok(history_data) = serde_wasm_bindgen::from_value::<Vec<serde_json::Value>>(response.clone()) {
+    if let Ok(history_data) =
+        serde_wasm_bindgen::from_value::<Vec<serde_json::Value>>(response.clone())
+    {
         let history_array = js_sys::Array::new();
-        
+
         for entry in history_data {
             let history_obj = Object::new();
-            
+
             if let Some(balance) = entry.get("balance").and_then(|v| v.as_u64()) {
                 Reflect::set(&history_obj, &"balance".into(), &balance.into())
                     .map_err(|_| JsError::new("Failed to set balance"))?;
@@ -315,10 +329,10 @@ pub async fn fetch_identity_balance_history(
                 Reflect::set(&history_obj, &"amount".into(), &amount.into())
                     .map_err(|_| JsError::new("Failed to set amount"))?;
             }
-            
+
             history_array.push(&history_obj);
         }
-        
+
         Ok(history_array.into())
     } else {
         // Return response as-is if not an array
@@ -335,7 +349,7 @@ pub async fn check_identity_balance(
     use_unconfirmed: bool,
 ) -> Result<bool, JsError> {
     let balance = fetch_identity_balance_details(sdk, identity_id).await?;
-    
+
     if use_unconfirmed {
         Ok(balance.total >= required_amount)
     } else {
@@ -357,7 +371,12 @@ pub fn estimate_credits_needed(
         "identity_topup" => 100,
         "contract_create" => 5000,
         "contract_update" => 3000,
-        _ => return Err(JsError::new(&format!("Unknown operation type: {}", operation_type))),
+        _ => {
+            return Err(JsError::new(&format!(
+                "Unknown operation type: {}",
+                operation_type
+            )))
+        }
     };
 
     // Add cost for data size (1 credit per 100 bytes)
@@ -384,8 +403,14 @@ pub async fn monitor_identity_balance(
 
     // Create interval handle
     let handle = Object::new();
-    Reflect::set(&handle, &"identityId".into(), &identifier.to_string(platform_value::string_encoding::Encoding::Base58).into())
-        .map_err(|_| JsError::new("Failed to set identity ID"))?;
+    Reflect::set(
+        &handle,
+        &"identityId".into(),
+        &identifier
+            .to_string(platform_value::string_encoding::Encoding::Base58)
+            .into(),
+    )
+    .map_err(|_| JsError::new("Failed to set identity ID"))?;
     Reflect::set(&handle, &"interval".into(), &interval.into())
         .map_err(|_| JsError::new("Failed to set interval"))?;
     Reflect::set(&handle, &"active".into(), &true.into())
@@ -394,31 +419,32 @@ pub async fn monitor_identity_balance(
     // Set up interval monitoring using gloo-timers
     use gloo_timers::callback::Interval;
     use wasm_bindgen_futures::spawn_local;
-    
+
     let interval_ms = interval as f64;
-    
+
     if interval_ms <= 0.0 {
         return Err(JsError::new("Interval must be positive"));
     }
-    
+
     let sdk_clone = sdk.clone();
     let identity_id_clone = identity_id.to_string();
     let callback_clone = callback.clone();
     let handle_clone = handle.clone();
-    
+
     // Initial fetch
     let balance = fetch_identity_balance_details(sdk, identity_id).await?;
     let this = JsValue::null();
-    callback.call1(&this, &balance.to_object()?)
+    callback
+        .call1(&this, &balance.to_object()?)
         .map_err(|e| JsError::new(&format!("Callback failed: {:?}", e)))?;
-    
+
     // Set up interval
     let _interval_handle = Interval::new(interval_ms as u32, move || {
         let sdk_inner = sdk_clone.clone();
         let id_inner = identity_id_clone.clone();
         let cb_inner = callback_clone.clone();
         let handle_inner = handle_clone.clone();
-        
+
         spawn_local(async move {
             // Check if still active
             if let Ok(active) = Reflect::get(&handle_inner, &"active".into()) {
@@ -426,7 +452,7 @@ pub async fn monitor_identity_balance(
                     return;
                 }
             }
-            
+
             // Fetch balance
             match fetch_identity_balance_details(&sdk_inner, &id_inner).await {
                 Ok(balance) => {
@@ -436,12 +462,15 @@ pub async fn monitor_identity_balance(
                     }
                 }
                 Err(e) => {
-                    web_sys::console::error_1(&JsValue::from_str(&format!("Monitor error: {:?}", e)));
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "Monitor error: {:?}",
+                        e
+                    )));
                 }
             }
         });
     });
-    
+
     // Store interval handle for cleanup
     Reflect::set(&handle, &"_intervalHandle".into(), &JsValue::from_f64(0.0))
         .map_err(|_| JsError::new("Failed to store interval handle"))?;
@@ -451,10 +480,7 @@ pub async fn monitor_identity_balance(
 
 /// Fetch identity public keys information
 #[wasm_bindgen(js_name = fetchIdentityKeys)]
-pub async fn fetch_identity_keys(
-    sdk: &WasmSdk,
-    identity_id: &str,
-) -> Result<JsValue, JsError> {
+pub async fn fetch_identity_keys(sdk: &WasmSdk, identity_id: &str) -> Result<JsValue, JsError> {
     let _identifier = Identifier::from_string(
         identity_id,
         platform_value::string_encoding::Encoding::Base58,
@@ -464,18 +490,18 @@ pub async fn fetch_identity_keys(
     // Create DAPI client
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
-    
+
     // Fetch identity to get keys
     let response = client.get_identity(identity_id.to_string(), false).await?;
-    
+
     // Parse response
     if let Ok(identity_data) = serde_wasm_bindgen::from_value::<serde_json::Value>(response) {
         if let Some(keys) = identity_data.get("publicKeys").and_then(|v| v.as_array()) {
             let keys_array = js_sys::Array::new();
-            
+
             for key in keys {
                 let key_obj = Object::new();
-                
+
                 if let Some(id) = key.get("id").and_then(|v| v.as_u64()) {
                     Reflect::set(&key_obj, &"id".into(), &id.into())
                         .map_err(|_| JsError::new("Failed to set key ID"))?;
@@ -496,10 +522,10 @@ pub async fn fetch_identity_keys(
                     Reflect::set(&key_obj, &"data".into(), &data.into())
                         .map_err(|_| JsError::new("Failed to set key data"))?;
                 }
-                
+
                 keys_array.push(&key_obj);
             }
-            
+
             Ok(keys_array.into())
         } else {
             Ok(js_sys::Array::new().into())
@@ -517,10 +543,10 @@ pub async fn fetch_identity_credits_in_dash(
     identity_id: &str,
 ) -> Result<f64, JsError> {
     let balance = fetch_identity_balance_details(sdk, identity_id).await?;
-    
+
     // Convert credits to Dash (1 Dash = 100,000,000 credits)
     let dash_amount = balance.confirmed as f64 / 100_000_000.0;
-    
+
     Ok(dash_amount)
 }
 
@@ -531,12 +557,12 @@ pub async fn batch_fetch_identity_info(
     identity_ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
     let results = js_sys::Array::new();
-    
+
     for id in identity_ids {
         match fetch_identity_info(sdk, &id).await {
             Ok(info) => {
                 results.push(&info.to_object()?);
-            },
+            }
             Err(e) => {
                 // Create error object
                 let error_obj = Object::new();
@@ -548,28 +574,25 @@ pub async fn batch_fetch_identity_info(
             }
         }
     }
-    
+
     Ok(results.into())
 }
 
 /// Get identity credit transfer fee estimate
 #[wasm_bindgen(js_name = estimateCreditTransferFee)]
-pub fn estimate_credit_transfer_fee(
-    amount: u64,
-    priority: Option<String>,
-) -> Result<u64, JsError> {
+pub fn estimate_credit_transfer_fee(amount: u64, priority: Option<String>) -> Result<u64, JsError> {
     let base_fee = 1000; // Base fee in credits
-    
+
     let priority_multiplier = match priority.as_deref() {
         Some("high") => 2.0,
         Some("medium") => 1.5,
         Some("low") | None => 1.0,
         _ => return Err(JsError::new("Invalid priority level")),
     };
-    
+
     // Fee is base fee plus 0.1% of transfer amount
     let transfer_fee = (amount as f64 * 0.001) as u64;
     let total_fee = ((base_fee + transfer_fee) as f64 * priority_multiplier) as u64;
-    
+
     Ok(total_fee)
 }

@@ -73,12 +73,16 @@ impl From<dpp::ProtocolError> for WasmError {
             ErrorCategory::Identity
         } else if message.contains("transition") || message.contains("Transition") {
             ErrorCategory::StateTransition
-        } else if message.contains("decod") || message.contains("Decod") || message.contains("encod") || message.contains("Encod") {
+        } else if message.contains("decod")
+            || message.contains("Decod")
+            || message.contains("encod")
+            || message.contains("Encod")
+        {
             ErrorCategory::Serialization
         } else {
             ErrorCategory::Platform
         };
-        
+
         WasmError {
             inner: None,
             message,

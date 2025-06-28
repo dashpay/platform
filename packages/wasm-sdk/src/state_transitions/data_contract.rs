@@ -3,11 +3,9 @@
 //! This module provides WASM bindings for data contract-related state transitions including:
 //! - Data contract creation and updates
 
-use dpp::data_contract::DataContract;
-use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
-use dpp::version::PlatformVersion;
-use dpp::version::TryFromPlatformVersioned;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use dpp::serialization::PlatformSerializable;
@@ -18,6 +16,8 @@ use dpp::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
+use dpp::version::TryFromPlatformVersioned;
 use platform_value::Value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
@@ -32,11 +32,9 @@ pub fn create_data_contract(
     signature_public_key_id: Number,
 ) -> Result<Uint8Array, JsError> {
     // Parse owner ID
-    let owner_id = Identifier::from_string(
-        owner_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
+    let owner_id =
+        Identifier::from_string(owner_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
 
     // Parse contract definition
     let contract_value: Value = serde_wasm_bindgen::from_value(contract_definition)
@@ -62,7 +60,7 @@ pub fn create_data_contract(
     // Parse the contract definition to extract document schemas
     let mut document_schemas = BTreeMap::new();
     let mut schema_defs = None;
-    
+
     if let Ok(contract_map) = contract_value.into_btree_string_map() {
         // Extract document schemas from the "documents" field
         if let Some(Value::Map(docs)) = contract_map.get("documents") {
@@ -72,7 +70,7 @@ pub fn create_data_contract(
                 }
             }
         }
-        
+
         // Extract schema definitions if present
         if let Some(defs) = contract_map.get("$defs") {
             if let Ok(defs_map) = defs.clone().into_btree_string_map() {
@@ -80,29 +78,25 @@ pub fn create_data_contract(
             }
         }
     }
-    
+
     // Create the data contract using the factory
     let platform_version = PlatformVersion::latest();
-    let factory = dpp::data_contract::factory::DataContractFactory::new(platform_version.protocol_version)
-        .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
-    
+    let factory =
+        dpp::data_contract::factory::DataContractFactory::new(platform_version.protocol_version)
+            .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
+
     // Create documents value
     let documents_value = Value::Map(
         document_schemas
             .into_iter()
             .map(|(k, v)| (Value::Text(k), v))
-            .collect()
+            .collect(),
     );
-    
+
     // Create definitions value if present
-    let definitions_value = schema_defs.map(|defs| {
-        Value::Map(
-            defs.into_iter()
-                .map(|(k, v)| (Value::Text(k), v))
-                .collect()
-        )
-    });
-    
+    let definitions_value = schema_defs
+        .map(|defs| Value::Map(defs.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+
     let created_contract = factory
         .create(
             owner_id,
@@ -112,16 +106,22 @@ pub fn create_data_contract(
             definitions_value,
         )
         .map_err(|e| JsError::new(&format!("Failed to create contract: {}", e)))?;
-    
+
     let data_contract = created_contract.data_contract().clone();
-    
+
     // Convert data contract to serialization format
-    let data_contract_serialization = DataContractInSerializationFormat::try_from_platform_versioned(
-        data_contract,
-        &platform_version,
-    )
-    .map_err(|e| JsError::new(&format!("Failed to convert contract to serialization format: {}", e)))?;
-    
+    let data_contract_serialization =
+        DataContractInSerializationFormat::try_from_platform_versioned(
+            data_contract,
+            &platform_version,
+        )
+        .map_err(|e| {
+            JsError::new(&format!(
+                "Failed to convert contract to serialization format: {}",
+                e
+            ))
+        })?;
+
     // Create the state transition
     let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
         data_contract: data_contract_serialization,
@@ -130,14 +130,14 @@ pub fn create_data_contract(
         signature_public_key_id,
         signature: Default::default(),
     });
-    
+
     let state_transition = StateTransition::DataContractCreate(transition);
-    
+
     // Serialize the state transition
     let bytes = state_transition
         .serialize_to_bytes()
         .map_err(|e| JsError::new(&format!("Failed to serialize state transition: {}", e)))?;
-    
+
     Ok(Uint8Array::from(&bytes[..]))
 }
 
@@ -157,11 +157,9 @@ pub fn update_data_contract(
     )
     .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
 
-    let owner_id = Identifier::from_string(
-        owner_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
+    let owner_id =
+        Identifier::from_string(owner_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
 
     // Parse contract definition
     let contract_value: Value = serde_wasm_bindgen::from_value(contract_definition)
@@ -187,7 +185,7 @@ pub fn update_data_contract(
     // Parse the contract definition to extract document schemas
     let mut document_schemas = BTreeMap::new();
     let mut schema_defs = None;
-    
+
     if let Ok(contract_map) = contract_value.into_btree_string_map() {
         // Extract document schemas from the "documents" field
         if let Some(Value::Map(docs)) = contract_map.get("documents") {
@@ -197,7 +195,7 @@ pub fn update_data_contract(
                 }
             }
         }
-        
+
         // Extract schema definitions if present
         if let Some(defs) = contract_map.get("$defs") {
             if let Ok(defs_map) = defs.clone().into_btree_string_map() {
@@ -205,29 +203,25 @@ pub fn update_data_contract(
             }
         }
     }
-    
+
     // Create the updated data contract using the factory
     let platform_version = PlatformVersion::latest();
-    let factory = dpp::data_contract::factory::DataContractFactory::new(platform_version.protocol_version)
-        .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
-    
+    let factory =
+        dpp::data_contract::factory::DataContractFactory::new(platform_version.protocol_version)
+            .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
+
     // Create documents value
     let documents_value = Value::Map(
         document_schemas
             .into_iter()
             .map(|(k, v)| (Value::Text(k), v))
-            .collect()
+            .collect(),
     );
-    
+
     // Create definitions value if present
-    let definitions_value = schema_defs.map(|defs| {
-        Value::Map(
-            defs.into_iter()
-                .map(|(k, v)| (Value::Text(k), v))
-                .collect()
-        )
-    });
-    
+    let definitions_value = schema_defs
+        .map(|defs| Value::Map(defs.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+
     // For updates, we need to create a contract with the existing ID
     // First create it normally, then update the ID
     let created_contract = factory
@@ -239,28 +233,34 @@ pub fn update_data_contract(
             definitions_value,
         )
         .map_err(|e| JsError::new(&format!("Failed to create contract: {}", e)))?;
-    
+
     let mut data_contract = created_contract.data_contract().clone();
-    
+
     // Update the contract ID to match the existing contract
     match &mut data_contract {
         DataContract::V0(ref mut v0) => v0.set_id(contract_id),
         DataContract::V1(ref mut v1) => v1.id = contract_id,
     }
-    
+
     // Increment the version for update
     match &mut data_contract {
         DataContract::V0(ref mut v0) => v0.increment_version(),
         DataContract::V1(ref mut v1) => v1.version += 1,
     }
-    
+
     // Convert data contract to serialization format
-    let data_contract_serialization = DataContractInSerializationFormat::try_from_platform_versioned(
-        data_contract,
-        &platform_version,
-    )
-    .map_err(|e| JsError::new(&format!("Failed to convert contract to serialization format: {}", e)))?;
-    
+    let data_contract_serialization =
+        DataContractInSerializationFormat::try_from_platform_versioned(
+            data_contract,
+            &platform_version,
+        )
+        .map_err(|e| {
+            JsError::new(&format!(
+                "Failed to convert contract to serialization format: {}",
+                e
+            ))
+        })?;
+
     // Create the state transition
     let transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
         data_contract: data_contract_serialization,
@@ -269,14 +269,14 @@ pub fn update_data_contract(
         signature_public_key_id,
         signature: Default::default(),
     });
-    
+
     let state_transition = StateTransition::DataContractUpdate(transition);
-    
+
     // Serialize the state transition
     let bytes = state_transition
         .serialize_to_bytes()
         .map_err(|e| JsError::new(&format!("Failed to serialize state transition: {}", e)))?;
-    
+
     Ok(Uint8Array::from(&bytes[..]))
 }
 
@@ -296,11 +296,9 @@ pub struct DataContractTransitionBuilder {
 impl DataContractTransitionBuilder {
     #[wasm_bindgen(constructor)]
     pub fn new(owner_id: &str) -> Result<DataContractTransitionBuilder, JsError> {
-        let owner_id = Identifier::from_string(
-            owner_id,
-            platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
+        let owner_id =
+            Identifier::from_string(owner_id, platform_value::string_encoding::Encoding::Base58)
+                .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
 
         Ok(DataContractTransitionBuilder {
             owner_id,
@@ -405,7 +403,7 @@ impl DataContractTransitionBuilder {
         // Parse the contract definition to extract document schemas
         let mut document_schemas = BTreeMap::new();
         let mut schema_defs = None;
-        
+
         // Extract document schemas from the "documents" field
         if let Some(Value::Map(docs)) = self.contract_definition.get("documents") {
             for (key_val, doc_val) in docs {
@@ -414,36 +412,33 @@ impl DataContractTransitionBuilder {
                 }
             }
         }
-        
+
         // Extract schema definitions if present
         if let Some(defs) = self.contract_definition.get("$defs") {
             if let Ok(defs_map) = defs.clone().into_btree_string_map() {
                 schema_defs = Some(defs_map);
             }
         }
-        
+
         // Create the data contract using the factory
         let platform_version = PlatformVersion::latest();
-        let factory = dpp::data_contract::factory::DataContractFactory::new(platform_version.protocol_version)
-            .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
-        
+        let factory = dpp::data_contract::factory::DataContractFactory::new(
+            platform_version.protocol_version,
+        )
+        .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
+
         // Create documents value
         let documents_value = Value::Map(
             document_schemas
                 .into_iter()
                 .map(|(k, v)| (Value::Text(k), v))
-                .collect()
+                .collect(),
         );
-        
+
         // Create definitions value if present
-        let definitions_value = schema_defs.map(|defs| {
-            Value::Map(
-                defs.into_iter()
-                    .map(|(k, v)| (Value::Text(k), v))
-                    .collect()
-            )
-        });
-        
+        let definitions_value = schema_defs
+            .map(|defs| Value::Map(defs.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+
         let created_contract = factory
             .create(
                 self.owner_id,
@@ -453,16 +448,22 @@ impl DataContractTransitionBuilder {
                 definitions_value,
             )
             .map_err(|e| JsError::new(&format!("Failed to create contract: {}", e)))?;
-        
+
         let data_contract = created_contract.data_contract().clone();
-        
+
         // Convert data contract to serialization format
-        let data_contract_serialization = DataContractInSerializationFormat::try_from_platform_versioned(
-            data_contract,
-            &platform_version,
-        )
-        .map_err(|e| JsError::new(&format!("Failed to convert contract to serialization format: {}", e)))?;
-        
+        let data_contract_serialization =
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                data_contract,
+                &platform_version,
+            )
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to convert contract to serialization format: {}",
+                    e
+                ))
+            })?;
+
         // Create the state transition
         let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract: data_contract_serialization,
@@ -471,14 +472,14 @@ impl DataContractTransitionBuilder {
             signature_public_key_id,
             signature: Default::default(),
         });
-        
+
         let state_transition = StateTransition::DataContractCreate(transition);
-        
+
         // Serialize the state transition
         let bytes = state_transition
             .serialize_to_bytes()
             .map_err(|e| JsError::new(&format!("Failed to serialize state transition: {}", e)))?;
-        
+
         Ok(Uint8Array::from(&bytes[..]))
     }
 
@@ -511,7 +512,7 @@ impl DataContractTransitionBuilder {
         // Parse the contract definition to extract document schemas
         let mut document_schemas = BTreeMap::new();
         let mut schema_defs = None;
-        
+
         // Extract document schemas from the "documents" field
         if let Some(Value::Map(docs)) = self.contract_definition.get("documents") {
             for (key_val, doc_val) in docs {
@@ -520,36 +521,33 @@ impl DataContractTransitionBuilder {
                 }
             }
         }
-        
+
         // Extract schema definitions if present
         if let Some(defs) = self.contract_definition.get("$defs") {
             if let Ok(defs_map) = defs.clone().into_btree_string_map() {
                 schema_defs = Some(defs_map);
             }
         }
-        
+
         // Create the updated data contract using the factory
         let platform_version = PlatformVersion::latest();
-        let factory = dpp::data_contract::factory::DataContractFactory::new(platform_version.protocol_version)
-            .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
-        
+        let factory = dpp::data_contract::factory::DataContractFactory::new(
+            platform_version.protocol_version,
+        )
+        .map_err(|e| JsError::new(&format!("Failed to create factory: {}", e)))?;
+
         // Create documents value
         let documents_value = Value::Map(
             document_schemas
                 .into_iter()
                 .map(|(k, v)| (Value::Text(k), v))
-                .collect()
+                .collect(),
         );
-        
+
         // Create definitions value if present
-        let definitions_value = schema_defs.map(|defs| {
-            Value::Map(
-                defs.into_iter()
-                    .map(|(k, v)| (Value::Text(k), v))
-                    .collect()
-            )
-        });
-        
+        let definitions_value = schema_defs
+            .map(|defs| Value::Map(defs.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+
         // For updates, we need to create a contract with the existing ID
         // First create it normally, then update the ID
         let created_contract = factory
@@ -561,28 +559,34 @@ impl DataContractTransitionBuilder {
                 definitions_value,
             )
             .map_err(|e| JsError::new(&format!("Failed to create contract: {}", e)))?;
-        
+
         let mut data_contract = created_contract.data_contract().clone();
-        
+
         // Update the contract ID to match the existing contract
         match &mut data_contract {
             DataContract::V0(ref mut v0) => {
                 v0.set_id(contract_id);
                 v0.set_version(self.version);
-            },
+            }
             DataContract::V1(ref mut v1) => {
                 v1.id = contract_id;
                 v1.version = self.version;
-            },
+            }
         }
-        
+
         // Convert data contract to serialization format
-        let data_contract_serialization = DataContractInSerializationFormat::try_from_platform_versioned(
-            data_contract,
-            &platform_version,
-        )
-        .map_err(|e| JsError::new(&format!("Failed to convert contract to serialization format: {}", e)))?;
-        
+        let data_contract_serialization =
+            DataContractInSerializationFormat::try_from_platform_versioned(
+                data_contract,
+                &platform_version,
+            )
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to convert contract to serialization format: {}",
+                    e
+                ))
+            })?;
+
         // Create the state transition
         let transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
             data_contract: data_contract_serialization,
@@ -591,14 +595,14 @@ impl DataContractTransitionBuilder {
             signature_public_key_id,
             signature: Default::default(),
         });
-        
+
         let state_transition = StateTransition::DataContractUpdate(transition);
-        
+
         // Serialize the state transition
         let bytes = state_transition
             .serialize_to_bytes()
             .map_err(|e| JsError::new(&format!("Failed to serialize state transition: {}", e)))?;
-        
+
         Ok(Uint8Array::from(&bytes[..]))
     }
 }

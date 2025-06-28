@@ -8,9 +8,7 @@ use crate::error::to_js_error;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, UserFeeIncrease};
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::batch_transition::{
-    BatchTransition, BatchTransitionV0,
-};
+use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
 use dpp::state_transition::StateTransition;
 use platform_value::Value;
 use std::collections::BTreeMap;
@@ -18,7 +16,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::js_sys::{Number, Uint8Array};
 
 /// Create a simple document batch transition
-/// 
+///
 /// Note: This is a simplified implementation that creates a minimal batch transition.
 /// In production, you would need to properly construct the document transitions.
 #[wasm_bindgen]
@@ -27,11 +25,9 @@ pub fn create_document_batch_transition(
     signature_public_key_id: Number,
 ) -> Result<Uint8Array, JsError> {
     // Parse owner ID
-    let owner_id = Identifier::from_string(
-        owner_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
+    let owner_id =
+        Identifier::from_string(owner_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
 
     // Parse signature public key ID
     let signature_public_key_id = signature_public_key_id
@@ -68,7 +64,7 @@ pub fn create_document_batch_transition(
 }
 
 /// Document transition builder for WASM
-/// 
+///
 /// This is a simplified builder that helps construct document batch transitions.
 #[wasm_bindgen]
 pub struct DocumentBatchBuilder {
@@ -81,11 +77,9 @@ pub struct DocumentBatchBuilder {
 impl DocumentBatchBuilder {
     #[wasm_bindgen(constructor)]
     pub fn new(owner_id: &str) -> Result<DocumentBatchBuilder, JsError> {
-        let owner_id = Identifier::from_string(
-            owner_id,
-            platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
+        let owner_id =
+            Identifier::from_string(owner_id, platform_value::string_encoding::Encoding::Base58)
+                .map_err(|e| JsError::new(&format!("Invalid owner ID: {}", e)))?;
 
         Ok(DocumentBatchBuilder {
             owner_id,
@@ -125,11 +119,20 @@ impl DocumentBatchBuilder {
 
         // Create a transition object as a Value
         let mut transition = BTreeMap::new();
-        transition.insert("$type".to_string(), Value::Text("documentCreate".to_string()));
-        transition.insert("$dataContractId".to_string(), Value::Bytes(contract_id.to_vec()));
-        transition.insert("$documentType".to_string(), Value::Text(document_type.to_string()));
+        transition.insert(
+            "$type".to_string(),
+            Value::Text("documentCreate".to_string()),
+        );
+        transition.insert(
+            "$dataContractId".to_string(),
+            Value::Bytes(contract_id.to_vec()),
+        );
+        transition.insert(
+            "$documentType".to_string(),
+            Value::Text(document_type.to_string()),
+        );
         transition.insert("$entropy".to_string(), Value::Bytes(entropy_array.to_vec()));
-        
+
         // Add data fields
         if let Value::Map(data_map) = data_value {
             for (key, value) in data_map {
@@ -139,7 +142,12 @@ impl DocumentBatchBuilder {
             }
         }
 
-        self.transitions.push(Value::Map(transition.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+        self.transitions.push(Value::Map(
+            transition
+                .into_iter()
+                .map(|(k, v)| (Value::Text(k), v))
+                .collect(),
+        ));
         Ok(())
     }
 
@@ -165,12 +173,26 @@ impl DocumentBatchBuilder {
 
         // Create a transition object as a Value
         let mut transition = BTreeMap::new();
-        transition.insert("$type".to_string(), Value::Text("documentDelete".to_string()));
-        transition.insert("$dataContractId".to_string(), Value::Bytes(contract_id.to_vec()));
-        transition.insert("$documentType".to_string(), Value::Text(document_type.to_string()));
+        transition.insert(
+            "$type".to_string(),
+            Value::Text("documentDelete".to_string()),
+        );
+        transition.insert(
+            "$dataContractId".to_string(),
+            Value::Bytes(contract_id.to_vec()),
+        );
+        transition.insert(
+            "$documentType".to_string(),
+            Value::Text(document_type.to_string()),
+        );
         transition.insert("$id".to_string(), Value::Bytes(document_id.to_vec()));
 
-        self.transitions.push(Value::Map(transition.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+        self.transitions.push(Value::Map(
+            transition
+                .into_iter()
+                .map(|(k, v)| (Value::Text(k), v))
+                .collect(),
+        ));
         Ok(())
     }
 
@@ -202,12 +224,21 @@ impl DocumentBatchBuilder {
 
         // Create a transition object as a Value
         let mut transition = BTreeMap::new();
-        transition.insert("$type".to_string(), Value::Text("documentReplace".to_string()));
-        transition.insert("$dataContractId".to_string(), Value::Bytes(contract_id.to_vec()));
-        transition.insert("$documentType".to_string(), Value::Text(document_type.to_string()));
+        transition.insert(
+            "$type".to_string(),
+            Value::Text("documentReplace".to_string()),
+        );
+        transition.insert(
+            "$dataContractId".to_string(),
+            Value::Bytes(contract_id.to_vec()),
+        );
+        transition.insert(
+            "$documentType".to_string(),
+            Value::Text(document_type.to_string()),
+        );
         transition.insert("$id".to_string(), Value::Bytes(document_id.to_vec()));
         transition.insert("$revision".to_string(), Value::U32(revision));
-        
+
         // Add data fields
         if let Value::Map(data_map) = data_value {
             for (key, value) in data_map {
@@ -217,7 +248,12 @@ impl DocumentBatchBuilder {
             }
         }
 
-        self.transitions.push(Value::Map(transition.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()));
+        self.transitions.push(Value::Map(
+            transition
+                .into_iter()
+                .map(|(k, v)| (Value::Text(k), v))
+                .collect(),
+        ));
         Ok(())
     }
 

@@ -207,8 +207,8 @@ impl BatchOptimizer {
     #[wasm_bindgen(constructor)]
     pub fn new() -> BatchOptimizer {
         BatchOptimizer {
-            batch_size: 10,      // Default batch size
-            max_concurrent: 3,   // Default concurrent operations
+            batch_size: 10,    // Default batch size
+            max_concurrent: 3, // Default concurrent operations
         }
     }
 
@@ -235,7 +235,7 @@ impl BatchOptimizer {
     pub fn get_batch_boundaries(&self, total_items: usize, batch_index: usize) -> js_sys::Object {
         let start = batch_index * self.batch_size;
         let end = ((batch_index + 1) * self.batch_size).min(total_items);
-        
+
         let obj = js_sys::Object::new();
         let _ = js_sys::Reflect::set(&obj, &"start".into(), &start.into());
         let _ = js_sys::Reflect::set(&obj, &"end".into(), &end.into());
@@ -305,17 +305,17 @@ impl CompressionUtils {
         for &byte in data {
             byte_counts[byte as usize] += 1;
         }
-        
+
         let total = data.len() as f32;
         let mut entropy = 0.0;
-        
+
         for &count in &byte_counts {
             if count > 0 {
                 let probability = count as f32 / total;
                 entropy -= probability * probability.log2();
             }
         }
-        
+
         // Estimate compression ratio based on entropy
         (entropy / 8.0).max(0.1).min(1.0)
     }
@@ -351,7 +351,7 @@ impl PerformanceMonitor {
     pub fn get_report(&self) -> String {
         let mut report = String::from("Performance Report:\n");
         let mut last_time = 0.0;
-        
+
         for (label, time) in &self.measurements {
             let delta = time - last_time;
             report.push_str(&format!(
@@ -360,7 +360,7 @@ impl PerformanceMonitor {
             ));
             last_time = *time;
         }
-        
+
         report.push_str(&format!("Total time: {:.2}ms", last_time));
         report
     }
@@ -376,7 +376,7 @@ impl PerformanceMonitor {
 #[wasm_bindgen(js_name = getOptimizationRecommendations)]
 pub fn get_optimization_recommendations() -> js_sys::Array {
     let recommendations = js_sys::Array::new();
-    
+
     recommendations.push(&"Use FeatureFlags to disable unused features".into());
     recommendations.push(&"Enable compression for large data transfers".into());
     recommendations.push(&"Use batch operations for multiple requests".into());
@@ -385,6 +385,6 @@ pub fn get_optimization_recommendations() -> js_sys::Array {
     recommendations.push(&"Minimize state transition sizes".into());
     recommendations.push(&"Use string interning for repeated strings".into());
     recommendations.push(&"Monitor performance with PerformanceMonitor".into());
-    
+
     recommendations
 }

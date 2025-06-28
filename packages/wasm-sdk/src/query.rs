@@ -10,8 +10,8 @@
 //! const identity = await fetchIdentity(sdk, query);
 //! ```
 
-use platform_value::Identifier;
 use js_sys::{Array, Object, Reflect};
+use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -26,15 +26,17 @@ pub struct IdentifierQuery {
 impl IdentifierQuery {
     #[wasm_bindgen(constructor)]
     pub fn new(id: &str) -> Result<IdentifierQuery, JsError> {
-        let identifier = Identifier::from_string(id, platform_value::string_encoding::Encoding::Base58)
-            .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
-        
+        let identifier =
+            Identifier::from_string(id, platform_value::string_encoding::Encoding::Base58)
+                .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
+
         Ok(IdentifierQuery { identifier })
     }
 
     #[wasm_bindgen(getter)]
     pub fn id(&self) -> String {
-        self.identifier.to_string(platform_value::string_encoding::Encoding::Base58)
+        self.identifier
+            .to_string(platform_value::string_encoding::Encoding::Base58)
     }
 }
 
@@ -57,11 +59,14 @@ impl IdentifiersQuery {
     pub fn new(ids: Vec<String>) -> Result<IdentifiersQuery, JsError> {
         let identifiers: Result<Vec<Identifier>, _> = ids
             .iter()
-            .map(|id| Identifier::from_string(id, platform_value::string_encoding::Encoding::Base58))
+            .map(|id| {
+                Identifier::from_string(id, platform_value::string_encoding::Encoding::Base58)
+            })
             .collect();
-        
-        let identifiers = identifiers.map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
-        
+
+        let identifiers =
+            identifiers.map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
+
         Ok(IdentifiersQuery { identifiers })
     }
 
@@ -185,9 +190,12 @@ pub struct OrderByClause {
 impl DocumentQuery {
     #[wasm_bindgen(constructor)]
     pub fn new(contract_id: &str, document_type: &str) -> Result<DocumentQuery, JsError> {
-        let contract_id = Identifier::from_string(contract_id, platform_value::string_encoding::Encoding::Base58)
-            .map_err(|e| JsError::new(&format!("Invalid contract identifier: {}", e)))?;
-        
+        let contract_id = Identifier::from_string(
+            contract_id,
+            platform_value::string_encoding::Encoding::Base58,
+        )
+        .map_err(|e| JsError::new(&format!("Invalid contract identifier: {}", e)))?;
+
         Ok(DocumentQuery {
             contract_id,
             document_type: document_type.to_string(),
@@ -199,7 +207,12 @@ impl DocumentQuery {
     }
 
     #[wasm_bindgen(js_name = addWhereClause)]
-    pub fn add_where_clause(&mut self, field: &str, operator: &str, value: JsValue) -> Result<(), JsError> {
+    pub fn add_where_clause(
+        &mut self,
+        field: &str,
+        operator: &str,
+        value: JsValue,
+    ) -> Result<(), JsError> {
         let operator = match operator {
             "==" | "equal" => WhereOperator::Equal,
             "!=" | "notEqual" => WhereOperator::NotEqual,
@@ -247,7 +260,8 @@ impl DocumentQuery {
 
     #[wasm_bindgen(getter, js_name = contractId)]
     pub fn contract_id(&self) -> String {
-        self.contract_id.to_string(platform_value::string_encoding::Encoding::Base58)
+        self.contract_id
+            .to_string(platform_value::string_encoding::Encoding::Base58)
     }
 
     #[wasm_bindgen(getter, js_name = documentType)]
@@ -269,22 +283,26 @@ impl DocumentQuery {
     #[wasm_bindgen(js_name = getWhereClauses)]
     pub fn get_where_clauses(&self) -> Result<Array, JsError> {
         let arr = Array::new();
-        
+
         for clause in &self.where_clauses {
             let obj = Object::new();
             Reflect::set(&obj, &"field".into(), &clause.field.clone().into())
                 .map_err(|_| JsError::new("Failed to set field"))?;
-            Reflect::set(&obj, &"operator".into(), &format!("{:?}", clause.operator).into())
-                .map_err(|_| JsError::new("Failed to set operator"))?;
-            
+            Reflect::set(
+                &obj,
+                &"operator".into(),
+                &format!("{:?}", clause.operator).into(),
+            )
+            .map_err(|_| JsError::new("Failed to set operator"))?;
+
             let value = serde_wasm_bindgen::to_value(&clause.value)
                 .map_err(|e| JsError::new(&format!("Failed to convert value: {}", e)))?;
             Reflect::set(&obj, &"value".into(), &value)
                 .map_err(|_| JsError::new("Failed to set value"))?;
-            
+
             arr.push(&obj.into());
         }
-        
+
         Ok(arr)
     }
 
@@ -292,7 +310,7 @@ impl DocumentQuery {
     #[wasm_bindgen(js_name = getOrderByClauses)]
     pub fn get_order_by_clauses(&self) -> Result<Array, JsError> {
         let arr = Array::new();
-        
+
         for clause in &self.order_by {
             let obj = Object::new();
             Reflect::set(&obj, &"field".into(), &clause.field.clone().into())
@@ -301,7 +319,7 @@ impl DocumentQuery {
                 .map_err(|_| JsError::new("Failed to set ascending"))?;
             arr.push(&obj.into());
         }
-        
+
         Ok(arr)
     }
 }
@@ -386,10 +404,17 @@ pub struct ContestedResourceQuery {
 #[wasm_bindgen]
 impl ContestedResourceQuery {
     #[wasm_bindgen(constructor)]
-    pub fn new(contract_id: &str, document_type: &str, index_name: &str) -> Result<ContestedResourceQuery, JsError> {
-        let contract_id = Identifier::from_string(contract_id, platform_value::string_encoding::Encoding::Base58)
-            .map_err(|e| JsError::new(&format!("Invalid contract identifier: {}", e)))?;
-        
+    pub fn new(
+        contract_id: &str,
+        document_type: &str,
+        index_name: &str,
+    ) -> Result<ContestedResourceQuery, JsError> {
+        let contract_id = Identifier::from_string(
+            contract_id,
+            platform_value::string_encoding::Encoding::Base58,
+        )
+        .map_err(|e| JsError::new(&format!("Invalid contract identifier: {}", e)))?;
+
         Ok(ContestedResourceQuery {
             contract_id,
             document_type: document_type.to_string(),
@@ -460,12 +485,15 @@ pub fn build_drive_query(
     start_at: Option<Vec<u8>>,
     start_after: Option<Vec<u8>>,
 ) -> Result<SimpleDriveQuery, JsError> {
-    let contract_id = Identifier::from_string(contract_id, platform_value::string_encoding::Encoding::Base58)
-        .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
-    
+    let contract_id = Identifier::from_string(
+        contract_id,
+        platform_value::string_encoding::Encoding::Base58,
+    )
+    .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
+
     let mut where_clauses = Vec::new();
     let mut order_by_clauses = Vec::new();
-    
+
     // Parse where clause
     if !where_clause.is_null() && !where_clause.is_undefined() {
         if let Some(where_obj) = where_clause.dyn_ref::<Object>() {
@@ -474,23 +502,26 @@ pub fn build_drive_query(
                 let entry = entries.get(i);
                 if let Some(entry_array) = entry.dyn_ref::<Array>() {
                     if entry_array.length() >= 2 {
-                        let field = entry_array.get(0).as_string()
+                        let field = entry_array
+                            .get(0)
+                            .as_string()
                             .ok_or_else(|| JsError::new("Field name must be a string"))?;
                         let value = entry_array.get(1);
-                        
+
                         // For simple equality checks
                         where_clauses.push(WhereClause {
                             field,
                             operator: WhereOperator::Equal,
-                            value: serde_wasm_bindgen::from_value(value)
-                                .map_err(|e| JsError::new(&format!("Invalid where value: {}", e)))?,
+                            value: serde_wasm_bindgen::from_value(value).map_err(|e| {
+                                JsError::new(&format!("Invalid where value: {}", e))
+                            })?,
                         });
                     }
                 }
             }
         }
     }
-    
+
     // Parse order by
     if !order_by.is_null() && !order_by.is_undefined() {
         if let Some(order_array) = order_by.dyn_ref::<Array>() {
@@ -501,21 +532,18 @@ pub fn build_drive_query(
                         .ok()
                         .and_then(|v| v.as_string())
                         .ok_or_else(|| JsError::new("Order field must be a string"))?;
-                    
+
                     let ascending = Reflect::get(order_obj, &"ascending".into())
                         .ok()
                         .and_then(|v| v.as_bool())
                         .unwrap_or(true);
-                    
-                    order_by_clauses.push(OrderByClause {
-                        field,
-                        ascending,
-                    });
+
+                    order_by_clauses.push(OrderByClause { field, ascending });
                 }
             }
         }
     }
-    
+
     Ok(SimpleDriveQuery {
         contract_id,
         document_type: document_type.to_string(),

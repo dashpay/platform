@@ -2,11 +2,14 @@
 //!
 //! This module provides functionality for group-based actions and collaborative operations
 
-use crate::sdk::WasmSdk;
 use crate::dapi_client::{DapiClient, DapiClientConfig};
+use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
-use dpp::state_transition::{StateTransition, batch_transition::{BatchTransition, BatchTransitionV0}};
 use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::{
+    batch_transition::{BatchTransition, BatchTransitionV0},
+    StateTransition,
+};
 use js_sys::{Array, Date, Object, Reflect};
 use wasm_bindgen::prelude::*;
 
@@ -106,8 +109,12 @@ impl Group {
             .map_err(|_| JsError::new("Failed to set id"))?;
         Reflect::set(&obj, &"name".into(), &self.name.clone().into())
             .map_err(|_| JsError::new("Failed to set name"))?;
-        Reflect::set(&obj, &"description".into(), &self.description.clone().into())
-            .map_err(|_| JsError::new("Failed to set description"))?;
+        Reflect::set(
+            &obj,
+            &"description".into(),
+            &self.description.clone().into(),
+        )
+        .map_err(|_| JsError::new("Failed to set description"))?;
         Reflect::set(&obj, &"groupType".into(), &self.group_type_str().into())
             .map_err(|_| JsError::new("Failed to set group type"))?;
         Reflect::set(&obj, &"createdAt".into(), &self.created_at.into())
@@ -288,8 +295,12 @@ impl GroupProposal {
             .map_err(|_| JsError::new("Failed to set proposer id"))?;
         Reflect::set(&obj, &"title".into(), &self.title.clone().into())
             .map_err(|_| JsError::new("Failed to set title"))?;
-        Reflect::set(&obj, &"description".into(), &self.description.clone().into())
-            .map_err(|_| JsError::new("Failed to set description"))?;
+        Reflect::set(
+            &obj,
+            &"description".into(),
+            &self.description.clone().into(),
+        )
+        .map_err(|_| JsError::new("Failed to set description"))?;
         Reflect::set(&obj, &"actionType".into(), &self.action_type.clone().into())
             .map_err(|_| JsError::new("Failed to set action type"))?;
         Reflect::set(&obj, &"createdAt".into(), &self.created_at.into())
@@ -344,7 +355,7 @@ pub fn create_group(
     // This would create a document in a groups data contract
     let group_id = format!("group_{}_{}_{}", creator_id, name, Date::now() as u64);
     let group_doc = Object::new();
-    
+
     // Set document properties
     Reflect::set(&group_doc, &"$id".into(), &group_id.clone().into())
         .map_err(|_| JsError::new("Failed to set group id"))?;
@@ -364,8 +375,12 @@ pub fn create_group(
         .map_err(|_| JsError::new("Failed to set members"))?;
     Reflect::set(&group_doc, &"active".into(), &true.into())
         .map_err(|_| JsError::new("Failed to set active status"))?;
-    Reflect::set(&group_doc, &"createdAt".into(), &(Date::now() as u64).into())
-        .map_err(|_| JsError::new("Failed to set created at"))?;
+    Reflect::set(
+        &group_doc,
+        &"createdAt".into(),
+        &(Date::now() as u64).into(),
+    )
+    .map_err(|_| JsError::new("Failed to set created at"))?;
 
     // Create a simplified batch transition
     // In production, this would include proper document create transitions
@@ -394,17 +409,13 @@ pub fn add_group_member(
     _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
-    let _group = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _group =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
-    let _admin = Identifier::from_string(
-        admin_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid admin ID: {}", e)))?;
+    let _admin =
+        Identifier::from_string(admin_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid admin ID: {}", e)))?;
 
     let _new_member = Identifier::from_string(
         new_member_id,
@@ -423,7 +434,7 @@ pub fn add_group_member(
     // Create member document for the state transition
     let member_id = format!("member_{}_{}", group_id, new_member_id);
     let member_doc = Object::new();
-    
+
     // Set document properties
     Reflect::set(&member_doc, &"$id".into(), &member_id.clone().into())
         .map_err(|_| JsError::new("Failed to set member id"))?;
@@ -439,13 +450,17 @@ pub fn add_group_member(
         .map_err(|_| JsError::new("Failed to set permissions"))?;
     Reflect::set(&member_doc, &"addedBy".into(), &admin_id.into())
         .map_err(|_| JsError::new("Failed to set added by"))?;
-    Reflect::set(&member_doc, &"joinedAt".into(), &(Date::now() as u64).into())
-        .map_err(|_| JsError::new("Failed to set joined at"))?;
+    Reflect::set(
+        &member_doc,
+        &"joinedAt".into(),
+        &(Date::now() as u64).into(),
+    )
+    .map_err(|_| JsError::new("Failed to set joined at"))?;
 
     // Create a document create transition
     let documents_to_create = Array::new();
     documents_to_create.push(&member_doc.into());
-    
+
     // Create a simplified batch transition for adding member
     let batch_transition = BatchTransition::V0(BatchTransitionV0 {
         owner_id: _admin.clone(),
@@ -470,36 +485,30 @@ pub fn remove_group_member(
     _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
-    let _group = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _group =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
-    let _admin = Identifier::from_string(
-        admin_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid admin ID: {}", e)))?;
+    let _admin =
+        Identifier::from_string(admin_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid admin ID: {}", e)))?;
 
-    let _member = Identifier::from_string(
-        member_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid member ID: {}", e)))?;
+    let _member =
+        Identifier::from_string(member_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid member ID: {}", e)))?;
 
     // Create a document delete transition for the member
     let member_doc_id = format!("member_{}_{}", group_id, member_id);
     let documents_to_delete = Array::new();
-    
+
     let delete_obj = Object::new();
     Reflect::set(&delete_obj, &"$id".into(), &member_doc_id.into())
         .map_err(|_| JsError::new("Failed to set document id for deletion"))?;
     Reflect::set(&delete_obj, &"$type".into(), &"groupMember".into())
         .map_err(|_| JsError::new("Failed to set document type for deletion"))?;
-    
+
     documents_to_delete.push(&delete_obj.into());
-    
+
     // Create a simplified batch transition for removing member
     let batch_transition = BatchTransition::V0(BatchTransitionV0 {
         owner_id: _admin.clone(),
@@ -528,11 +537,9 @@ pub fn create_group_proposal(
     _identity_nonce: u64,
     signature_public_key_id: u32,
 ) -> Result<Vec<u8>, JsError> {
-    let _group = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _group =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
     let _proposer = Identifier::from_string(
         proposer_id,
@@ -543,7 +550,7 @@ pub fn create_group_proposal(
     // Create proposal document for the state transition
     let proposal_id = format!("proposal_{}_{}", group_id, Date::now() as u64);
     let proposal_doc = Object::new();
-    
+
     // Set document properties
     Reflect::set(&proposal_doc, &"$id".into(), &proposal_id.clone().into())
         .map_err(|_| JsError::new("Failed to set proposal id"))?;
@@ -559,16 +566,16 @@ pub fn create_group_proposal(
         .map_err(|_| JsError::new("Failed to set description"))?;
     Reflect::set(&proposal_doc, &"actionType".into(), &action_type.into())
         .map_err(|_| JsError::new("Failed to set action type"))?;
-    
+
     // Convert action data to base64 for storage
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     let action_data_b64 = STANDARD.encode(&action_data);
     Reflect::set(&proposal_doc, &"actionData".into(), &action_data_b64.into())
         .map_err(|_| JsError::new("Failed to set action data"))?;
-    
+
     let created_at = Date::now() as u64;
     let expires_at = created_at + (duration_hours as u64 * 3600 * 1000); // Convert hours to milliseconds
-    
+
     Reflect::set(&proposal_doc, &"createdAt".into(), &created_at.into())
         .map_err(|_| JsError::new("Failed to set created at"))?;
     Reflect::set(&proposal_doc, &"expiresAt".into(), &expires_at.into())
@@ -583,7 +590,7 @@ pub fn create_group_proposal(
     // Create a document create transition
     let documents_to_create = Array::new();
     documents_to_create.push(&proposal_doc.into());
-    
+
     // Create a simplified batch transition for creating proposal
     let batch_transition = BatchTransition::V0(BatchTransitionV0 {
         owner_id: _proposer.clone(),
@@ -615,16 +622,14 @@ pub fn vote_on_proposal(
     )
     .map_err(|e| JsError::new(&format!("Invalid proposal ID: {}", e)))?;
 
-    let _voter = Identifier::from_string(
-        voter_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid voter ID: {}", e)))?;
+    let _voter =
+        Identifier::from_string(voter_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid voter ID: {}", e)))?;
 
     // Create vote document for the state transition
     let vote_id = format!("vote_{}_{}_{}", proposal_id, voter_id, Date::now() as u64);
     let vote_doc = Object::new();
-    
+
     // Set document properties
     Reflect::set(&vote_doc, &"$id".into(), &vote_id.clone().into())
         .map_err(|_| JsError::new("Failed to set vote id"))?;
@@ -634,11 +639,15 @@ pub fn vote_on_proposal(
         .map_err(|_| JsError::new("Failed to set proposal id"))?;
     Reflect::set(&vote_doc, &"voterId".into(), &voter_id.into())
         .map_err(|_| JsError::new("Failed to set voter id"))?;
-    Reflect::set(&vote_doc, &"vote".into(), &(if approve { "approve" } else { "reject" }).into())
-        .map_err(|_| JsError::new("Failed to set vote"))?;
+    Reflect::set(
+        &vote_doc,
+        &"vote".into(),
+        &(if approve { "approve" } else { "reject" }).into(),
+    )
+    .map_err(|_| JsError::new("Failed to set vote"))?;
     Reflect::set(&vote_doc, &"votedAt".into(), &(Date::now() as u64).into())
         .map_err(|_| JsError::new("Failed to set voted at"))?;
-    
+
     if let Some(comment_text) = comment {
         Reflect::set(&vote_doc, &"comment".into(), &comment_text.into())
             .map_err(|_| JsError::new("Failed to set comment"))?;
@@ -647,7 +656,7 @@ pub fn vote_on_proposal(
     // Create a document create transition
     let documents_to_create = Array::new();
     documents_to_create.push(&vote_doc.into());
-    
+
     // Create a simplified batch transition for voting
     let batch_transition = BatchTransition::V0(BatchTransitionV0 {
         owner_id: _voter.clone(),
@@ -685,25 +694,29 @@ pub fn execute_proposal(
 
     // Update proposal document to mark it as executed
     let update_obj = Object::new();
-    
+
     // Document ID to update
     Reflect::set(&update_obj, &"$id".into(), &proposal_id.into())
         .map_err(|_| JsError::new("Failed to set proposal id for update"))?;
     Reflect::set(&update_obj, &"$type".into(), &"groupProposal".into())
         .map_err(|_| JsError::new("Failed to set document type for update"))?;
-    
+
     // Fields to update
     Reflect::set(&update_obj, &"executed".into(), &true.into())
         .map_err(|_| JsError::new("Failed to set executed status"))?;
     Reflect::set(&update_obj, &"executedBy".into(), &executor_id.into())
         .map_err(|_| JsError::new("Failed to set executed by"))?;
-    Reflect::set(&update_obj, &"executedAt".into(), &(Date::now() as u64).into())
-        .map_err(|_| JsError::new("Failed to set executed at"))?;
+    Reflect::set(
+        &update_obj,
+        &"executedAt".into(),
+        &(Date::now() as u64).into(),
+    )
+    .map_err(|_| JsError::new("Failed to set executed at"))?;
 
     // Create a document update transition
     let documents_to_update = Array::new();
     documents_to_update.push(&update_obj.into());
-    
+
     // Create a simplified batch transition for executing proposal
     let batch_transition = BatchTransition::V0(BatchTransitionV0 {
         owner_id: _executor.clone(),
@@ -721,54 +734,48 @@ pub fn execute_proposal(
 
 /// Fetch group information
 #[wasm_bindgen(js_name = fetchGroup)]
-pub async fn fetch_group(
-    sdk: &WasmSdk,
-    group_id: &str,
-) -> Result<Group, JsError> {
+pub async fn fetch_group(sdk: &WasmSdk, group_id: &str) -> Result<Group, JsError> {
     let _sdk = sdk;
-    let _identifier = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _identifier =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
     // Fetch group document from platform
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Query for the group document
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    let id_condition = js_sys::Array::of3(
-        &"$id".into(),
-        &"==".into(),
-        &group_id.into()
-    );
+    let id_condition = js_sys::Array::of3(&"$id".into(), &"==".into(), &group_id.into());
     where_clause.push(&id_condition);
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &1.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     let groups_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System groups contract
-    let documents = client.get_documents(
-        groups_contract_id.to_string(),
-        "group".to_string(),
-        query.into(),
-        JsValue::null(),
-        1,
-        None,
-        false
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            groups_contract_id.to_string(),
+            "group".to_string(),
+            query.into(),
+            JsValue::null(),
+            1,
+            None,
+            false,
+        )
+        .await?;
+
     // Parse the response
     if let Some(docs_array) = js_sys::Reflect::get(&documents, &"documents".into())
         .map_err(|_| JsError::new("Failed to get documents from response"))?
-        .dyn_ref::<js_sys::Array>() {
+        .dyn_ref::<js_sys::Array>()
+    {
         if docs_array.length() > 0 {
             let group_doc = docs_array.get(0);
-            
+
             // Extract group properties
             let name = js_sys::Reflect::get(&group_doc, &"name".into())
                 .map_err(|_| JsError::new("Failed to get group name"))?
@@ -799,14 +806,14 @@ pub async fn fetch_group(
                 .map_err(|_| JsError::new("Failed to get active status"))?
                 .as_bool()
                 .unwrap_or(true);
-            
+
             let group_type = match group_type_str.as_str() {
                 "multisig" => GroupType::Multisig,
                 "dao" => GroupType::DAO,
                 "committee" => GroupType::Committee,
                 _ => GroupType::Custom,
             };
-            
+
             return Ok(Group {
                 id: group_id.to_string(),
                 name,
@@ -819,60 +826,54 @@ pub async fn fetch_group(
             });
         }
     }
-    
+
     Err(JsError::new("Group not found"))
 }
 
 /// Fetch group members
 #[wasm_bindgen(js_name = fetchGroupMembers)]
-pub async fn fetch_group_members(
-    sdk: &WasmSdk,
-    group_id: &str,
-) -> Result<Array, JsError> {
+pub async fn fetch_group_members(sdk: &WasmSdk, group_id: &str) -> Result<Array, JsError> {
     let _sdk = sdk;
-    let _identifier = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _identifier =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
     // Fetch group members from platform
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Query for group member documents
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    let group_condition = js_sys::Array::of3(
-        &"groupId".into(),
-        &"==".into(),
-        &group_id.into()
-    );
+    let group_condition = js_sys::Array::of3(&"groupId".into(), &"==".into(), &group_id.into());
     where_clause.push(&group_condition);
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &100.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     let groups_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System groups contract
-    let documents = client.get_documents(
-        groups_contract_id.to_string(),
-        "groupMember".to_string(),
-        query.into(),
-        JsValue::null(),
-        100,
-        None,
-        false
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            groups_contract_id.to_string(),
+            "groupMember".to_string(),
+            query.into(),
+            JsValue::null(),
+            100,
+            None,
+            false,
+        )
+        .await?;
+
     // Parse and return the members array
     if let Some(docs_array) = js_sys::Reflect::get(&documents, &"documents".into())
         .map_err(|_| JsError::new("Failed to get documents from response"))?
-        .dyn_ref::<js_sys::Array>() {
+        .dyn_ref::<js_sys::Array>()
+    {
         return Ok(docs_array.clone());
     }
-    
+
     Ok(Array::new())
 }
 
@@ -884,128 +885,117 @@ pub async fn fetch_group_proposals(
     active_only: bool,
 ) -> Result<Array, JsError> {
     let _sdk = sdk;
-    let _identifier = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _identifier =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
     // Fetch proposals from platform
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Query for proposal documents
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    let group_condition = js_sys::Array::of3(
-        &"groupId".into(),
-        &"==".into(),
-        &group_id.into()
-    );
+    let group_condition = js_sys::Array::of3(&"groupId".into(), &"==".into(), &group_id.into());
     where_clause.push(&group_condition);
-    
+
     if active_only {
         // Add condition for non-executed proposals
-        let executed_condition = js_sys::Array::of3(
-            &"executed".into(),
-            &"==".into(),
-            &false.into()
-        );
+        let executed_condition =
+            js_sys::Array::of3(&"executed".into(), &"==".into(), &false.into());
         where_clause.push(&executed_condition);
-        
+
         // Add condition for non-expired proposals
         let expires_condition = js_sys::Array::of3(
             &"expiresAt".into(),
             &">".into(),
-            &(Date::now() as u64).into()
+            &(Date::now() as u64).into(),
         );
         where_clause.push(&expires_condition);
     }
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &100.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     // Order by creation date descending
     let order_by = js_sys::Array::of2(
         &js_sys::Array::of2(&"createdAt".into(), &"desc".into()),
-        &js_sys::Array::of2(&"$id".into(), &"asc".into())
+        &js_sys::Array::of2(&"$id".into(), &"asc".into()),
     );
     Reflect::set(&query, &"orderBy".into(), &order_by)
         .map_err(|_| JsError::new("Failed to set orderBy"))?;
-    
+
     let groups_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System groups contract
-    let documents = client.get_documents(
-        groups_contract_id.to_string(),
-        "groupProposal".to_string(),
-        query.into(),
-        JsValue::null(),
-        100,
-        None,
-        false
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            groups_contract_id.to_string(),
+            "groupProposal".to_string(),
+            query.into(),
+            JsValue::null(),
+            100,
+            None,
+            false,
+        )
+        .await?;
+
     // Parse and return the proposals array
     if let Some(docs_array) = js_sys::Reflect::get(&documents, &"documents".into())
         .map_err(|_| JsError::new("Failed to get documents from response"))?
-        .dyn_ref::<js_sys::Array>() {
+        .dyn_ref::<js_sys::Array>()
+    {
         return Ok(docs_array.clone());
     }
-    
+
     Ok(Array::new())
 }
 
 /// Fetch user's groups
 #[wasm_bindgen(js_name = fetchUserGroups)]
-pub async fn fetch_user_groups(
-    sdk: &WasmSdk,
-    user_id: &str,
-) -> Result<Array, JsError> {
+pub async fn fetch_user_groups(sdk: &WasmSdk, user_id: &str) -> Result<Array, JsError> {
     let _sdk = sdk;
-    let _identifier = Identifier::from_string(
-        user_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid user ID: {}", e)))?;
+    let _identifier =
+        Identifier::from_string(user_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid user ID: {}", e)))?;
 
     // Fetch user's groups from platform
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Query for groups where user is a member
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    let member_condition = js_sys::Array::of3(
-        &"members".into(),
-        &"contains".into(),
-        &user_id.into()
-    );
+    let member_condition =
+        js_sys::Array::of3(&"members".into(), &"contains".into(), &user_id.into());
     where_clause.push(&member_condition);
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &100.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     let groups_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System groups contract
-    let documents = client.get_documents(
-        groups_contract_id.to_string(),
-        "group".to_string(),
-        query.into(),
-        JsValue::null(),
-        100,
-        None,
-        false
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            groups_contract_id.to_string(),
+            "group".to_string(),
+            query.into(),
+            JsValue::null(),
+            100,
+            None,
+            false,
+        )
+        .await?;
+
     // Parse and return the groups array
     if let Some(docs_array) = js_sys::Reflect::get(&documents, &"documents".into())
         .map_err(|_| JsError::new("Failed to get documents from response"))?
-        .dyn_ref::<js_sys::Array>() {
+        .dyn_ref::<js_sys::Array>()
+    {
         return Ok(docs_array.clone());
     }
-    
+
     Ok(Array::new())
 }
 
@@ -1018,69 +1008,61 @@ pub async fn check_group_permission(
     permission: &str,
 ) -> Result<bool, JsError> {
     let _sdk = sdk;
-    let _group = Identifier::from_string(
-        group_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
+    let _group =
+        Identifier::from_string(group_id, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid group ID: {}", e)))?;
 
-    let _user = Identifier::from_string(
-        user_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| JsError::new(&format!("Invalid user ID: {}", e)))?;
+    let _user = Identifier::from_string(user_id, platform_value::string_encoding::Encoding::Base58)
+        .map_err(|e| JsError::new(&format!("Invalid user ID: {}", e)))?;
 
     // Fetch user's membership in the group to check permissions
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Query for member document
     let query = Object::new();
     let where_clause = js_sys::Array::new();
-    
+
     // Group ID condition
-    let group_condition = js_sys::Array::of3(
-        &"groupId".into(),
-        &"==".into(),
-        &group_id.into()
-    );
+    let group_condition = js_sys::Array::of3(&"groupId".into(), &"==".into(), &group_id.into());
     where_clause.push(&group_condition);
-    
+
     // User ID condition
-    let user_condition = js_sys::Array::of3(
-        &"identityId".into(),
-        &"==".into(),
-        &user_id.into()
-    );
+    let user_condition = js_sys::Array::of3(&"identityId".into(), &"==".into(), &user_id.into());
     where_clause.push(&user_condition);
-    
+
     Reflect::set(&query, &"where".into(), &where_clause)
         .map_err(|_| JsError::new("Failed to set where clause"))?;
     Reflect::set(&query, &"limit".into(), &1.into())
         .map_err(|_| JsError::new("Failed to set limit"))?;
-    
+
     let groups_contract_id = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"; // System groups contract
-    let documents = client.get_documents(
-        groups_contract_id.to_string(),
-        "groupMember".to_string(),
-        query.into(),
-        JsValue::null(),
-        1,
-        None,
-        false
-    ).await?;
-    
+    let documents = client
+        .get_documents(
+            groups_contract_id.to_string(),
+            "groupMember".to_string(),
+            query.into(),
+            JsValue::null(),
+            1,
+            None,
+            false,
+        )
+        .await?;
+
     // Check if member exists and has permission
     if let Some(docs_array) = js_sys::Reflect::get(&documents, &"documents".into())
         .map_err(|_| JsError::new("Failed to get documents from response"))?
-        .dyn_ref::<js_sys::Array>() {
+        .dyn_ref::<js_sys::Array>()
+    {
         if docs_array.length() > 0 {
             let member_doc = docs_array.get(0);
-            
+
             // Check permissions array
-            if let Some(permissions_array) = js_sys::Reflect::get(&member_doc, &"permissions".into())
-                .map_err(|_| JsError::new("Failed to get permissions from member"))?
-                .dyn_ref::<js_sys::Array>() {
+            if let Some(permissions_array) =
+                js_sys::Reflect::get(&member_doc, &"permissions".into())
+                    .map_err(|_| JsError::new("Failed to get permissions from member"))?
+                    .dyn_ref::<js_sys::Array>()
+            {
                 // Check if user has the specific permission or "all" permission
                 for i in 0..permissions_array.length() {
                     if let Some(perm) = permissions_array.get(i).as_string() {
@@ -1090,11 +1072,12 @@ pub async fn check_group_permission(
                     }
                 }
             }
-            
+
             // Check role-based permissions
             if let Some(role) = js_sys::Reflect::get(&member_doc, &"role".into())
                 .map_err(|_| JsError::new("Failed to get role from member"))?
-                .as_string() {
+                .as_string()
+            {
                 match (role.as_str(), permission) {
                     ("owner", _) => return Ok(true), // Owners have all permissions
                     ("admin", perm) if perm != "delete_group" => return Ok(true), // Admins have most permissions
@@ -1105,6 +1088,6 @@ pub async fn check_group_permission(
             }
         }
     }
-    
+
     Ok(false)
 }

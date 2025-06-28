@@ -3,21 +3,21 @@
 //! This module provides a WASM-compatible DAPI client implementation that works
 //! without platform_proto or gRPC dependencies.
 
-pub mod transport;
-pub mod types;
-pub mod requests;
-pub mod responses;
 pub mod endpoints;
 pub mod error;
+pub mod requests;
+pub mod responses;
+pub mod transport;
+pub mod types;
 
 use crate::error::to_js_error;
 use js_sys::{Array, Object, Reflect};
-use wasm_bindgen::prelude::*;
 use std::time::Duration;
+use wasm_bindgen::prelude::*;
 
+pub use error::DapiClientError;
 pub use transport::{Transport, TransportConfig};
 pub use types::*;
-pub use error::DapiClientError;
 
 /// DAPI Client configuration
 #[wasm_bindgen]
@@ -130,13 +130,14 @@ impl DapiClient {
         wait: bool,
     ) -> Result<JsValue, JsError> {
         use requests::BroadcastRequest;
-        
+
         let request = BroadcastRequest {
             state_transition: state_transition_bytes,
             wait,
         };
 
-        let response = self.transport
+        let response = self
+            .transport
             .request("/v0/broadcastStateTransition", &request)
             .await
             .map_err(to_js_error)?;
@@ -148,13 +149,11 @@ impl DapiClient {
     #[wasm_bindgen(js_name = getIdentity)]
     pub async fn get_identity(&self, identity_id: String, prove: bool) -> Result<JsValue, JsError> {
         use requests::GetIdentityRequest;
-        
-        let request = GetIdentityRequest {
-            identity_id,
-            prove,
-        };
 
-        let response = self.transport
+        let request = GetIdentityRequest { identity_id, prove };
+
+        let response = self
+            .transport
             .request("/v0/getIdentity", &request)
             .await
             .map_err(to_js_error)?;
@@ -170,13 +169,11 @@ impl DapiClient {
         prove: bool,
     ) -> Result<JsValue, JsError> {
         use requests::GetDataContractRequest;
-        
-        let request = GetDataContractRequest {
-            contract_id,
-            prove,
-        };
 
-        let response = self.transport
+        let request = GetDataContractRequest { contract_id, prove };
+
+        let response = self
+            .transport
             .request("/v0/getDataContract", &request)
             .await
             .map_err(to_js_error)?;
@@ -197,7 +194,7 @@ impl DapiClient {
         prove: bool,
     ) -> Result<JsValue, JsError> {
         use requests::GetDocumentsRequest;
-        
+
         let where_obj = if where_clause.is_object() {
             serde_wasm_bindgen::from_value(where_clause)
                 .map_err(|e| JsError::new(&format!("Invalid where clause: {}", e)))?
@@ -222,7 +219,8 @@ impl DapiClient {
             prove,
         };
 
-        let response = self.transport
+        let response = self
+            .transport
             .request("/v0/getDocuments", &request)
             .await
             .map_err(to_js_error)?;
@@ -232,15 +230,17 @@ impl DapiClient {
 
     /// Get epoch info
     #[wasm_bindgen(js_name = getEpochInfo)]
-    pub async fn get_epoch_info(&self, epoch: Option<u32>, prove: bool) -> Result<JsValue, JsError> {
+    pub async fn get_epoch_info(
+        &self,
+        epoch: Option<u32>,
+        prove: bool,
+    ) -> Result<JsValue, JsError> {
         use requests::GetEpochInfoRequest;
-        
-        let request = GetEpochInfoRequest {
-            epoch,
-            prove,
-        };
 
-        let response = self.transport
+        let request = GetEpochInfoRequest { epoch, prove };
+
+        let response = self
+            .transport
             .request("/v0/getEpochInfo", &request)
             .await
             .map_err(to_js_error)?;
@@ -261,7 +261,8 @@ impl DapiClient {
             .map_err(|_| JsError::new("Failed to set active flag"))?;
 
         // Add unsubscribe method
-        let unsubscribe_fn = js_sys::Function::new_no_args("this.active = false; return 'Unsubscribed';");
+        let unsubscribe_fn =
+            js_sys::Function::new_no_args("this.active = false; return 'Unsubscribed';");
         Reflect::set(&handle, &"unsubscribe".into(), &unsubscribe_fn)
             .map_err(|_| JsError::new("Failed to set unsubscribe method"))?;
 
@@ -273,7 +274,8 @@ impl DapiClient {
     /// Get protocol version
     #[wasm_bindgen(js_name = getProtocolVersion)]
     pub async fn get_protocol_version(&self) -> Result<JsValue, JsError> {
-        let response = self.transport
+        let response = self
+            .transport
             .request("/v0/getProtocolVersion", &serde_json::json!({}))
             .await
             .map_err(to_js_error)?;
@@ -289,13 +291,14 @@ impl DapiClient {
         timeout_ms: Option<u32>,
     ) -> Result<JsValue, JsError> {
         use requests::WaitForStateTransitionRequest;
-        
+
         let request = WaitForStateTransitionRequest {
             state_transition_hash,
             timeout_ms: timeout_ms.unwrap_or(60000),
         };
 
-        let response = self.transport
+        let response = self
+            .transport
             .request("/v0/waitForStateTransitionResult", &request)
             .await
             .map_err(to_js_error)?;

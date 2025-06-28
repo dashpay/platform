@@ -4,13 +4,13 @@ use dpp::serialization::PlatformDeserializable;
 use dpp::serialization::ValueConvertible;
 
 use crate::error::to_js_error;
-use serde::Serialize;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dpp::version::PlatformVersion;
 use dpp::data_contract::DataContract;
 use dpp::identity::Identity;
+use dpp::version::PlatformVersion;
 use platform_value::string_encoding::Encoding;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use web_sys::js_sys;
@@ -61,7 +61,7 @@ impl IdentityWasm {
     pub fn id(&self) -> String {
         self.inner.id().to_string(Encoding::Base58)
     }
-    
+
     #[wasm_bindgen(getter)]
     pub fn revision(&self) -> u64 {
         self.inner.revision()
@@ -308,12 +308,12 @@ impl DataContractWasm {
     pub fn id(&self) -> String {
         self.0.id().to_string(Encoding::Base58)
     }
-    
+
     #[wasm_bindgen(getter)]
     pub fn version(&self) -> u32 {
         self.0.version()
     }
-    
+
     #[wasm_bindgen(getter, js_name = ownerId)]
     pub fn owner_id(&self) -> String {
         self.0.owner_id().to_string(Encoding::Base58)

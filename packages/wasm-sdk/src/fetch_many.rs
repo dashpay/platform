@@ -2,11 +2,11 @@
 //!
 //! This module provides functionality for fetching multiple objects from the platform.
 
-use crate::sdk::WasmSdk;
 use crate::dapi_client::{DapiClient, DapiClientConfig};
+use crate::sdk::WasmSdk;
 use dpp::prelude::Identifier;
-use wasm_bindgen::prelude::*;
 use js_sys::{Object, Reflect};
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct FetchManyOptions {
@@ -46,7 +46,7 @@ impl FetchManyResponse {
 }
 
 /// Fetch multiple identities by their IDs
-/// 
+///
 /// This implementation fetches identities sequentially. For parallel fetching,
 /// JavaScript callers can map over IDs and use Promise.all on individual fetch calls.
 #[wasm_bindgen]
@@ -57,21 +57,18 @@ pub async fn fetch_identities(
 ) -> Result<FetchManyResponse, JsError> {
     let opts = options.unwrap_or_else(FetchManyOptions::new);
     let items = Object::new();
-    
+
     // Create DAPI client
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Fetch all identities (sequentially for now, but could be optimized)
     // In JavaScript, the caller can use Promise.all() to parallelize if needed
     for id_str in &identity_ids {
         // Validate identifier
-        let _ = Identifier::from_string(
-            id_str,
-            platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
-        
+        let _ = Identifier::from_string(id_str, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
+
         // Fetch the identity
         match client.get_identity(id_str.clone(), opts.prove).await {
             Ok(identity_value) => {
@@ -85,7 +82,7 @@ pub async fn fetch_identities(
             }
         }
     }
-    
+
     // Create metadata with current timestamp
     let metadata = Object::new();
     let timestamp = js_sys::Date::now();
@@ -93,9 +90,13 @@ pub async fn fetch_identities(
         .map_err(|_| JsError::new("Failed to set metadata"))?;
     Reflect::set(&metadata, &"time_ms".into(), &JsValue::from_f64(timestamp))
         .map_err(|_| JsError::new("Failed to set metadata"))?;
-    Reflect::set(&metadata, &"fetched_count".into(), &JsValue::from_f64(identity_ids.len() as f64))
-        .map_err(|_| JsError::new("Failed to set metadata"))?;
-    
+    Reflect::set(
+        &metadata,
+        &"fetched_count".into(),
+        &JsValue::from_f64(identity_ids.len() as f64),
+    )
+    .map_err(|_| JsError::new("Failed to set metadata"))?;
+
     Ok(FetchManyResponse {
         items: items.into(),
         metadata: metadata.into(),
@@ -111,21 +112,18 @@ pub async fn fetch_data_contracts(
 ) -> Result<FetchManyResponse, JsError> {
     let opts = options.unwrap_or_else(FetchManyOptions::new);
     let items = Object::new();
-    
+
     // Create DAPI client
     let config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(config)?;
-    
+
     // Fetch all contracts (sequentially for now, but could be optimized)
     // In JavaScript, the caller can use Promise.all() to parallelize if needed
     for id_str in &contract_ids {
         // Validate identifier
-        let _ = Identifier::from_string(
-            id_str,
-            platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
-        
+        let _ = Identifier::from_string(id_str, platform_value::string_encoding::Encoding::Base58)
+            .map_err(|e| JsError::new(&format!("Invalid identifier: {}", e)))?;
+
         // Fetch the contract
         match client.get_data_contract(id_str.clone(), opts.prove).await {
             Ok(contract_value) => {
@@ -139,7 +137,7 @@ pub async fn fetch_data_contracts(
             }
         }
     }
-    
+
     // Create metadata with current timestamp
     let metadata = Object::new();
     let timestamp = js_sys::Date::now();
@@ -147,9 +145,13 @@ pub async fn fetch_data_contracts(
         .map_err(|_| JsError::new("Failed to set metadata"))?;
     Reflect::set(&metadata, &"time_ms".into(), &JsValue::from_f64(timestamp))
         .map_err(|_| JsError::new("Failed to set metadata"))?;
-    Reflect::set(&metadata, &"fetched_count".into(), &JsValue::from_f64(contract_ids.len() as f64))
-        .map_err(|_| JsError::new("Failed to set metadata"))?;
-    
+    Reflect::set(
+        &metadata,
+        &"fetched_count".into(),
+        &JsValue::from_f64(contract_ids.len() as f64),
+    )
+    .map_err(|_| JsError::new("Failed to set metadata"))?;
+
     Ok(FetchManyResponse {
         items: items.into(),
         metadata: metadata.into(),
@@ -217,24 +219,24 @@ pub async fn fetch_documents(
     options: Option<FetchManyOptions>,
 ) -> Result<FetchManyResponse, JsError> {
     let _opts = options.unwrap_or_else(FetchManyOptions::new);
-    
+
     // Convert query options to platform query
     let _contract_id = Identifier::from_string(
         &query_options.contract_id,
         platform_value::string_encoding::Encoding::Base58,
     )
     .map_err(|e| JsError::new(&format!("Invalid contract ID: {}", e)))?;
-    
+
     // For now, return empty response as document querying is complex
     // This would need full DriveQuery implementation
     let items = Object::new();
     let metadata = Object::new();
-    
+
     Reflect::set(&metadata, &"height".into(), &JsValue::from_f64(0.0))
         .map_err(|_| JsError::new("Failed to set metadata"))?;
     Reflect::set(&metadata, &"time_ms".into(), &JsValue::from_f64(0.0))
         .map_err(|_| JsError::new("Failed to set metadata"))?;
-    
+
     Ok(FetchManyResponse {
         items: items.into(),
         metadata: metadata.into(),

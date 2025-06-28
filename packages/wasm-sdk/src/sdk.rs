@@ -26,18 +26,18 @@ impl SdkBuilder {
             context_provider: None,
         }
     }
-    
+
     pub fn new_testnet() -> Self {
         SdkBuilder {
             context_provider: None,
         }
     }
-    
+
     pub fn with_context_provider(mut self, context_provider: WasmContext) -> Self {
         self.context_provider = Some(context_provider);
         self
     }
-    
+
     pub fn build(self) -> Result<Sdk, JsError> {
         Ok(Sdk {
             version: platform_version::version::PlatformVersion::latest().clone(),
@@ -72,23 +72,26 @@ impl WasmSdk {
     pub fn version(&self) -> &platform_version::version::PlatformVersion {
         &self.0.version
     }
-    
+
     /// Get the network name (mainnet, testnet, devnet)
     pub fn network(&self) -> String {
         // For now, default to testnet
         // In production, this would be set during SDK initialization
         "testnet".to_string()
     }
-    
+
     /// Process identity nonce response from platform
     pub fn process_identity_nonce_response(&self, _response_bytes: &[u8]) -> Result<u64, JsError> {
         // This would be called by JavaScript after it receives the response
         // For now, return a mock value
         Ok(0)
     }
-    
+
     /// Process identity contract nonce response from platform
-    pub fn process_identity_contract_nonce_response(&self, _response_bytes: &[u8]) -> Result<u64, JsError> {
+    pub fn process_identity_contract_nonce_response(
+        &self,
+        _response_bytes: &[u8],
+    ) -> Result<u64, JsError> {
         // This would be called by JavaScript after it receives the response
         // For now, return a mock value
         Ok(0)
@@ -133,17 +136,15 @@ impl WasmSdkBuilder {
 }
 
 #[wasm_bindgen]
-pub fn prepare_identity_fetch_request(_sdk: &WasmSdk, base58_id: &str, prove: bool) -> Result<Vec<u8>, JsError> {
-    let _id = Identifier::from_string(
-        base58_id,
-        platform_value::string_encoding::Encoding::Base58,
-    )?;
+pub fn prepare_identity_fetch_request(
+    _sdk: &WasmSdk,
+    base58_id: &str,
+    prove: bool,
+) -> Result<Vec<u8>, JsError> {
+    let _id =
+        Identifier::from_string(base58_id, platform_value::string_encoding::Encoding::Base58)?;
 
-    
     // Use serializer module to prepare the request
     use crate::serializer::serialize_get_identity_request;
-    serialize_get_identity_request(base58_id, prove)
-        .map(|bytes| bytes.to_vec())
+    serialize_get_identity_request(base58_id, prove).map(|bytes| bytes.to_vec())
 }
-
-

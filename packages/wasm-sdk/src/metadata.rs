@@ -82,14 +82,22 @@ impl Metadata {
         let obj = Object::new();
         Reflect::set(&obj, &"height".into(), &self.height.into())
             .map_err(|_| JsError::new("Failed to set height"))?;
-        Reflect::set(&obj, &"coreChainLockedHeight".into(), &self.core_chain_locked_height.into())
-            .map_err(|_| JsError::new("Failed to set core chain locked height"))?;
+        Reflect::set(
+            &obj,
+            &"coreChainLockedHeight".into(),
+            &self.core_chain_locked_height.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set core chain locked height"))?;
         Reflect::set(&obj, &"epoch".into(), &self.epoch.into())
             .map_err(|_| JsError::new("Failed to set epoch"))?;
         Reflect::set(&obj, &"timeMs".into(), &self.time_ms.into())
             .map_err(|_| JsError::new("Failed to set time"))?;
-        Reflect::set(&obj, &"protocolVersion".into(), &self.protocol_version.into())
-            .map_err(|_| JsError::new("Failed to set protocol version"))?;
+        Reflect::set(
+            &obj,
+            &"protocolVersion".into(),
+            &self.protocol_version.into(),
+        )
+        .map_err(|_| JsError::new("Failed to set protocol version"))?;
         Reflect::set(&obj, &"chainId".into(), &self.chain_id.clone().into())
             .map_err(|_| JsError::new("Failed to set chain ID"))?;
         Ok(obj.into())
@@ -120,8 +128,8 @@ impl MetadataVerificationConfig {
     #[wasm_bindgen(constructor)]
     pub fn new() -> MetadataVerificationConfig {
         MetadataVerificationConfig {
-            max_height_difference: 100,       // ~4 hours at 2.5 min blocks
-            max_time_difference_ms: 300000,   // 5 minutes
+            max_height_difference: 100,     // ~4 hours at 2.5 min blocks
+            max_time_difference_ms: 300000, // 5 minutes
             verify_time: true,
             verify_height: true,
             verify_chain_id: true,
@@ -234,37 +242,37 @@ impl MetadataVerificationResult {
         let obj = Object::new();
         Reflect::set(&obj, &"valid".into(), &self.valid.into())
             .map_err(|_| JsError::new("Failed to set valid"))?;
-        
+
         if let Some(height_valid) = self.height_valid {
             Reflect::set(&obj, &"heightValid".into(), &height_valid.into())
                 .map_err(|_| JsError::new("Failed to set height valid"))?;
         }
-        
+
         if let Some(time_valid) = self.time_valid {
             Reflect::set(&obj, &"timeValid".into(), &time_valid.into())
                 .map_err(|_| JsError::new("Failed to set time valid"))?;
         }
-        
+
         if let Some(chain_id_valid) = self.chain_id_valid {
             Reflect::set(&obj, &"chainIdValid".into(), &chain_id_valid.into())
                 .map_err(|_| JsError::new("Failed to set chain ID valid"))?;
         }
-        
+
         if let Some(height_diff) = self.height_difference {
             Reflect::set(&obj, &"heightDifference".into(), &height_diff.into())
                 .map_err(|_| JsError::new("Failed to set height difference"))?;
         }
-        
+
         if let Some(time_diff) = self.time_difference_ms {
             Reflect::set(&obj, &"timeDifferenceMs".into(), &time_diff.into())
                 .map_err(|_| JsError::new("Failed to set time difference"))?;
         }
-        
+
         if let Some(ref error) = self.error_message {
             Reflect::set(&obj, &"errorMessage".into(), &error.clone().into())
                 .map_err(|_| JsError::new("Failed to set error message"))?;
         }
-        
+
         Ok(obj.into())
     }
 }
@@ -294,10 +302,10 @@ pub fn verify_metadata(
         } else {
             current_height - metadata.height
         };
-        
+
         result.height_difference = Some(height_diff);
         result.height_valid = Some(height_diff <= config.max_height_difference);
-        
+
         if height_diff > config.max_height_difference {
             result.valid = false;
             result.error_message = Some(format!(
@@ -315,10 +323,10 @@ pub fn verify_metadata(
         } else {
             current_time - metadata.time_ms
         };
-        
+
         result.time_difference_ms = Some(time_diff);
         result.time_valid = Some(time_diff <= config.max_time_difference_ms);
-        
+
         if time_diff > config.max_time_difference_ms {
             result.valid = false;
             result.error_message = Some(format!(
@@ -333,7 +341,7 @@ pub fn verify_metadata(
         if let Some(ref expected_chain_id) = config.expected_chain_id {
             let chain_id_matches = &metadata.chain_id == expected_chain_id;
             result.chain_id_valid = Some(chain_id_matches);
-            
+
             if !chain_id_matches {
                 result.valid = false;
                 result.error_message = Some(format!(
@@ -356,14 +364,14 @@ pub fn compare_metadata(metadata1: &Metadata, metadata2: &Metadata) -> i32 {
     } else if metadata1.height < metadata2.height {
         return -1;
     }
-    
+
     // If heights are equal, compare by time
     if metadata1.time_ms > metadata2.time_ms {
         return 1;
     } else if metadata1.time_ms < metadata2.time_ms {
         return -1;
     }
-    
+
     // If both height and time are equal
     0
 }
@@ -376,38 +384,40 @@ pub fn get_most_recent_metadata(metadata_list: Vec<JsValue>) -> Result<Metadata,
     }
 
     let mut metadata_objects = Vec::new();
-    
+
     for js_metadata in metadata_list {
         let height = Reflect::get(&js_metadata, &"height".into())
             .map_err(|_| JsError::new("Failed to get height"))?
             .as_f64()
             .ok_or_else(|| JsError::new("Height must be a number"))? as u64;
-            
+
         let core_chain_locked_height = Reflect::get(&js_metadata, &"coreChainLockedHeight".into())
             .map_err(|_| JsError::new("Failed to get core chain locked height"))?
             .as_f64()
-            .ok_or_else(|| JsError::new("Core chain locked height must be a number"))? as u32;
-            
+            .ok_or_else(|| JsError::new("Core chain locked height must be a number"))?
+            as u32;
+
         let epoch = Reflect::get(&js_metadata, &"epoch".into())
             .map_err(|_| JsError::new("Failed to get epoch"))?
             .as_f64()
             .ok_or_else(|| JsError::new("Epoch must be a number"))? as u32;
-            
+
         let time_ms = Reflect::get(&js_metadata, &"timeMs".into())
             .map_err(|_| JsError::new("Failed to get time"))?
             .as_f64()
             .ok_or_else(|| JsError::new("Time must be a number"))? as u64;
-            
+
         let protocol_version = Reflect::get(&js_metadata, &"protocolVersion".into())
             .map_err(|_| JsError::new("Failed to get protocol version"))?
             .as_f64()
-            .ok_or_else(|| JsError::new("Protocol version must be a number"))? as u32;
-            
+            .ok_or_else(|| JsError::new("Protocol version must be a number"))?
+            as u32;
+
         let chain_id = Reflect::get(&js_metadata, &"chainId".into())
             .map_err(|_| JsError::new("Failed to get chain ID"))?
             .as_string()
             .ok_or_else(|| JsError::new("Chain ID must be a string"))?;
-        
+
         metadata_objects.push(Metadata {
             height,
             core_chain_locked_height,
@@ -419,7 +429,8 @@ pub fn get_most_recent_metadata(metadata_list: Vec<JsValue>) -> Result<Metadata,
     }
 
     // Find the most recent metadata
-    metadata_objects.into_iter()
+    metadata_objects
+        .into_iter()
         .max_by(|a, b| {
             if a.height != b.height {
                 a.height.cmp(&b.height)
@@ -443,13 +454,13 @@ pub fn is_metadata_stale(
     if current_time > metadata.time_ms && (current_time - metadata.time_ms) > max_age_ms {
         return true;
     }
-    
+
     // Check height staleness if current height is provided
     if let Some(current) = current_height {
         if current > metadata.height && (current - metadata.height) > max_height_behind {
             return true;
         }
     }
-    
+
     false
 }

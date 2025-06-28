@@ -5,11 +5,11 @@
 //! with proper cleanup to prevent memory leaks.
 
 use js_sys::Function;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::{MessageEvent, WebSocket, CloseEvent};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+use web_sys::{CloseEvent, MessageEvent, WebSocket};
 
 // Global registry to track active subscriptions and their closures
 thread_local! {
@@ -26,7 +26,8 @@ struct SubscriptionData {
 
 /// Extract subscription ID from JSON value
 fn extract_subscription_id(msg: &serde_json::Value) -> Result<String, JsError> {
-    msg["id"].as_str()
+    msg["id"]
+        .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| JsError::new("Failed to get subscription ID"))
 }
@@ -44,7 +45,7 @@ impl SubscriptionHandleV2 {
     pub fn id(&self) -> String {
         self.id.clone()
     }
-    
+
     /// Close the subscription and clean up resources
     #[wasm_bindgen]
     pub fn close(&self) -> Result<(), JsError> {
@@ -52,22 +53,23 @@ impl SubscriptionHandleV2 {
             let mut subs = subs.borrow_mut();
             if let Some(data) = subs.remove(&self.id) {
                 // Close WebSocket
-                data.websocket.close()
+                data.websocket
+                    .close()
                     .map_err(|_| JsError::new("Failed to close WebSocket connection"))?;
-                
+
                 // Clear event handlers
                 data.websocket.set_onmessage(None);
                 data.websocket.set_onerror(None);
                 data.websocket.set_onclose(None);
                 data.websocket.set_onopen(None);
-                
+
                 Ok(())
             } else {
                 Err(JsError::new("Subscription not found"))
             }
         })
     }
-    
+
     /// Check if the subscription is active
     #[wasm_bindgen(getter, js_name = isActive)]
     pub fn is_active(&self) -> bool {
@@ -99,10 +101,10 @@ fn create_subscription(
 ) -> Result<SubscriptionHandleV2, JsError> {
     let ws = WebSocket::new(endpoint)
         .map_err(|_| JsError::new("Failed to create WebSocket connection"))?;
-    
+
     let subscription_id = extract_subscription_id(&subscribe_msg)?;
     let id_clone = subscription_id.clone();
-    
+
     // Create message handler
     let on_message_clone = on_message.clone();
     let onmessage = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
@@ -113,7 +115,7 @@ fn create_subscription(
                     if msg.get("id").is_some() && msg.get("result").is_some() {
                         return;
                     }
-                    
+
                     // Handle subscription update
                     if let Some(params) = msg.get("params") {
                         if let Ok(js_params) = serde_wasm_bindgen::to_value(params) {
@@ -124,7 +126,7 @@ fn create_subscription(
             }
         }
     });
-    
+
     // Create error handler
     let onerror = {
         let on_error_fn = on_error.clone();
@@ -135,7 +137,7 @@ fn create_subscription(
             }
         })
     };
-    
+
     // Create close handler
     let onclose = {
         let on_close_fn = on_close.clone();
@@ -145,17 +147,17 @@ fn create_subscription(
             ACTIVE_SUBSCRIPTIONS.with(|subs| {
                 subs.borrow_mut().remove(&id_for_close);
             });
-            
+
             if let Some(ref close_fn) = on_close_fn {
                 let _ = close_fn.call0(&JsValue::null());
             }
         })
     };
-    
+
     // Create open handler
     let subscribe_msg_str = serde_json::to_string(&subscribe_msg)
         .map_err(|e| JsError::new(&format!("Failed to serialize subscription: {}", e)))?;
-    
+
     let onopen = {
         let ws_clone = ws.clone();
         let msg = subscribe_msg_str.clone();
@@ -163,13 +165,13 @@ fn create_subscription(
             let _ = ws_clone.send_with_str(&msg);
         })
     };
-    
+
     // Set event handlers
     ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
     ws.set_onerror(Some(onerror.as_ref().unchecked_ref()));
     ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
     ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
-    
+
     // Store subscription data
     let subscription_data = SubscriptionData {
         websocket: ws,
@@ -178,11 +180,12 @@ fn create_subscription(
         _onclose: onclose,
         _onopen: onopen,
     };
-    
+
     ACTIVE_SUBSCRIPTIONS.with(|subs| {
-        subs.borrow_mut().insert(subscription_id.clone(), subscription_data);
+        subs.borrow_mut()
+            .insert(subscription_id.clone(), subscription_data);
     });
-    
+
     Ok(SubscriptionHandleV2 { id: id_clone })
 }
 
@@ -194,7 +197,7 @@ pub fn subscribe_to_identity_balance_updates_v2(
     endpoint: Option<String>,
 ) -> Result<SubscriptionHandleV2, JsError> {
     let endpoint = endpoint.unwrap_or_else(|| "wss://api.platform.dash.org/ws".to_string());
-    
+
     let subscribe_msg = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "subscribe",
@@ -204,7 +207,7 @@ pub fn subscribe_to_identity_balance_updates_v2(
         },
         "id": uuid::Uuid::new_v4().to_string(),
     });
-    
+
     create_subscription(&endpoint, subscribe_msg, callback.clone(), None, None)
 }
 
@@ -216,7 +219,7 @@ pub fn subscribe_to_data_contract_updates_v2(
     endpoint: Option<String>,
 ) -> Result<SubscriptionHandleV2, JsError> {
     let endpoint = endpoint.unwrap_or_else(|| "wss://api.platform.dash.org/ws".to_string());
-    
+
     let subscribe_msg = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "subscribe",
@@ -226,7 +229,7 @@ pub fn subscribe_to_data_contract_updates_v2(
         },
         "id": uuid::Uuid::new_v4().to_string(),
     });
-    
+
     create_subscription(&endpoint, subscribe_msg, callback.clone(), None, None)
 }
 
@@ -240,25 +243,25 @@ pub fn subscribe_to_document_updates_v2(
     endpoint: Option<String>,
 ) -> Result<SubscriptionHandleV2, JsError> {
     let endpoint = endpoint.unwrap_or_else(|| "wss://api.platform.dash.org/ws".to_string());
-    
+
     let mut params = serde_json::json!({
         "type": "documents",
         "contractId": contract_id,
         "documentType": document_type,
     });
-    
+
     if !where_clause.is_null() && !where_clause.is_undefined() {
         params["where"] = serde_wasm_bindgen::from_value(where_clause)
             .map_err(|e| JsError::new(&format!("Invalid where clause: {}", e)))?;
     }
-    
+
     let subscribe_msg = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "subscribe",
         "params": params,
         "id": uuid::Uuid::new_v4().to_string(),
     });
-    
+
     create_subscription(&endpoint, subscribe_msg, callback.clone(), None, None)
 }
 
@@ -273,30 +276,36 @@ pub fn subscribe_with_handlers_v2(
     endpoint: Option<String>,
 ) -> Result<SubscriptionHandleV2, JsError> {
     let endpoint = endpoint.unwrap_or_else(|| "wss://api.platform.dash.org/ws".to_string());
-    
+
     let mut subscription_params = serde_json::json!({
         "type": subscription_type,
     });
-    
+
     if !params.is_null() && !params.is_undefined() {
         let additional_params: serde_json::Value = serde_wasm_bindgen::from_value(params)
             .map_err(|e| JsError::new(&format!("Invalid params: {}", e)))?;
-        
+
         if let serde_json::Value::Object(map) = additional_params {
             for (key, value) in map {
                 subscription_params[key] = value;
             }
         }
     }
-    
+
     let subscribe_msg = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "subscribe",
         "params": subscription_params,
         "id": uuid::Uuid::new_v4().to_string(),
     });
-    
-    create_subscription(&endpoint, subscribe_msg, on_message.clone(), on_error, on_close)
+
+    create_subscription(
+        &endpoint,
+        subscribe_msg,
+        on_message.clone(),
+        on_error,
+        on_close,
+    )
 }
 
 /// Clean up all active subscriptions
@@ -304,7 +313,7 @@ pub fn subscribe_with_handlers_v2(
 pub fn cleanup_all_subscriptions() {
     ACTIVE_SUBSCRIPTIONS.with(|subs| {
         let mut subs = subs.borrow_mut();
-        
+
         // Close all WebSockets
         for (_, data) in subs.drain() {
             let _ = data.websocket.close();
