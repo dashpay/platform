@@ -16284,6 +16284,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"wasm-drive-verify@workspace:packages/wasm-drive-verify":
+  version: 0.0.0-use.local
+  resolution: "wasm-drive-verify@workspace:packages/wasm-drive-verify"
+  languageName: unknown
+  linkType: soft
+
 "wasm-x11-hash@npm:~0.0.2":
   version: 0.0.2
   resolution: "wasm-x11-hash@npm:0.0.2"
