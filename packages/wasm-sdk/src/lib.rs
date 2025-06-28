@@ -39,16 +39,10 @@ pub mod withdrawal;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[wasm_bindgen(start)]
-pub async fn start() -> Result<(), JsValue> {
-    // We use tracing-wasm together with console_error_panic_hook to get logs from the wasm module.
-    // Other alternatives are:
-    // * https://github.com/jquesada2016/tracing_subscriber_wasm
-    // * https://crates.io/crates/tracing-web
+// Initialize function that can be called manually if needed
+// Removed #[wasm_bindgen(start)] to avoid conflict with wasm-drive-verify
+pub fn init() {
     console_error_panic_hook::set_once();
-
     // Temporarily disable tracing due to LTO issues
     // tracing_wasm::set_as_global_default();
-
-    Ok(())
 }

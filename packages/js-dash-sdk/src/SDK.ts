@@ -93,8 +93,18 @@ export class SDK extends EventEmitter {
     // Load WASM SDK
     const wasm = await loadWasmSdk();
     
-    // Initialize WASM SDK instance
-    this.wasmSdk = new wasm.WasmSdk(this.network.type);
+    // Initialize WASM SDK instance using builder pattern
+    let builder;
+    if (this.network.type === 'mainnet') {
+      builder = wasm.WasmSdkBuilder.new_mainnet();
+    } else if (this.network.type === 'testnet') {
+      builder = wasm.WasmSdkBuilder.new_testnet();
+    } else {
+      // For devnet, use testnet builder as a fallback
+      builder = wasm.WasmSdkBuilder.new_testnet();
+    }
+    
+    this.wasmSdk = builder.build();
     
     // Verify context provider is working
     const isValid = await this.contextProvider.isValid();
@@ -123,6 +133,13 @@ export class SDK extends EventEmitter {
       throw new Error('SDK not initialized. Call initialize() first.');
     }
     return this.wasmSdk;
+  }
+
+  getWasmModule(): any {
+    if (!this.initialized) {
+      throw new Error('SDK not initialized. Call initialize() first.');
+    }
+    return getWasmSdk();
   }
 
   registerApp(name: string, definition: AppDefinition): void {
