@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
-    "state-transitions", 
+    "state-transitions",
     "system_contracts",
     "data-contract-serde-conversion",
     "data-contract-json-conversion",
@@ -42,10 +42,10 @@ bincode = { version = "2.0.0-rc.3" }
 wasm-bindgen-test = "0.3.39"
 criterion = { version = "0.5", default-features = false, features = [] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
-    "state-transitions", 
-    "random-public-keys", 
-    "random-identities", 
-    "random-documents", 
+    "state-transitions",
+    "random-public-keys",
+    "random-identities",
+    "random-documents",
     "system_contracts",
     "data-contract-serde-conversion",
     "data-contract-json-conversion",
@@ -74,14 +74,6 @@ tokens = []
 governance = []
 transitions = []
 debug_logs = []
-
-[profile.release]
-# Optimize for small code size
-opt-level = "z"
-lto = true
-codegen-units = 1
-strip = true
-panic = "abort"
 
 [[bench]]
 name = "simple_benchmarks"
