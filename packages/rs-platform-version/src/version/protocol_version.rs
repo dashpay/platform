@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 
 use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::system_limits::SystemLimits;
+use crate::version::v10::PLATFORM_V10;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
 use crate::version::v4::PLATFORM_V4;
@@ -50,6 +51,7 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V7,
     PLATFORM_V8,
     PLATFORM_V9,
+    PLATFORM_V10,
 ];
 
 #[cfg(feature = "mock-versions")]
@@ -58,7 +60,7 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V9;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V10;
 
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 
