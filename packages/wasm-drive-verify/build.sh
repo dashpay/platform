@@ -9,10 +9,21 @@ echo "Building wasm-drive-verify..."
 
 # Build the Rust WASM target
 echo "Building Rust WASM target..."
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32-unknown-unknown --release \
+  --config 'profile.release.panic="abort"' \
+  --config 'profile.release.strip=true' \
+  --config 'profile.release.debug=false' \
+  --config 'profile.release.incremental=false' \
+  --config 'profile.release.lto=true' \
+  --config 'profile.release.opt-level="z"' \
+  --config 'profile.release.codegen-units=1' \
 
 # Create pkg directory if it doesn't exist
 mkdir -p pkg
+
+if command -v wasm-snip &> /dev/null; then
+  wasm-snip ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm -o ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm --snip-rust-fmt-code --snip-rust-panicking-code
+fi
 
 # Run wasm-bindgen
 echo "Running wasm-bindgen..."
@@ -20,36 +31,51 @@ if ! command -v wasm-bindgen &> /dev/null; then
   echo "Error: 'wasm-bindgen' not found. Install via 'cargo install wasm-bindgen-cli'." >&2
   exit 1
 fi
-wasm-bindgen ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm \
-    --out-dir pkg \
-    --target web
+wasm-bindgen \
+  --typescript \
+  --out-dir=pkg \
+  --target=web \
+  --omit-default-module-path ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm
 
-# Create proper package.json if it doesn't exist or is incomplete
-if [ ! -f pkg/package.json ] || ! grep -q '"name"' pkg/package.json; then
-    echo "Creating package.json..."
-    # Extract version from Cargo.toml
-    VERSION=$(grep -E '^version =' Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/')
-    cat > pkg/package.json << EOF
-{
-  "name": "wasm-drive-verify",
-  "version": "$VERSION",
-  "description": "WASM bindings for Drive verify functions",
-  "main": "wasm_drive_verify.js",
-  "types": "wasm_drive_verify.d.ts",
-  "author": "Dash Core Group <dev@dash.org>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/dashpay/platform.git"
-  },
-  "files": [
-    "wasm_drive_verify_bg.wasm",
-    "wasm_drive_verify.js",
-    "wasm_drive_verify.d.ts",
-    "wasm_drive_verify_bg.wasm.d.ts"
-  ]
-}
-EOF
+if command -v wasm-opt &> /dev/null; then
+  echo "Optimizing wasm using Binaryen"
+  wasm-opt \
+      --code-folding \
+      --const-hoisting \
+      --abstract-type-refining \
+      --dce \
+      --strip-producers \
+      -Oz \
+      --generate-global-effects \
+      --enable-bulk-memory \
+      --enable-nontrapping-float-to-int  \
+      -tnh \
+      --flatten \
+      --rereloop \
+      -Oz \
+      --converge \
+      --vacuum \
+      --dce \
+      --gsi \
+      --inlining-optimizing \
+      --merge-blocks \
+      --simplify-locals \
+      --optimize-added-constants \
+      --optimize-casts \
+      --optimize-instructions \
+      --optimize-stack-ir \
+      --remove-unused-brs \
+      --remove-unused-module-elements \
+      --remove-unused-names \
+      --remove-unused-types \
+      --post-emscripten \
+      -Oz \
+      -Oz \
+      "pkg/wasm_drive_verify_bg.wasm" \
+      -o \
+      "pkg/wasm_drive_verify_bg.wasm"
+else
+  echo "wasm-opt command not found. Skipping wasm optimization."
 fi
 
 echo "Build complete!"

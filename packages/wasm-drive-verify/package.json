@@ -1,6 +1,8 @@
 {
   "name": "wasm-drive-verify",
-  "collaborators": ["Dash Core Group <dev@dash.org>"],
+  "collaborators": [
+    "Dash Core Group <dev@dash.org>"
+  ],
   "version": "1.8.0",
   "license": "MIT",
   "description": "WASM bindings for Drive verify functions",
@@ -9,6 +11,8 @@
     "url": "https://github.com/dashpay/platform.git"
   },
   "type": "module",
+  "main": "pkg/wasm_drive_verify.js",
+  "types": "pkg/wasm_drive_verify.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
