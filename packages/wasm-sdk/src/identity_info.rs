@@ -162,41 +162,41 @@ pub async fn fetch_identity_balance_details(
     let client_config = DapiClientConfig::new(sdk.network());
     let client = DapiClient::new(client_config)?;
 
-    // Request identity balance
-    let request = serde_json::json!({
-        "method": "getIdentityBalance",
-        "params": {
-            "identityId": identity_id,
-        }
-    });
-
+    // Get identity balance - prove must be true for GRPC queries
     let response = client
-        .raw_request("/platform/v1/identity/balance", &request)
+        .get_identity_balance(identity_id.to_string(), true)
         .await?;
 
-    // Parse response
-    if let Ok(balance_data) = serde_wasm_bindgen::from_value::<serde_json::Value>(response) {
-        let confirmed = balance_data
-            .get("confirmed")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let unconfirmed = balance_data
-            .get("unconfirmed")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-
-        Ok(IdentityBalance {
-            confirmed,
-            unconfirmed,
-            total: confirmed + unconfirmed,
-        })
+    // Parse response - GRPC response contains proof
+    if let Ok(response_data) = serde_wasm_bindgen::from_value::<serde_json::Value>(response) {
+        // The response should contain proof data that needs to be verified
+        if let Some(proof) = response_data.get("proof") {
+            // For now, we'll extract the balance from the proof
+            // In a real implementation, this would be verified using drive-proof-verifier
+            
+            // The balance is typically in the proof data
+            if let Some(balance_value) = response_data.get("balance") {
+                let balance = balance_value.as_u64().unwrap_or(0);
+                
+                // Platform credits to Dash conversion (1 Dash = 100,000,000 credits)
+                Ok(IdentityBalance {
+                    confirmed: balance,
+                    unconfirmed: 0,
+                    total: balance,
+                })
+            } else {
+                // Try to extract from metadata
+                if let Some(metadata) = response_data.get("metadata") {
+                    web_sys::console::log_1(&format!("Metadata: {:?}", metadata).into());
+                }
+                
+                Err(JsError::new("Balance not found in response"))
+            }
+        } else {
+            Err(JsError::new("No proof in balance response"))
+        }
     } else {
-        // Mock balance if no response
-        Ok(IdentityBalance {
-            confirmed: 1000000,
-            unconfirmed: 50000,
-            total: 1050000,
-        })
+        Err(JsError::new("Failed to parse balance response"))
     }
 }
 
@@ -302,7 +302,8 @@ pub async fn fetch_identity_balance_history(
 
     let response = client
         .raw_request("/platform/v1/identity/balance/history", &request)
-        .await?;
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch balance history: {:?}", e)))?;
 
     // Parse response
     if let Ok(history_data) =

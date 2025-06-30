@@ -25,15 +25,37 @@ export interface AppDefinition {
   contract?: any; // DataContract type from wasm-sdk
 }
 
+// Types for state transitions
+export type BlockHeight = number;
+export interface StateTransition {
+  toBuffer(): Buffer;
+  signature?: Buffer;
+}
+
+// Context provider for blockchain operations
 export interface ContextProvider {
-  getLatestPlatformBlockHeight(): Promise<number>;
-  getLatestPlatformBlockTime(): Promise<number>;
-  getLatestPlatformCoreChainLockedHeight(): Promise<number>;
-  getLatestPlatformVersion(): Promise<string>;
-  getProposerBlockCount(proposerProTxHash: string): Promise<number | null>;
-  getTimePerBlockMillis(): Promise<number>;
-  getBlockProposer(blockHeight: number): Promise<string | null>;
-  isValid(): Promise<boolean>;
+  // Block operations
+  getBlockHash(height: BlockHeight): Promise<string>;
+  
+  // Contract operations
+  getDataContract(identifier: string): Promise<any>;
+  
+  // State transition operations
+  waitForStateTransitionResult(stHash: string, prove: boolean): Promise<any>;
+  broadcastStateTransition(stateTransition: StateTransition): Promise<string>;
+  
+  // Protocol information
+  getProtocolVersion(): Promise<number>;
+  
+  // Platform information methods (optional for backwards compatibility)
+  getLatestPlatformBlockHeight?(): Promise<number>;
+  getLatestPlatformBlockTime?(): Promise<number>;
+  getLatestPlatformCoreChainLockedHeight?(): Promise<number>;
+  getLatestPlatformVersion?(): Promise<string>;
+  getProposerBlockCount?(proposerProTxHash: string): Promise<number | null>;
+  getTimePerBlockMillis?(): Promise<number>;
+  getBlockProposer?(blockHeight: number): Promise<string | null>;
+  isValid?(): Promise<boolean>;
 }
 
 export interface StateTransitionResult {

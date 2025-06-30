@@ -7,6 +7,7 @@ import {
 } from './core/types';
 import { CentralizedProvider } from './core/CentralizedProvider';
 import { loadWasmSdk, getWasmSdk } from './core/WasmLoader';
+import { createWasmSdkWithDynamicEvonodes } from './core/WasmContextProvider';
 
 // Re-export types for external use
 export type { SDKOptions, Network, ContextProvider, AppDefinition };
@@ -49,9 +50,12 @@ export class SDK extends EventEmitter {
   }
 
   private createDefaultProvider(): ContextProvider {
-    // Use WebServiceProvider as default with CentralizedProvider as fallback
+    // Use custom masternode provider as primary
     const { PriorityContextProvider } = require('./providers/PriorityContextProvider');
+    const { CustomMasternodeProvider } = require('./providers/CustomMasternodeProvider');
     const { WebServiceProvider } = require('./providers/WebServiceProvider');
+    
+    const customMasternodeProvider = new CustomMasternodeProvider();
     
     const webServiceProvider = new WebServiceProvider({
       network: this.network.type as 'mainnet' | 'testnet'
@@ -66,9 +70,14 @@ export class SDK extends EventEmitter {
     const url = urls[this.network.type] || urls.testnet;
     const centralizedProvider = new CentralizedProvider({ url });
     
-    // Create priority provider with web service as primary
+    // Create priority provider with custom masternodes as primary
     return new PriorityContextProvider({
       providers: [
+        {
+          provider: customMasternodeProvider,
+          priority: 150,
+          name: 'CustomMasternodeProvider'
+        },
         {
           provider: webServiceProvider,
           priority: 100,
@@ -87,33 +96,43 @@ export class SDK extends EventEmitter {
 
   async initialize(): Promise<void> {
     if (this.initialized) {
+      console.log('SDK already initialized, skipping...');
       return;
     }
 
-    // Load WASM SDK
-    const wasm = await loadWasmSdk();
+    console.log('=== SDK Initialization Started ===');
+    console.log('Network:', this.network);
     
-    // Initialize WASM SDK instance using builder pattern
-    let builder;
-    if (this.network.type === 'mainnet') {
-      builder = wasm.WasmSdkBuilder.new_mainnet();
-    } else if (this.network.type === 'testnet') {
-      builder = wasm.WasmSdkBuilder.new_testnet();
-    } else {
-      // For devnet, use testnet builder as a fallback
-      builder = wasm.WasmSdkBuilder.new_testnet();
+    try {
+      // Load WASM SDK module first
+      console.log('Loading WASM SDK module...');
+      await loadWasmSdk();
+      
+      // Create WASM SDK with dynamic evonodes
+      console.log(`Creating WASM SDK for network: ${this.network.type}`);
+      this.wasmSdk = await createWasmSdkWithDynamicEvonodes(
+        this.network.type as 'mainnet' | 'testnet', 
+        {
+          timeout: 30000 // 30 second timeout
+        }
+      );
+      
+      console.log('WASM SDK instance built successfully');
+      console.log('WASM SDK type:', this.wasmSdk?.constructor?.name);
+      console.log('WASM SDK methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.wasmSdk || {})).slice(0, 10));
+      
+      // Skip context provider validation since WASM SDK handles its own connections
+      console.log('WASM SDK initialized with Dash testnet evonodes');
+      
+      this.initialized = true;
+      this.emit('initialized');
+      
+      console.log('=== SDK Initialization Complete ===');
+    } catch (error) {
+      console.error('=== SDK Initialization Failed ===');
+      console.error('Error:', error);
+      throw error;
     }
-    
-    this.wasmSdk = builder.build();
-    
-    // Verify context provider is working
-    const isValid = await this.contextProvider.isValid();
-    if (!isValid) {
-      throw new Error('Context provider is not valid or cannot connect to the network');
-    }
-    
-    this.initialized = true;
-    this.emit('initialized');
   }
 
   isInitialized(): boolean {

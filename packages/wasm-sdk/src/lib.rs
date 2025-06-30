@@ -6,6 +6,8 @@ pub mod bls;
 pub mod broadcast;
 pub mod cache;
 pub mod context_provider;
+pub mod trusted_context_provider;
+pub mod trusted_context_provider_universal;
 pub mod contract_cache;
 pub mod contract_history;
 pub mod dapi_client;

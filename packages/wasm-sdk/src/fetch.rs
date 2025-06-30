@@ -7,6 +7,7 @@
 //! - [Fetch]: A trait that defines how to fetch data from Platform in WASM environment.
 
 use crate::dapi_client::{DapiClient, DapiClientConfig};
+use crate::dapi_client::universal_client::{UniversalDapiClient, UniversalDapiClientConfig};
 use crate::dpp::{DataContractWasm, IdentityWasm};
 use crate::error::to_js_error;
 use crate::sdk::WasmSdk;
@@ -17,6 +18,7 @@ use js_sys;
 use platform_value::Identifier;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use js_sys::global;
 // use wasm_drive_verify::document_verification::verify_document_proof; // Currently unused
 use wasm_drive_verify::identity_verification::verify_full_identity_by_identity_id;
 
@@ -61,6 +63,19 @@ impl FetchOptions {
     }
 }
 
+/// Check if running in Node.js environment
+fn is_nodejs() -> bool {
+    let process_exists = js_sys::Reflect::has(&global(), &JsValue::from_str("process")).unwrap_or(false);
+    if process_exists {
+        if let Ok(process) = js_sys::Reflect::get(&global(), &JsValue::from_str("process")) {
+            if let Ok(versions) = js_sys::Reflect::get(&process, &JsValue::from_str("versions")) {
+                return js_sys::Reflect::has(&versions, &JsValue::from_str("node")).unwrap_or(false);
+            }
+        }
+    }
+    false
+}
+
 /// Fetch trait for retrieving data from Platform
 #[allow(async_fn_in_trait)]
 pub trait Fetch {
@@ -99,19 +114,32 @@ impl Fetch for WasmSdk {
         let options = options.unwrap_or_default();
         let prove = options.prove.unwrap_or(false);
 
-        // Create DAPI client
-        let client_config = DapiClientConfig::new(self.network());
-        if let Some(timeout) = options.timeout {
-            client_config.clone().set_timeout(timeout);
-        }
-        if let Some(retries) = options.retries {
-            client_config.clone().set_retries(retries);
-        }
+        // Create appropriate DAPI client based on environment
+        let response = if is_nodejs() {
+            // Use UniversalDapiClient for Node.js
+            let mut client_config = UniversalDapiClientConfig::new(self.network());
+            if let Some(timeout) = options.timeout {
+                client_config.set_timeout(timeout);
+            }
+            if let Some(retries) = options.retries {
+                client_config.set_retries(retries);
+            }
 
-        let client = DapiClient::new(client_config)?;
+            let mut client = UniversalDapiClient::new(client_config)?;
+            client.get_identity(id.clone(), prove).await?
+        } else {
+            // Use regular DapiClient for browser
+            let client_config = DapiClientConfig::new(self.network());
+            if let Some(timeout) = options.timeout {
+                client_config.clone().set_timeout(timeout);
+            }
+            if let Some(retries) = options.retries {
+                client_config.clone().set_retries(retries);
+            }
 
-        // Fetch identity
-        let response = client.get_identity(id.clone(), prove).await?;
+            let client = DapiClient::new(client_config)?;
+            client.get_identity(id.clone(), prove).await?
+        };
 
         // Parse response
         if let Some(response_obj) = response.dyn_ref::<js_sys::Object>() {
@@ -203,19 +231,32 @@ impl Fetch for WasmSdk {
         let options = options.unwrap_or_default();
         let prove = options.prove.unwrap_or(false);
 
-        // Create DAPI client
-        let client_config = DapiClientConfig::new(self.network());
-        if let Some(timeout) = options.timeout {
-            client_config.clone().set_timeout(timeout);
-        }
-        if let Some(retries) = options.retries {
-            client_config.clone().set_retries(retries);
-        }
+        // Create appropriate DAPI client based on environment
+        let response = if is_nodejs() {
+            // Use UniversalDapiClient for Node.js
+            let mut client_config = UniversalDapiClientConfig::new(self.network());
+            if let Some(timeout) = options.timeout {
+                client_config.set_timeout(timeout);
+            }
+            if let Some(retries) = options.retries {
+                client_config.set_retries(retries);
+            }
 
-        let client = DapiClient::new(client_config)?;
+            let mut client = UniversalDapiClient::new(client_config)?;
+            client.get_data_contract(id.clone(), prove).await?
+        } else {
+            // Use regular DapiClient for browser
+            let client_config = DapiClientConfig::new(self.network());
+            if let Some(timeout) = options.timeout {
+                client_config.clone().set_timeout(timeout);
+            }
+            if let Some(retries) = options.retries {
+                client_config.clone().set_retries(retries);
+            }
 
-        // Fetch data contract
-        let response = client.get_data_contract(id.clone(), prove).await?;
+            let client = DapiClient::new(client_config)?;
+            client.get_data_contract(id.clone(), prove).await?
+        };
 
         // Parse response
         if let Some(response_obj) = response.dyn_ref::<js_sys::Object>() {
@@ -258,34 +299,57 @@ impl Fetch for WasmSdk {
         let options = options.unwrap_or_default();
         let prove = options.prove.unwrap_or(false);
 
-        // Create DAPI client
-        let client_config = DapiClientConfig::new(self.network());
-        if let Some(timeout) = options.timeout {
-            client_config.clone().set_timeout(timeout);
-        }
-        if let Some(retries) = options.retries {
-            client_config.clone().set_retries(retries);
-        }
-
-        let client = DapiClient::new(client_config)?;
-
         // Create where clause to find document by ID
         let where_clause = serde_json::json!({
             "$id": id
         });
 
-        // Fetch documents
-        let response = client
-            .get_documents(
-                contract_id.clone(),
-                document_type,
-                serde_wasm_bindgen::to_value(&where_clause)?,
-                JsValue::NULL,
-                1,
-                None,
-                prove,
-            )
-            .await?;
+        // Create appropriate DAPI client based on environment
+        let response = if is_nodejs() {
+            // Use UniversalDapiClient for Node.js
+            let mut client_config = UniversalDapiClientConfig::new(self.network());
+            if let Some(timeout) = options.timeout {
+                client_config.set_timeout(timeout);
+            }
+            if let Some(retries) = options.retries {
+                client_config.set_retries(retries);
+            }
+
+            let mut client = UniversalDapiClient::new(client_config)?;
+            client
+                .get_documents(
+                    contract_id.clone(),
+                    document_type,
+                    serde_wasm_bindgen::to_value(&where_clause)?,
+                    JsValue::NULL,
+                    1,
+                    None,
+                    prove,
+                )
+                .await?
+        } else {
+            // Use regular DapiClient for browser
+            let client_config = DapiClientConfig::new(self.network());
+            if let Some(timeout) = options.timeout {
+                client_config.clone().set_timeout(timeout);
+            }
+            if let Some(retries) = options.retries {
+                client_config.clone().set_retries(retries);
+            }
+
+            let client = DapiClient::new(client_config)?;
+            client
+                .get_documents(
+                    contract_id.clone(),
+                    document_type,
+                    serde_wasm_bindgen::to_value(&where_clause)?,
+                    JsValue::NULL,
+                    1,
+                    None,
+                    prove,
+                )
+                .await?
+        };
 
         // Parse response
         if let Some(response_obj) = response.dyn_ref::<js_sys::Object>() {

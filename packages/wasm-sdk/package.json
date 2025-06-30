@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dashpay/platform.git"
+    "url": "git+https://github.com/dashpay/platform.git"
   },
   "keywords": [
     "dash",
@@ -35,7 +35,10 @@
     "url": "https://github.com/dashpay/platform/issues"
   },
   "homepage": "https://github.com/dashpay/platform/tree/master/packages/wasm-sdk",
-  "dependencies": {},
+  "dependencies": {
+    "node-fetch": "^2.7.0",
+    "puppeteer": "^24.11.1"
+  },
   "devDependencies": {
     "wasm-pack": "^0.12.1"
   },
@@ -43,5 +46,10 @@
     "fs": false,
     "path": false,
     "crypto": false
+  },
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
   }
 }

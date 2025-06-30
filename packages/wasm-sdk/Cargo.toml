@@ -25,6 +25,7 @@ web-sys = { version = "0.3.4", features = [
     'Window',
     'Request',
     'RequestInit',
+    'RequestMode',
     'Response',
     'Headers',
     'AbortController',
@@ -103,6 +104,5 @@ path = "tests/web.rs"
 opt-level = "z"
 strip = "symbols"
 
-#[package.metadata.wasm-pack.profile.release]
-#wasm-opt = ['-g', '-O'] # -g for profiling
-#  -Oz -Oz -g
+[package.metadata.wasm-pack]
+wasm-opt = false

@@ -8,6 +8,8 @@ pub mod error;
 pub mod requests;
 pub mod responses;
 pub mod transport;
+pub mod universal_transport;
+pub mod universal_client;
 pub mod types;
 
 use crate::error::to_js_error;
@@ -44,8 +46,15 @@ impl DapiClientConfig {
                 "https://dapi-2.dash.org:443".to_string(),
             ],
             "testnet" => vec![
-                "https://testnet-dapi.dash.org:443".to_string(),
-                "https://testnet-dapi-1.dash.org:443".to_string(),
+                "https://52.13.132.146:1443".to_string(),
+                "https://52.89.154.48:1443".to_string(),
+                "https://44.227.137.77:1443".to_string(),
+                "https://52.40.219.41:1443".to_string(),
+                "https://54.149.33.167:1443".to_string(),
+                "https://54.187.14.232:1443".to_string(),
+                "https://52.12.176.90:1443".to_string(),
+                "https://52.34.144.50:1443".to_string(),
+                "https://44.239.39.153:1443".to_string(),
             ],
             _ => vec!["http://localhost:3000".to_string()],
         };
@@ -175,6 +184,26 @@ impl DapiClient {
         let response = self
             .transport
             .request("/v0/getDataContract", &request)
+            .await
+            .map_err(to_js_error)?;
+
+        Ok(response)
+    }
+
+    /// Get identity balance
+    #[wasm_bindgen(js_name = getIdentityBalance)]
+    pub async fn get_identity_balance(
+        &self,
+        identity_id: String,
+        prove: bool,
+    ) -> Result<JsValue, JsError> {
+        use requests::GetIdentityBalanceRequest;
+
+        let request = GetIdentityBalanceRequest { identity_id, prove };
+
+        let response = self
+            .transport
+            .request("/v0/getIdentityBalance", &request)
             .await
             .map_err(to_js_error)?;
 

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dash Balance Checker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      margin: 20px 0;
+    }
+    #output {
+      border: 1px solid #ccc;
+      padding: 10px;
+      margin-top: 20px;
+      background-color: #f5f5f5;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .error {
+      color: red;
+    }
+    .success {
+      color: green;
+    }
+    button {
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+    #loading {
+      display: none;
+      color: blue;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dash Balance Checker</h1>
+  
+  <div class="container">
+    <p>Testing balance fetch for identity: <strong>5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk</strong></p>
+    <button id="fetchButton">Fetch Balance</button>
+    <span id="loading">Loading...</span>
+  </div>
+
+  <div id="output"></div>
+
+  <script type="module">
+    import init, { WasmSdkBuilder, fetchIdentityBalanceDetails } from './pkg/wasm_sdk.js';
+
+    const output = document.getElementById('output');
+    const loading = document.getElementById('loading');
+    
+    function log(message, isError = false) {
+      const timestamp = new Date().toISOString();
+      const className = isError ? 'error' : 'success';
+      output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+      console.log(message);
+    }
+
+    async function run() {
+      try {
+        log('Initializing WASM module...');
+        await init();
+        log('WASM module initialized successfully');
+
+        log('Building SDK for mainnet...');
+        const sdk = await WasmSdkBuilder.new_mainnet().build();
+        log('SDK built successfully');
+
+        document.getElementById('fetchButton').addEventListener('click', async () => {
+          const identityId = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
+          
+          loading.style.display = 'inline';
+          output.innerHTML = '';
+          
+          try {
+            log(`Fetching balance for identity: ${identityId}`);
+            
+            const balance = await fetchIdentityBalanceDetails(sdk, identityId);
+            
+            log('Balance fetched successfully!');
+            
+            const balanceObj = balance.toObject();
+            log(`\nBalance Details:`);
+            log(`  Confirmed: ${balanceObj.confirmed} credits`);
+            log(`  Unconfirmed: ${balanceObj.unconfirmed} credits`);
+            log(`  Total: ${balanceObj.total} credits`);
+            
+            // Convert credits to DASH (1 DASH = 100,000,000 credits)
+            const dashConfirmed = balanceObj.confirmed / 100000000;
+            const dashUnconfirmed = balanceObj.unconfirmed / 100000000;
+            const dashTotal = balanceObj.total / 100000000;
+            
+            log(`\nIn DASH:`);
+            log(`  Confirmed: ${dashConfirmed} DASH`);
+            log(`  Unconfirmed: ${dashUnconfirmed} DASH`);
+            log(`  Total: ${dashTotal} DASH`);
+            
+          } catch (error) {
+            log(`Error fetching balance: ${error.message || error}`, true);
+            console.error('Full error:', error);
+          } finally {
+            loading.style.display = 'none';
+          }
+        });
+
+      } catch (error) {
+        log(`Initialization error: ${error.message || error}`, true);
+        console.error('Full error:', error);
+      }
+    }
+
+    // Start the application
+    run();
+  </script>
+</body>
+</html>

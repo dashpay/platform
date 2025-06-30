@@ -1,4 +1,6 @@
-use crate::context_provider::WasmContext;
+use crate::context_provider::{WasmContext, ContextProvider};
+use crate::trusted_context_provider::TrustedHttpContextProvider;
+use crate::trusted_context_provider_universal::UniversalTrustedHttpContextProvider;
 use platform_value::Identifier;
 // use dash_sdk::platform::transition::broadcast::BroadcastStateTransition; // Not available in WASM
 // use dash_sdk::platform::transition::put_identity::PutIdentity; // Not available in WASM
@@ -9,15 +11,69 @@ use std::ops::{Deref, DerefMut};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsError;
 
+#[derive(Debug, Clone)]
+pub enum WasmContextProviderEnum {
+    Default(WasmContext),
+    TrustedHttp(Box<TrustedHttpContextProvider>),
+    UniversalTrustedHttp(Box<UniversalTrustedHttpContextProvider>),
+}
+
+impl ContextProvider for WasmContextProviderEnum {
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], crate::context_provider::ContextProviderError> {
+        match self {
+            WasmContextProviderEnum::Default(provider) => provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height),
+            WasmContextProviderEnum::TrustedHttp(provider) => provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height),
+            WasmContextProviderEnum::UniversalTrustedHttp(provider) => provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height),
+        }
+    }
+
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<Option<std::sync::Arc<dpp::data_contract::DataContract>>, crate::context_provider::ContextProviderError> {
+        match self {
+            WasmContextProviderEnum::Default(provider) => provider.get_data_contract(id, platform_version),
+            WasmContextProviderEnum::TrustedHttp(provider) => provider.get_data_contract(id, platform_version),
+            WasmContextProviderEnum::UniversalTrustedHttp(provider) => provider.get_data_contract(id, platform_version),
+        }
+    }
+
+    fn get_platform_activation_height(&self) -> Result<dpp::prelude::CoreBlockHeight, crate::context_provider::ContextProviderError> {
+        match self {
+            WasmContextProviderEnum::Default(provider) => provider.get_platform_activation_height(),
+            WasmContextProviderEnum::TrustedHttp(provider) => provider.get_platform_activation_height(),
+            WasmContextProviderEnum::UniversalTrustedHttp(provider) => provider.get_platform_activation_height(),
+        }
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, crate::context_provider::ContextProviderError> {
+        match self {
+            WasmContextProviderEnum::Default(provider) => provider.get_token_configuration(token_id),
+            WasmContextProviderEnum::TrustedHttp(provider) => provider.get_token_configuration(token_id),
+            WasmContextProviderEnum::UniversalTrustedHttp(provider) => provider.get_token_configuration(token_id),
+        }
+    }
+}
+
 // Mock SDK types for WASM compatibility
 #[derive(Debug, Clone)]
 pub struct Sdk {
     version: platform_version::version::PlatformVersion,
+    context_provider: Option<WasmContextProviderEnum>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SdkBuilder {
-    context_provider: Option<WasmContext>,
+    context_provider: Option<WasmContextProviderEnum>,
 }
 
 impl SdkBuilder {
@@ -33,7 +89,7 @@ impl SdkBuilder {
         }
     }
 
-    pub fn with_context_provider(mut self, context_provider: WasmContext) -> Self {
+    pub fn with_context_provider(mut self, context_provider: WasmContextProviderEnum) -> Self {
         self.context_provider = Some(context_provider);
         self
     }
@@ -41,6 +97,7 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, JsError> {
         Ok(Sdk {
             version: platform_version::version::PlatformVersion::latest().clone(),
+            context_provider: self.context_provider,
         })
     }
 }
@@ -117,13 +174,14 @@ impl DerefMut for WasmSdkBuilder {
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     pub fn new_mainnet() -> Self {
-        let sdk_builder = SdkBuilder::new_mainnet().with_context_provider(WasmContext {});
+        let sdk_builder = SdkBuilder::new_mainnet().with_context_provider(WasmContextProviderEnum::Default(WasmContext {}));
 
         Self(sdk_builder)
     }
 
     pub fn new_testnet() -> Self {
-        WasmSdkBuilder(SdkBuilder::new_testnet()).with_context_provider(WasmContext {})
+        let sdk_builder = SdkBuilder::new_testnet().with_context_provider(WasmContextProviderEnum::Default(WasmContext {}));
+        Self(sdk_builder)
     }
 
     pub fn build(self) -> Result<WasmSdk, JsError> {
@@ -131,7 +189,15 @@ impl WasmSdkBuilder {
     }
 
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
-        WasmSdkBuilder(self.0.with_context_provider(context_provider))
+        WasmSdkBuilder(self.0.with_context_provider(WasmContextProviderEnum::Default(context_provider)))
+    }
+    
+    pub fn with_trusted_http_context_provider(self, context_provider: TrustedHttpContextProvider) -> Self {
+        WasmSdkBuilder(self.0.with_context_provider(WasmContextProviderEnum::TrustedHttp(Box::new(context_provider))))
+    }
+    
+    pub fn with_universal_trusted_context_provider(self, context_provider: UniversalTrustedHttpContextProvider) -> Self {
+        WasmSdkBuilder(self.0.with_context_provider(WasmContextProviderEnum::UniversalTrustedHttp(Box::new(context_provider))))
     }
 }
 
