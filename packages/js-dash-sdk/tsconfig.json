@@ -1,20 +1,22 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "commonjs",
-    "lib": ["es6", "dom"],
-    "skipLibCheck": true,
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": ["ES2020", "DOM"],
+    "declaration": true,
+    "declarationDir": "./dist",
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
-    "allowUmdGlobalAccess": true,
-    "noImplicitAny": false,
     "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
     "resolveJsonModule": true,
-    "allowJs": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "types": ["jest", "node"]
   },
-  "include": [
-    "src/**/*"
-  ],
-  "typeRoots": [
-    "node_modules/@types"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests", "wasm"]
 }

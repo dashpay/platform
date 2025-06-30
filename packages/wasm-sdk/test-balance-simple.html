@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Balance Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .error {
+      color: red;
+    }
+    .success {
+      color: green;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simple Balance Test</h1>
+  
+  <div id="output"></div>
+
+  <script type="module">
+    import init, { WasmSdkBuilder, DapiClient, DapiClientConfig } from './pkg/wasm_sdk.js';
+
+    const output = document.getElementById('output');
+    
+    function log(message, isError = false) {
+      const div = document.createElement('div');
+      div.className = isError ? 'error' : 'success';
+      div.textContent = message;
+      output.appendChild(div);
+      console.log(message);
+    }
+
+    async function testBalance() {
+      try {
+        log('Initializing WASM...');
+        await init();
+        
+        log('Creating SDK...');
+        const sdk = await WasmSdkBuilder.new_mainnet().build();
+        
+        log('Creating DAPI client config...');
+        const config = new DapiClientConfig('mainnet');
+        
+        log('Creating DAPI client...');
+        const client = new DapiClient(config);
+        
+        const identityId = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
+        log(`Getting balance for ${identityId}...`);
+        
+        // Call getIdentityBalance directly
+        const response = await client.getIdentityBalance(identityId, true);
+        
+        log('Response received:');
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(response, null, 2);
+        output.appendChild(pre);
+        
+        // Try to extract balance from response
+        if (response && typeof response === 'object') {
+          if ('balance' in response) {
+            const balance = response.balance;
+            log(`Balance: ${balance} credits`);
+            log(`Balance in DASH: ${balance / 100000000} DASH`);
+          } else {
+            log('Balance field not found in response', true);
+          }
+        }
+        
+      } catch (error) {
+        log(`Error: ${error.message || error}`, true);
+        console.error('Full error:', error);
+        
+        // Try to provide more details
+        if (error.stack) {
+          const pre = document.createElement('pre');
+          pre.className = 'error';
+          pre.textContent = error.stack;
+          output.appendChild(pre);
+        }
+      }
+    }
+
+    testBalance();
+  </script>
+</body>
+</html>

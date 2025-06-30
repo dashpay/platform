@@ -1,145 +1,345 @@
 # Dash SDK
 
-[![NPM Version](https://img.shields.io/npm/v/dash)](https://www.npmjs.org/package/dash)
-[![Release Packages](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
-[![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
-[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen)](https://github.com/RichardLitt/standard-readme)
+A modular JavaScript/TypeScript SDK for interacting with Dash Platform, built on WebAssembly for optimal performance and minimal bundle size.
 
-Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
+## Features
 
-**Warning: This SDK should only be used in production when connected to trusted nodes. Although it
-provides easy access to Dash Platform without requiring a full node, it does not support Dash
-Platform’s proofs or verify synchronized blockchain data. Therefore, it is less secure than the
-[Rust SDK](../rs-sdk/), which requests proofs for all queried data.**
+- 🚀 **WebAssembly based** - Built on top of the Rust implementation for maximum performance
+- 📦 **Modular architecture** - Import only what you need for smaller bundle sizes
+- 🔒 **Type-safe** - Full TypeScript support with comprehensive type definitions
+- 🌐 **Multiple connectivity options** - Web service, Bluetooth, centralized service with automatic fallback
+- 🎯 **Tree-shaking friendly** - ES modules support for optimal bundling
+- 📱 **Mobile wallet support** - Bluetooth connectivity for secure mobile signing
 
-Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/explanation-dapi) to use both the Dash Core network and Dash Platform on [supported networks](https://github.com/dashpay/platform/#supported-networks). The Dash Core network can be used to broadcast and receive payments. Dash Platform can be used to manage identities, register data contracts for applications, and submit or retrieve application data via documents.
+## Installation
 
-## Table of Contents
-- [Install](#install)
-- [Usage](#usage)
-- [Dependencies](#dependencies)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Install
-
-### ES5/ES6 via NPM
-
-In order to use this library, you will need to add it to your project as a dependency.
-
-Having [NodeJS](https://nodejs.org/) installed, just type : `npm install dash` in your terminal.
-
-```sh
+```bash
 npm install dash
+# or
+yarn add dash
 ```
 
+## Quick Start
 
-### CDN Standalone
+```typescript
+import { createSDK } from 'dash';
 
-For browser usage, you can also directly rely on unpkg : 
+// Initialize SDK
+const sdk = createSDK({
+  network: 'testnet',
+  // Optional: provide custom context provider
+  // contextProvider: new CentralizedProvider({ url: 'https://your-provider.com' })
+});
 
+await sdk.initialize();
+
+// Use the SDK
+const identity = await sdk.identities.get('identityId...');
+const contract = await sdk.contracts.get('contractId...');
 ```
-<script src="https://unpkg.com/dash"></script>
+
+## Modular Usage
+
+Import only the modules you need:
+
+```typescript
+// Core only
+import { SDK, CentralizedProvider } from 'dash/core';
+
+// Individual modules
+import { IdentityModule } from 'dash/identities';
+import { ContractModule } from 'dash/contracts';
+import { DocumentModule } from 'dash/documents';
+import { NamesModule } from 'dash/names';
+
+// Create SDK with only needed modules
+const sdk = new SDK({ network: 'testnet' });
+await sdk.initialize();
+
+const identities = new IdentityModule(sdk);
+const identity = await identities.get('...');
 ```
 
-## Usage
+## API Reference
 
-```js
-const Dash = require("dash"); // or import Dash from "dash"
+### Core
 
-const client = new Dash.Client({
-  wallet: {
-    mnemonic: "arena light cheap control apple buffalo indicate rare motor valid accident isolate",
-  },
-  apps: {
-    tutorialContract: {
-      // Learn more on how to register Data Contract
-      // https://dashplatform.readme.io/docs/tutorial-register-a-data-contract#registering-the-data-contract
-      contractId: "<tutorial-contract-id>" 
+#### SDK Initialization
+
+```typescript
+const sdk = createSDK({
+  network: 'mainnet' | 'testnet' | 'devnet',
+  contextProvider?: ContextProvider,
+  wallet?: WalletOptions,
+  apps?: Record<string, AppDefinition>,
+  retries?: number,
+  timeout?: number
+});
+
+await sdk.initialize();
+```
+
+### Identities
+
+```typescript
+// Get identity
+const identity = await sdk.identities.get(identityId);
+
+// Get balance
+const balance = await sdk.identities.getBalance(identityId);
+
+// Update identity
+await sdk.identities.update(identityId, {
+  addKeys: [{ /* key definition */ }],
+  disableKeys: [keyId]
+});
+
+// Credit operations
+await sdk.identities.creditTransfer(identityId, {
+  recipientId: '...',
+  amount: 100000
+});
+
+await sdk.identities.creditWithdrawal(identityId, {
+  amount: 50000,
+  coreFeePerByte: 1,
+  pooling: 'if-needed'
+});
+```
+
+### Contracts
+
+```typescript
+// Create contract
+const contract = await sdk.contracts.create({
+  ownerId: identityId,
+  schema: {},
+  documentSchemas: {
+    myDocument: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        age: { type: 'integer' }
+      },
+      required: ['name']
     }
   }
 });
 
-// Accessing an account allow you to transact with the Dash Network
-client.wallet.getAccount().then(async (account) => {
-  console.log('Funding address', account.getUnusedAddress().address);
+// Publish contract
+await sdk.contracts.publish(contract);
 
-  const balance = account.getConfirmedBalance();
-  console.log('Confirmed Balance', balance);
+// Get contract
+const existingContract = await sdk.contracts.get(contractId);
 
-  if (balance > 0) {
-    // Obtain identity - the base of all platform interactions
-    // Read more on how to create an identity here: https://dashplatform.readme.io/docs/tutorial-register-an-identity
-    const identityIds = account.identities.getIdentityIds();
-    const identity = await client.platform.identities.get(identityIds[0]);
+// Get contract history
+const history = await sdk.contracts.getHistory(contractId);
+```
 
-    // Prepare a new document containing a simple hello world sent to a hypothetical tutorial contract
-    const document = await client.platform.documents.create(
-      'tutorialContract.note',
-      identity,
-      { message: 'Hello World' },
-    );
+### Documents
 
-    // Broadcast the document into a new state transition
-    await client.platform.documents.broadcast({ create: [document] }, identity);
+```typescript
+// Create document
+const document = await sdk.documents.create(
+  contractId,
+  ownerId,
+  'myDocument',
+  { name: 'Alice', age: 30 }
+);
 
-    // Retrieve documents
-    const documents = await client.platform.documents.get('tutorialContract.note', {
-      limit: 2,
-    });
+// Query documents
+const documents = await sdk.documents.query({
+  dataContractId: contractId,
+  type: 'myDocument',
+  where: [
+    ['>=', 'age', 25],
+    ['<=', 'age', 35]
+  ],
+  orderBy: [['age', 'desc']],
+  limit: 10
+});
 
-    console.log(documents);
+// Batch operations
+await sdk.documents.broadcast(contractId, ownerId, {
+  create: [
+    { type: 'myDocument', data: { name: 'Bob', age: 25 } }
+  ],
+  replace: [
+    { id: documentId, type: 'myDocument', data: { name: 'Alice', age: 31 }, revision: 2 }
+  ],
+  delete: [
+    { id: otherDocumentId, type: 'myDocument' }
+  ]
+});
+```
+
+### Names (DPNS)
+
+```typescript
+// Register name
+await sdk.names.register({
+  label: 'myname',
+  ownerId: identityId,
+  records: {
+    dashUniqueIdentityId: identityId
+  }
+});
+
+// Resolve name
+const name = await sdk.names.resolve('myname');
+
+// Search names
+const names = await sdk.names.search('prefix', {
+  limit: 25
+});
+
+// Update name records
+await sdk.names.update('myname', ownerId, {
+  dashUniqueIdentityId: newIdentityId
+});
+```
+
+## Network Configuration
+
+The SDK supports multiple networks:
+
+```typescript
+// Mainnet
+const sdk = createSDK({ network: 'mainnet' });
+
+// Testnet (default)
+const sdk = createSDK({ network: 'testnet' });
+
+// Custom network
+const sdk = createSDK({
+  network: { name: 'local', type: 'devnet' },
+  contextProvider: new CentralizedProvider({
+    url: 'http://localhost:3000'
+  })
+});
+```
+
+## Context Providers
+
+Context providers supply network state information. The SDK includes multiple providers with automatic fallback support:
+
+### Available Providers
+
+- **WebServiceProvider** - Connects to quorum service endpoints for state and quorum keys
+- **BluetoothProvider** - Mobile device connection for state and signing
+- **CentralizedProvider** - Basic HTTP provider (fallback)
+- **PriorityContextProvider** - Manages multiple providers with automatic fallback
+
+### Default Configuration
+
+By default, the SDK uses priority-based provider selection:
+
+```typescript
+// Default setup: WebService → Centralized fallback
+const sdk = createSDK({ network: 'testnet' });
+```
+
+### Web Service Provider
+
+Connects to Dash quorum service endpoints:
+
+```typescript
+import { WebServiceProvider } from 'dash/providers';
+
+const provider = new WebServiceProvider({
+  network: 'mainnet',              // or 'testnet'
+  cacheDuration: 60000,            // Cache for 1 minute
+  retryAttempts: 3,                // Retry failed requests
+  timeout: 30000                   // 30 second timeout
+});
+
+// Get quorum keys
+const quorumKeys = await provider.getQuorumKeys();
+```
+
+### Bluetooth Provider
+
+Connect to mobile wallets for signing:
+
+```typescript
+import { BluetoothProvider } from 'dash/bluetooth';
+
+const provider = new BluetoothProvider({
+  requireAuthentication: true,
+  autoReconnect: true
+});
+
+await provider.connect();
+```
+
+### Priority Provider
+
+Use multiple providers with automatic fallback:
+
+```typescript
+import { ProviderFactory } from 'dash/providers';
+
+// Bluetooth priority with web service fallback
+const provider = await ProviderFactory.createWithBluetooth({
+  network: 'testnet',
+  bluetooth: {
+    requireAuthentication: true
+  },
+  webservice: {
+    cacheDuration: 60000
+  },
+  fallbackEnabled: true
+});
+
+// Monitor provider usage
+provider.on('provider:used', (name, method) => {
+  console.log(`${name} used for ${method}`);
+});
+
+provider.on('provider:fallback', (from, to) => {
+  console.log(`Fallback from ${from} to ${to}`);
+});
+```
+
+### Hybrid Setup
+
+Use different providers for different operations:
+
+```typescript
+// Web service for state, Bluetooth for signing
+const sdk = createSDK({
+  network: 'testnet',
+  contextProvider: webServiceProvider,  // For platform state
+  wallet: {
+    bluetooth: true                     // For transaction signing
   }
 });
 ```
 
-### Primitives and essentials
-Dash SDK bundled into a standalone package, 
-so that the end user never have to worry about mananaging polyfills or related dependencies 
+For detailed provider documentation, see the [Provider Guide](./docs/providers.md).
 
-```javascript
-const Dash = require('dash')
+## Error Handling
 
-const {
-  Essentials: {
-    Buffer  // Node.JS Buffer polyfill.
-  },
-  Core: { // @dashevo/dashcore-lib essentials
-    Transaction, 
-    PrivateKey,
-    BlockHeader,
-    // ...
-  },
-  PlatformProtocol: { // @dashevo/wasm-dpp essentials
-    Identity,
-    Identifier,
-  },
-  WalletLib: { // @dashevo/wallet-lib essentials
-    EVENTS
-  },
-  DAPIClient, // @dashevo/dapi-client
-} = Dash;
-``` 
+The SDK provides typed errors for better error handling:
 
-## Dependencies 
+```typescript
+import { 
+  NotFoundError, 
+  InsufficientBalanceError,
+  StateTransitionError 
+} from 'dash/utils';
 
-The Dash SDK works using multiple dependencies that might interest you:
-- [Wallet-Lib](https://github.com/dashpay/platform/tree/master/packages/wallet-lib) - Wallet management for handling, signing and broadcasting transactions (BIP-44 HD).
-- [Dashcore-Lib](https://github.com/dashpay/dashcore-lib) - Provides the main L1 blockchain primitives (Block, Transaction,...).
-- [DAPI-Client](https://github.com/dashpay/platform/tree/master/packages/js-dapi-client) - Client library for accessing DAPI endpoints.
-- [Wasm-DPP](https://github.com/dashpay/platform/tree/master/packages/wasm-dpp) - Implementation  of Dash Platform Protocol.
-
-Some features might be more extensive in those libs, as Dash SDK only wraps around them to provide a single interface that is easy to use (and thus has less features).
-
-## Documentation
-
-More extensive documentation available at https://dashpay.github.io/platform/SDK/.
-
-## Contributing
-
-Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
+try {
+  await sdk.identities.get('...');
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.log('Identity not found');
+  } else if (error instanceof StateTransitionError) {
+    console.log('State transition failed:', error.code);
+  }
+}
+```
 
 ## License
 
-[MIT](/LICENSE) © Dash Core Group, Inc.
+MIT

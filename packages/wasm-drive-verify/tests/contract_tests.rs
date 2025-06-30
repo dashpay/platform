@@ -16,7 +16,14 @@ fn test_verify_contract_invalid_id_length() {
     let invalid_contract_id = Uint8Array::from(&[0u8; 31][..]); // One byte short
     let platform_version = test_platform_version();
 
-    let result = verify_contract(&proof, None, false, false, &invalid_contract_id, platform_version);
+    let result = verify_contract(
+        &proof,
+        None,
+        false,
+        false,
+        &invalid_contract_id,
+        platform_version,
+    );
     assert_error_contains(
         &result.map(|_| ()),
         "Invalid contract_id length. Expected 32 bytes",
@@ -30,8 +37,7 @@ fn test_verify_contract_history_invalid_parameters() {
     let platform_version = test_platform_version();
 
     // Test with start_at_date of 0
-    let result =
-        verify_contract_history(&proof, &contract_id, 0, None, None, platform_version);
+    let result = verify_contract_history(&proof, &contract_id, 0, None, None, platform_version);
     // Should not panic, actual verification will fail due to mock proof
     assert!(result.is_err());
 }
@@ -46,9 +52,9 @@ fn test_verify_contract_history_large_limit() {
     let result = verify_contract_history(
         &proof,
         &contract_id,
-        0, // start_at_date
+        0,           // start_at_date
         Some(50000), // large limit within u16 range
-        None, // offset
+        None,        // offset
         platform_version,
     );
     // Should not panic, actual verification will fail due to mock proof

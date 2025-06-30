@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "lib": ["es6", "dom"],
+    "skipLibCheck": true,
+    "strict": true,
+    "allowUmdGlobalAccess": true,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "typeRoots": [
+    "node_modules/@types"
+  ]
+}

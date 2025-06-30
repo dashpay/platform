@@ -7,7 +7,8 @@ rust-version = "1.74"
 license = "MIT"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+# Default to rlib for tests, override with --crate-type for WASM builds
+crate-type = ["rlib"]
 
 [dependencies]
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
@@ -74,6 +75,10 @@ tokens = []
 governance = []
 transitions = []
 debug_logs = []
+
+[profile.release]
+# Disable LTO for mixed crate types (cdylib + rlib)
+lto = false
 
 [[bench]]
 name = "simple_benchmarks"

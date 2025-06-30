@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dash Balance Checker - Working Version</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      margin: 20px 0;
+    }
+    #output {
+      border: 1px solid #ccc;
+      padding: 10px;
+      margin-top: 20px;
+      background-color: #f5f5f5;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .error {
+      color: red;
+    }
+    .success {
+      color: green;
+    }
+    .info {
+      color: blue;
+    }
+    button {
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    #loading {
+      display: none;
+      color: blue;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dash Balance Checker - Working Version</h1>
+  
+  <div class="container">
+    <p>Identity ID: <strong>5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk</strong></p>
+    <button id="fetchButton">Fetch Balance</button>
+    <span id="loading">Loading...</span>
+  </div>
+
+  <div id="output"></div>
+
+  <script type="module">
+    import init, { WasmSdkBuilder, fetchIdentity, fetchIdentityBalance, FetchOptions } from './pkg/wasm_sdk.js';
+
+    const output = document.getElementById('output');
+    const loading = document.getElementById('loading');
+    const button = document.getElementById('fetchButton');
+    
+    function log(message, className = '') {
+      const timestamp = new Date().toISOString();
+      output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+      console.log(message);
+    }
+
+    async function fetchBalance() {
+      const identityId = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
+      
+      loading.style.display = 'inline';
+      button.disabled = true;
+      output.innerHTML = '';
+      
+      try {
+        log('Initializing WASM module...', 'info');
+        await init();
+        log('✓ WASM module initialized', 'success');
+
+        log('Building SDK for mainnet...', 'info');
+        const sdk = await WasmSdkBuilder.new_mainnet().build();
+        log('✓ SDK built successfully', 'success');
+
+        // Create fetch options with prove = true for GRPC
+        log('Creating fetch options with prove=true...', 'info');
+        const options = new FetchOptions();
+        options.prove = true;
+        options.timeout = 30000; // 30 seconds
+        options.retries = 3;
+
+        log(`Fetching balance for identity: ${identityId}`, 'info');
+        
+        try {
+          // Method 1: Direct balance fetch
+          log('Attempting direct balance fetch...', 'info');
+          const balance = await fetchIdentityBalance(sdk, identityId, options);
+          
+          log('✓ Balance fetched successfully!', 'success');
+          log(`\nBalance: ${balance} credits`, 'success');
+          
+          // Convert to DASH (1 DASH = 100,000,000 credits)
+          const dashAmount = balance / 100000000;
+          log(`Balance in DASH: ${dashAmount} DASH`, 'success');
+          
+        } catch (balanceError) {
+          log(`Direct balance fetch failed: ${balanceError.message}`, 'error');
+          
+          // Method 2: Fetch full identity
+          log('\nAttempting to fetch full identity...', 'info');
+          const identity = await fetchIdentity(sdk, identityId, options);
+          
+          log('✓ Identity fetched successfully!', 'success');
+          
+          // Get balance from identity
+          const balance = identity.balance();
+          log(`\nBalance: ${balance} credits`, 'success');
+          
+          // Convert to DASH
+          const dashAmount = balance / 100000000;
+          log(`Balance in DASH: ${dashAmount} DASH`, 'success');
+          
+          // Additional identity info
+          log(`\nIdentity revision: ${identity.revision()}`, 'info');
+          log(`Public keys count: ${identity.publicKeysCount()}`, 'info');
+        }
+        
+      } catch (error) {
+        log(`\nError: ${error.message || error}`, 'error');
+        console.error('Full error:', error);
+        
+        if (error.stack) {
+          log('\nStack trace:', 'error');
+          log(error.stack, 'error');
+        }
+        
+        // Provide debugging tips
+        log('\nDebugging tips:', 'info');
+        log('1. Check browser console for CORS errors', 'info');
+        log('2. Ensure the identity ID is valid', 'info');
+        log('3. Check network tab for failed requests', 'info');
+        log('4. The mainnet GRPC endpoints might be experiencing issues', 'info');
+      } finally {
+        loading.style.display = 'none';
+        button.disabled = false;
+      }
+    }
+
+    button.addEventListener('click', fetchBalance);
+    
+    // Log initial state
+    log('Page loaded. Click "Fetch Balance" to start.', 'info');
+  </script>
+</body>
+</html>

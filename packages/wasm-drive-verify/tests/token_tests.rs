@@ -4,8 +4,8 @@ use js_sys::{Array, Uint8Array};
 use wasm_bindgen_test::*;
 use wasm_drive_verify::token_verification::verify_token_balance_for_identity_id::verify_token_balance_for_identity_id;
 use wasm_drive_verify::token_verification::verify_token_balances_for_identity_ids::verify_token_balances_for_identity_ids_vec;
-use wasm_drive_verify::token_verification::verify_token_statuses::verify_token_statuses_vec;
 use wasm_drive_verify::token_verification::verify_token_direct_selling_prices::verify_token_direct_selling_prices_vec;
+use wasm_drive_verify::token_verification::verify_token_statuses::verify_token_statuses_vec;
 
 mod common;
 use common::*;
@@ -96,6 +96,7 @@ fn test_verify_token_direct_selling_prices_mixed_valid_invalid() {
 
     let platform_version = test_platform_version();
 
-    let result = verify_token_direct_selling_prices_vec(&proof, &contract_ids, false, platform_version);
+    let result =
+        verify_token_direct_selling_prices_vec(&proof, &contract_ids, false, platform_version);
     assert_error_contains(&result.map(|_| ()), "Invalid contract_id at index 1");
 }

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dash Platform Read-Only Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .loading {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+        .data-item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        input {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dash Platform Read-Only Data Viewer</h1>
+    
+    <div class="container">
+        <h2>SDK Status</h2>
+        <div id="sdk-status" class="status loading">Initializing SDK...</div>
+        <div id="network-info"></div>
+    </div>
+
+    <div class="container">
+        <h2>Platform State</h2>
+        <button onclick="fetchPlatformState()">Refresh Platform State</button>
+        <div id="platform-state"></div>
+    </div>
+
+    <div class="container">
+        <h2>Identity Lookup</h2>
+        <input type="text" id="identity-id" placeholder="Enter Identity ID">
+        <button onclick="lookupIdentity()">Lookup Identity</button>
+        <div id="identity-result"></div>
+    </div>
+
+    <div class="container">
+        <h2>Name Resolution (DPNS)</h2>
+        <input type="text" id="name-lookup" placeholder="Enter name (e.g., alice)">
+        <button onclick="resolveName()">Resolve Name</button>
+        <div id="name-result"></div>
+    </div>
+
+    <div class="container">
+        <h2>Data Contract</h2>
+        <input type="text" id="contract-id" placeholder="Enter Contract ID">
+        <button onclick="fetchContract()">Fetch Contract</button>
+        <div id="contract-result"></div>
+    </div>
+
+    <div class="container">
+        <h2>Document Query</h2>
+        <select id="query-contract">
+            <option value="dpns">DPNS Names</option>
+            <option value="dashpay">DashPay Profiles</option>
+        </select>
+        <input type="number" id="query-limit" placeholder="Limit" value="10">
+        <button onclick="queryDocuments()">Query Documents</button>
+        <div id="documents-result"></div>
+    </div>
+
+    <script type="module">
+        // Import the SDK (in production, you'd use a bundler or CDN)
+        import { createSDK } from './dash-sdk.js';
+        
+        let sdk;
+        
+        // Initialize SDK
+        async function initSDK() {
+            try {
+                sdk = createSDK({
+                    network: 'testnet',
+                    // Read-only operations don't require wallet
+                });
+                
+                await sdk.initialize();
+                
+                document.getElementById('sdk-status').className = 'status success';
+                document.getElementById('sdk-status').textContent = 'SDK initialized successfully!';
+                
+                // Show network info
+                const network = sdk.getNetwork();
+                document.getElementById('network-info').innerHTML = `
+                    <strong>Network:</strong> ${network.name} (${network.type})
+                `;
+                
+                // Fetch initial platform state
+                await fetchPlatformState();
+            } catch (error) {
+                document.getElementById('sdk-status').className = 'status error';
+                document.getElementById('sdk-status').textContent = `Failed to initialize SDK: ${error.message}`;
+            }
+        }
+        
+        // Fetch platform state
+        window.fetchPlatformState = async function() {
+            if (!sdk) return;
+            
+            const stateDiv = document.getElementById('platform-state');
+            stateDiv.innerHTML = '<div class="status loading">Fetching platform state...</div>';
+            
+            try {
+                const provider = sdk.getContextProvider();
+                const [height, time, coreHeight, version] = await Promise.all([
+                    provider.getLatestPlatformBlockHeight(),
+                    provider.getLatestPlatformBlockTime(),
+                    provider.getLatestPlatformCoreChainLockedHeight(),
+                    provider.getLatestPlatformVersion()
+                ]);
+                
+                stateDiv.innerHTML = `
+                    <div class="data-item">
+                        <strong>Platform Block Height:</strong> ${height.toLocaleString()}<br>
+                        <strong>Block Time:</strong> ${new Date(time).toLocaleString()}<br>
+                        <strong>Core Chain Locked Height:</strong> ${coreHeight.toLocaleString()}<br>
+                        <strong>Platform Version:</strong> ${version}
+                    </div>
+                `;
+            } catch (error) {
+                stateDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Lookup identity
+        window.lookupIdentity = async function() {
+            if (!sdk) return;
+            
+            const identityId = document.getElementById('identity-id').value.trim();
+            if (!identityId) {
+                alert('Please enter an Identity ID');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('identity-result');
+            resultDiv.innerHTML = '<div class="status loading">Looking up identity...</div>';
+            
+            try {
+                const identity = await sdk.identities.get(identityId);
+                
+                if (identity) {
+                    resultDiv.innerHTML = `
+                        <div class="data-item">
+                            <strong>Identity Found!</strong><br>
+                            <strong>ID:</strong> ${identity.id}<br>
+                            <strong>Balance:</strong> ${identity.balance} credits<br>
+                            <strong>Public Keys:</strong> ${identity.publicKeys.length}<br>
+                            <strong>Revision:</strong> ${identity.revision}
+                            <details>
+                                <summary>View Details</summary>
+                                <pre>${JSON.stringify(identity, null, 2)}</pre>
+                            </details>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<div class="status error">Identity not found</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Resolve DPNS name
+        window.resolveName = async function() {
+            if (!sdk) return;
+            
+            const name = document.getElementById('name-lookup').value.trim();
+            if (!name) {
+                alert('Please enter a name');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('name-result');
+            resultDiv.innerHTML = '<div class="status loading">Resolving name...</div>';
+            
+            try {
+                const nameDoc = await sdk.names.resolve(name);
+                
+                if (nameDoc) {
+                    resultDiv.innerHTML = `
+                        <div class="data-item">
+                            <strong>Name Resolved!</strong><br>
+                            <strong>Label:</strong> ${nameDoc.label}<br>
+                            <strong>Owner:</strong> ${nameDoc.ownerId}<br>
+                            <strong>Identity:</strong> ${nameDoc.records?.dashUniqueIdentityId || 'Not set'}
+                            <details>
+                                <summary>View Full Record</summary>
+                                <pre>${JSON.stringify(nameDoc, null, 2)}</pre>
+                            </details>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<div class="status error">Name not found</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Fetch data contract
+        window.fetchContract = async function() {
+            if (!sdk) return;
+            
+            const contractId = document.getElementById('contract-id').value.trim();
+            if (!contractId) {
+                alert('Please enter a Contract ID');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('contract-result');
+            resultDiv.innerHTML = '<div class="status loading">Fetching contract...</div>';
+            
+            try {
+                const contract = await sdk.contracts.get(contractId);
+                
+                if (contract) {
+                    const documentTypes = Object.keys(contract.documents || {});
+                    resultDiv.innerHTML = `
+                        <div class="data-item">
+                            <strong>Contract Found!</strong><br>
+                            <strong>ID:</strong> ${contract.id}<br>
+                            <strong>Owner:</strong> ${contract.ownerId}<br>
+                            <strong>Version:</strong> ${contract.version}<br>
+                            <strong>Document Types:</strong> ${documentTypes.join(', ')}
+                            <details>
+                                <summary>View Schema</summary>
+                                <pre>${JSON.stringify(contract.documents, null, 2)}</pre>
+                            </details>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<div class="status error">Contract not found</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Query documents
+        window.queryDocuments = async function() {
+            if (!sdk) return;
+            
+            const contractType = document.getElementById('query-contract').value;
+            const limit = parseInt(document.getElementById('query-limit').value) || 10;
+            
+            const resultDiv = document.getElementById('documents-result');
+            resultDiv.innerHTML = '<div class="status loading">Querying documents...</div>';
+            
+            try {
+                let documents;
+                
+                if (contractType === 'dpns') {
+                    // Query DPNS names
+                    documents = await sdk.documents.query({
+                        dataContractId: sdk.names.getDPNSContractId(),
+                        type: 'domain',
+                        limit: limit,
+                        orderBy: [['normalizedLabel', 'asc']]
+                    });
+                } else if (contractType === 'dashpay') {
+                    // Query DashPay profiles
+                    documents = await sdk.documents.query({
+                        dataContractId: 'Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7', // DashPay contract
+                        type: 'profile',
+                        limit: limit
+                    });
+                }
+                
+                if (documents && documents.length > 0) {
+                    let html = `<h3>Found ${documents.length} documents:</h3>`;
+                    documents.forEach((doc, index) => {
+                        html += `
+                            <div class="data-item">
+                                <strong>Document ${index + 1}</strong><br>
+                                <strong>ID:</strong> ${doc.id}<br>
+                                <strong>Owner:</strong> ${doc.ownerId}<br>
+                                <details>
+                                    <summary>View Data</summary>
+                                    <pre>${JSON.stringify(doc.data, null, 2)}</pre>
+                                </details>
+                            </div>
+                        `;
+                    });
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<div class="status error">No documents found</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Initialize on load
+        initSDK();
+    </script>
+</body>
+</html>

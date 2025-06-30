@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <title>Test Dash Endpoints</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .endpoint {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    .success { background-color: #d4edda; }
+    .error { background-color: #f8d7da; }
+    .info { background-color: #d1ecf1; }
+  </style>
+</head>
+<body>
+  <h1>Test Dash Platform Endpoints</h1>
+  
+  <div id="results"></div>
+
+  <script>
+    const endpoints = [
+      'https://dapi.dash.org:443',
+      'https://dapi-1.dash.org:443',
+      'https://dapi-2.dash.org:443'
+    ];
+
+    const results = document.getElementById('results');
+
+    async function testEndpoint(url) {
+      const div = document.createElement('div');
+      div.className = 'endpoint info';
+      div.innerHTML = `<strong>${url}</strong><br>Testing...`;
+      results.appendChild(div);
+
+      try {
+        // Test a simple gRPC-Web request
+        const response = await fetch(`${url}/v0/getStatus`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/grpc-web+proto',
+            'X-Grpc-Web': '1',
+          },
+          body: new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00]) // Empty protobuf message
+        });
+
+        const headers = {};
+        response.headers.forEach((value, key) => {
+          headers[key] = value;
+        });
+
+        div.className = response.ok ? 'endpoint success' : 'endpoint error';
+        div.innerHTML = `
+          <strong>${url}</strong><br>
+          Status: ${response.status} ${response.statusText}<br>
+          CORS: ${headers['access-control-allow-origin'] || 'Not set'}<br>
+          Content-Type: ${headers['content-type'] || 'Not set'}<br>
+          <details>
+            <summary>All Headers</summary>
+            <pre>${JSON.stringify(headers, null, 2)}</pre>
+          </details>
+        `;
+      } catch (error) {
+        div.className = 'endpoint error';
+        div.innerHTML = `
+          <strong>${url}</strong><br>
+          Error: ${error.message}<br>
+          Type: ${error.name}
+        `;
+      }
+    }
+
+    // Test all endpoints
+    endpoints.forEach(endpoint => {
+      testEndpoint(endpoint);
+    });
+  </script>
+</body>
+</html>

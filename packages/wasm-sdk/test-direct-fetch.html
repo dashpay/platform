@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Direct Fetch Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    pre { background: #f4f4f4; padding: 10px; overflow: auto; }
+    .error { color: red; }
+    .success { color: green; }
+  </style>
+</head>
+<body>
+  <h1>Direct Fetch Test</h1>
+  <div id="output"></div>
+
+  <script>
+    const output = document.getElementById('output');
+    
+    function log(msg, type = '') {
+      const div = document.createElement('div');
+      div.className = type;
+      div.textContent = msg;
+      output.appendChild(div);
+      console.log(msg);
+    }
+
+    async function testEndpoints() {
+      // Test different approaches
+      const endpoints = [
+        { url: 'https://52.13.132.146:1443/v0/getStatus', name: 'Testnet IP' },
+        { url: 'https://platform-dapi.testnet.dashplatform.io/v0/getStatus', name: 'Platform DAPI Testnet' },
+        { url: 'https://seed-1.testnet.networks.dash.org:1443/v0/getStatus', name: 'Seed Testnet' }
+      ];
+
+      for (const endpoint of endpoints) {
+        log(`\nTesting ${endpoint.name}: ${endpoint.url}`);
+        
+        try {
+          // Try as JSON first
+          const response = await fetch(endpoint.url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({})
+          });
+          
+          log(`Response: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+          
+          if (response.ok) {
+            const text = await response.text();
+            log(`Response body: ${text.substring(0, 200)}...`);
+          }
+        } catch (error) {
+          log(`Error: ${error.message}`, 'error');
+        }
+      }
+
+      // Test identity balance endpoint
+      log('\n\nTesting identity balance endpoint...');
+      const identityId = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
+      
+      try {
+        const balanceUrl = 'https://platform-dapi.testnet.dashplatform.io/v0/identities/' + identityId + '/balance';
+        const response = await fetch(balanceUrl);
+        
+        log(`Balance response: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+        
+        if (response.ok) {
+          const data = await response.json();
+          log(`Balance data: ${JSON.stringify(data, null, 2)}`, 'success');
+        }
+      } catch (error) {
+        log(`Balance error: ${error.message}`, 'error');
+      }
+    }
+
+    testEndpoints();
+  </script>
+</body>
+</html>

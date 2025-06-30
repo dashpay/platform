@@ -1,0 +1,90 @@
+# cargo-deny configuration for security and license compliance
+
+[bans]
+# Lint level for when multiple versions of the same crate are detected
+multiple-versions = "warn"
+# The graph highlighting used when creating dotgraphs for crates
+# with multiple versions
+highlight = "all"
+# List of explicitly disallowed crates
+deny = []
+# Certain crates/versions that will be skipped when doing duplicate detection
+skip = []
+# Similarly named crates that are allowed to coexist
+allow = []
+# Wildcards are not allowed in crate names
+wildcards = "deny"
+
+[licenses]
+# The confidence threshold for detecting a license from license text.
+confidence-threshold = 0.8
+# List of explicitly allowed licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+# List of explicitly disallowed licenses
+deny = [
+    "GPL-3.0",
+    "AGPL-3.0",
+    "GPL-2.0",
+    "LGPL-3.0",
+]
+# Lint level for licenses considered copyleft
+copyleft = "warn"
+# Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
+allow-osi-fsf-free = "neither"
+# Lint level used when no other predicates are matched
+default = "deny"
+
+[[licenses.clarify]]
+# Ring has a complicated license
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 }
+]
+
+[sources]
+# Lint level for what to happen when a crate from a crate registry that is not in the allow list is encountered
+unknown-registry = "warn"
+# Lint level for what to happen when a crate from a git repository that is not in the allow list is encountered
+unknown-git = "warn"
+# List of allowed crate registries
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# List of allowed Git repositories
+allow-git = []
+
+[advisories]
+# The path where the advisory database is cloned/fetched into
+db-path = "~/.cargo/advisory-db"
+# The url(s) of the advisory databases to use
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# The lint level for security vulnerabilities
+vulnerability = "deny"
+# The lint level for unmaintained crates
+unmaintained = "warn"
+# The lint level for crates with security notices
+notice = "warn"
+# A list of advisory IDs to ignore
+ignore = []
+# Threshold for security vulnerabilities, any vulnerability with a CVSS score
+# lower than the range start will be ignored. Note that ignored advisories will still
+# output a note when they are encountered.
+# * None - CVSS Score 0.0
+# * Low - CVSS Score 0.1 - 3.9
+# * Medium - CVSS Score 4.0 - 6.9
+# * High - CVSS Score 7.0 - 8.9
+# * Critical - CVSS Score 9.0 - 10.0
+severity-threshold = "low"
+
+# This section is considered when running `cargo deny check sources`
+[sources.allow-org]
+# GitHub organizations to allow git sources for
+github = ["dashpay", "rust-lang"]

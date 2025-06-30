@@ -16,4 +16,3 @@ impl VecU8ToUint8Array for [u8] {
         js_sys::Uint8Array::from(self)
     }
 }
-

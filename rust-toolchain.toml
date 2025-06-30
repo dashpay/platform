@@ -1,5 +1,5 @@
 [toolchain]
-# Rust version the same as in /README.md
-channel = "1.85"
+# Using 1.88 with LLVM 20
+channel = "1.88"
 
 targets = ["wasm32-unknown-unknown"]

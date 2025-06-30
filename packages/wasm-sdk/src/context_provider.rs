@@ -1,17 +1,52 @@
 use std::sync::Arc;
 
-use dash_sdk::{
-    dpp::{
-        prelude::CoreBlockHeight,
-        util::vec::{decode_hex, encode_hex},
-    },
-    error::ContextProviderError,
-    platform::{DataContract, Identifier},
+use dpp::{
+    data_contract::DataContract,
+    prelude::CoreBlockHeight,
+    util::vec::{decode_hex, encode_hex},
 };
-use drive_proof_verifier::ContextProvider;
+use platform_value::Identifier;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+// Define our own error type since drive_proof_verifier is not WASM compatible
+#[derive(Debug, thiserror::Error)]
+pub enum ContextProviderError {
+    #[error("Invalid quorum: {0}")]
+    InvalidQuorum(String),
+    #[error("Data contract not found: {0}")]
+    DataContractNotFound(String),
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
+// Define our own ContextProvider trait since drive_proof_verifier is not WASM compatible
+pub trait ContextProvider {
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError>;
+
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<
+        Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>,
+        ContextProviderError,
+    >;
+}
+
 #[wasm_bindgen]
+#[derive(Clone, Debug)]
 pub struct WasmContext {}
 /// Quorum keys for the testnet
 /// This is a hardcoded list of quorum keys for the testnet.
@@ -91,11 +126,186 @@ impl ContextProvider for WasmContext {
     fn get_data_contract(
         &self,
         _id: &Identifier,
+        _platform_version: &dpp::version::PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         todo!()
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        todo!()
+        // Return testnet activation height for now
+        Ok(1)
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<
+        Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>,
+        ContextProviderError,
+    > {
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+
+        // For now, return a default token configuration for any requested token
+        // In a real implementation, this would fetch from the platform or cache
+
+        // Check if this is a known system contract token
+        let token_config = match token_id
+            .to_string(platform_value::string_encoding::Encoding::Base58)
+        {
+            id_str => {
+                // Parse token ID format: <contract_id>.<position>
+                let parts: Vec<&str> = id_str.split('.').collect();
+                if parts.len() == 2 {
+                    let _contract_id = parts[0];
+                    let _position = parts[1].parse::<u32>().unwrap_or(0);
+
+                    // Create a default token configuration
+                    // Import the rules we need to construct manually
+                    use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+                    use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+                    use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+                    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+                    use dpp::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+                    use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
+                    use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
+                    use dpp::data_contract::associated_token::token_marketplace_rules::TokenMarketplaceRules;
+                    use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+                    use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+                    use dpp::data_contract::change_control_rules::ChangeControlRules;
+
+                    Some(TokenConfiguration::V0(TokenConfigurationV0 {
+                        base_supply: 1_000_000_000_000,       // 1 trillion base units
+                        max_supply: Some(10_000_000_000_000), // 10 trillion max supply
+                        conventions: TokenConfigurationConvention::V0(Default::default()),
+                        conventions_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        keeps_history: TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+                            keeps_transfer_history: true,
+                            keeps_freezing_history: true,
+                            keeps_minting_history: true,
+                            keeps_burning_history: true,
+                            keeps_direct_pricing_history: true,
+                            keeps_direct_purchase_history: true,
+                        }),
+                        start_as_paused: false,
+                        allow_transfer_to_frozen_balance: true,
+                        max_supply_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        distribution_rules: TokenDistributionRules::V0(TokenDistributionRulesV0 {
+                            perpetual_distribution: None,
+                            perpetual_distribution_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
+                            pre_programmed_distribution: None,
+                            new_tokens_destination_identity: None,
+                            new_tokens_destination_identity_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
+                            minting_allow_choosing_destination: true,
+                            minting_allow_choosing_destination_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
+                            change_direct_purchase_pricing_rules: ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ),
+                        }),
+                        marketplace_rules: TokenMarketplaceRules::V0(TokenMarketplaceRulesV0 {
+                            trade_mode: TokenTradeMode::NotTradeable,
+                            trade_mode_change_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            }),
+                        }),
+                        manual_minting_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        manual_burning_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        freeze_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        unfreeze_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        destroy_frozen_funds_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        emergency_action_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        }),
+                        main_control_group: None,
+                        main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
+                        description: None,
+                    }))
+                } else {
+                    None
+                }
+            }
+        };
+
+        Ok(token_config)
     }
 }

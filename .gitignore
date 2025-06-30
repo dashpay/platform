@@ -44,6 +44,13 @@ packages/wasm-drive-verify/analysis-results/
 packages/wasm-drive-verify/size-analysis/
 packages/wasm-drive-verify/test-tree-shaking/
 
+# wasm-sdk build artifacts
+packages/wasm-sdk/target/
+packages/wasm-sdk/.cargo/
+packages/wasm-sdk/pkg/
+packages/wasm-sdk/dist/
+packages/wasm-sdk/*.bak
+
 # gRPC coverage report
 grpc-coverage-report.txt
 
