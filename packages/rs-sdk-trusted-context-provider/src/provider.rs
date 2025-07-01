@@ -69,7 +69,11 @@ impl TrustedHttpContextProvider {
             TrustedContextProviderError::NetworkError("URL has no host".to_string())
         })?;
 
-        let port = parsed_url.port().unwrap_or(443); // Default to HTTPS port
+        let port = parsed_url.port_or_known_default().ok_or_else(|| {
+            TrustedContextProviderError::NetworkError(
+                "Unknown URL scheme and no port specified".to_string(),
+            )
+        })?;
 
         // Try to resolve the domain
         let addr = format!("{}:{}", host, port);
@@ -472,16 +476,22 @@ mod tests {
         let result = TrustedHttpContextProvider::verify_domain_resolves("https://localhost");
         assert!(result.is_ok());
 
+        // Test with HTTP URL (should use port 80 by default)
+        let result = TrustedHttpContextProvider::verify_domain_resolves("http://localhost");
+        assert!(result.is_ok());
+
         // Test with an invalid domain that won't resolve
         let result = TrustedHttpContextProvider::verify_domain_resolves(
             "https://this-domain-definitely-does-not-exist-12345.com",
         );
         assert!(result.is_err());
-        // Just check that it returns an error
-        assert!(result.is_err());
 
         // Test with an invalid URL
         let result = TrustedHttpContextProvider::verify_domain_resolves("not-a-valid-url");
+        assert!(result.is_err());
+
+        // Test with unknown scheme - should fail due to port_or_known_default returning None
+        let result = TrustedHttpContextProvider::verify_domain_resolves("unknown://localhost");
         assert!(result.is_err());
     }
 
