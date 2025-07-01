@@ -1,0 +1,26 @@
+[package]
+name = "rs-sdk-trusted-context-provider"
+version = "2.0.0"
+edition = "2021"
+authors = ["sam@dash.org"]
+license = "MIT"
+description = "Trusted HTTP-based context provider for Dash Platform SDK"
+
+[dependencies]
+dash-context-provider = { path = "../rs-context-provider" }
+dpp = { path = "../rs-dpp", default-features = false, features = ["dash-sdk-features"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1.40"
+lru = "0.12.5"
+arc-swap = "1.7.1"
+async-trait = "0.1.83"
+hex = "0.4.3"
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = ["bls-signatures"], tag = "v0.39.6" }
+futures = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4.4"
