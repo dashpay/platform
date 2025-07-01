@@ -22,4 +22,10 @@ pub enum TrustedContextProviderError {
 
     #[error("Cache error: {0}")]
     CacheError(String),
+
+    #[error("Invalid devnet name: {0}")]
+    InvalidDevnetName(String),
+
+    #[error("Unsupported network: {0}")]
+    UnsupportedNetwork(String),
 }

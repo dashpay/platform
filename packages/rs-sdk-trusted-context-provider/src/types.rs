@@ -13,9 +13,6 @@ pub struct QuorumData {
     pub quorum_hash: String,
     pub key: String,
     pub height: u64,
-    pub members: Vec<String>,
-    pub threshold_signature: String,
-    pub mining_members_count: u32,
     pub valid_members_count: u32,
 }
 

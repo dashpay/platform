@@ -21,6 +21,7 @@ async-trait = "0.1.83"
 hex = "0.4.3"
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = ["bls-signatures"], tag = "v0.39.6" }
 futures = "0.3"
+url = "2.5"
 
 [dev-dependencies]
 tokio-test = "0.4.4"

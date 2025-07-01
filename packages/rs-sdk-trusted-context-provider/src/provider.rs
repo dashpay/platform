@@ -25,16 +25,17 @@ fn get_llmq_type_for_network(network: Network) -> u32 {
 use lru::LruCache;
 use reqwest::Client;
 use std::collections::HashMap;
+use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info};
+use url::Url;
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
 pub struct TrustedHttpContextProvider {
     network: Network,
-    _devnet_name: Option<String>,
     client: Client,
     base_url: String,
 
@@ -58,19 +59,61 @@ pub struct TrustedHttpContextProvider {
 }
 
 impl TrustedHttpContextProvider {
-    /// Create a new trusted HTTP context provider
+    /// Verify that a URL's domain resolves
+    fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
+        let parsed_url = Url::parse(url).map_err(|e| {
+            TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
+        })?;
+
+        let host = parsed_url.host_str().ok_or_else(|| {
+            TrustedContextProviderError::NetworkError("URL has no host".to_string())
+        })?;
+
+        let port = parsed_url.port().unwrap_or(443); // Default to HTTPS port
+
+        // Try to resolve the domain
+        let addr = format!("{}:{}", host, port);
+        match addr.to_socket_addrs() {
+            Ok(mut addrs) => {
+                if addrs.next().is_none() {
+                    return Err(TrustedContextProviderError::NetworkError(format!(
+                        "Domain '{}' does not resolve to any IP addresses",
+                        host
+                    )));
+                }
+                debug!("Domain '{}' resolves successfully", host);
+                Ok(())
+            }
+            Err(e) => Err(TrustedContextProviderError::NetworkError(format!(
+                "Failed to resolve domain '{}': {}",
+                host, e
+            ))),
+        }
+    }
+
+    /// Create a new trusted HTTP context provider with default URLs
     pub fn new(
         network: Network,
         devnet_name: Option<String>,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
-        let base_url = get_quorum_base_url(network, devnet_name.as_deref());
+        let base_url = get_quorum_base_url(network, devnet_name.as_deref())?;
+        Self::new_with_url(network, base_url, cache_size)
+    }
+
+    /// Create a new trusted HTTP context provider with a custom URL
+    pub fn new_with_url(
+        network: Network,
+        base_url: String,
+        cache_size: NonZeroUsize,
+    ) -> Result<Self, TrustedContextProviderError> {
+        // Verify the domain resolves before proceeding
+        Self::verify_domain_resolves(&base_url)?;
 
         let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
         Ok(Self {
             network,
-            _devnet_name: devnet_name,
             client,
             base_url,
             current_quorums_cache: Arc::new(Mutex::new(LruCache::new(cache_size))),
@@ -122,11 +165,20 @@ impl TrustedHttpContextProvider {
         // Cache individual quorums
         if let Ok(mut cache) = self.current_quorums_cache.lock() {
             for quorum in &quorums.data {
-                let hash: [u8; 32] = hex::decode(&quorum.quorum_hash)
+                match hex::decode(&quorum.quorum_hash)
                     .ok()
                     .and_then(|bytes| bytes.try_into().ok())
-                    .unwrap_or([0u8; 32]);
-                cache.put(hash, quorum.clone());
+                {
+                    Some(hash) => {
+                        cache.put(hash, quorum.clone());
+                    }
+                    None => {
+                        debug!(
+                            "Skipping invalid quorum hash '{}' for current quorums",
+                            quorum.quorum_hash
+                        );
+                    }
+                }
             }
         }
 
@@ -160,11 +212,20 @@ impl TrustedHttpContextProvider {
         // Cache individual quorums
         if let Ok(mut cache) = self.previous_quorums_cache.lock() {
             for quorum in &quorums.data.quorums {
-                let hash: [u8; 32] = hex::decode(&quorum.quorum_hash)
+                match hex::decode(&quorum.quorum_hash)
                     .ok()
                     .and_then(|bytes| bytes.try_into().ok())
-                    .unwrap_or([0u8; 32]);
-                cache.put(hash, quorum.clone());
+                {
+                    Some(hash) => {
+                        cache.put(hash, quorum.clone());
+                    }
+                    None => {
+                        debug!(
+                            "Skipping invalid quorum hash '{}' for previous quorums",
+                            quorum.quorum_hash
+                        );
+                    }
+                }
             }
         }
 
@@ -186,16 +247,16 @@ impl TrustedHttpContextProvider {
         }
 
         // Check current cache first
-        if let Ok(cache) = self.current_quorums_cache.lock() {
-            if let Some(quorum) = cache.peek(&quorum_hash) {
+        if let Ok(mut cache) = self.current_quorums_cache.lock() {
+            if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in current cache");
                 return Ok(quorum.clone());
             }
         }
 
         // Check previous cache
-        if let Ok(cache) = self.previous_quorums_cache.lock() {
-            if let Some(quorum) = cache.peek(&quorum_hash) {
+        if let Ok(mut cache) = self.previous_quorums_cache.lock() {
+            if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in previous cache");
                 return Ok(quorum.clone());
             }
@@ -323,25 +384,63 @@ mod tests {
     #[test]
     fn test_get_quorum_base_url() {
         assert_eq!(
-            get_quorum_base_url(Network::Dash, None),
+            get_quorum_base_url(Network::Dash, None).unwrap(),
             "https://quorums.mainnet.networks.dash.org"
         );
 
         assert_eq!(
-            get_quorum_base_url(Network::Testnet, None),
+            get_quorum_base_url(Network::Testnet, None).unwrap(),
             "https://quorums.testnet.networks.dash.org"
         );
 
         assert_eq!(
-            get_quorum_base_url(Network::Devnet, Some("example")),
+            get_quorum_base_url(Network::Devnet, Some("example")).unwrap(),
             "https://quorums.devnet.example.networks.dash.org"
         );
     }
 
     #[test]
-    #[should_panic(expected = "Devnet name must be provided")]
-    fn test_devnet_without_name_panics() {
-        get_quorum_base_url(Network::Devnet, None);
+    fn test_devnet_without_name_returns_error() {
+        let result = get_quorum_base_url(Network::Devnet, None);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TrustedContextProviderError::InvalidDevnetName(_)
+        ));
+    }
+
+    #[test]
+    fn test_regtest_returns_error() {
+        let result = get_quorum_base_url(Network::Regtest, None);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TrustedContextProviderError::UnsupportedNetwork(_)
+        ));
+    }
+
+    #[test]
+    fn test_invalid_devnet_names() {
+        // Empty name
+        let result = get_quorum_base_url(Network::Devnet, Some(""));
+        assert!(result.is_err());
+
+        // Name with special characters
+        let result = get_quorum_base_url(Network::Devnet, Some("test@name"));
+        assert!(result.is_err());
+
+        // Name starting with hyphen
+        let result = get_quorum_base_url(Network::Devnet, Some("-test"));
+        assert!(result.is_err());
+
+        // Name ending with hyphen
+        let result = get_quorum_base_url(Network::Devnet, Some("test-"));
+        assert!(result.is_err());
+
+        // Valid names should work
+        assert!(get_quorum_base_url(Network::Devnet, Some("test")).is_ok());
+        assert!(get_quorum_base_url(Network::Devnet, Some("test-123")).is_ok());
+        assert!(get_quorum_base_url(Network::Devnet, Some("TEST123")).is_ok());
     }
 
     #[test]
@@ -365,5 +464,59 @@ mod tests {
 
         // Test that we can use the builder pattern to add known contracts
         // The builder pattern is more appropriate since contracts are only added during initialization
+    }
+
+    #[test]
+    fn test_domain_resolution_check() {
+        // Test with a domain that should resolve (using localhost)
+        let result = TrustedHttpContextProvider::verify_domain_resolves("https://localhost");
+        assert!(result.is_ok());
+
+        // Test with an invalid domain that won't resolve
+        let result = TrustedHttpContextProvider::verify_domain_resolves(
+            "https://this-domain-definitely-does-not-exist-12345.com",
+        );
+        assert!(result.is_err());
+        // Just check that it returns an error
+        assert!(result.is_err());
+
+        // Test with an invalid URL
+        let result = TrustedHttpContextProvider::verify_domain_resolves("not-a-valid-url");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_provider_creation_with_invalid_domain() {
+        // This test will fail if we try to create a provider with an invalid devnet name
+        // that results in a non-resolving domain
+        let result = TrustedHttpContextProvider::new(
+            Network::Devnet,
+            Some("nonexistent-devnet-12345".to_string()),
+            NonZeroUsize::new(100).unwrap(),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_provider_with_custom_url() {
+        // Test with a valid custom URL (localhost should resolve)
+        let result = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://localhost:8080".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        );
+        assert!(result.is_ok());
+
+        let provider = result.unwrap();
+        assert_eq!(provider.base_url, "https://localhost:8080");
+
+        // Test with an invalid custom URL
+        let result = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://this-domain-definitely-does-not-exist-12345.com".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        );
+        assert!(result.is_err());
     }
 }
