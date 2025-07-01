@@ -45,7 +45,7 @@ pub fn get_platform_version_with_validation(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
 

@@ -5,7 +5,7 @@
 //! using a channel.
 
 use arc_swap::ArcSwap;
-use drive_proof_verifier::error::ContextProviderError;
+use dash_context_provider::ContextProviderError;
 use rs_dapi_client::{
     update_address_ban_status, AddressList, CanRetry, ExecutionResult, RequestSettings,
 };

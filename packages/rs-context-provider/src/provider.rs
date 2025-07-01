@@ -1,12 +1,15 @@
 use crate::error::ContextProviderError;
-use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
+use std::{ops::Deref, sync::Arc};
+
 #[cfg(feature = "mocks")]
-use hex::ToHex;
-use std::{io::ErrorKind, ops::Deref, sync::Arc};
+use {
+    dpp::data_contract::serialized_version::DataContractInSerializationFormat, hex::ToHex,
+    std::io::ErrorKind,
+};
 
 /// Interface between the Sdk and state of the application.
 ///

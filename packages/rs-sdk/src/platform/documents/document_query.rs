@@ -10,6 +10,7 @@ use dapi_grpc::platform::v0::{
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
+use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use dpp::{
@@ -22,7 +23,7 @@ use dpp::{
     InvalidVectorSizeError, ProtocolError,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
+use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };

@@ -34,10 +34,12 @@
 //! All identifiers (identity IDs, contract IDs, document IDs, etc.) are returned as base58-encoded
 //! strings for consistency and compatibility with the Dash ecosystem.
 
-
 // Core utilities module (always available)
 mod utils;
 pub use utils::serialization::*;
+
+// Native Rust API (for use by other Rust/WASM projects)
+pub mod native;
 
 // Conditional compilation for modules
 #[cfg(any(feature = "identity", feature = "full"))]
