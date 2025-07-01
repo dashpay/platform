@@ -1,49 +1,17 @@
 use std::sync::Arc;
 
-use dpp::{
-    prelude::CoreBlockHeight,
-    util::vec::{decode_hex, encode_hex},
-    data_contract::DataContract,
+use dash_sdk::{
+    dpp::{
+        prelude::CoreBlockHeight,
+        util::vec::{decode_hex, encode_hex},
+    },
+    error::ContextProviderError,
+    platform::{DataContract, Identifier},
 };
-use platform_value::Identifier;
+use drive_proof_verifier::ContextProvider;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-// Define our own error type since drive_proof_verifier is not WASM compatible
-#[derive(Debug, thiserror::Error)]
-pub enum ContextProviderError {
-    #[error("Invalid quorum: {0}")]
-    InvalidQuorum(String),
-    #[error("Data contract not found: {0}")]
-    DataContractNotFound(String),
-    #[error("Other error: {0}")]
-    Other(String),
-}
-
-// Define our own ContextProvider trait since drive_proof_verifier is not WASM compatible
-pub trait ContextProvider {
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError>;
-    
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-        platform_version: &dpp::version::PlatformVersion,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
-    
-    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
-    
-    fn get_token_configuration(
-        &self,
-        token_id: &Identifier,
-    ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, ContextProviderError>;
-}
-
 #[wasm_bindgen]
-#[derive(Clone, Debug)]
 pub struct WasmContext {}
 /// Quorum keys for the testnet
 /// This is a hardcoded list of quorum keys for the testnet.
@@ -123,21 +91,11 @@ impl ContextProvider for WasmContext {
     fn get_data_contract(
         &self,
         _id: &Identifier,
-        _platform_version: &dpp::version::PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         todo!()
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        // Return testnet activation height for now
-        Ok(1) 
-    }
-
-    fn get_token_configuration(
-        &self,
-        _token_id: &Identifier,
-    ) -> Result<Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>, ContextProviderError> {
-        // TODO: Implement token configuration retrieval
-        Ok(None)
+        todo!()
     }
 }
