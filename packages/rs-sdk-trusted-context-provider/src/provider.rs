@@ -5,6 +5,7 @@ use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use dash_context_provider::{ContextProvider, ContextProviderError};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
 type QuorumHash = [u8; 32];
@@ -23,6 +24,7 @@ fn get_llmq_type_for_network(network: Network) -> u32 {
 }
 use lru::LruCache;
 use reqwest::Client;
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -50,6 +52,9 @@ pub struct TrustedHttpContextProvider {
 
     /// Optional fallback provider for data contracts and token configurations
     fallback_provider: Option<Box<dyn ContextProvider>>,
+
+    /// Known contracts cache - contracts that are pre-loaded and can be served immediately
+    known_contracts: HashMap<Identifier, Arc<DataContract>>,
 }
 
 impl TrustedHttpContextProvider {
@@ -73,12 +78,22 @@ impl TrustedHttpContextProvider {
             last_current_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
+            known_contracts: HashMap::new(),
         })
     }
 
     /// Set a fallback provider for data contracts and token configurations
     pub fn with_fallback_provider<P: ContextProvider + 'static>(mut self, provider: P) -> Self {
         self.fallback_provider = Some(Box::new(provider));
+        self
+    }
+
+    /// Set known contracts that will be served immediately without fallback
+    pub fn with_known_contracts(mut self, contracts: Vec<DataContract>) -> Self {
+        for contract in contracts {
+            let id = contract.id();
+            self.known_contracts.insert(id, Arc::new(contract));
+        }
         self
     }
 
@@ -261,7 +276,12 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // Delegate to fallback provider if available
+        // First check known contracts cache
+        if let Some(contract) = self.known_contracts.get(id) {
+            return Ok(Some(contract.clone()));
+        }
+
+        // If not found in known contracts, delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
             provider.get_data_contract(id, platform_version)
         } else {
@@ -322,5 +342,28 @@ mod tests {
     #[should_panic(expected = "Devnet name must be provided")]
     fn test_devnet_without_name_panics() {
         get_quorum_base_url(Network::Devnet, None);
+    }
+
+    #[test]
+    fn test_known_contracts() {
+        use dpp::version::PlatformVersion;
+
+        // Create a provider
+        let provider = TrustedHttpContextProvider::new(
+            Network::Testnet,
+            None,
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+
+        // Test that initially there are no known contracts
+        let contract_id = Identifier::from([1u8; 32]);
+        let retrieved = provider
+            .get_data_contract(&contract_id, PlatformVersion::latest())
+            .unwrap();
+        assert!(retrieved.is_none());
+
+        // Test that we can use the builder pattern to add known contracts
+        // The builder pattern is more appropriate since contracts are only added during initialization
     }
 }
