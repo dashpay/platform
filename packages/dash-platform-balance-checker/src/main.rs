@@ -154,7 +154,7 @@ async fn main() -> Result<()> {
             builder =
                 builder.with_core(&args.core_host, core_port, &args.core_user, &core_password);
         }
-        builder.build().expect("Failed to build SDK")
+        builder.build()?
     } else {
         // Mainnet configuration
         let addresses = vec![
@@ -168,7 +168,7 @@ async fn main() -> Result<()> {
             builder =
                 builder.with_core(&args.core_host, core_port, &args.core_user, &core_password);
         }
-        builder.build().expect("Failed to build SDK")
+        builder.build()?
     };
 
     // Fetch the identity
