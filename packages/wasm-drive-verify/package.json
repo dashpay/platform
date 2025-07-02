@@ -1,0 +1,59 @@
+{
+  "name": "wasm-drive-verify",
+  "collaborators": [
+    "Dash Core Group <dev@dash.org>"
+  ],
+  "version": "1.8.0",
+  "license": "MIT",
+  "description": "WASM bindings for Drive verify functions",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git"
+  },
+  "type": "module",
+  "main": "pkg/wasm_drive_verify.js",
+  "types": "pkg/wasm_drive_verify.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./identity": {
+      "import": "./dist/identity.js",
+      "types": "./dist/identity.d.ts"
+    },
+    "./document": {
+      "import": "./dist/document.js",
+      "types": "./dist/document.d.ts"
+    },
+    "./contract": {
+      "import": "./dist/contract.js",
+      "types": "./dist/contract.d.ts"
+    },
+    "./tokens": {
+      "import": "./dist/tokens.js",
+      "types": "./dist/tokens.d.ts"
+    },
+    "./governance": {
+      "import": "./dist/governance.js",
+      "types": "./dist/governance.d.ts"
+    },
+    "./transitions": {
+      "import": "./dist/transitions.js",
+      "types": "./dist/transitions.d.ts"
+    },
+    "./core": {
+      "import": "./dist/core.js",
+      "types": "./dist/core.d.ts"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "pkg"
+  ],
+  "scripts": {
+    "build": "./build.sh",
+    "build:modules": "./scripts/build-modules.sh"
+  }
+}

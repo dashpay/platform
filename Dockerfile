@@ -388,6 +388,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/wasm-dpp \
+    packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/check-features \
@@ -470,6 +471,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/wasm-dpp \
+    packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/check-features \

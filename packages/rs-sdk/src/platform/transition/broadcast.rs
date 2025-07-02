@@ -9,10 +9,10 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response, Proof, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dash_context_provider::ContextProviderError;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
-use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 use rs_dapi_client::{ExecutionResponse, WrapToExecutionResult};
