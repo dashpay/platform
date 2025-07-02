@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::Parser;
 use dash_sdk::dapi_client::{Address, AddressList};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::platform::{Fetch, Identifier, Identity};
@@ -6,128 +7,111 @@ use dash_sdk::SdkBuilder;
 use std::env;
 use std::str::FromStr;
 
-fn print_usage() {
-    println!("Usage: dash-platform-balance-checker <identity-id> [OPTIONS]");
-    println!();
-    println!("Arguments:");
-    println!("  <identity-id>              Identity ID in Base58 format");
-    println!();
-    println!("Options:");
-    println!("  --testnet                  Use testnet instead of mainnet (default: mainnet)");
-    println!("  --core-host <host>         Core RPC host (default: localhost)");
-    println!("  --core-port <port>         Core RPC port (default: 9998 mainnet, 19998 testnet)");
-    println!("  --core-user <username>     Core RPC username (default: dashrpc)");
-    println!("  --core-password <password> Core RPC password (default: password)");
-    println!("  --no-core                  Skip Core connection (may limit functionality)");
-    println!();
-    println!("Examples:");
-    println!("  # Check balance on mainnet using local Core");
-    println!("  dash-platform-balance-checker 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk");
-    println!();
-    println!("  # Check balance on testnet with custom Core");
-    println!("  dash-platform-balance-checker 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk \\");
-    println!("    --testnet --core-host 192.168.1.100 --core-port 19998 \\");
-    println!("    --core-user myuser --core-password mypass");
-    println!();
-    println!("  # Check balance without Core connection");
-    println!("  dash-platform-balance-checker 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk --no-core");
+/// Number of credits per DASH
+/// 1 DASH = 100,000,000,000 credits (100 billion)
+const CREDITS_PER_DASH: f64 = 100_000_000_000.0;
+
+/// Dash Platform Balance Checker - Check identity balances on Dash Platform
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+#[command(after_help = "EXAMPLES:
+    # Check balance on mainnet using local Core
+    dash-platform-balance-checker 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk
+
+    # Check balance on testnet with custom Core (password from env var)
+    DASH_CORE_RPC_PASSWORD=mypass dash-platform-balance-checker 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk \\
+        --testnet --core-host 192.168.1.100 --core-port 19998 --core-user myuser
+
+    # Check balance without Core connection
+    dash-platform-balance-checker 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk --no-core
+
+SECURITY:
+    Core RPC password can be provided in three ways (in order of preference):
+    1. Set DASH_CORE_RPC_PASSWORD environment variable
+    2. Enter interactively when prompted (most secure)
+    3. Pass via --core-password flag (least secure, visible in process list)")]
+struct Args {
+    /// Identity ID in Base58 format
+    identity_id: String,
+
+    /// Use testnet instead of mainnet
+    #[arg(long)]
+    testnet: bool,
+
+    /// Core RPC host
+    #[arg(long, default_value = "localhost")]
+    core_host: String,
+
+    /// Core RPC port (defaults to 9998 for mainnet, 19998 for testnet)
+    #[arg(long)]
+    core_port: Option<u16>,
+
+    /// Core RPC username
+    #[arg(long, default_value = "dashrpc")]
+    core_user: String,
+
+    /// Core RPC password (reads from DASH_CORE_RPC_PASSWORD env var if not provided)
+    #[arg(long, hide = true)]
+    core_password: Option<String>,
+
+    /// Skip Core connection (may limit functionality)
+    #[arg(long)]
+    no_core: bool,
 }
 
-fn parse_args(args: &[String]) -> Result<(String, bool, String, u16, String, String, bool)> {
-    if args.len() < 2 {
-        return Err(anyhow::anyhow!("Missing identity ID"));
+impl Args {
+    /// Get the effective core port, using defaults based on network if not specified
+    fn get_core_port(&self) -> u16 {
+        self.core_port
+            .unwrap_or(if self.testnet { 19998 } else { 9998 })
     }
-    
-    let identity_id = args[1].clone();
-    let mut use_testnet = false;
-    let mut core_host = "localhost".to_string();
-    let mut core_port = 0u16; // Will be set based on network
-    let mut core_user = "dashrpc".to_string();
-    let mut core_password = "password".to_string();
-    let mut no_core = false;
-    
-    let mut i = 2;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--testnet" => use_testnet = true,
-            "--no-core" => no_core = true,
-            "--core-host" => {
-                if i + 1 < args.len() {
-                    core_host = args[i + 1].clone();
-                    i += 1;
-                } else {
-                    return Err(anyhow::anyhow!("--core-host requires a value"));
-                }
-            }
-            "--core-port" => {
-                if i + 1 < args.len() {
-                    core_port = args[i + 1].parse()
-                        .map_err(|_| anyhow::anyhow!("Invalid port number"))?;
-                    i += 1;
-                } else {
-                    return Err(anyhow::anyhow!("--core-port requires a value"));
-                }
-            }
-            "--core-user" => {
-                if i + 1 < args.len() {
-                    core_user = args[i + 1].clone();
-                    i += 1;
-                } else {
-                    return Err(anyhow::anyhow!("--core-user requires a value"));
-                }
-            }
-            "--core-password" => {
-                if i + 1 < args.len() {
-                    core_password = args[i + 1].clone();
-                    i += 1;
-                } else {
-                    return Err(anyhow::anyhow!("--core-password requires a value"));
-                }
-            }
-            _ => return Err(anyhow::anyhow!("Unknown option: {}", args[i])),
-        }
-        i += 1;
-    }
-    
-    // Set default port based on network if not specified
-    if core_port == 0 {
-        core_port = if use_testnet { 19998 } else { 9998 };
-    }
-    
-    Ok((identity_id, use_testnet, core_host, core_port, core_user, core_password, no_core))
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    
-    // Check for help flag
-    if args.len() < 2 || args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
-        print_usage();
-        return Ok(());
-    }
-    
-    // Parse arguments
-    let (identity_id_string, use_testnet, core_host, core_port, core_user, core_password, no_core) = 
-        match parse_args(&args) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                eprintln!();
-                print_usage();
-                return Ok(());
+    // Parse command line arguments
+    let args = Args::parse();
+
+    let network = if args.testnet { "Testnet" } else { "Mainnet" };
+    let core_port = args.get_core_port();
+
+    // Handle Core password securely
+    let core_password = if args.no_core {
+        String::new() // Won't be used anyway
+    } else {
+        match &args.core_password {
+            Some(password) => {
+                eprintln!("Warning: Passing passwords via command line is insecure.");
+                eprintln!("Consider using DASH_CORE_RPC_PASSWORD environment variable instead.");
+                password.clone()
             }
-        };
-    
-    let network = if use_testnet { "Testnet" } else { "Mainnet" };
-    
+            None => {
+                // Try environment variable first
+                match env::var("DASH_CORE_RPC_PASSWORD") {
+                    Ok(password) => password,
+                    Err(_) => {
+                        // Prompt for password
+                        eprint!("Enter Core RPC password: ");
+                        match rpassword::read_password() {
+                            Ok(password) => password,
+                            Err(e) => {
+                                eprintln!("Error reading password: {}", e);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     println!("Dash Platform Balance Checker - {}", network);
     println!("=====================================\n");
-    println!("Identity ID: {}", identity_id_string);
-    
+    println!("Identity ID: {}", args.identity_id);
+
     // Parse the identity ID
     let identity_id = match Identifier::from_string(
-        &identity_id_string,
+        &args.identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     ) {
         Ok(id) => id,
@@ -137,21 +121,21 @@ async fn main() -> Result<()> {
             return Ok(());
         }
     };
-    
+
     println!("Parsed Identity ID: {}", identity_id);
-    
+
     // Core connection info
-    if !no_core {
-        println!("\nCore connection: {}:{}", core_host, core_port);
-        println!("Core user: {}", core_user);
+    if !args.no_core {
+        println!("\nCore connection: {}:{}", args.core_host, core_port);
+        println!("Core user: {}", args.core_user);
     } else {
         println!("\nRunning without Core connection");
     }
-    
+
     println!("\nConnecting to {}...", network.to_lowercase());
-    
+
     // Create SDK instance
-    let sdk = if use_testnet {
+    let sdk = if args.testnet {
         // Testnet configuration
         let addresses = vec![
             Address::from_str("https://52.13.132.146:1443")?,
@@ -164,13 +148,13 @@ async fn main() -> Result<()> {
             Address::from_str("https://52.34.144.50:1443")?,
             Address::from_str("https://44.239.39.153:1443")?,
         ];
-        
+
         let mut builder = SdkBuilder::new(AddressList::from_iter(addresses));
-        if !no_core {
-            builder = builder.with_core(&core_host, core_port, &core_user, &core_password);
+        if !args.no_core {
+            builder =
+                builder.with_core(&args.core_host, core_port, &args.core_user, &core_password);
         }
-        builder.build()
-            .expect("Failed to build SDK")
+        builder.build().expect("Failed to build SDK")
     } else {
         // Mainnet configuration
         let addresses = vec![
@@ -178,15 +162,15 @@ async fn main() -> Result<()> {
             Address::from_str("https://dapi-1.dash.org:443")?,
             Address::from_str("https://dapi-2.dash.org:443")?,
         ];
-        
+
         let mut builder = SdkBuilder::new(AddressList::from_iter(addresses));
-        if !no_core {
-            builder = builder.with_core(&core_host, core_port, &core_user, &core_password);
+        if !args.no_core {
+            builder =
+                builder.with_core(&args.core_host, core_port, &args.core_user, &core_password);
         }
-        builder.build()
-            .expect("Failed to build SDK")
+        builder.build().expect("Failed to build SDK")
     };
-    
+
     // Fetch the identity
     println!("Fetching identity...");
     match Identity::fetch(&sdk, identity_id).await {
@@ -195,7 +179,7 @@ async fn main() -> Result<()> {
             println!("  Balance: {} credits", identity.balance());
             println!(
                 "  Balance in DASH: {} DASH",
-                identity.balance() as f64 / 100_000_000_000.0  // 1 DASH = 100,000,000,000 credits
+                identity.balance() as f64 / CREDITS_PER_DASH
             );
             println!("  Revision: {}", identity.revision());
             println!("  Public keys: {}", identity.public_keys().len());
@@ -204,16 +188,17 @@ async fn main() -> Result<()> {
             println!("\n✗ Identity not found on {}", network.to_lowercase());
             println!(
                 "  The identity {} does not exist on {}",
-                identity_id_string, network.to_lowercase()
+                args.identity_id,
+                network.to_lowercase()
             );
         }
         Err(e) => {
             println!("\n✗ Error fetching identity: {}", e);
-            if no_core {
+            if args.no_core {
                 println!("  Note: Some operations may fail without Core connection");
             }
         }
     }
-    
+
     Ok(())
 }

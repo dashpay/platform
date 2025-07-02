@@ -6,8 +6,8 @@ use dash_sdk::platform::{Fetch, Identifier, Identity};
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::dashcore::Network;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
-use std::str::FromStr;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
 
     // Build SDK with trusted context provider
     println!("Building SDK with trusted context provider...");
-    
+
     // Create the trusted context provider
     let context_provider = TrustedHttpContextProvider::new(
         Network::Testnet,
