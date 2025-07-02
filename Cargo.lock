@@ -1276,6 +1276,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-platform-balance-checker"
+version = "2.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dapi-grpc",
+ "dash-sdk",
+ "dpp",
+ "drive-proof-verifier",
+ "rpassword",
+ "rs-dapi-client",
+ "rs-sdk-trusted-context-provider",
+ "tokio",
+]
+
+[[package]]
 name = "dash-sdk"
 version = "2.0.0-rc.18"
 dependencies = [
@@ -4240,7 +4256,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4535,6 +4551,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "7.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66d4c8b64f049c6721ec8ccec37ddfc3d641c4a7fca57e8f2a89de509c73df39"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "rs-dapi-client"
 version = "2.0.0-rc.18"
 dependencies = [
@@ -4579,6 +4606,16 @@ dependencies = [
  "tokio-test",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7cc970b249fbe527d6e02e0a227762c9108b2f49d81094fe357ffc6d14d7f6f"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
