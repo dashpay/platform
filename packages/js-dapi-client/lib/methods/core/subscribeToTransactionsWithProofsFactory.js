@@ -39,7 +39,7 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
       ...options,
     };
 
-    if (options.fromBlockHeight === 0) {
+    if ('fromBlockHeight' in options && options.fromBlockHeight === 0) {
       throw new DAPIClientError('Invalid argument: minimum value for `fromBlockHeight` is 1');
     }
 
@@ -59,14 +59,14 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
     const request = new TransactionsWithProofsRequest();
     request.setBloomFilter(bloomFilterMessage);
 
-    if (options.fromBlockHeight !== undefined) {
-      request.setFromBlockHeight(options.fromBlockHeight);
-    }
-
-    if (options.fromBlockHash) {
+    if ('fromBlockHash' in options) {
       request.setFromBlockHash(
-        Buffer.from(options.fromBlockHash, 'hex'),
+        Buffer.isBuffer(options.fromBlockHash)
+          ? options.fromBlockHash
+          : Buffer.from(options.fromBlockHash, 'hex'),
       );
+    } else if ('fromBlockHeight' in options) {
+      request.setFromBlockHeight(options.fromBlockHeight);
     }
 
     request.setCount(options.count);
