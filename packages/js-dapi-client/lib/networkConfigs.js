@@ -1,12 +1,12 @@
 module.exports = {
   testnet: {
     seeds: [
-      'seed-1.testnet.networks.dash.org:1443',
-      'seed-2.testnet.networks.dash.org:1443',
-      'seed-3.testnet.networks.dash.org:1443',
-      'seed-4.testnet.networks.dash.org:1443',
-      'seed-5.testnet.networks.dash.org:1443',
-      'seed-1.pshenmic.dev:1443',
+      // seed-N.testnet.networks.dash.org
+      '34.209.12.72:1443',
+      '35.163.194.221:1443',
+      '44.230.238.208:1443',
+      // seed-1.pshenmic.dev:1443
+      '158.160.14.115:1443',
     ],
     network: 'testnet',
     // Since we don't have PoSe atm, 3rd party masternodes sometimes provide wrong data
@@ -54,11 +54,12 @@ module.exports = {
   },
   mainnet: {
     seeds: [
-      'seed-1.mainnet.networks.dash.org',
-      'seed-2.mainnet.networks.dash.org',
-      'seed-3.mainnet.networks.dash.org',
-      'seed-4.mainnet.networks.dash.org',
-      'seed-1.pshenmic.dev',
+      // seed-N.testnet.networks.dash.org
+      '34.209.12.72',
+      '35.163.194.221',
+      '44.230.238.208',
+      // seed-1.pshenmic.dev
+      '158.160.14.115',
     ],
     network: 'mainnet',
   },

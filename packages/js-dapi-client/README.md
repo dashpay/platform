@@ -49,7 +49,7 @@ const DAPIClient = require('@dashevo/dapi-client');
 
 var client = new DAPIClient({
   seeds: [{
-     host: 'seed-1.evonet.networks.dash.org',
+     host: '158.160.14.115',
      port: 443,
   }],
 });
