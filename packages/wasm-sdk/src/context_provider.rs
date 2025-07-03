@@ -12,15 +12,15 @@ use dash_sdk::{
 };
 use dash_sdk::platform::ContextProvider;
 use wasm_bindgen::prelude::wasm_bindgen;
-use async_trait::async_trait;
 
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmContext {}
 
 /// A wrapper for TrustedHttpContextProvider that works in WASM
+#[derive(Clone)]
 pub struct WasmTrustedContext {
-    inner: rs_sdk_trusted_context_provider::TrustedHttpContextProvider,
+    inner: std::sync::Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>,
 }
 /// Quorum keys for the testnet
 /// This is a hardcoded list of quorum keys for the testnet.
@@ -72,8 +72,6 @@ const QUORUM_KEYS: [&str; 24] = [
     "0000000000000028113a56cdec51df03d0a4786886455b56c405888820ef0941:a9cc0b5debb51078cc74666ce230512b5cc8a210e92e7a61143a94f2d39e0f2396fdb8a236f9e4f08bb9f9efade56aa0",
 ];
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ContextProvider for WasmContext {
     fn get_quorum_public_key(
         &self,
@@ -121,41 +119,17 @@ impl ContextProvider for WasmContext {
         // This is the height at which Platform was activated on testnet
         Ok(1)
     }
-
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        // For WASM, we can directly call the sync version since we're not doing any async operations
-        self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-    }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ContextProvider for WasmTrustedContext {
     fn get_quorum_public_key(
         &self,
-        _quorum_type: u32,
-        _quorum_hash: [u8; 32],
-        _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        // In WASM, we can't use the sync version
-        Err(ContextProviderError::Generic(
-            "Synchronous get_quorum_public_key not supported in WASM. Use async version.".to_string()
-        ))
-    }
-
-    async fn get_quorum_public_key_async(
-        &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        // Use the async version from the inner provider
-        self.inner.get_quorum_public_key_async(quorum_type, quorum_hash, core_chain_locked_height).await
+        // Delegate to the inner provider
+        self.inner.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_data_contract(
@@ -184,9 +158,11 @@ impl WasmTrustedContext {
             dash_sdk::dpp::dashcore::Network::Dash,
             None,
             std::num::NonZeroUsize::new(100).unwrap(),
-        ).map_err(|e| ContextProviderError::Generic(e.to_string()))?;
+        )
+        .map_err(|e| ContextProviderError::Generic(e.to_string()))?
+        .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
         
-        Ok(Self { inner })
+        Ok(Self { inner: std::sync::Arc::new(inner) })
     }
 
     pub fn new_testnet() -> Result<Self, ContextProviderError> {
@@ -194,8 +170,17 @@ impl WasmTrustedContext {
             dash_sdk::dpp::dashcore::Network::Testnet,
             None,
             std::num::NonZeroUsize::new(100).unwrap(),
-        ).map_err(|e| ContextProviderError::Generic(e.to_string()))?;
+        )
+        .map_err(|e| ContextProviderError::Generic(e.to_string()))?
+        .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
         
-        Ok(Self { inner })
+        Ok(Self { inner: std::sync::Arc::new(inner) })
+    }
+
+    /// Pre-fetch quorum information to populate the cache
+    pub async fn prefetch_quorums(&self) -> Result<(), ContextProviderError> {
+        self.inner.update_quorum_caches()
+            .await
+            .map_err(|e| ContextProviderError::Generic(format!("Failed to prefetch quorums: {}", e)))
     }
 }

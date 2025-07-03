@@ -3,7 +3,6 @@ use crate::get_quorum_base_url;
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
-use async_trait::async_trait;
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -60,6 +59,9 @@ pub struct TrustedHttpContextProvider {
 
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
     known_contracts: HashMap<Identifier, Arc<DataContract>>,
+
+    /// Whether to refetch quorums if not found in cache
+    refetch_if_not_found: bool,
 }
 
 impl TrustedHttpContextProvider {
@@ -136,6 +138,7 @@ impl TrustedHttpContextProvider {
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
             known_contracts: HashMap::new(),
+            refetch_if_not_found: true,
         })
     }
 
@@ -154,8 +157,29 @@ impl TrustedHttpContextProvider {
         self
     }
 
+    /// Set whether to refetch quorums if not found in cache
+    pub fn with_refetch_if_not_found(mut self, refetch: bool) -> Self {
+        self.refetch_if_not_found = refetch;
+        self
+    }
+
+    /// Update the quorum caches by fetching current and previous quorums
+    pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
+        // Fetch current quorums
+        let current = self.fetch_current_quorums().await?;
+        
+        // Fetch previous quorums
+        let previous = self.fetch_previous_quorums().await?;
+        
+        // The caches are already updated by the fetch methods
+        debug!("Successfully updated quorum caches with {} current and {} previous quorums", 
+               current.data.len(), previous.data.quorums.len());
+        
+        Ok(())
+    }
+
     /// Fetch current quorums from the HTTP endpoint
-    async fn fetch_current_quorums(&self) -> Result<QuorumsResponse, TrustedContextProviderError> {
+    pub async fn fetch_current_quorums(&self) -> Result<QuorumsResponse, TrustedContextProviderError> {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
@@ -202,7 +226,7 @@ impl TrustedHttpContextProvider {
     }
 
     /// Fetch previous quorums from the HTTP endpoint
-    async fn fetch_previous_quorums(
+    pub async fn fetch_previous_quorums(
         &self,
     ) -> Result<PreviousQuorumsResponse, TrustedContextProviderError> {
         let url = format!("{}/previous", self.base_url);
@@ -280,6 +304,14 @@ impl TrustedHttpContextProvider {
             }
         }
 
+        // Check if we should refetch
+        if !self.refetch_if_not_found {
+            return Err(TrustedContextProviderError::QuorumNotFound {
+                quorum_type,
+                quorum_hash: hex::encode(quorum_hash),
+            });
+        }
+
         // Fetch fresh data
         info!("Quorum not in cache, fetching fresh data for hash: {}", hex::encode(quorum_hash));
 
@@ -324,21 +356,76 @@ impl TrustedHttpContextProvider {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ContextProvider for TrustedHttpContextProvider {
     fn get_quorum_public_key(
         &self,
-        _quorum_type: u32,
-        _quorum_hash: QuorumHash,
+        quorum_type: u32,
+        quorum_hash: QuorumHash,
         _core_chain_locked_height: CoreBlockHeight,
     ) -> Result<[u8; 48], ContextProviderError> {
+        debug!("get_quorum_public_key called for type {} hash {}", quorum_type, hex::encode(quorum_hash));
+        
+        // Check current cache first
+        if let Ok(mut cache) = self.current_quorums_cache.lock() {
+            if let Some(quorum) = cache.get(&quorum_hash) {
+                debug!("Found quorum in current cache");
+                
+                // Parse the public key from the 'key' field
+                let pubkey_hex = quorum.key.trim_start_matches("0x");
+                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+                })?;
+
+                if pubkey_bytes.len() != 48 {
+                    return Err(ContextProviderError::Generic(format!(
+                        "Invalid public key length: {} bytes, expected 48",
+                        pubkey_bytes.len()
+                    )));
+                }
+
+                return pubkey_bytes.try_into().map_err(|_| {
+                    ContextProviderError::Generic("Failed to convert public key to array".to_string())
+                });
+            }
+        }
+
+        // Check previous cache
+        if let Ok(mut cache) = self.previous_quorums_cache.lock() {
+            if let Some(quorum) = cache.get(&quorum_hash) {
+                debug!("Found quorum in previous cache");
+                
+                // Parse the public key from the 'key' field
+                let pubkey_hex = quorum.key.trim_start_matches("0x");
+                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+                })?;
+
+                if pubkey_bytes.len() != 48 {
+                    return Err(ContextProviderError::Generic(format!(
+                        "Invalid public key length: {} bytes, expected 48",
+                        pubkey_bytes.len()
+                    )));
+                }
+
+                return pubkey_bytes.try_into().map_err(|_| {
+                    ContextProviderError::Generic("Failed to convert public key to array".to_string())
+                });
+            }
+        }
+
+        // If not in cache and refetch is disabled, return error
+        if !self.refetch_if_not_found {
+            return Err(ContextProviderError::InvalidQuorum(format!(
+                "Quorum not found in cache for hash: {}",
+                hex::encode(quorum_hash)
+            )));
+        }
+
+        // For non-WASM targets, we can use block_on to fetch
         #[cfg(not(target_arch = "wasm32"))]  
         {
-            debug!("get_quorum_public_key called for type {} hash {}", _quorum_type, hex::encode(_quorum_hash));
-            
             // Use blocking to run async code in sync context
-            let quorum = match futures::executor::block_on(self.find_quorum(_quorum_type, _quorum_hash)) {
+            let quorum = match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
                 Ok(q) => q,
                 Err(e) => {
                     debug!("Error finding quorum: {}", e);
@@ -365,9 +452,9 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            // For WASM, we can't use block_on, so implementations must use the async version
+            // For WASM, we rely on pre-fetched cache
             Err(ContextProviderError::Generic(
-                "Synchronous get_quorum_public_key not supported in WASM. Use get_quorum_public_key_async instead.".to_string()
+                "Quorum not found in cache. In WASM, call update_quorum_caches() first.".to_string()
             ))
         }
     }
@@ -414,41 +501,6 @@ impl ContextProvider for TrustedHttpContextProvider {
                 "Unsupported network".to_string(),
             )),
         }
-    }
-
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: QuorumHash,
-        _core_chain_locked_height: CoreBlockHeight,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        debug!("get_quorum_public_key_async called for type {} hash {}", quorum_type, hex::encode(quorum_hash));
-        
-        // Use the async version directly
-        let quorum = match self.find_quorum(quorum_type, quorum_hash).await {
-            Ok(q) => q,
-            Err(e) => {
-                debug!("Error finding quorum: {}", e);
-                return Err(ContextProviderError::Generic(format!("Failed to find quorum: {}", e)));
-            }
-        };
-
-        // Parse the public key from the 'key' field
-        let pubkey_hex = quorum.key.trim_start_matches("0x");
-        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-        })?;
-
-        if pubkey_bytes.len() != 48 {
-            return Err(ContextProviderError::Generic(format!(
-                "Invalid public key length: {} bytes, expected 48",
-                pubkey_bytes.len()
-            )));
-        }
-
-        pubkey_bytes.try_into().map_err(|_| {
-            ContextProviderError::Generic("Failed to convert public key to array".to_string())
-        })
     }
 }
 

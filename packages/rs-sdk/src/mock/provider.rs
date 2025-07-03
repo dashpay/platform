@@ -5,7 +5,6 @@ use crate::platform::Fetch;
 use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
-use async_trait::async_trait;
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -162,8 +161,6 @@ impl GrpcContextProvider {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ContextProvider for GrpcContextProvider {
     fn get_quorum_public_key(
         &self,
@@ -241,17 +238,6 @@ impl ContextProvider for GrpcContextProvider {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.core.get_platform_activation_height()
-    }
-
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        // For the mock provider, we can just call the sync version
-        // since we're not doing actual async operations
-        self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 

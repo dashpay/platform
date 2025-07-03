@@ -86,8 +86,14 @@ impl WasmSdkBuilder {
     pub fn new_mainnet_trusted() -> Result<Self, JsError> {
         use crate::context_provider::WasmTrustedContext;
         
-        let trusted_context = WasmTrustedContext::new_mainnet()
-            .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
+        // Use the cached context if available, otherwise create a new one
+        let trusted_context = {
+            let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+            guard.clone()
+        }.unwrap_or_else(|| {
+            WasmTrustedContext::new_mainnet()
+                .expect("Failed to create mainnet trusted context")
+        });
         
         // Mainnet addresses - these are placeholder addresses for now
         // TODO: Replace with actual mainnet addresses when available
@@ -131,8 +137,14 @@ impl WasmSdkBuilder {
     pub fn new_testnet_trusted() -> Result<Self, JsError> {
         use crate::context_provider::WasmTrustedContext;
         
-        let trusted_context = WasmTrustedContext::new_testnet()
-            .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
+        // Use the cached context if available, otherwise create a new one
+        let trusted_context = {
+            let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+            guard.clone()
+        }.unwrap_or_else(|| {
+            WasmTrustedContext::new_testnet()
+                .expect("Failed to create testnet trusted context")
+        });
         
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
         // Using HTTPS endpoints for ENABLED nodes with successful version checks
@@ -162,6 +174,49 @@ impl WasmSdkBuilder {
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
+}
+
+// Store shared trusted contexts
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> = 
+    Lazy::new(|| Mutex::new(None));
+static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> = 
+    Lazy::new(|| Mutex::new(None));
+
+#[wasm_bindgen]
+pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsError> {
+    use crate::context_provider::WasmTrustedContext;
+    
+    let trusted_context = WasmTrustedContext::new_mainnet()
+        .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
+    
+    trusted_context.prefetch_quorums()
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
+    
+    // Store the context for later use
+    *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+    
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
+    use crate::context_provider::WasmTrustedContext;
+    
+    let trusted_context = WasmTrustedContext::new_testnet()
+        .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
+    
+    trusted_context.prefetch_quorums()
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
+    
+    // Store the context for later use
+    *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+    
+    Ok(())
 }
 
 #[wasm_bindgen]

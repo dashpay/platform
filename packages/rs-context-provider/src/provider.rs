@@ -1,5 +1,4 @@
 use crate::error::ContextProviderError;
-use async_trait::async_trait;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -23,8 +22,6 @@ use {
 ///
 /// A ContextProvider should be thread-safe and manage timeouts and other concurrency-related issues internally,
 /// as the [FromProof](crate::FromProof) implementations can block on ContextProvider calls.
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ContextProvider: Send + Sync {
     /// Fetches the data contract for a specified data contract ID.
     /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
@@ -84,25 +81,6 @@ pub trait ContextProvider: Send + Sync {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
 
-    /// Async version of get_quorum_public_key for WASM compatibility
-    ///
-    /// # Arguments
-    ///
-    /// * `quorum_type`: The type of the quorum.
-    /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
-    /// * `core_chain_locked_height`: Core chain locked height for which the quorum must be valid
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Vec<u8>)`: On success, returns a byte vector representing the public key of the quorum.
-    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32], // quorum hash is 32 bytes
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError>;
-
     /// Gets the platform activation height from core. Once this has happened this can be hardcoded.
     ///
     /// # Returns
@@ -112,8 +90,6 @@ pub trait ContextProvider: Send + Sync {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     fn get_data_contract(
         &self,
@@ -140,24 +116,11 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        self.as_ref()
-            .get_quorum_public_key_async(quorum_type, quorum_hash, core_chain_locked_height)
-            .await
-    }
-
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.as_ref().get_platform_activation_height()
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<T: ContextProvider> ContextProvider for std::sync::Mutex<T>
 where
     Self: Sync + Send,
@@ -185,18 +148,6 @@ where
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        let lock = self.lock().expect("lock poisoned");
-        lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-    }
-
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        // For Mutex wrapper, we can't hold the lock across await points
-        // So we'll just call the sync version
         let lock = self.lock().expect("lock poisoned");
         lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
@@ -275,8 +226,6 @@ impl Default for MockContextProvider {
 }
 
 #[cfg(feature = "mocks")]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ContextProvider for MockContextProvider {
     /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
@@ -313,16 +262,6 @@ impl ContextProvider for MockContextProvider {
         let key: Vec<u8> = hex::decode(data).expect("cannot parse quorum key");
 
         Ok(key.try_into().expect("quorum key format mismatch"))
-    }
-
-    async fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        // For mock provider, just call the sync version
-        self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_data_contract(

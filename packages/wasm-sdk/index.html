@@ -103,7 +103,7 @@
   <div id="statusBanner" class="status-banner loading">Initializing WASM SDK...</div>
 
   <script type="module">
-    import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch } from './pkg/wasm_sdk.js';
+    import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch, prefetch_trusted_quorums_mainnet, prefetch_trusted_quorums_testnet } from './pkg/wasm_sdk.js';
 
     let sdk = null;
 
@@ -122,9 +122,13 @@
       
       try {
         if (useTrusted) {
+          // Prefetch quorums first for trusted mode
+          updateStatus(`Prefetching quorum information for ${network.toUpperCase()}...`, 'loading');
           if (network === 'mainnet') {
+            await prefetch_trusted_quorums_mainnet();
             sdk = await WasmSdkBuilder.new_mainnet_trusted().build();
           } else {
+            await prefetch_trusted_quorums_testnet();
             sdk = await WasmSdkBuilder.new_testnet_trusted().build();
           }
         } else {
