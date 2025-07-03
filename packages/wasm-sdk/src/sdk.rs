@@ -14,7 +14,8 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
-use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+// Note: TrustedHttpContextProvider is not usable in WASM due to futures::executor::block_on
+// which is not supported in browser environments
 use platform_value::platform_value;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -83,25 +84,11 @@ impl WasmSdkBuilder {
     }
 
     pub fn new_mainnet_trusted() -> Result<Self, JsError> {
-        // Mainnet using trusted context provider
-        let mainnet_addresses = vec![
-            "http://seed-1.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-2.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-3.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-4.mainnet.networks.dash.org:1443".parse().unwrap(),
-        ];
-        
-        let network = dash_sdk::dpp::dashcore::Network::Dash;
-        let cache_size = std::num::NonZeroUsize::new(100).unwrap();
-        let trusted_provider = TrustedHttpContextProvider::new(network, None, cache_size)
-            .map_err(|e| JsError::new(&format!("Failed to create trusted provider: {}", e)))?;
-        
-        let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(network)
-            .with_context_provider(trusted_provider);
-
-        Ok(Self(sdk_builder))
+        // Note: TrustedHttpContextProvider uses futures::executor::block_on internally
+        // which is not supported in WASM environments. For now, we fall back to WasmContext
+        // which uses hardcoded quorum keys.
+        // TODO: Implement async ContextProvider trait or find a WASM-compatible solution
+        Ok(Self::new_mainnet())
     }
 
     pub fn new_testnet() -> Self {
@@ -127,29 +114,11 @@ impl WasmSdkBuilder {
     }
 
     pub fn new_testnet_trusted() -> Result<Self, JsError> {
-        // Testnet using trusted context provider
-        let testnet_addresses = vec![
-            "https://52.12.176.90:1443".parse().unwrap(),
-            "https://35.82.197.197:1443".parse().unwrap(),
-            "https://44.240.98.102:1443".parse().unwrap(),
-            "https://52.34.144.50:1443".parse().unwrap(),
-            "https://44.239.39.153:1443".parse().unwrap(),
-            "https://35.164.23.245:1443".parse().unwrap(),
-            "https://54.149.33.167:1443".parse().unwrap(),
-            "https://52.24.124.162:1443".parse().unwrap(),
-        ];
-        
-        let network = dash_sdk::dpp::dashcore::Network::Testnet;
-        let cache_size = std::num::NonZeroUsize::new(100).unwrap();
-        let trusted_provider = TrustedHttpContextProvider::new(network, None, cache_size)
-            .map_err(|e| JsError::new(&format!("Failed to create trusted provider: {}", e)))?;
-        
-        let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(network)
-            .with_context_provider(trusted_provider);
-
-        Ok(Self(sdk_builder))
+        // Note: TrustedHttpContextProvider uses futures::executor::block_on internally
+        // which is not supported in WASM environments. For now, we fall back to WasmContext
+        // which uses hardcoded quorum keys.
+        // TODO: Implement async ContextProvider trait or find a WASM-compatible solution
+        Ok(Self::new_testnet())
     }
 
     pub fn build(self) -> Result<WasmSdk, JsError> {

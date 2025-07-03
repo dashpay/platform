@@ -160,6 +160,7 @@ impl TrustedHttpContextProvider {
         debug!("Fetching current quorums from: {}", url);
 
         let response = self.client.get(&url).send().await?;
+        debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
             return Err(TrustedContextProviderError::NetworkError(format!(
@@ -169,7 +170,9 @@ impl TrustedHttpContextProvider {
             )));
         }
 
+        debug!("Parsing JSON response for current quorums");
         let quorums: QuorumsResponse = response.json().await?;
+        debug!("Successfully parsed {} quorums", quorums.data.len());
 
         // Update cache
         self.last_current_quorums
@@ -206,6 +209,7 @@ impl TrustedHttpContextProvider {
         debug!("Fetching previous quorums from: {}", url);
 
         let response = self.client.get(&url).send().await?;
+        debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
             return Err(TrustedContextProviderError::NetworkError(format!(
@@ -215,7 +219,9 @@ impl TrustedHttpContextProvider {
             )));
         }
 
+        debug!("Parsing JSON response for previous quorums");
         let quorums: PreviousQuorumsResponse = response.json().await?;
+        debug!("Successfully parsed {} previous quorums", quorums.data.quorums.len());
 
         // Update cache
         self.last_previous_quorums
@@ -275,9 +281,10 @@ impl TrustedHttpContextProvider {
         }
 
         // Fetch fresh data
-        info!("Quorum not in cache, fetching fresh data");
+        info!("Quorum not in cache, fetching fresh data for hash: {}", hex::encode(quorum_hash));
 
         // Try current quorums first
+        debug!("Attempting to fetch current quorums");
         if let Ok(current) = self.fetch_current_quorums().await {
             for quorum in &current.data {
                 let hash_bytes: Option<[u8; 32]> = hex::decode(&quorum.quorum_hash)
@@ -290,9 +297,12 @@ impl TrustedHttpContextProvider {
                     }
                 }
             }
+        } else {
+            debug!("Failed to fetch current quorums");
         }
 
         // Try previous quorums
+        debug!("Attempting to fetch previous quorums");
         if let Ok(previous) = self.fetch_previous_quorums().await {
             for quorum in &previous.data.quorums {
                 let hash_bytes: Option<[u8; 32]> = hex::decode(&quorum.quorum_hash)
@@ -322,9 +332,17 @@ impl ContextProvider for TrustedHttpContextProvider {
         quorum_hash: QuorumHash,
         _core_chain_locked_height: CoreBlockHeight,
     ) -> Result<[u8; 48], ContextProviderError> {
+        debug!("get_quorum_public_key called for type {} hash {}", quorum_type, hex::encode(quorum_hash));
+        
         // Use blocking to run async code in sync context
-        let quorum = futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash))
-            .map_err(|e| ContextProviderError::Generic(e.to_string()))?;
+        // Note: This won't work in WASM environments where futures::executor::block_on is not supported
+        let quorum = match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
+            Ok(q) => q,
+            Err(e) => {
+                debug!("Error finding quorum: {}", e);
+                return Err(ContextProviderError::Generic(format!("Failed to find quorum: {}", e)));
+            }
+        };
 
         // Parse the public key from the 'key' field
         let pubkey_hex = quorum.key.trim_start_matches("0x");

@@ -10,7 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["mocks"] }
-rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [
@@ -24,6 +23,7 @@ web-sys = { version = "0.3.4", features = [
 wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
+tracing = { version = "0.1" }
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
