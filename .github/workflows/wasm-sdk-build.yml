@@ -1,0 +1,105 @@
+name: Build WASM SDK
+
+on:
+  pull_request:
+    paths:
+      - 'packages/wasm-sdk/**'
+      - 'packages/rs-sdk/**'
+      - 'packages/rs-drive-proof-verifier/**'
+      - 'packages/rs-platform-value/**'
+      - 'packages/rs-dpp/**'
+      - 'packages/rs-drive/src/verify/**'
+  push:
+    branches:
+      - main
+      - master
+      - 'v[0-9]+.[0-9]+-dev'
+      - 'v[0-9]+.[0-9]+-dev-sdk'
+    paths:
+      - 'packages/wasm-sdk/**'
+      - 'packages/rs-sdk/**'
+      - 'packages/rs-drive-proof-verifier/**'
+      - 'packages/rs-platform-value/**'
+      - 'packages/rs-dpp/**'
+      - 'packages/rs-drive/src/verify/**'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-C lto=off"
+  CARGO_PROFILE_RELEASE_LTO: false
+
+jobs:
+  build-wasm-sdk:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+          
+      - name: Cache cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-wasm-sdk-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-sdk-
+            
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack &> /dev/null; then
+            echo "Installing wasm-pack..."
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          else
+            echo "wasm-pack already installed"
+          fi
+          
+      - name: Install wasm-opt
+        run: |
+          if ! command -v wasm-opt &> /dev/null; then
+            echo "Installing wasm-opt..."
+            sudo apt-get update
+            sudo apt-get install -y binaryen
+          else
+            echo "wasm-opt already installed"
+          fi
+          
+      - name: Build WASM SDK
+        working-directory: packages/wasm-sdk
+        run: |
+          chmod +x build.sh
+          ./build.sh
+          
+      - name: Verify build output
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "Checking build output..."
+          ls -lah pkg/
+          # Verify required files exist
+          test -f pkg/wasm_sdk_bg.wasm
+          test -f pkg/optimized.wasm
+          test -f pkg/wasm_sdk.js
+          test -f pkg/wasm_sdk_bg.wasm.d.ts
+          test -f pkg/wasm_sdk.d.ts
+          test -f pkg/package.json
+          echo "Build verification successful!"
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: wasm-sdk-build
+          path: packages/wasm-sdk/pkg/
+          retention-days: 7
