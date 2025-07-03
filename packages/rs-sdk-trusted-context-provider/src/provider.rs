@@ -14,6 +14,7 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::version::PlatformVersion;
 
 /// Get the LLMQ type for the network
+#[allow(dead_code)]
 fn get_llmq_type_for_network(network: Network) -> u32 {
     match network {
         Network::Dash => 4,     // Mainnet uses LLMQ type 4
@@ -155,8 +156,7 @@ impl TrustedHttpContextProvider {
 
     /// Fetch current quorums from the HTTP endpoint
     async fn fetch_current_quorums(&self) -> Result<QuorumsResponse, TrustedContextProviderError> {
-        let llmq_type = get_llmq_type_for_network(self.network);
-        let url = format!("{}/quorums?quorumType={}", self.base_url, llmq_type);
+        let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
         let response = self.client.get(&url).send().await?;
@@ -202,8 +202,7 @@ impl TrustedHttpContextProvider {
     async fn fetch_previous_quorums(
         &self,
     ) -> Result<PreviousQuorumsResponse, TrustedContextProviderError> {
-        let llmq_type = get_llmq_type_for_network(self.network);
-        let url = format!("{}/previous?quorumType={}", self.base_url, llmq_type);
+        let url = format!("{}/previous", self.base_url);
         debug!("Fetching previous quorums from: {}", url);
 
         let response = self.client.get(&url).send().await?;
