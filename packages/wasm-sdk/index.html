@@ -12,11 +12,52 @@
     .container {
       padding: 10px;
     }
+
+    .network-toggle {
+      padding: 10px;
+      background-color: #f0f0f0;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+
+    .network-toggle label {
+      margin-right: 15px;
+      font-weight: bold;
+    }
+
+    .network-indicator {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 3px;
+      margin-left: 10px;
+      font-size: 0.9em;
+      font-weight: bold;
+    }
+
+    .network-indicator.testnet {
+      background-color: #ff9800;
+      color: white;
+    }
+
+    .network-indicator.mainnet {
+      background-color: #4caf50;
+      color: white;
+    }
   </style>
 </head>
 
 <body>
   <div id="preloader">Loading...</div>
+  
+  <div class="network-toggle">
+    <label>Network:</label>
+    <input type="radio" id="mainnet" name="network" value="mainnet" checked>
+    <label for="mainnet">Mainnet</label>
+    <input type="radio" id="testnet" name="network" value="testnet">
+    <label for="testnet">Testnet</label>
+    <span id="networkIndicator" class="network-indicator mainnet">MAINNET</span>
+  </div>
+
   <div class="container">
     <input type="text" id="identityInput" placeholder="Enter Identity ID" />
     <button id="fetchButton">Fetch Identity</button>
@@ -31,13 +72,57 @@
   <script type="module">
     import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch } from './pkg/wasm_sdk.js';
 
+    let sdk = null;
+
+    async function initializeSdk(network) {
+      const preloader = document.getElementById('preloader');
+      preloader.style.display = 'block';
+      
+      try {
+        if (network === 'mainnet') {
+          sdk = await WasmSdkBuilder.new_mainnet().build();
+        } else {
+          sdk = await WasmSdkBuilder.new_testnet().build();
+        }
+        console.log(`Initialized ${network} SDK:`, sdk);
+      } catch (error) {
+        console.error(`Error initializing ${network} SDK:`, error);
+        document.getElementById('identityInfo').textContent = `Error initializing ${network} SDK: ${error}`;
+      } finally {
+        preloader.style.display = 'none';
+      }
+    }
+
     async function run() {
       await init();
 
-      const sdk = await WasmSdkBuilder.new_mainnet().build();
-      console.log(sdk);
+      // Initialize with mainnet by default
+      await initializeSdk('mainnet');
+
+      // Handle network toggle
+      document.querySelectorAll('input[name="network"]').forEach(radio => {
+        radio.addEventListener('change', async (event) => {
+          const network = event.target.value;
+          const indicator = document.getElementById('networkIndicator');
+          
+          // Update indicator
+          indicator.textContent = network.toUpperCase();
+          indicator.className = `network-indicator ${network}`;
+          
+          // Clear any existing results
+          document.getElementById('identityInfo').textContent = '';
+          
+          // Reinitialize SDK with new network
+          await initializeSdk(network);
+        });
+      });
 
       document.getElementById('fetchButton').addEventListener('click', async () => {
+        if (!sdk) {
+          alert('SDK not initialized. Please wait or refresh the page.');
+          return;
+        }
+
         const identityId = document.getElementById('identityInput').value;
         const preloader = document.getElementById('preloader');
         const identityInfo = document.getElementById('identityInfo');
@@ -59,6 +144,11 @@
       });
 
       document.getElementById('fetchButton2').addEventListener('click', async () => {
+        if (!sdk) {
+          alert('SDK not initialized. Please wait or refresh the page.');
+          return;
+        }
+
         const identityId = document.getElementById('identityInput2').value;
         const preloader = document.getElementById('preloader');
         const identityInfo = document.getElementById('identityInfo');
