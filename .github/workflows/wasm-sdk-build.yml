@@ -44,6 +44,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           
+      - name: Install protoc
+        run: |
+          curl -Lo /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-x86_64.zip"
+          unzip -o /tmp/protoc.zip -d ${HOME}/.local
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          export PATH="${PATH}:${HOME}/.local/bin"
+          
+      - name: Install clang
+        run: |
+          sudo apt update -qq
+          sudo apt install -qq --yes clang llvm
+          
       - name: Cache cargo dependencies
         uses: actions/cache@v4
         with:
