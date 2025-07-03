@@ -5,24 +5,50 @@
   <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    #preloader {
-      display: none;
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #f5f5f5;
     }
 
-    .container {
-      padding: 10px;
+    #preloader {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 20px;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+
+    .app-container {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 400px;
+      background-color: white;
+      border-right: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
     }
 
     .network-toggle {
-      padding: 10px;
-      background-color: #f0f0f0;
-      border-radius: 5px;
-      margin-bottom: 20px;
+      padding: 20px;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
     }
 
     .network-toggle label {
       margin-right: 15px;
-      font-weight: bold;
+      font-weight: 500;
+      color: #333;
     }
 
     .network-indicator {
@@ -44,6 +70,117 @@
       color: white;
     }
 
+    .actions-container {
+      padding: 20px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .action-group {
+      margin-bottom: 30px;
+      padding: 15px;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .action-group h3 {
+      margin: 0 0 15px 0;
+      color: #333;
+      font-size: 1.1em;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .input-group input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .input-group button {
+      padding: 10px 20px;
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+
+    .input-group button:hover {
+      background-color: #1976D2;
+    }
+
+    .input-group button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .result-container {
+      flex: 1;
+      background-color: #fafafa;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .result-header h2 {
+      margin: 0;
+      color: #333;
+    }
+
+    .result-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .result-actions button {
+      padding: 6px 12px;
+      background-color: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .result-actions button:hover {
+      background-color: #e0e0e0;
+    }
+
+    .result-content {
+      background-color: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #333;
+      min-height: 400px;
+    }
+
+    .result-content.empty {
+      color: #999;
+      text-align: center;
+      padding: 100px 20px;
+      font-style: italic;
+    }
+
     .status-banner {
       position: fixed;
       bottom: 0;
@@ -53,6 +190,7 @@
       text-align: center;
       font-weight: bold;
       transition: all 0.3s ease;
+      z-index: 100;
     }
 
     .status-banner.success {
@@ -69,36 +207,66 @@
       background-color: #ff9800;
       color: white;
     }
+
+    .error-result {
+      color: #d32f2f;
+      background-color: #ffebee;
+      border: 1px solid #ffcdd2;
+      border-radius: 4px;
+      padding: 10px;
+    }
   </style>
 </head>
 
 <body>
   <div id="preloader">Loading...</div>
   
-  <div class="network-toggle">
-    <label>Network:</label>
-    <input type="radio" id="mainnet" name="network" value="mainnet" checked>
-    <label for="mainnet">Mainnet</label>
-    <input type="radio" id="testnet" name="network" value="testnet">
-    <label for="testnet">Testnet</label>
-    <span id="networkIndicator" class="network-indicator mainnet">MAINNET</span>
-    <br>
-    <label style="margin-top: 5px;">
-      <input type="checkbox" id="trustedMode" style="margin-right: 5px;">
-      Use Trusted Mode (uses hardcoded quorum keys)
-    </label>
+  <div class="app-container">
+    <div class="sidebar">
+      <div class="network-toggle">
+        <label>Network:</label>
+        <input type="radio" id="mainnet" name="network" value="mainnet" checked>
+        <label for="mainnet">Mainnet</label>
+        <input type="radio" id="testnet" name="network" value="testnet">
+        <label for="testnet">Testnet</label>
+        <span id="networkIndicator" class="network-indicator mainnet">MAINNET</span>
+        <br>
+        <label style="margin-top: 10px; display: block;">
+          <input type="checkbox" id="trustedMode" style="margin-right: 5px;">
+          Trusted Quorums Mode
+        </label>
+      </div>
+      
+      <div class="actions-container">
+        <div class="action-group">
+          <h3>Identity</h3>
+          <div class="input-group">
+            <input type="text" id="identityInput" placeholder="Enter Identity ID" />
+            <button id="fetchButton">Fetch</button>
+          </div>
+        </div>
+        
+        <div class="action-group">
+          <h3>Data Contract</h3>
+          <div class="input-group">
+            <input type="text" id="identityInput2" placeholder="Enter Data Contract ID" />
+            <button id="fetchButton2">Fetch</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="result-container">
+      <div class="result-header">
+        <h2>Results</h2>
+        <div class="result-actions">
+          <button id="clearButton" onclick="clearResults()">Clear</button>
+          <button id="copyButton" onclick="copyResults()">Copy</button>
+        </div>
+      </div>
+      <div id="identityInfo" class="result-content empty">No data fetched yet. Use the actions on the left to fetch identity or data contract information.</div>
+    </div>
   </div>
-
-  <div class="container">
-    <input type="text" id="identityInput" placeholder="Enter Identity ID" />
-    <button id="fetchButton">Fetch Identity</button>
-  </div>
-
-  <div class="container">
-    <input type="text" id="identityInput2" placeholder="Enter Data Contract ID" />
-    <button id="fetchButton2">Fetch Data Contract</button>
-  </div>
-  <div id="identityInfo"></div>
 
   <div id="statusBanner" class="status-banner loading">Initializing WASM SDK...</div>
 
@@ -106,6 +274,48 @@
     import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch, prefetch_trusted_quorums_mainnet, prefetch_trusted_quorums_testnet } from './pkg/wasm_sdk.js';
 
     let sdk = null;
+    let currentResult = null;
+
+    // Helper functions for result actions
+    window.clearResults = function() {
+      const resultContent = document.getElementById('identityInfo');
+      resultContent.textContent = 'No data fetched yet. Use the actions on the left to fetch identity or data contract information.';
+      resultContent.className = 'result-content empty';
+      currentResult = null;
+    };
+
+    window.copyResults = function() {
+      if (!currentResult) {
+        alert('No results to copy');
+        return;
+      }
+      navigator.clipboard.writeText(JSON.stringify(currentResult, null, 2))
+        .then(() => {
+          const copyButton = document.getElementById('copyButton');
+          const originalText = copyButton.textContent;
+          copyButton.textContent = 'Copied!';
+          setTimeout(() => {
+            copyButton.textContent = originalText;
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('Failed to copy:', err);
+          alert('Failed to copy to clipboard');
+        });
+    };
+
+    function displayResult(data, isError = false) {
+      const resultContent = document.getElementById('identityInfo');
+      if (isError) {
+        resultContent.className = 'result-content error-result';
+        resultContent.textContent = data;
+        currentResult = null;
+      } else {
+        resultContent.className = 'result-content';
+        resultContent.textContent = JSON.stringify(data, null, 2);
+        currentResult = data;
+      }
+    }
 
     function updateStatus(message, type = 'loading') {
       const statusBanner = document.getElementById('statusBanner');
@@ -199,22 +409,33 @@
         }
 
         const identityId = document.getElementById('identityInput').value;
+        if (!identityId.trim()) {
+          alert('Please enter an Identity ID');
+          return;
+        }
+
         const preloader = document.getElementById('preloader');
-        const identityInfo = document.getElementById('identityInfo');
+        const button = document.getElementById('fetchButton');
+        const originalButtonText = button.textContent;
 
         preloader.style.display = 'block';
-        identityInfo.textContent = '';
+        button.disabled = true;
+        button.textContent = 'Fetching...';
+        updateStatus('Fetching identity...', 'loading');
 
         try {
           const identity = await identity_fetch(sdk, identityId);
-          console.log("fetched identity");
-          console.log(identity);
-          identityInfo.textContent = JSON.stringify(identity.toJSON(), null, 2);
+          console.log("fetched identity", identity);
+          displayResult(identity.toJSON());
+          updateStatus('Identity fetched successfully', 'success');
         } catch (error) {
           console.error("Error fetching identity:", error);
-          identityInfo.textContent = `Error fetching identity: ${error}`;
+          displayResult(`Error fetching identity: ${error}`, true);
+          updateStatus(`Error: ${error.message || error}`, 'error');
         } finally {
           preloader.style.display = 'none';
+          button.disabled = false;
+          button.textContent = originalButtonText;
         }
       });
 
@@ -224,23 +445,34 @@
           return;
         }
 
-        const identityId = document.getElementById('identityInput2').value;
+        const contractId = document.getElementById('identityInput2').value;
+        if (!contractId.trim()) {
+          alert('Please enter a Data Contract ID');
+          return;
+        }
+
         const preloader = document.getElementById('preloader');
-        const identityInfo = document.getElementById('identityInfo');
+        const button = document.getElementById('fetchButton2');
+        const originalButtonText = button.textContent;
 
         preloader.style.display = 'block';
-        identityInfo.textContent = '';
+        button.disabled = true;
+        button.textContent = 'Fetching...';
+        updateStatus('Fetching data contract...', 'loading');
 
         try {
-          const dataContract = await data_contract_fetch(sdk, identityId);
-          console.log("fetched data contract");
-          console.log(dataContract);
-          identityInfo.textContent = JSON.stringify(dataContract.toJSON(), null, 2);
+          const dataContract = await data_contract_fetch(sdk, contractId);
+          console.log("fetched data contract", dataContract);
+          displayResult(dataContract.toJSON());
+          updateStatus('Data contract fetched successfully', 'success');
         } catch (error) {
           console.error("Error fetching contract:", error);
-          identityInfo.textContent = `Error fetching contract: ${error}`;
+          displayResult(`Error fetching data contract: ${error}`, true);
+          updateStatus(`Error: ${error.message || error}`, 'error');
         } finally {
           preloader.style.display = 'none';
+          button.disabled = false;
+          button.textContent = originalButtonText;
         }
       });
     }
