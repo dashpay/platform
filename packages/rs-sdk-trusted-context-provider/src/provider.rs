@@ -25,11 +25,14 @@ fn get_llmq_type_for_network(network: Network) -> u32 {
 use lru::LruCache;
 use reqwest::Client;
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use tracing::{debug, info};
+#[cfg(not(target_arch = "wasm32"))]
 use url::Url;
 
 /// A trusted HTTP-based context provider that fetches quorum information
@@ -60,6 +63,7 @@ pub struct TrustedHttpContextProvider {
 
 impl TrustedHttpContextProvider {
     /// Verify that a URL's domain resolves
+    #[cfg(not(target_arch = "wasm32"))]
     fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
         let parsed_url = Url::parse(url).map_err(|e| {
             TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
@@ -111,9 +115,14 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
-        // Verify the domain resolves before proceeding
+        // Verify the domain resolves before proceeding (skip on WASM)
+        #[cfg(not(target_arch = "wasm32"))]
         Self::verify_domain_resolves(&base_url)?;
 
+        #[cfg(target_arch = "wasm32")]
+        let client = Client::builder().build()?;
+        
+        #[cfg(not(target_arch = "wasm32"))]
         let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
         Ok(Self {

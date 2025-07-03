@@ -9,6 +9,7 @@ on:
       - 'packages/rs-platform-value/**'
       - 'packages/rs-dpp/**'
       - 'packages/rs-drive/src/verify/**'
+      - 'packages/rs-context-provider/**'
   push:
     branches:
       - main
@@ -22,6 +23,7 @@ on:
       - 'packages/rs-platform-value/**'
       - 'packages/rs-dpp/**'
       - 'packages/rs-drive/src/verify/**'
+      - 'packages/rs-context-provider/**'
   workflow_dispatch:
 
 env:
