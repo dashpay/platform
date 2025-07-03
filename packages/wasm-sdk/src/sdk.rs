@@ -70,7 +70,9 @@ impl WasmSdkBuilder {
     }
 
     pub fn new_testnet() -> Self {
-        WasmSdkBuilder(SdkBuilder::new_testnet()).with_context_provider(WasmContext {})
+        let sdk_builder = SdkBuilder::new_testnet().with_context_provider(WasmContext {});
+
+        Self(sdk_builder)
     }
 
     pub fn build(self) -> Result<WasmSdk, JsError> {
