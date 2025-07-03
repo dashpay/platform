@@ -29,12 +29,13 @@ wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde-wasm-bindgen = { version = "0.6.5" }
 getrandom = { version = "0.2", features = ["js"] }
+async-trait = "0.1"
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 
 [profile.release]
 opt-level = "z"
 panic = "abort"
 debug = false
-lto = false
 
 #[package.metadata.wasm-pack.profile.release]
 #wasm-opt = ['-g', '-O'] # -g for profiling

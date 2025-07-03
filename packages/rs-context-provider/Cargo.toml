@@ -7,12 +7,14 @@ license = "MIT"
 description = "Context provider traits for Dash Platform SDK"
 
 [dependencies]
+async-trait = "0.1"
 dpp = { path = "../rs-dpp", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 thiserror = "1.0"
 hex = { version = "0.4", optional = true }
 serde = { version = "1.0", optional = true }
 serde_json = { version = "1.0", optional = true }
+futures = { version = "0.3", default-features = false, features = ["executor"] }
 
 [features]
 mocks = ["hex", "serde", "serde_json", "dpp/data-contract-serde-conversion"]

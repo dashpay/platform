@@ -324,42 +324,52 @@ impl TrustedHttpContextProvider {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ContextProvider for TrustedHttpContextProvider {
     fn get_quorum_public_key(
         &self,
-        quorum_type: u32,
-        quorum_hash: QuorumHash,
+        _quorum_type: u32,
+        _quorum_hash: QuorumHash,
         _core_chain_locked_height: CoreBlockHeight,
     ) -> Result<[u8; 48], ContextProviderError> {
-        debug!("get_quorum_public_key called for type {} hash {}", quorum_type, hex::encode(quorum_hash));
-        
-        // Use blocking to run async code in sync context
-        // Note: This won't work in WASM environments where futures::executor::block_on is not supported
-        let quorum = match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
-            Ok(q) => q,
-            Err(e) => {
-                debug!("Error finding quorum: {}", e);
-                return Err(ContextProviderError::Generic(format!("Failed to find quorum: {}", e)));
+        #[cfg(not(target_arch = "wasm32"))]  
+        {
+            debug!("get_quorum_public_key called for type {} hash {}", _quorum_type, hex::encode(_quorum_hash));
+            
+            // Use blocking to run async code in sync context
+            let quorum = match futures::executor::block_on(self.find_quorum(_quorum_type, _quorum_hash)) {
+                Ok(q) => q,
+                Err(e) => {
+                    debug!("Error finding quorum: {}", e);
+                    return Err(ContextProviderError::Generic(format!("Failed to find quorum: {}", e)));
+                }
+            };
+
+            // Parse the public key from the 'key' field
+            let pubkey_hex = quorum.key.trim_start_matches("0x");
+            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+                ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+            })?;
+
+            if pubkey_bytes.len() != 48 {
+                return Err(ContextProviderError::Generic(format!(
+                    "Invalid public key length: {} bytes, expected 48",
+                    pubkey_bytes.len()
+                )));
             }
-        };
 
-        // Parse the public key from the 'key' field
-        let pubkey_hex = quorum.key.trim_start_matches("0x");
-        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-        })?;
-
-        if pubkey_bytes.len() != 48 {
-            return Err(ContextProviderError::Generic(format!(
-                "Invalid public key length: {} bytes, expected 48",
-                pubkey_bytes.len()
-            )));
+            pubkey_bytes.try_into().map_err(|_| {
+                ContextProviderError::Generic("Failed to convert public key to array".to_string())
+            })
         }
-
-        pubkey_bytes.try_into().map_err(|_| {
-            ContextProviderError::Generic("Failed to convert public key to array".to_string())
-        })
+        #[cfg(target_arch = "wasm32")]
+        {
+            // For WASM, we can't use block_on, so implementations must use the async version
+            Err(ContextProviderError::Generic(
+                "Synchronous get_quorum_public_key not supported in WASM. Use get_quorum_public_key_async instead.".to_string()
+            ))
+        }
     }
 
     fn get_data_contract(
@@ -404,6 +414,41 @@ impl ContextProvider for TrustedHttpContextProvider {
                 "Unsupported network".to_string(),
             )),
         }
+    }
+
+    async fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: QuorumHash,
+        _core_chain_locked_height: CoreBlockHeight,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        debug!("get_quorum_public_key_async called for type {} hash {}", quorum_type, hex::encode(quorum_hash));
+        
+        // Use the async version directly
+        let quorum = match self.find_quorum(quorum_type, quorum_hash).await {
+            Ok(q) => q,
+            Err(e) => {
+                debug!("Error finding quorum: {}", e);
+                return Err(ContextProviderError::Generic(format!("Failed to find quorum: {}", e)));
+            }
+        };
+
+        // Parse the public key from the 'key' field
+        let pubkey_hex = quorum.key.trim_start_matches("0x");
+        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+        })?;
+
+        if pubkey_bytes.len() != 48 {
+            return Err(ContextProviderError::Generic(format!(
+                "Invalid public key length: {} bytes, expected 48",
+                pubkey_bytes.len()
+            )));
+        }
+
+        pubkey_bytes.try_into().map_err(|_| {
+            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+        })
     }
 }
 
