@@ -64,13 +64,41 @@ impl DerefMut for WasmSdkBuilder {
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     pub fn new_mainnet() -> Self {
-        let sdk_builder = SdkBuilder::new_mainnet().with_context_provider(WasmContext {});
+        // Mainnet addresses - these are placeholder addresses for now
+        // TODO: Replace with actual mainnet addresses when available
+        let mainnet_addresses = vec![
+            "http://seed-1.mainnet.networks.dash.org:1443".parse().unwrap(),
+            "http://seed-2.mainnet.networks.dash.org:1443".parse().unwrap(),
+            "http://seed-3.mainnet.networks.dash.org:1443".parse().unwrap(),
+            "http://seed-4.mainnet.networks.dash.org:1443".parse().unwrap(),
+        ];
+        
+        let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(dash_sdk::dpp::dashcore::Network::Dash)
+            .with_context_provider(WasmContext {});
 
         Self(sdk_builder)
     }
 
     pub fn new_testnet() -> Self {
-        let sdk_builder = SdkBuilder::new_testnet().with_context_provider(WasmContext {});
+        // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
+        // Using ENABLED nodes with successful version checks
+        let testnet_addresses = vec![
+            "http://52.12.176.90:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://35.82.197.197:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://44.240.98.102:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://52.34.144.50:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://44.239.39.153:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://35.164.23.245:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://54.149.33.167:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "http://52.24.124.162:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+        ];
+        
+        let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
+            .with_context_provider(WasmContext {});
 
         Self(sdk_builder)
     }
