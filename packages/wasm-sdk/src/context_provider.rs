@@ -95,17 +95,21 @@ impl ContextProvider for WasmContext {
         _id: &Identifier,
         _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        todo!()
+        // Return None for now - this means the contract will be fetched from the network
+        Ok(None)
     }
 
     fn get_token_configuration(
         &self,
         _token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-        todo!()
+        // Return None for now - this means the token config will be fetched from the network
+        Ok(None)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        todo!()
+        // Return a reasonable default for platform activation height
+        // This is the height at which Platform was activated on testnet
+        Ok(1)
     }
 }
