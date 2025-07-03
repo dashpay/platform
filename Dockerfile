@@ -394,6 +394,7 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/check-features \
+    packages/dash-platform-balance-checker \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -479,6 +480,7 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/check-features \
+    packages/dash-platform-balance-checker \
     /platform/
 
 RUN mkdir /artifacts
