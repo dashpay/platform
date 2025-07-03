@@ -83,16 +83,16 @@ impl WasmSdkBuilder {
 
     pub fn new_testnet() -> Self {
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
-        // Using ENABLED nodes with successful version checks
+        // Using HTTPS endpoints for ENABLED nodes with successful version checks
         let testnet_addresses = vec![
-            "http://52.12.176.90:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://35.82.197.197:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://44.240.98.102:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://52.34.144.50:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://44.239.39.153:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://35.164.23.245:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://54.149.33.167:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "http://52.24.124.162:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.12.176.90:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://35.82.197.197:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://44.240.98.102:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.34.144.50:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://44.239.39.153:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://35.164.23.245:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://54.149.33.167:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.24.124.162:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
         
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
