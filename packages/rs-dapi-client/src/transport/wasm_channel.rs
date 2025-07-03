@@ -43,7 +43,6 @@ impl WasmClient {
     }
 }
 
-
 impl tonic::client::GrpcService<tonic::body::Body> for WasmClient {
     type Future = BoxFuture<'static, Result<http::Response<Self::ResponseBody>, Self::Error>>;
     type ResponseBody = tonic::body::Body;
@@ -51,7 +50,7 @@ impl tonic::client::GrpcService<tonic::body::Body> for WasmClient {
 
     fn call(&mut self, request: http::Request<tonic::body::Body>) -> Self::Future {
         let mut client = self.client.clone();
-        
+
         let fut = async move {
             match client.call(request).await {
                 Ok(resp) => {
