@@ -43,6 +43,32 @@
       background-color: #4caf50;
       color: white;
     }
+
+    .status-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 15px;
+      text-align: center;
+      font-weight: bold;
+      transition: all 0.3s ease;
+    }
+
+    .status-banner.success {
+      background-color: #4caf50;
+      color: white;
+    }
+
+    .status-banner.error {
+      background-color: #f44336;
+      color: white;
+    }
+
+    .status-banner.loading {
+      background-color: #ff9800;
+      color: white;
+    }
   </style>
 </head>
 
@@ -69,14 +95,23 @@
   </div>
   <div id="identityInfo"></div>
 
+  <div id="statusBanner" class="status-banner loading">Initializing WASM SDK...</div>
+
   <script type="module">
     import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch } from './pkg/wasm_sdk.js';
 
     let sdk = null;
 
+    function updateStatus(message, type = 'loading') {
+      const statusBanner = document.getElementById('statusBanner');
+      statusBanner.textContent = message;
+      statusBanner.className = `status-banner ${type}`;
+    }
+
     async function initializeSdk(network) {
       const preloader = document.getElementById('preloader');
       preloader.style.display = 'block';
+      updateStatus(`Initializing ${network.toUpperCase()} SDK...`, 'loading');
       
       try {
         if (network === 'mainnet') {
@@ -85,19 +120,28 @@
           sdk = await WasmSdkBuilder.new_testnet().build();
         }
         console.log(`Initialized ${network} SDK:`, sdk);
+        updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()}`, 'success');
       } catch (error) {
         console.error(`Error initializing ${network} SDK:`, error);
         document.getElementById('identityInfo').textContent = `Error initializing ${network} SDK: ${error}`;
+        updateStatus(`Error loading WASM SDK: ${error.message || error}`, 'error');
       } finally {
         preloader.style.display = 'none';
       }
     }
 
     async function run() {
-      await init();
-
-      // Initialize with mainnet by default
-      await initializeSdk('mainnet');
+      try {
+        updateStatus('Loading WASM module...', 'loading');
+        await init();
+        updateStatus('WASM module loaded, initializing SDK...', 'loading');
+        
+        // Initialize with mainnet by default
+        await initializeSdk('mainnet');
+      } catch (error) {
+        console.error('Failed to initialize WASM:', error);
+        updateStatus(`Failed to load WASM module: ${error.message || error}`, 'error');
+      }
 
       // Handle network toggle
       document.querySelectorAll('input[name="network"]').forEach(radio => {
