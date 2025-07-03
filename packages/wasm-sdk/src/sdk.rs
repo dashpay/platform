@@ -69,12 +69,20 @@ impl WasmSdkBuilder {
         // Mainnet addresses - these are placeholder addresses for now
         // TODO: Replace with actual mainnet addresses when available
         let mainnet_addresses = vec![
-            "http://seed-1.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-2.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-3.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-4.mainnet.networks.dash.org:1443".parse().unwrap(),
+            "http://seed-1.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
+            "http://seed-2.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
+            "http://seed-3.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
+            "http://seed-4.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
         ];
-        
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
@@ -85,25 +93,36 @@ impl WasmSdkBuilder {
 
     pub fn new_mainnet_trusted() -> Result<Self, JsError> {
         use crate::context_provider::WasmTrustedContext;
-        
+
         // Use the cached context if available, otherwise create a new one
         let trusted_context = {
             let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
-        }.map(Ok).unwrap_or_else(|| {
-            WasmTrustedContext::new_mainnet()
-                .map_err(|e| JsError::new(&format!("Failed to create mainnet trusted context: {}", e)))
+        }
+        .map(Ok)
+        .unwrap_or_else(|| {
+            WasmTrustedContext::new_mainnet().map_err(|e| {
+                JsError::new(&format!("Failed to create mainnet trusted context: {}", e))
+            })
         })?;
-        
+
         // Mainnet addresses - these are placeholder addresses for now
         // TODO: Replace with actual mainnet addresses when available
         let mainnet_addresses = vec![
-            "http://seed-1.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-2.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-3.mainnet.networks.dash.org:1443".parse().unwrap(),
-            "http://seed-4.mainnet.networks.dash.org:1443".parse().unwrap(),
+            "http://seed-1.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
+            "http://seed-2.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
+            "http://seed-3.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
+            "http://seed-4.mainnet.networks.dash.org:1443"
+                .parse()
+                .unwrap(),
         ];
-        
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
@@ -116,16 +135,16 @@ impl WasmSdkBuilder {
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
         // Using HTTPS endpoints for ENABLED nodes with successful version checks
         let testnet_addresses = vec![
-            "https://52.12.176.90:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.82.197.197:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.240.98.102:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.34.144.50:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.239.39.153:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.164.23.245:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://54.149.33.167:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.24.124.162:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.12.176.90:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://35.82.197.197:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://35.164.23.245:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
-        
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
@@ -136,29 +155,32 @@ impl WasmSdkBuilder {
 
     pub fn new_testnet_trusted() -> Result<Self, JsError> {
         use crate::context_provider::WasmTrustedContext;
-        
+
         // Use the cached context if available, otherwise create a new one
         let trusted_context = {
             let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
-        }.map(Ok).unwrap_or_else(|| {
-            WasmTrustedContext::new_testnet()
-                .map_err(|e| JsError::new(&format!("Failed to create testnet trusted context: {}", e)))
+        }
+        .map(Ok)
+        .unwrap_or_else(|| {
+            WasmTrustedContext::new_testnet().map_err(|e| {
+                JsError::new(&format!("Failed to create testnet trusted context: {}", e))
+            })
         })?;
-        
+
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
         // Using HTTPS endpoints for ENABLED nodes with successful version checks
         let testnet_addresses = vec![
-            "https://52.12.176.90:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.82.197.197:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.240.98.102:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.34.144.50:1443".parse().unwrap(),      // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.239.39.153:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.164.23.245:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://54.149.33.167:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.24.124.162:1443".parse().unwrap(),     // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.12.176.90:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://35.82.197.197:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://35.164.23.245:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
-        
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
@@ -180,42 +202,44 @@ impl WasmSdkBuilder {
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> = 
+static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
-static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> = 
+static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen]
 pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsError> {
     use crate::context_provider::WasmTrustedContext;
-    
+
     let trusted_context = WasmTrustedContext::new_mainnet()
         .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
-    
-    trusted_context.prefetch_quorums()
+
+    trusted_context
+        .prefetch_quorums()
         .await
         .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
-    
+
     // Store the context for later use
     *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-    
+
     Ok(())
 }
 
 #[wasm_bindgen]
 pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
     use crate::context_provider::WasmTrustedContext;
-    
+
     let trusted_context = WasmTrustedContext::new_testnet()
         .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
-    
-    trusted_context.prefetch_quorums()
+
+    trusted_context
+        .prefetch_quorums()
         .await
         .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
-    
+
     // Store the context for later use
     *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-    
+
     Ok(())
 }
 

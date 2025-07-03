@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
+use dash_sdk::platform::ContextProvider;
 use dash_sdk::{
     dpp::{
+        data_contract::TokenConfiguration,
         prelude::CoreBlockHeight,
         util::vec::{decode_hex, encode_hex},
         version::PlatformVersion,
-        data_contract::TokenConfiguration,
     },
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
-use dash_sdk::platform::ContextProvider;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
@@ -129,7 +129,8 @@ impl ContextProvider for WasmTrustedContext {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         // Delegate to the inner provider
-        self.inner.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+        self.inner
+            .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_data_contract(
@@ -161,8 +162,10 @@ impl WasmTrustedContext {
         )
         .map_err(|e| ContextProviderError::Generic(e.to_string()))?
         .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
-        
-        Ok(Self { inner: std::sync::Arc::new(inner) })
+
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
     }
 
     pub fn new_testnet() -> Result<Self, ContextProviderError> {
@@ -173,14 +176,16 @@ impl WasmTrustedContext {
         )
         .map_err(|e| ContextProviderError::Generic(e.to_string()))?
         .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
-        
-        Ok(Self { inner: std::sync::Arc::new(inner) })
+
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
     }
 
     /// Pre-fetch quorum information to populate the cache
     pub async fn prefetch_quorums(&self) -> Result<(), ContextProviderError> {
-        self.inner.update_quorum_caches()
-            .await
-            .map_err(|e| ContextProviderError::Generic(format!("Failed to prefetch quorums: {}", e)))
+        self.inner.update_quorum_caches().await.map_err(|e| {
+            ContextProviderError::Generic(format!("Failed to prefetch quorums: {}", e))
+        })
     }
 }
