@@ -1,3 +1,6 @@
+[workspace]
+members = ["."]
+
 [package]
 name = "wasm-sdk"
 edition = "2021"
@@ -7,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", default-features = false }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["mocks"] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [
@@ -20,7 +23,7 @@ web-sys = { version = "0.3.4", features = [
 ] }
 wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think it's not needed (LKl)
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 # tonic = { version = "*", features = ["transport"], default-features = false }
 # client = [
 #   "tonic/channel", FAIL
@@ -30,17 +33,22 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think i
 #   "tonic/tls-webpki-roots",
 #   "platform",
 # ]
-tracing-wasm = { version = "0.2.1" }
+# tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde-wasm-bindgen = { version = "0.6.5" }
+getrandom = { version = "0.2", features = ["js"] }
 
 [profile.release]
-lto = "fat"
 opt-level = "z"
 panic = "abort"
 debug = false
+lto = false
 
 #[package.metadata.wasm-pack.profile.release]
 #wasm-opt = ['-g', '-O'] # -g for profiling
 #  -Oz -Oz -g
+
+[patch.crates-io]
+# Override ring to use the wasm-compatible version
+ring = { git = "https://github.com/briansmith/ring", branch = "main" }

@@ -18,7 +18,7 @@ pub async fn start() -> Result<(), JsValue> {
     // * https://crates.io/crates/tracing-web
     console_error_panic_hook::set_once();
 
-    tracing_wasm::set_as_global_default();
+    // tracing_wasm::set_as_global_default();
 
     Ok(())
 }

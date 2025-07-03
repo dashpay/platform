@@ -184,7 +184,7 @@ pub async fn docs_testing(sdk: &WasmSdk) {
         .document_type_for_name("aaa")
         .expect("document type for name");
     let doc_serialized = doc
-        .serialize(document_type, sdk.version())
+        .serialize(document_type, &dc, sdk.version())
         .expect("serialize document");
 
     let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))

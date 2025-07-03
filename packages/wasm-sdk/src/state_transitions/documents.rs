@@ -1,12 +1,13 @@
 use crate::error::to_js_error;
 use dash_sdk::dpp::identity::KeyID;
 use dash_sdk::dpp::serialization::PlatformSerializable;
-use dash_sdk::dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dash_sdk::dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use dash_sdk::dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
-use dash_sdk::dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-use dash_sdk::dpp::state_transition::documents_batch_transition::{
-    DocumentCreateTransition, DocumentsBatchTransition, DocumentsBatchTransitionV0,
+use dash_sdk::dpp::state_transition::StateTransition;
+use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
+use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransitionV0;
+use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dash_sdk::dpp::state_transition::batch_transition::{
+    document_create_transition::DocumentCreateTransition, BatchTransition, BatchTransitionV0,
 };
 use wasm_bindgen::prelude::*;
 use web_sys::js_sys::{Number, Uint8Array};
@@ -60,7 +61,7 @@ fn create_batch_transition(
         )));
     };
 
-    let document_batch_transition = DocumentsBatchTransition::V0(DocumentsBatchTransitionV0 {
+    let document_batch_transition = BatchTransition::V0(BatchTransitionV0 {
         owner_id: Default::default(),
         transitions,
         user_fee_increase: 0,
@@ -68,7 +69,9 @@ fn create_batch_transition(
         signature: Default::default(),
     });
 
-    document_batch_transition
+    let state_transition: StateTransition = document_batch_transition.into();
+    
+    state_transition
         .serialize_to_bytes()
         .map_err(to_js_error)
         .map(|bytes| Uint8Array::from(bytes.as_slice()))

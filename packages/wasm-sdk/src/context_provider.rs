@@ -4,11 +4,13 @@ use dash_sdk::{
     dpp::{
         prelude::CoreBlockHeight,
         util::vec::{decode_hex, encode_hex},
+        version::PlatformVersion,
+        data_contract::TokenConfiguration,
     },
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
-use drive_proof_verifier::ContextProvider;
+use dash_sdk::platform::ContextProvider;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
@@ -91,7 +93,15 @@ impl ContextProvider for WasmContext {
     fn get_data_contract(
         &self,
         _id: &Identifier,
+        _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        todo!()
+    }
+
+    fn get_token_configuration(
+        &self,
+        _token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         todo!()
     }
 
