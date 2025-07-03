@@ -90,10 +90,10 @@ impl WasmSdkBuilder {
         let trusted_context = {
             let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
-        }.unwrap_or_else(|| {
+        }.map(Ok).unwrap_or_else(|| {
             WasmTrustedContext::new_mainnet()
-                .expect("Failed to create mainnet trusted context")
-        });
+                .map_err(|e| JsError::new(&format!("Failed to create mainnet trusted context: {}", e)))
+        })?;
         
         // Mainnet addresses - these are placeholder addresses for now
         // TODO: Replace with actual mainnet addresses when available
@@ -141,10 +141,10 @@ impl WasmSdkBuilder {
         let trusted_context = {
             let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
-        }.unwrap_or_else(|| {
+        }.map(Ok).unwrap_or_else(|| {
             WasmTrustedContext::new_testnet()
-                .expect("Failed to create testnet trusted context")
-        });
+                .map_err(|e| JsError::new(&format!("Failed to create testnet trusted context: {}", e)))
+        })?;
         
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
         // Using HTTPS endpoints for ENABLED nodes with successful version checks

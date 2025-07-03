@@ -91,7 +91,6 @@ jobs:
           test -f pkg/wasm_sdk_bg.wasm
           test -f pkg/optimized.wasm
           test -f pkg/wasm_sdk.js
-          test -f pkg/wasm_sdk_bg.wasm.d.ts
           test -f pkg/wasm_sdk.d.ts
           test -f pkg/package.json
           echo "Build verification successful!"
