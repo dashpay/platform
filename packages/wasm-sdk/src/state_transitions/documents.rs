@@ -70,7 +70,7 @@ fn create_batch_transition(
     });
 
     let state_transition: StateTransition = document_batch_transition.into();
-    
+
     state_transition
         .serialize_to_bytes()
         .map_err(to_js_error)
