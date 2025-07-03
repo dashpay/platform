@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["mocks"] }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [

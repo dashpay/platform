@@ -4573,6 +4573,7 @@ dependencies = [
  "gloo-timers",
  "hex",
  "http",
+ "http-body-util",
  "http-serde",
  "lru",
  "rand 0.8.5",
@@ -4582,6 +4583,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tonic-web-wasm-client",
+ "tower-service",
  "tracing",
  "wasm-bindgen-futures",
 ]

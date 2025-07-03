@@ -82,6 +82,11 @@
     <input type="radio" id="testnet" name="network" value="testnet">
     <label for="testnet">Testnet</label>
     <span id="networkIndicator" class="network-indicator mainnet">MAINNET</span>
+    <br>
+    <label style="margin-top: 5px;">
+      <input type="checkbox" id="trustedMode" style="margin-right: 5px;">
+      Use Trusted Mode (fetches quorum info from HTTP endpoints)
+    </label>
   </div>
 
   <div class="container">
@@ -111,16 +116,26 @@
     async function initializeSdk(network) {
       const preloader = document.getElementById('preloader');
       preloader.style.display = 'block';
-      updateStatus(`Initializing ${network.toUpperCase()} SDK...`, 'loading');
+      const useTrusted = document.getElementById('trustedMode').checked;
+      const modeStr = useTrusted ? 'trusted' : 'standard';
+      updateStatus(`Initializing ${network.toUpperCase()} SDK (${modeStr} mode)...`, 'loading');
       
       try {
-        if (network === 'mainnet') {
-          sdk = await WasmSdkBuilder.new_mainnet().build();
+        if (useTrusted) {
+          if (network === 'mainnet') {
+            sdk = await WasmSdkBuilder.new_mainnet_trusted().build();
+          } else {
+            sdk = await WasmSdkBuilder.new_testnet_trusted().build();
+          }
         } else {
-          sdk = await WasmSdkBuilder.new_testnet().build();
+          if (network === 'mainnet') {
+            sdk = await WasmSdkBuilder.new_mainnet().build();
+          } else {
+            sdk = await WasmSdkBuilder.new_testnet().build();
+          }
         }
-        console.log(`Initialized ${network} SDK:`, sdk);
-        updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()}`, 'success');
+        console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
+        updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
       } catch (error) {
         console.error(`Error initializing ${network} SDK:`, error);
         document.getElementById('identityInfo').textContent = `Error initializing ${network} SDK: ${error}`;
@@ -159,6 +174,18 @@
           // Reinitialize SDK with new network
           await initializeSdk(network);
         });
+      });
+
+      // Handle trusted mode toggle
+      document.getElementById('trustedMode').addEventListener('change', async () => {
+        // Get current network selection
+        const network = document.querySelector('input[name="network"]:checked').value;
+        
+        // Clear any existing results
+        document.getElementById('identityInfo').textContent = '';
+        
+        // Reinitialize SDK with current network and new trusted mode
+        await initializeSdk(network);
       });
 
       document.getElementById('fetchButton').addEventListener('click', async () => {
