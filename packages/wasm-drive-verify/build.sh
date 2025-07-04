@@ -40,9 +40,12 @@ wasm-bindgen \
 if command -v wasm-opt &> /dev/null; then
   echo "Optimizing wasm using Binaryen"
   
+  # Initialize CARGO_BUILD_PROFILE with default value if not set
+  CARGO_BUILD_PROFILE="${CARGO_BUILD_PROFILE:-dev}"
+  
   # Check if we're in a release build (via CARGO_BUILD_PROFILE or GitHub event)
-  if [ "${CARGO_BUILD_PROFILE:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
-    echo "Running full optimizations for release build"
+  if [ "${CARGO_BUILD_PROFILE}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+    echo "Running full optimizations for release build (CARGO_BUILD_PROFILE=${CARGO_BUILD_PROFILE}, GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-not_set})"
     wasm-opt \
         --code-folding \
         --const-hoisting \
@@ -80,7 +83,7 @@ if command -v wasm-opt &> /dev/null; then
         -o \
         "pkg/wasm_drive_verify_bg.wasm"
   else
-    echo "Running minimal optimizations for development/PR build"
+    echo "Running minimal optimizations for development/PR build (CARGO_BUILD_PROFILE=${CARGO_BUILD_PROFILE}, GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-not_set})"
     wasm-opt \
         --strip-producers \
         -O2 \
