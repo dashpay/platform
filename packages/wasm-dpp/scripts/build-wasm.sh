@@ -53,7 +53,7 @@ if command -v wasm-opt &> /dev/null; then
   # Check if we're in a release build (via CARGO_BUILD_PROFILE or GitHub event)
   if [ "${CARGO_BUILD_PROFILE}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
     echo "Running full optimizations for release build (CARGO_BUILD_PROFILE=${CARGO_BUILD_PROFILE}, GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-not_set})"
-    wasm-opt -tnh --flatten --rereloop -Oz --gufa -Oz --gufa -Oz  "$OUTPUT_FILE" -o "$OUTPUT_FILE"
+    wasm-opt --flatten --rereloop -Oz --gufa "$OUTPUT_FILE" -o "$OUTPUT_FILE"
   else
     echo "Running minimal optimizations for development/PR build (CARGO_BUILD_PROFILE=${CARGO_BUILD_PROFILE}, GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-not_set})"
     wasm-opt -O2 "$OUTPUT_FILE" -o "$OUTPUT_FILE"

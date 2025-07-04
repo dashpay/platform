@@ -52,17 +52,13 @@ if command -v wasm-opt &> /dev/null; then
         --abstract-type-refining \
         --dce \
         --strip-producers \
-        -Oz \
         --generate-global-effects \
         --enable-bulk-memory \
         --enable-nontrapping-float-to-int  \
-        -tnh \
         --flatten \
         --rereloop \
-        -Oz \
         --converge \
         --vacuum \
-        --dce \
         --gsi \
         --inlining-optimizing \
         --merge-blocks \
@@ -78,7 +74,7 @@ if command -v wasm-opt &> /dev/null; then
         --remove-unused-types \
         --post-emscripten \
         -Oz \
-        -Oz \
+        --gufa \
         "pkg/wasm_drive_verify_bg.wasm" \
         -o \
         "pkg/wasm_drive_verify_bg.wasm"
