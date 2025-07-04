@@ -95,6 +95,7 @@ where
 }
 
 /// Worker function that runs the provided future and sends the result back to the caller using oneshot channel.
+#[cfg(not(target_arch = "wasm32"))]
 async fn worker<F: Future>(
     fut: F,
     // response: oneshot::Sender<F::Output>,

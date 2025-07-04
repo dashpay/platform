@@ -1,10 +1,19 @@
+[workspace]
+members = ["."]
+
 [package]
 name = "wasm-sdk"
 edition = "2021"
-# rust-version.workspace = true
 publish = false
 [lib]
 crate-type = ["cdylib"]
+
+[features]
+default = []
+
+mocks = ["dash-sdk/mocks"]
+system-data-contracts = ["dash-sdk/system-data-contracts"]
+token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false }
@@ -20,23 +29,17 @@ web-sys = { version = "0.3.4", features = [
 ] }
 wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think it's not needed (LKl)
-# tonic = { version = "*", features = ["transport"], default-features = false }
-# client = [
-#   "tonic/channel", FAIL
-#   "tonic/transport", FAIL
-#   "tonic/tls",
-#   "tonic/tls-roots",
-#   "tonic/tls-webpki-roots",
-#   "platform",
-# ]
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
+tracing = { version = "0.1" }
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde-wasm-bindgen = { version = "0.6.5" }
+getrandom = { version = "0.2", features = ["js"] }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
+once_cell = "1.19"
 
 [profile.release]
-lto = "fat"
 opt-level = "z"
 panic = "abort"
 debug = false
