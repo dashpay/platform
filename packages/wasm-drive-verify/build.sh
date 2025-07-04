@@ -39,42 +39,55 @@ wasm-bindgen \
 
 if command -v wasm-opt &> /dev/null; then
   echo "Optimizing wasm using Binaryen"
-  wasm-opt \
-      --code-folding \
-      --const-hoisting \
-      --abstract-type-refining \
-      --dce \
-      --strip-producers \
-      -Oz \
-      --generate-global-effects \
-      --enable-bulk-memory \
-      --enable-nontrapping-float-to-int  \
-      -tnh \
-      --flatten \
-      --rereloop \
-      -Oz \
-      --converge \
-      --vacuum \
-      --dce \
-      --gsi \
-      --inlining-optimizing \
-      --merge-blocks \
-      --simplify-locals \
-      --low-memory-unused \
-      --optimize-added-constants \
-      --optimize-casts \
-      --optimize-instructions \
-      --optimize-stack-ir \
-      --remove-unused-brs \
-      --remove-unused-module-elements \
-      --remove-unused-names \
-      --remove-unused-types \
-      --post-emscripten \
-      -Oz \
-      -Oz \
-      "pkg/wasm_drive_verify_bg.wasm" \
-      -o \
-      "pkg/wasm_drive_verify_bg.wasm"
+  
+  # Check if we're in a release build (via CARGO_BUILD_PROFILE or GitHub event)
+  if [ "${CARGO_BUILD_PROFILE}" = "release" ] || [ "${GITHUB_EVENT_NAME}" = "release" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+    echo "Running full optimizations for release build"
+    wasm-opt \
+        --code-folding \
+        --const-hoisting \
+        --abstract-type-refining \
+        --dce \
+        --strip-producers \
+        -Oz \
+        --generate-global-effects \
+        --enable-bulk-memory \
+        --enable-nontrapping-float-to-int  \
+        -tnh \
+        --flatten \
+        --rereloop \
+        -Oz \
+        --converge \
+        --vacuum \
+        --dce \
+        --gsi \
+        --inlining-optimizing \
+        --merge-blocks \
+        --simplify-locals \
+        --low-memory-unused \
+        --optimize-added-constants \
+        --optimize-casts \
+        --optimize-instructions \
+        --optimize-stack-ir \
+        --remove-unused-brs \
+        --remove-unused-module-elements \
+        --remove-unused-names \
+        --remove-unused-types \
+        --post-emscripten \
+        -Oz \
+        -Oz \
+        "pkg/wasm_drive_verify_bg.wasm" \
+        -o \
+        "pkg/wasm_drive_verify_bg.wasm"
+  else
+    echo "Running minimal optimizations for development/PR build"
+    wasm-opt \
+        --strip-producers \
+        -O2 \
+        "pkg/wasm_drive_verify_bg.wasm" \
+        -o \
+        "pkg/wasm_drive_verify_bg.wasm"
+  fi
 else
   echo "wasm-opt command not found. Skipping wasm optimization."
 fi

@@ -49,7 +49,15 @@ fi
 
 if command -v wasm-opt &> /dev/null; then
   echo "Optimizing wasm using Binaryen"
-  wasm-opt -tnh --flatten --rereloop -Oz --gufa -Oz --gufa -Oz  "$OUTPUT_FILE" -o "$OUTPUT_FILE"
+  
+  # Check if we're in a release build (via CARGO_BUILD_PROFILE or GitHub event)
+  if [ "${CARGO_BUILD_PROFILE}" = "release" ] || [ "${GITHUB_EVENT_NAME}" = "release" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+    echo "Running full optimizations for release build"
+    wasm-opt -tnh --flatten --rereloop -Oz --gufa -Oz --gufa -Oz  "$OUTPUT_FILE" -o "$OUTPUT_FILE"
+  else
+    echo "Running minimal optimizations for development/PR build"
+    wasm-opt -O2 "$OUTPUT_FILE" -o "$OUTPUT_FILE"
+  fi
 else
   echo "wasm-opt command not found. Skipping wasm optimization."
 fi
