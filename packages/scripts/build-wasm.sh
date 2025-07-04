@@ -136,42 +136,61 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
     WASM_PATH="pkg/$WASM_FILE"
     
     if [ "$OPT_LEVEL" = "full" ]; then
-        # Full optimization for production builds
-        wasm-opt \
-            --code-folding \
-            --const-hoisting \
-            --abstract-type-refining \
-            --dce \
-            --strip-producers \
-            -Oz \
-            --generate-global-effects \
-            --enable-bulk-memory \
-            --enable-nontrapping-float-to-int \
-            -tnh \
-            --flatten \
-            --rereloop \
-            -Oz \
-            --converge \
-            --vacuum \
-            --dce \
-            --gsi \
-            --inlining-optimizing \
-            --merge-blocks \
-            --simplify-locals \
-            --optimize-added-constants \
-            --optimize-casts \
-            --optimize-instructions \
-            --optimize-stack-ir \
-            --remove-unused-brs \
-            --remove-unused-module-elements \
-            --remove-unused-names \
-            --remove-unused-types \
-            --post-emscripten \
-            -Oz \
-            -Oz \
-            "$WASM_PATH" \
-            -o \
-            "$WASM_PATH"
+        # Check wasm-opt version to determine available options
+        WASM_OPT_VERSION=$(wasm-opt --version 2>/dev/null || echo "")
+        
+        # Base optimization flags that work with all versions
+        BASE_FLAGS=(
+            --code-folding
+            --const-hoisting
+            --dce
+            --strip-producers
+            -Oz
+            --generate-global-effects
+            --enable-bulk-memory
+            --enable-nontrapping-float-to-int
+            -tnh
+            --flatten
+            --rereloop
+            -Oz
+            --converge
+            --vacuum
+            --dce
+            --gsi
+            --inlining-optimizing
+            --merge-blocks
+            --simplify-locals
+            --optimize-added-constants
+            --optimize-casts
+            --optimize-instructions
+            --optimize-stack-ir
+            --remove-unused-brs
+            --remove-unused-module-elements
+            --remove-unused-names
+            --remove-unused-types
+            --post-emscripten
+            -Oz
+            -Oz
+        )
+        
+        # Try to run with abstract-type-refining first
+        if wasm-opt --abstract-type-refining "$WASM_PATH" -o /dev/null 2>/dev/null; then
+            # If it works, add it to the flags
+            wasm-opt \
+                "${BASE_FLAGS[@]}" \
+                --abstract-type-refining \
+                "$WASM_PATH" \
+                -o \
+                "$WASM_PATH"
+        else
+            # Otherwise run without it
+            echo "Note: --abstract-type-refining not supported by this wasm-opt version, skipping..."
+            wasm-opt \
+                "${BASE_FLAGS[@]}" \
+                "$WASM_PATH" \
+                -o \
+                "$WASM_PATH"
+        fi
             
         # Create optimized version for wasm-sdk
         if [ "$PACKAGE_NAME" = "wasm-sdk" ]; then
