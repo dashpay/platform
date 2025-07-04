@@ -1241,7 +1241,7 @@
             values.limit,
             values.offset
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentitiesContractKeys') {
           const purposes = values.purposes ? values.purposes.map(p => parseInt(p)) : undefined;
           result = await get_identities_contract_keys(
@@ -1251,19 +1251,21 @@
             values.documentTypeName || undefined,
             purposes
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityNonce') {
           result = await get_identity_nonce(sdk, values.identityId);
         } else if (queryType === 'getIdentityContractNonce') {
           result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
         } else if (queryType === 'getIdentityBalance') {
           result = await get_identity_balance(sdk, values.id);
+          // Result is a string to handle large numbers
+          result = { balance: result };
         } else if (queryType === 'getIdentitiesBalances') {
           result = await get_identities_balances(sdk, values.ids);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityBalanceAndRevision') {
           result = await get_identity_balance_and_revision(sdk, values.id);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityByPublicKeyHash') {
           result = await get_identity_by_public_key_hash(sdk, values.publicKeyHash);
           result = result.toJSON();
@@ -1273,10 +1275,10 @@
             values.publicKeyHash,
             values.startAfter || undefined
           );
-          result = JSON.parse(result);
+          // Result is already a JS array
         } else if (queryType === 'getIdentityTokenBalances') {
           result = await get_identity_token_balances(sdk, values.identityId, values.tokenIds);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Data contract queries
         else if (queryType === 'getDataContract' && values.id) {
