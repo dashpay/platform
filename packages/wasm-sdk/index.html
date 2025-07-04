@@ -336,6 +336,7 @@
       
       try {
         let newSdk;
+        let shouldContinue = true;
         
         if (useTrusted) {
           // Prefetch quorums first for trusted mode
@@ -345,19 +346,21 @@
             // Check if this is still the latest request
             if (currentRequestToken !== initRequestCounter) {
               console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
-              return;
+              shouldContinue = false;
+            } else {
+              newSdk = await WasmSdkBuilder.new_mainnet_trusted().build();
             }
-            newSdk = await WasmSdkBuilder.new_mainnet_trusted().build();
           } else {
             await prefetch_trusted_quorums_testnet();
             // Check if this is still the latest request
             if (currentRequestToken !== initRequestCounter) {
               console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
-              return;
+              shouldContinue = false;
+            } else {
+              newSdk = await WasmSdkBuilder.new_testnet_trusted().build();
             }
-            newSdk = await WasmSdkBuilder.new_testnet_trusted().build();
           }
-        } else {
+        } else if (shouldContinue) {
           if (network === 'mainnet') {
             newSdk = await WasmSdkBuilder.new_mainnet().build();
           } else {
@@ -365,12 +368,12 @@
           }
         }
         
-        // Only update sdk if this is still the latest request
-        if (currentRequestToken === initRequestCounter) {
+        // Only update sdk if this is still the latest request and we should continue
+        if (shouldContinue && currentRequestToken === initRequestCounter) {
           sdk = newSdk;
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
-        } else {
+        } else if (!shouldContinue) {
           console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
         }
       } catch (error) {
