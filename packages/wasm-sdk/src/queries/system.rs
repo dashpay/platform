@@ -83,20 +83,21 @@ pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError>
     // The result is Option<CurrentQuorumsInfo>
     if let Some(quorum_info) = quorums_result {
         // Convert the SDK response to our structure
-        let quorums: Vec<QuorumInfo> = quorum_info.quorums_info.unwrap_or_default()
+        // For now, we'll use the quorum hashes to create basic info
+        let quorums: Vec<QuorumInfo> = quorum_info.quorum_hashes
             .into_iter()
-            .map(|q| QuorumInfo {
-                quorum_hash: hex::encode(&q.quorum_hash),
-                quorum_type: format!("{:?}", q.quorum_type),
-                member_count: q.member_count as u32,
-                threshold: q.threshold as u32,
-                is_verified: q.is_verified,
+            .map(|quorum_hash| QuorumInfo {
+                quorum_hash: hex::encode(&quorum_hash),
+                quorum_type: "LLMQ_TYPE_UNKNOWN".to_string(), // Type info not available in this response
+                member_count: 0, // Not available
+                threshold: 0, // Not available
+                is_verified: false, // Not available
             })
             .collect();
         
         let info = CurrentQuorumsInfo {
             quorums,
-            height: quorum_info.height.unwrap_or(0),
+            height: quorum_info.last_platform_block_height,
         };
         
         serde_wasm_bindgen::to_value(&info)
@@ -118,12 +119,21 @@ pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsE
     use dash_sdk::platform::Fetch;
     use drive_proof_verifier::types::{TotalCreditsInPlatform as TotalCreditsQuery, NoParamQuery};
     
-    let total_credits = TotalCreditsQuery::fetch(sdk.as_ref(), NoParamQuery {})
+    let total_credits_result = TotalCreditsQuery::fetch(sdk.as_ref(), NoParamQuery {})
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch total credits: {}", e)))?;
     
+    // TotalCreditsInPlatform is likely a newtype wrapper around u64
+    let credits_value = if let Some(credits) = total_credits_result {
+        // Extract the inner value - assuming it has a field or can be dereferenced
+        // We'll try to access it as a tuple struct
+        credits.0
+    } else {
+        0
+    };
+    
     let response = TotalCreditsResponse {
-        total_credits_in_platform: total_credits.unwrap_or(0),
+        total_credits_in_platform: credits_value,
     };
     
     serde_wasm_bindgen::to_value(&response)

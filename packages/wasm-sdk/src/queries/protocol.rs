@@ -89,11 +89,21 @@ pub async fn get_protocol_version_upgrade_vote_status(
     // Convert to our response format
     let votes: Vec<ProtocolVersionUpgradeVoteStatus> = votes_result
         .into_iter()
-        .map(|(pro_tx_hash, vote)| {
-            ProtocolVersionUpgradeVoteStatus {
-                pro_tx_hash: pro_tx_hash.to_string(),
-                voted: true,
-                vote_choice: vote.is_for_version.map(|v| v > 0), // Convert version number to bool
+        .filter_map(|(pro_tx_hash, vote_opt)| {
+            // vote_opt is Option<MasternodeProtocolVote>
+            if let Some(vote) = vote_opt {
+                Some(ProtocolVersionUpgradeVoteStatus {
+                    pro_tx_hash: pro_tx_hash.to_string(),
+                    voted: true,
+                    vote_choice: Some(vote.voted_version > 0), // True if voting for a non-zero version
+                })
+            } else {
+                // No vote from this masternode
+                Some(ProtocolVersionUpgradeVoteStatus {
+                    pro_tx_hash: pro_tx_hash.to_string(),
+                    voted: false,
+                    vote_choice: None,
+                })
             }
         })
         .collect();
