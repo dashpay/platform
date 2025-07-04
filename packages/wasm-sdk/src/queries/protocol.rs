@@ -23,16 +23,40 @@ struct ProtocolVersionUpgradeVoteStatus {
 
 #[wasm_bindgen]
 pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    // For now, we'll return the current protocol version
-    // In the future, this would query the actual upgrade state from the platform
+    use dash_sdk::platform::FetchMany;
+    use drive_proof_verifier::types::ProtocolVersionVoteCount;
+    
+    let upgrade_result: drive_proof_verifier::types::ProtocolVersionUpgrades = ProtocolVersionVoteCount::fetch_many(sdk.as_ref(), ())
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch protocol version upgrade state: {}", e)))?;
+    
+    // Get the current protocol version from the SDK
     let current_version = sdk.version();
+    
+    // Find the next version with votes
+    let mut next_version = None;
+    let mut activation_height = None;
+    let mut vote_count = None;
+    let mut threshold_reached = false;
+    
+    // The result is an IndexMap<u32, Option<u64>> where u32 is version and Option<u64> is activation height
+    for (version, height_opt) in upgrade_result.iter() {
+        if *version > current_version {
+            next_version = Some(*version);
+            activation_height = *height_opt;
+            // TODO: Get actual vote count and threshold from platform
+            vote_count = None;
+            threshold_reached = height_opt.is_some();
+            break;
+        }
+    }
     
     let state = ProtocolVersionUpgradeState {
         current_protocol_version: current_version,
-        next_protocol_version: None,
-        activation_height: None,
-        vote_count: None,
-        threshold_reached: false,
+        next_protocol_version: next_version,
+        activation_height,
+        vote_count,
+        threshold_reached,
     };
     
     serde_wasm_bindgen::to_value(&state)
@@ -41,22 +65,38 @@ pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue
 
 #[wasm_bindgen]
 pub async fn get_protocol_version_upgrade_vote_status(
-    _sdk: &WasmSdk,
+    sdk: &WasmSdk,
     start_pro_tx_hash: &str,
     count: u32,
 ) -> Result<JsValue, JsError> {
-    // For now, return a mock response
-    // In the future, this would query actual masternode votes
-    let mut votes = Vec::new();
+    use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
+    use drive_proof_verifier::types::MasternodeProtocolVote;
+    use dash_sdk::dpp::dashcore::ProTxHash;
+    use std::str::FromStr;
     
-    // Create mock vote status entries
-    for i in 0..count.min(5) {
-        votes.push(ProtocolVersionUpgradeVoteStatus {
-            pro_tx_hash: format!("{}{:02}", start_pro_tx_hash, i),
-            voted: i % 2 == 0,
-            vote_choice: if i % 2 == 0 { Some(true) } else { None },
-        });
-    }
+    // Parse the ProTxHash
+    let start_hash = if start_pro_tx_hash.is_empty() {
+        None
+    } else {
+        Some(ProTxHash::from_str(start_pro_tx_hash)
+            .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?)
+    };
+    
+    let votes_result = MasternodeProtocolVote::fetch_votes(sdk.as_ref(), start_hash, Some(count))
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch protocol version votes: {}", e)))?;
+    
+    // Convert to our response format
+    let votes: Vec<ProtocolVersionUpgradeVoteStatus> = votes_result
+        .into_iter()
+        .map(|(pro_tx_hash, vote)| {
+            ProtocolVersionUpgradeVoteStatus {
+                pro_tx_hash: pro_tx_hash.to_string(),
+                voted: true,
+                vote_choice: vote.is_for_version.map(|v| v > 0), // Convert version number to bool
+            }
+        })
+        .collect();
     
     serde_wasm_bindgen::to_value(&votes)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))

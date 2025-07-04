@@ -2,15 +2,14 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct PlatformStatus {
     version: u32,
-    time: String,
-    status: String,
     network: String,
+    block_height: Option<u64>,
+    core_height: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,9 +32,7 @@ struct CurrentQuorumsInfo {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct TotalCreditsResponse {
-    total_credits: u64,
-    total_in_platform: u64,
-    total_identity_balances: u64,
+    total_credits_in_platform: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,11 +59,12 @@ struct PathElement {
 
 #[wasm_bindgen]
 pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+    // TODO: Get actual status from the platform
     let status = PlatformStatus {
         version: sdk.version(),
-        time: chrono::Utc::now().to_rfc3339(),
-        status: "online".to_string(),
-        network: "testnet".to_string(), // This would come from SDK config
+        network: "testnet".to_string(), // This should come from SDK config
+        block_height: None,
+        core_height: None,
     };
     
     serde_wasm_bindgen::to_value(&status)
@@ -75,42 +73,57 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
 
 #[wasm_bindgen]
 pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    // For now, return mock quorum data
-    // In the future, this would query actual masternode quorums
-    let quorums = vec![
-        QuorumInfo {
-            quorum_hash: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-            quorum_type: "LLMQ_TYPE_50_60".to_string(),
-            member_count: 50,
-            threshold: 30,
-            is_verified: true,
-        },
-        QuorumInfo {
-            quorum_hash: "0000000000000000000000000000000000000000000000000000000000000002".to_string(),
-            quorum_type: "LLMQ_TYPE_400_60".to_string(),
-            member_count: 400,
-            threshold: 240,
-            is_verified: true,
-        },
-    ];
+    use dash_sdk::platform::FetchUnproved;
+    use drive_proof_verifier::types::{NoParamQuery, CurrentQuorumsInfo as CurrentQuorumsQuery};
     
-    let info = CurrentQuorumsInfo {
-        quorums,
-        height: 12345,
-    };
+    let quorums_result = CurrentQuorumsQuery::fetch_unproved(sdk.as_ref(), NoParamQuery {})
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch quorums info: {}", e)))?;
     
-    serde_wasm_bindgen::to_value(&info)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+    // The result is Option<CurrentQuorumsInfo>
+    if let Some(quorum_info) = quorums_result {
+        // Convert the SDK response to our structure
+        let quorums: Vec<QuorumInfo> = quorum_info.quorums_info.unwrap_or_default()
+            .into_iter()
+            .map(|q| QuorumInfo {
+                quorum_hash: hex::encode(&q.quorum_hash),
+                quorum_type: format!("{:?}", q.quorum_type),
+                member_count: q.member_count as u32,
+                threshold: q.threshold as u32,
+                is_verified: q.is_verified,
+            })
+            .collect();
+        
+        let info = CurrentQuorumsInfo {
+            quorums,
+            height: quorum_info.height.unwrap_or(0),
+        };
+        
+        serde_wasm_bindgen::to_value(&info)
+            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+    } else {
+        // No quorum info available
+        let info = CurrentQuorumsInfo {
+            quorums: vec![],
+            height: 0,
+        };
+        
+        serde_wasm_bindgen::to_value(&info)
+            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+    }
 }
 
 #[wasm_bindgen]
-pub async fn get_total_credits_in_platform(_sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    // For now, return mock credit totals
-    // In the future, this would calculate actual platform credits
+pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+    use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::{TotalCreditsInPlatform as TotalCreditsQuery, NoParamQuery};
+    
+    let total_credits = TotalCreditsQuery::fetch(sdk.as_ref(), NoParamQuery {})
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch total credits: {}", e)))?;
+    
     let response = TotalCreditsResponse {
-        total_credits: 1000000000000, // 10,000 Dash worth of credits
-        total_in_platform: 900000000000,
-        total_identity_balances: 100000000000,
+        total_credits_in_platform: total_credits.unwrap_or(0),
     };
     
     serde_wasm_bindgen::to_value(&response)
@@ -122,9 +135,10 @@ pub async fn get_prefunded_specialized_balance(
     _sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<JsValue, JsError> {
+    // TODO: Query actual prefunded balance from the platform
     let response = PrefundedSpecializedBalance {
         identity_id: identity_id.to_string(),
-        balance: 0, // No prefunded balance in this mock
+        balance: 0,
     };
     
     serde_wasm_bindgen::to_value(&response)
@@ -136,11 +150,11 @@ pub async fn wait_for_state_transition_result(
     _sdk: &WasmSdk,
     state_transition_hash: &str,
 ) -> Result<JsValue, JsError> {
-    // Mock implementation - in reality would poll until ST is confirmed
+    // TODO: Implement actual polling for state transition result
     let result = StateTransitionResult {
         state_transition_hash: state_transition_hash.to_string(),
-        status: "SUCCESS".to_string(),
-        error: None,
+        status: "UNKNOWN".to_string(),
+        error: Some("Not implemented - cannot query state transition status".to_string()),
     };
     
     serde_wasm_bindgen::to_value(&result)
@@ -152,7 +166,7 @@ pub async fn get_path_elements(
     _sdk: &WasmSdk,
     keys: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    // Mock implementation returning empty values
+    // TODO: Query actual path elements from the platform state tree
     let elements: Vec<PathElement> = keys.into_iter().map(|key| {
         PathElement {
             path: vec![key],
