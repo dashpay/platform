@@ -275,6 +275,7 @@
 
     let sdk = null;
     let currentResult = null;
+    let initRequestCounter = 0; // Counter to track initialization requests
 
     // Helper functions for result actions
     window.clearResults = function() {
@@ -324,6 +325,9 @@
     }
 
     async function initializeSdk(network) {
+      // Increment counter and store current request token
+      const currentRequestToken = ++initRequestCounter;
+      
       const preloader = document.getElementById('preloader');
       preloader.style.display = 'block';
       const useTrusted = document.getElementById('trustedMode').checked;
@@ -331,31 +335,56 @@
       updateStatus(`Initializing ${network.toUpperCase()} SDK (${modeStr} mode)...`, 'loading');
       
       try {
+        let newSdk;
+        
         if (useTrusted) {
           // Prefetch quorums first for trusted mode
           updateStatus(`Prefetching quorum information for ${network.toUpperCase()}...`, 'loading');
           if (network === 'mainnet') {
             await prefetch_trusted_quorums_mainnet();
-            sdk = await WasmSdkBuilder.new_mainnet_trusted().build();
+            // Check if this is still the latest request
+            if (currentRequestToken !== initRequestCounter) {
+              console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
+              return;
+            }
+            newSdk = await WasmSdkBuilder.new_mainnet_trusted().build();
           } else {
             await prefetch_trusted_quorums_testnet();
-            sdk = await WasmSdkBuilder.new_testnet_trusted().build();
+            // Check if this is still the latest request
+            if (currentRequestToken !== initRequestCounter) {
+              console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
+              return;
+            }
+            newSdk = await WasmSdkBuilder.new_testnet_trusted().build();
           }
         } else {
           if (network === 'mainnet') {
-            sdk = await WasmSdkBuilder.new_mainnet().build();
+            newSdk = await WasmSdkBuilder.new_mainnet().build();
           } else {
-            sdk = await WasmSdkBuilder.new_testnet().build();
+            newSdk = await WasmSdkBuilder.new_testnet().build();
           }
         }
-        console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
-        updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
+        
+        // Only update sdk if this is still the latest request
+        if (currentRequestToken === initRequestCounter) {
+          sdk = newSdk;
+          console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
+          updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
+        } else {
+          console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
+        }
       } catch (error) {
-        console.error(`Error initializing ${network} SDK:`, error);
-        document.getElementById('identityInfo').textContent = `Error initializing ${network} SDK: ${error}`;
-        updateStatus(`Error loading WASM SDK: ${error.message || error}`, 'error');
+        // Only show error if this is still the latest request
+        if (currentRequestToken === initRequestCounter) {
+          console.error(`Error initializing ${network} SDK:`, error);
+          document.getElementById('identityInfo').textContent = `Error initializing ${network} SDK: ${error}`;
+          updateStatus(`Error loading WASM SDK: ${error.message || error}`, 'error');
+        }
       } finally {
-        preloader.style.display = 'none';
+        // Only hide preloader if this is the latest request
+        if (currentRequestToken === initRequestCounter) {
+          preloader.style.display = 'none';
+        }
       }
     }
 
