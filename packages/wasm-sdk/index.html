@@ -31,7 +31,7 @@
     }
 
     .sidebar {
-      width: 400px;
+      width: 450px;
       background-color: white;
       border-right: 1px solid #e0e0e0;
       display: flex;
@@ -70,127 +70,168 @@
       color: white;
     }
 
-    .actions-container {
+    .query-container {
       padding: 20px;
       flex: 1;
       overflow-y: auto;
     }
 
-    .action-group {
-      margin-bottom: 30px;
-      padding: 15px;
-      background-color: #f8f9fa;
-      border-radius: 8px;
+    .query-selector {
+      margin-bottom: 20px;
     }
 
-    .action-group h3 {
-      margin: 0 0 15px 0;
-      color: #333;
-      font-size: 1.1em;
-    }
-
-    .input-group {
-      display: flex;
-      gap: 10px;
+    .query-selector select {
+      width: 100%;
+      padding: 10px;
+      font-size: 14px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: white;
       margin-bottom: 10px;
     }
 
-    .input-group input {
-      flex: 1;
-      padding: 10px;
+    .query-inputs {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+
+    .query-inputs h4 {
+      margin: 0 0 15px 0;
+      color: #333;
+      font-size: 1em;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      color: #555;
+      font-size: 0.9em;
+    }
+
+    .input-group input,
+    .input-group select {
+      width: 100%;
+      padding: 8px 10px;
       border: 1px solid #ddd;
       border-radius: 4px;
       font-size: 14px;
+      box-sizing: border-box;
     }
 
-    .input-group button {
-      padding: 10px 20px;
-      background-color: #2196F3;
+    .input-group input[type="checkbox"] {
+      width: auto;
+      margin-right: 5px;
+    }
+
+    .input-group input[type="number"] {
+      -moz-appearance: textfield;
+    }
+
+    .input-group input[type="number"]::-webkit-inner-spin-button,
+    .input-group input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .optional-label {
+      color: #888;
+      font-size: 0.85em;
+      font-style: italic;
+    }
+
+    .execute-button {
+      width: 100%;
+      padding: 12px;
+      background-color: #1976d2;
       color: white;
       border: none;
       border-radius: 4px;
-      cursor: pointer;
+      font-size: 16px;
       font-weight: 500;
-      transition: background-color 0.2s;
+      cursor: pointer;
+      transition: background-color 0.3s;
     }
 
-    .input-group button:hover {
-      background-color: #1976D2;
+    .execute-button:hover {
+      background-color: #1565c0;
     }
 
-    .input-group button:disabled {
+    .execute-button:disabled {
       background-color: #ccc;
       cursor: not-allowed;
     }
 
     .result-container {
       flex: 1;
-      background-color: #fafafa;
-      padding: 20px;
-      overflow-y: auto;
+      background-color: white;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     .result-header {
+      padding: 20px;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
     }
 
     .result-header h2 {
       margin: 0;
       color: #333;
-    }
-
-    .result-actions {
-      display: flex;
-      gap: 10px;
+      font-size: 1.3em;
     }
 
     .result-actions button {
-      padding: 6px 12px;
-      background-color: #f0f0f0;
+      margin-left: 10px;
+      padding: 8px 16px;
       border: 1px solid #ddd;
+      background-color: white;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 14px;
     }
 
     .result-actions button:hover {
-      background-color: #e0e0e0;
+      background-color: #f5f5f5;
     }
 
     .result-content {
-      background-color: white;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
+      flex: 1;
       padding: 20px;
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       white-space: pre-wrap;
       word-wrap: break-word;
-      color: #333;
-      min-height: 400px;
     }
 
     .result-content.empty {
-      color: #999;
-      text-align: center;
-      padding: 100px 20px;
+      color: #888;
       font-style: italic;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
 
     .status-banner {
       position: fixed;
-      bottom: 0;
+      top: 0;
       left: 0;
       right: 0;
-      padding: 15px;
+      padding: 10px 20px;
       text-align: center;
-      font-weight: bold;
+      font-weight: 500;
+      font-size: 14px;
+      z-index: 999;
       transition: all 0.3s ease;
-      z-index: 100;
     }
 
     .status-banner.success {
@@ -215,6 +256,57 @@
       border-radius: 4px;
       padding: 10px;
     }
+
+    .mode-selector {
+      margin-bottom: 15px;
+      display: none;
+    }
+
+    .array-input-container {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      background-color: #fafafa;
+    }
+
+    .array-item {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 5px;
+    }
+
+    .array-item input {
+      flex: 1;
+    }
+
+    .array-item button {
+      padding: 5px 10px;
+      background-color: #ff5252;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .add-array-item {
+      padding: 5px 15px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      margin-top: 5px;
+    }
+
+    .query-description {
+      font-size: 0.85em;
+      color: #666;
+      margin-bottom: 15px;
+      padding: 10px;
+      background-color: #e3f2fd;
+      border-radius: 4px;
+      line-height: 1.4;
+    }
   </style>
 </head>
 
@@ -237,22 +329,34 @@
         </label>
       </div>
       
-      <div class="actions-container">
-        <div class="action-group">
-          <h3>Identity</h3>
-          <div class="input-group">
-            <input type="text" id="identityInput" placeholder="Enter Identity ID" />
-            <button id="fetchButton">Fetch</button>
-          </div>
+      <div class="query-container">
+        <div class="query-selector">
+          <select id="queryCategory">
+            <option value="">Select Query Category</option>
+            <option value="identity">Identity Queries</option>
+            <option value="dataContract">Data Contract Queries</option>
+            <option value="document">Document Queries</option>
+            <option value="voting">Voting & Contested Resources</option>
+            <option value="protocol">Protocol & Version</option>
+            <option value="epoch">Epoch & Block</option>
+            <option value="token">Token Queries</option>
+            <option value="group">Group Queries</option>
+            <option value="system">System & Utility</option>
+          </select>
+          
+          <select id="queryType" style="display: none;">
+            <option value="">Select Query Type</option>
+          </select>
         </div>
         
-        <div class="action-group">
-          <h3>Data Contract</h3>
-          <div class="input-group">
-            <input type="text" id="identityInput2" placeholder="Enter Data Contract ID" />
-            <button id="fetchButton2">Fetch</button>
-          </div>
+        <div id="queryDescription" class="query-description" style="display: none;"></div>
+        
+        <div id="queryInputs" class="query-inputs" style="display: none;">
+          <h4 id="queryTitle">Query Parameters</h4>
+          <div id="dynamicInputs"></div>
         </div>
+        
+        <button id="executeQuery" class="execute-button" style="display: none;">Execute Query</button>
       </div>
     </div>
     
@@ -264,23 +368,536 @@
           <button id="copyButton" onclick="copyResults()">Copy</button>
         </div>
       </div>
-      <div id="identityInfo" class="result-content empty">No data fetched yet. Use the actions on the left to fetch identity or data contract information.</div>
+      <div id="identityInfo" class="result-content empty">No data fetched yet. Select a query category and type to begin.</div>
     </div>
   </div>
 
   <div id="statusBanner" class="status-banner loading">Initializing WASM SDK...</div>
 
   <script type="module">
-    import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch, prefetch_trusted_quorums_mainnet, prefetch_trusted_quorums_testnet } from './pkg/wasm_sdk.js';
+    import init, { 
+      WasmSdkBuilder, 
+      identity_fetch, 
+      data_contract_fetch, 
+      prefetch_trusted_quorums_mainnet, 
+      prefetch_trusted_quorums_testnet,
+      // Identity queries
+      get_identity_keys,
+      get_identity_nonce,
+      get_identity_contract_nonce,
+      get_identity_balance,
+      get_identities_balances,
+      get_identity_balance_and_revision,
+      get_identity_by_public_key_hash,
+      get_identities_contract_keys,
+      get_identity_by_non_unique_public_key_hash,
+      get_identity_token_balances,
+      // Data contract queries
+      get_data_contract_history,
+      get_data_contracts,
+      // Document queries
+      get_documents,
+      // Protocol/Version queries
+      get_protocol_version_upgrade_state,
+      get_protocol_version_upgrade_vote_status,
+      // Epoch/Block queries
+      get_epochs_info,
+      get_finalized_epoch_infos,
+      get_evonodes_proposed_epoch_blocks_by_ids,
+      get_evonodes_proposed_epoch_blocks_by_range,
+      // System/Utility queries
+      get_status,
+      get_total_credits_in_platform,
+      get_current_quorums_info,
+      get_prefunded_specialized_balance,
+      get_path_elements,
+      wait_for_state_transition_result,
+      // Token queries
+      get_identities_token_balances,
+      get_identity_token_infos,
+      get_identities_token_infos,
+      get_token_statuses,
+      get_token_direct_purchase_prices,
+      get_token_contract_info,
+      get_token_perpetual_distribution_last_claim,
+      get_token_total_supply,
+      // Voting/Contested Resource queries
+      get_contested_resources,
+      get_contested_resource_vote_state,
+      get_contested_resource_voters_for_identity,
+      get_contested_resource_identity_votes,
+      get_vote_polls_by_end_date,
+      // Group queries
+      get_group_info,
+      get_group_members,
+      get_identity_groups,
+      get_groups_data_contracts
+    } from './pkg/wasm_sdk.js';
+    
+    // Import all placeholder query functions
+    import * as queryFunctions from './pkg/wasm_sdk.js';
 
     let sdk = null;
     let currentResult = null;
-    let initRequestCounter = 0; // Counter to track initialization requests
+    let initRequestCounter = 0;
+
+    // Query definitions
+    const queryDefinitions = {
+      identity: {
+        label: "Identity Queries",
+        queries: {
+          getIdentity: {
+            label: "Get Identity",
+            description: "Fetch an identity by its identifier",
+            inputs: [
+              { name: "id", type: "text", label: "Identity ID", required: true }
+            ]
+          },
+          getIdentityKeys: {
+            label: "Get Identity Keys",
+            description: "Retrieve keys associated with an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "keyRequestType", type: "select", label: "Key Request Type", required: true, 
+                options: [
+                  { value: "all", label: "All Keys" },
+                  { value: "specific", label: "Specific Keys" },
+                  { value: "search", label: "Search Keys" }
+                ]
+              },
+              { name: "specificKeyIds", type: "array", label: "Key IDs (for Specific Keys)", required: false, 
+                dependsOn: { field: "keyRequestType", value: "specific" } },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false }
+            ]
+          },
+          getIdentitiesContractKeys: {
+            label: "Get Identities Contract Keys",
+            description: "Get keys for multiple identities related to a specific contract",
+            inputs: [
+              { name: "identitiesIds", type: "array", label: "Identity IDs", required: true },
+              { name: "contractId", type: "text", label: "Contract ID", required: true },
+              { name: "documentTypeName", type: "text", label: "Document Type Name", required: false },
+              { name: "purposes", type: "multiselect", label: "Key Purposes", required: false,
+                options: [
+                  { value: "0", label: "Authentication" },
+                  { value: "1", label: "Encryption" },
+                  { value: "2", label: "Decryption" },
+                  { value: "3", label: "Transfer" },
+                  { value: "5", label: "Voting" }
+                ]
+              }
+            ]
+          },
+          getIdentityNonce: {
+            label: "Get Identity Nonce",
+            description: "Get the current nonce for an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true }
+            ]
+          },
+          getIdentityContractNonce: {
+            label: "Get Identity Contract Nonce",
+            description: "Get the nonce for an identity in relation to a specific contract",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "contractId", type: "text", label: "Contract ID", required: true }
+            ]
+          },
+          getIdentityBalance: {
+            label: "Get Identity Balance",
+            description: "Get the credit balance of an identity",
+            inputs: [
+              { name: "id", type: "text", label: "Identity ID", required: true }
+            ]
+          },
+          getIdentitiesBalances: {
+            label: "Get Identities Balances",
+            description: "Get balances for multiple identities",
+            inputs: [
+              { name: "ids", type: "array", label: "Identity IDs", required: true }
+            ]
+          },
+          getIdentityBalanceAndRevision: {
+            label: "Get Identity Balance and Revision",
+            description: "Get both balance and revision number for an identity",
+            inputs: [
+              { name: "id", type: "text", label: "Identity ID", required: true }
+            ]
+          },
+          getIdentityByPublicKeyHash: {
+            label: "Get Identity by Public Key Hash",
+            description: "Find an identity by its unique public key hash",
+            inputs: [
+              { name: "publicKeyHash", type: "text", label: "Public Key Hash", required: true }
+            ]
+          },
+          getIdentityByNonUniquePublicKeyHash: {
+            label: "Get Identity by Non-Unique Public Key Hash",
+            description: "Find identities by non-unique public key hash",
+            inputs: [
+              { name: "publicKeyHash", type: "text", label: "Public Key Hash", required: true },
+              { name: "startAfter", type: "text", label: "Start After (Identity ID)", required: false }
+            ]
+          },
+          getIdentityTokenBalances: {
+            label: "Get Identity Token Balances",
+            description: "Get token balances for an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "tokenIds", type: "array", label: "Token IDs", required: true }
+            ]
+          },
+          getIdentitiesTokenBalances: {
+            label: "Get Identities Token Balances",
+            description: "Get token balance for multiple identities",
+            inputs: [
+              { name: "identityIds", type: "array", label: "Identity IDs", required: true },
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
+            ]
+          },
+          getIdentityTokenInfos: {
+            label: "Get Identity Token Info",
+            description: "Get token information for an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "tokenIds", type: "array", label: "Token IDs (optional)", required: false },
+              { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false }
+            ]
+          },
+          getIdentitiesTokenInfos: {
+            label: "Get Identities Token Info",
+            description: "Get token information for multiple identities",
+            inputs: [
+              { name: "identityIds", type: "array", label: "Identity IDs", required: true },
+              { name: "tokenId", type: "text", label: "Token ID", required: true },
+              { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false }
+            ]
+          }
+        }
+      },
+      dataContract: {
+        label: "Data Contract Queries",
+        queries: {
+          getDataContract: {
+            label: "Get Data Contract",
+            description: "Fetch a data contract by its identifier",
+            inputs: [
+              { name: "id", type: "text", label: "Data Contract ID", required: true }
+            ]
+          },
+          getDataContractHistory: {
+            label: "Get Data Contract History",
+            description: "Get the version history of a data contract",
+            inputs: [
+              { name: "id", type: "text", label: "Data Contract ID", required: true },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false },
+              { name: "startAtMs", type: "number", label: "Start At (ms)", required: false }
+            ]
+          },
+          getDataContracts: {
+            label: "Get Data Contracts",
+            description: "Fetch multiple data contracts by their identifiers",
+            inputs: [
+              { name: "ids", type: "array", label: "Data Contract IDs", required: true }
+            ]
+          }
+        }
+      },
+      document: {
+        label: "Document Queries",
+        queries: {
+          getDocuments: {
+            label: "Get Documents",
+            description: "Query documents from a data contract",
+            inputs: [
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "where", type: "json", label: "Where Clause (JSON)", required: false },
+              { name: "orderBy", type: "json", label: "Order By (JSON)", required: false },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "startOption", type: "select", label: "Start Option", required: false,
+                options: [
+                  { value: "none", label: "None" },
+                  { value: "startAfter", label: "Start After" },
+                  { value: "startAt", label: "Start At" }
+                ]
+              },
+              { name: "startValue", type: "text", label: "Start Value (Document ID)", required: false,
+                dependsOn: { field: "startOption", value: ["startAfter", "startAt"] } }
+            ]
+          }
+        }
+      },
+      voting: {
+        label: "Voting & Contested Resources",
+        queries: {
+          getContestedResources: {
+            label: "Get Contested Resources",
+            description: "Get list of contested resources",
+            inputs: [
+              { name: "documentTypeName", type: "text", label: "Document Type Name", required: true },
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "indexName", type: "text", label: "Index Name", required: true },
+              { name: "resultType", type: "select", label: "Result Type", required: true,
+                options: [
+                  { value: "documents", label: "Documents" },
+                  { value: "vote_tally", label: "Vote Tally" },
+                  { value: "document_with_vote_tally", label: "Document with Vote Tally" }
+                ]
+              },
+              { name: "allowIncludeLockedAndAbstainingVoteTally", type: "checkbox", label: "Include Locked and Abstaining", required: false },
+              { name: "startAtValue", type: "text", label: "Start At Value (hex bytes)", required: false },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false },
+              { name: "orderAscending", type: "checkbox", label: "Order Ascending", required: false }
+            ]
+          },
+          getContestedResourceVoteState: {
+            label: "Get Contested Resource Vote State",
+            description: "Get the current vote state for a contested resource",
+            inputs: [
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentTypeName", type: "text", label: "Document Type Name", required: true },
+              { name: "indexName", type: "text", label: "Index Name", required: true },
+              { name: "resultType", type: "select", label: "Result Type", required: true,
+                options: [
+                  { value: "contenders", label: "Contenders" },
+                  { value: "abstainers", label: "Abstainers" },
+                  { value: "locked", label: "Locked" }
+                ]
+              },
+              { name: "allowIncludeLockedAndAbstainingVoteTally", type: "checkbox", label: "Include Locked and Abstaining", required: false },
+              { name: "startAtIdentifierInfo", type: "json", label: "Start At Identifier Info (JSON)", required: false },
+              { name: "count", type: "number", label: "Count", required: false },
+              { name: "orderAscending", type: "checkbox", label: "Order Ascending", required: false }
+            ]
+          },
+          getContestedResourceVotersForIdentity: {
+            label: "Get Contested Resource Voters for Identity",
+            description: "Get voters who voted for a specific identity in a contested resource",
+            inputs: [
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentTypeName", type: "text", label: "Document Type Name", required: true },
+              { name: "indexName", type: "text", label: "Index Name", required: true },
+              { name: "contestantId", type: "text", label: "Contestant ID", required: true },
+              { name: "startAtIdentifierInfo", type: "json", label: "Start At Identifier Info (JSON)", required: false },
+              { name: "count", type: "number", label: "Count", required: false },
+              { name: "orderAscending", type: "checkbox", label: "Order Ascending", required: false }
+            ]
+          },
+          getContestedResourceIdentityVotes: {
+            label: "Get Contested Resource Identity Votes",
+            description: "Get all votes cast by a specific identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false },
+              { name: "orderAscending", type: "checkbox", label: "Order Ascending", required: false }
+            ]
+          },
+          getVotePollsByEndDate: {
+            label: "Get Vote Polls by End Date",
+            description: "Get vote polls within a time range",
+            inputs: [
+              { name: "startTimeMs", type: "number", label: "Start Time (ms)", required: false },
+              { name: "endTimeMs", type: "number", label: "End Time (ms)", required: false },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false },
+              { name: "orderAscending", type: "checkbox", label: "Ascending Order", required: false }
+            ]
+          }
+        }
+      },
+      protocol: {
+        label: "Protocol & Version",
+        queries: {
+          getProtocolVersionUpgradeState: {
+            label: "Get Protocol Version Upgrade State",
+            description: "Get the current state of protocol version upgrades",
+            inputs: []
+          },
+          getProtocolVersionUpgradeVoteStatus: {
+            label: "Get Protocol Version Upgrade Vote Status",
+            description: "Get voting status for protocol version upgrades",
+            inputs: [
+              { name: "startProTxHash", type: "text", label: "Start ProTx Hash", required: true },
+              { name: "count", type: "number", label: "Count", required: true }
+            ]
+          }
+        }
+      },
+      epoch: {
+        label: "Epoch & Block",
+        queries: {
+          getEpochsInfo: {
+            label: "Get Epochs Info",
+            description: "Get information about epochs",
+            inputs: [
+              { name: "startEpoch", type: "number", label: "Start Epoch", required: false },
+              { name: "count", type: "number", label: "Count", required: true },
+              { name: "ascending", type: "checkbox", label: "Ascending Order", required: false }
+            ]
+          },
+          getFinalizedEpochInfos: {
+            label: "Get Finalized Epoch Info",
+            description: "Get information about finalized epochs",
+            inputs: [
+              { name: "startEpoch", type: "number", label: "Start Epoch", required: false },
+              { name: "count", type: "number", label: "Count", required: false },
+              { name: "ascending", type: "checkbox", label: "Ascending Order", required: false }
+            ]
+          },
+          getEvonodesProposedEpochBlocksByIds: {
+            label: "Get Evonodes Proposed Epoch Blocks by IDs",
+            description: "Get proposed blocks by evonode IDs",
+            inputs: [
+              { name: "epoch", type: "number", label: "Epoch", required: true },
+              { name: "ids", type: "array", label: "Evonode IDs", required: true }
+            ]
+          },
+          getEvonodesProposedEpochBlocksByRange: {
+            label: "Get Evonodes Proposed Epoch Blocks by Range",
+            description: "Get proposed blocks by range",
+            inputs: [
+              { name: "epoch", type: "number", label: "Epoch", required: true },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "startAfter", type: "text", label: "Start After (Evonode ID)", required: false },
+              { name: "orderAscending", type: "checkbox", label: "Order Ascending", required: false }
+            ]
+          }
+        }
+      },
+      token: {
+        label: "Token Queries",
+        queries: {
+          getTokenStatuses: {
+            label: "Get Token Statuses",
+            description: "Get pause/unpause status for tokens",
+            inputs: [
+              { name: "tokenIds", type: "array", label: "Token IDs", required: true }
+            ]
+          },
+          getTokenDirectPurchasePrices: {
+            label: "Get Token Direct Purchase Prices",
+            description: "Get direct purchase prices for tokens",
+            inputs: [
+              { name: "tokenIds", type: "array", label: "Token IDs", required: true }
+            ]
+          },
+          getTokenContractInfo: {
+            label: "Get Token Contract Info",
+            description: "Get contract information for a token",
+            inputs: [
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true }
+            ]
+          },
+          getTokenPerpetualDistributionLastClaim: {
+            label: "Get Token Perpetual Distribution Last Claim",
+            description: "Get last claim information for token perpetual distribution",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "distributionId", type: "text", label: "Distribution ID", required: true }
+            ]
+          },
+          getTokenTotalSupply: {
+            label: "Get Token Total Supply",
+            description: "Get total supply information for a token",
+            inputs: [
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
+            ]
+          }
+        }
+      },
+      group: {
+        label: "Group Queries",
+        queries: {
+          getGroupInfo: {
+            label: "Get Group Info",
+            description: "Get information about a specific group",
+            inputs: [
+              { name: "groupContractId", type: "text", label: "Group Contract ID", required: true }
+            ]
+          },
+          getGroupMembers: {
+            label: "Get Group Members",
+            description: "Get members of a specific group",
+            inputs: [
+              { name: "groupContractId", type: "text", label: "Group Contract ID", required: true },
+              { name: "memberIds", type: "array", label: "Member IDs (optional)", required: false },
+              { name: "startAt", type: "text", label: "Start At (Member ID)", required: false },
+              { name: "limit", type: "number", label: "Limit", required: false }
+            ]
+          },
+          getIdentityGroups: {
+            label: "Get Identity Groups",
+            description: "Get groups associated with an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "memberDataContracts", type: "array", label: "Member Data Contracts", required: false },
+              { name: "ownerDataContracts", type: "array", label: "Owner Data Contracts", required: false },
+              { name: "moderatorDataContracts", type: "array", label: "Moderator Data Contracts", required: false }
+            ]
+          },
+          getGroupsDataContracts: {
+            label: "Get Groups Data Contracts",
+            description: "Get data contracts for multiple groups",
+            inputs: [
+              { name: "dataContractIds", type: "array", label: "Data Contract IDs", required: true }
+            ]
+          }
+        }
+      },
+      system: {
+        label: "System & Utility",
+        queries: {
+          getStatus: {
+            label: "Get Status",
+            description: "Get node and network status information",
+            inputs: []
+          },
+          getCurrentQuorumsInfo: {
+            label: "Get Current Quorums Info",
+            description: "Get information about current quorums",
+            inputs: []
+          },
+          getPrefundedSpecializedBalance: {
+            label: "Get Prefunded Specialized Balance",
+            description: "Get prefunded balance for specialized transactions",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true }
+            ]
+          },
+          getTotalCreditsInPlatform: {
+            label: "Get Total Credits in Platform",
+            description: "Get the total amount of credits in the platform",
+            inputs: []
+          },
+          getPathElements: {
+            label: "Get Path Elements",
+            description: "Get elements at specific paths in the state tree",
+            inputs: [
+              { name: "keys", type: "array", label: "Keys (hex strings)", required: true }
+            ]
+          },
+          waitForStateTransitionResult: {
+            label: "Wait for State Transition Result",
+            description: "Wait for a state transition to be processed",
+            inputs: [
+              { name: "stateTransitionHash", type: "text", label: "State Transition Hash", required: true }
+            ]
+          }
+        }
+      }
+    };
 
     // Helper functions for result actions
     window.clearResults = function() {
       const resultContent = document.getElementById('identityInfo');
-      resultContent.textContent = 'No data fetched yet. Use the actions on the left to fetch identity or data contract information.';
+      resultContent.textContent = 'No data fetched yet. Select a query category and type to begin.';
       resultContent.className = 'result-content empty';
       currentResult = null;
     };
@@ -325,7 +942,6 @@
     }
 
     async function initializeSdk(network) {
-      // Increment counter and store current request token
       const currentRequestToken = ++initRequestCounter;
       
       const preloader = document.getElementById('preloader');
@@ -339,11 +955,9 @@
         let shouldContinue = true;
         
         if (useTrusted) {
-          // Prefetch quorums first for trusted mode
           updateStatus(`Prefetching quorum information for ${network.toUpperCase()}...`, 'loading');
           if (network === 'mainnet') {
             await prefetch_trusted_quorums_mainnet();
-            // Check if this is still the latest request
             if (currentRequestToken !== initRequestCounter) {
               console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
               shouldContinue = false;
@@ -352,7 +966,6 @@
             }
           } else {
             await prefetch_trusted_quorums_testnet();
-            // Check if this is still the latest request
             if (currentRequestToken !== initRequestCounter) {
               console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
               shouldContinue = false;
@@ -368,145 +981,660 @@
           }
         }
         
-        // Only update sdk if this is still the latest request and we should continue
         if (shouldContinue && currentRequestToken === initRequestCounter) {
           sdk = newSdk;
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
-        } else if (!shouldContinue) {
-          console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
         }
       } catch (error) {
-        // Only show error if this is still the latest request
         if (currentRequestToken === initRequestCounter) {
           console.error(`Error initializing ${network} SDK:`, error);
           clearResults();
           updateStatus(`Error loading WASM SDK: ${error.message || error}`, 'error');
         }
       } finally {
-        // Only hide preloader if this is the latest request
         if (currentRequestToken === initRequestCounter) {
           preloader.style.display = 'none';
         }
       }
     }
 
+    // Dynamic input creation
+    function createInput(inputDef, container) {
+      const inputGroup = document.createElement('div');
+      inputGroup.className = 'input-group';
+      
+      const label = document.createElement('label');
+      label.textContent = inputDef.label;
+      if (!inputDef.required) {
+        const optionalSpan = document.createElement('span');
+        optionalSpan.className = 'optional-label';
+        optionalSpan.textContent = ' (optional)';
+        label.appendChild(optionalSpan);
+      }
+      inputGroup.appendChild(label);
+
+      if (inputDef.type === 'text' || inputDef.type === 'number') {
+        const input = document.createElement('input');
+        input.type = inputDef.type;
+        input.name = inputDef.name;
+        input.placeholder = inputDef.label;
+        inputGroup.appendChild(input);
+      } else if (inputDef.type === 'checkbox') {
+        const checkboxContainer = document.createElement('div');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = inputDef.name;
+        checkbox.id = `input_${inputDef.name}`;
+        
+        const checkboxLabel = document.createElement('label');
+        checkboxLabel.htmlFor = checkbox.id;
+        checkboxLabel.textContent = inputDef.label;
+        
+        checkboxContainer.appendChild(checkbox);
+        checkboxContainer.appendChild(checkboxLabel);
+        inputGroup.appendChild(checkboxContainer);
+      } else if (inputDef.type === 'select') {
+        const select = document.createElement('select');
+        select.name = inputDef.name;
+        
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = `Select ${inputDef.label}`;
+        select.appendChild(defaultOption);
+        
+        inputDef.options.forEach(opt => {
+          const option = document.createElement('option');
+          option.value = opt.value;
+          option.textContent = opt.label;
+          select.appendChild(option);
+        });
+        
+        inputGroup.appendChild(select);
+      } else if (inputDef.type === 'multiselect') {
+        const selectContainer = document.createElement('div');
+        selectContainer.className = 'array-input-container';
+        
+        inputDef.options.forEach(opt => {
+          const checkboxDiv = document.createElement('div');
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.name = `${inputDef.name}_${opt.value}`;
+          checkbox.value = opt.value;
+          checkbox.id = `input_${inputDef.name}_${opt.value}`;
+          
+          const checkboxLabel = document.createElement('label');
+          checkboxLabel.htmlFor = checkbox.id;
+          checkboxLabel.textContent = opt.label;
+          checkboxLabel.style.marginLeft = '5px';
+          
+          checkboxDiv.appendChild(checkbox);
+          checkboxDiv.appendChild(checkboxLabel);
+          selectContainer.appendChild(checkboxDiv);
+        });
+        
+        inputGroup.appendChild(selectContainer);
+      } else if (inputDef.type === 'array') {
+        const arrayContainer = document.createElement('div');
+        arrayContainer.className = 'array-input-container';
+        arrayContainer.dataset.arrayName = inputDef.name;
+        
+        const addButton = document.createElement('button');
+        addButton.className = 'add-array-item';
+        addButton.textContent = '+ Add Item';
+        addButton.onclick = () => addArrayItem(arrayContainer);
+        
+        arrayContainer.appendChild(addButton);
+        inputGroup.appendChild(arrayContainer);
+        
+        // Add one empty item by default
+        addArrayItem(arrayContainer);
+      } else if (inputDef.type === 'json') {
+        const textarea = document.createElement('textarea');
+        textarea.name = inputDef.name;
+        textarea.placeholder = `Enter valid JSON for ${inputDef.label}`;
+        textarea.style.width = '100%';
+        textarea.style.minHeight = '100px';
+        textarea.style.padding = '8px';
+        textarea.style.border = '1px solid #ddd';
+        textarea.style.borderRadius = '4px';
+        textarea.style.fontFamily = 'monospace';
+        inputGroup.appendChild(textarea);
+      }
+
+      // Handle dependencies
+      if (inputDef.dependsOn) {
+        inputGroup.style.display = 'none';
+        inputGroup.dataset.dependsOn = inputDef.dependsOn.field;
+        inputGroup.dataset.dependsOnValue = Array.isArray(inputDef.dependsOn.value) 
+          ? inputDef.dependsOn.value.join(',') 
+          : inputDef.dependsOn.value;
+      }
+
+      container.appendChild(inputGroup);
+    }
+
+    function addArrayItem(container) {
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'array-item';
+      
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Enter value';
+      
+      const removeButton = document.createElement('button');
+      removeButton.textContent = 'Remove';
+      removeButton.onclick = () => itemDiv.remove();
+      
+      itemDiv.appendChild(input);
+      itemDiv.appendChild(removeButton);
+      
+      const addButton = container.querySelector('.add-array-item');
+      container.insertBefore(itemDiv, addButton);
+    }
+
+    function getInputValues() {
+      const values = {};
+      const dynamicInputs = document.getElementById('dynamicInputs');
+      
+      // Text, number, and select inputs
+      dynamicInputs.querySelectorAll('input[type="text"], input[type="number"], select').forEach(input => {
+        if (input.name && input.value) {
+          values[input.name] = input.type === 'number' ? parseInt(input.value) : input.value;
+        }
+      });
+      
+      // Checkboxes
+      dynamicInputs.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        if (checkbox.name && !checkbox.name.includes('_')) {
+          values[checkbox.name] = checkbox.checked;
+        }
+      });
+      
+      // Multiselect checkboxes
+      const multiselects = {};
+      dynamicInputs.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        if (checkbox.name && checkbox.name.includes('_')) {
+          const baseName = checkbox.name.split('_')[0];
+          if (!multiselects[baseName]) multiselects[baseName] = [];
+          if (checkbox.checked) {
+            multiselects[baseName].push(parseInt(checkbox.value));
+          }
+        }
+      });
+      Object.assign(values, multiselects);
+      
+      // Arrays
+      dynamicInputs.querySelectorAll('.array-input-container').forEach(container => {
+        const arrayName = container.dataset.arrayName;
+        if (arrayName) {
+          const arrayValues = [];
+          container.querySelectorAll('.array-item input').forEach(input => {
+            if (input.value) arrayValues.push(input.value);
+          });
+          if (arrayValues.length > 0) {
+            values[arrayName] = arrayValues;
+          }
+        }
+      });
+      
+      // JSON inputs
+      dynamicInputs.querySelectorAll('textarea').forEach(textarea => {
+        if (textarea.name && textarea.value) {
+          try {
+            values[textarea.name] = JSON.parse(textarea.value);
+          } catch (e) {
+            throw new Error(`Invalid JSON in ${textarea.name}: ${e.message}`);
+          }
+        }
+      });
+      
+      return values;
+    }
+
+    // Query execution
+    async function executeQuery(category, queryType) {
+      if (!sdk) {
+        alert('SDK not initialized. Please wait or refresh the page.');
+        return;
+      }
+
+      const queryDef = queryDefinitions[category].queries[queryType];
+      if (!queryDef) {
+        alert('Invalid query selection');
+        return;
+      }
+
+      const preloader = document.getElementById('preloader');
+      const button = document.getElementById('executeQuery');
+      const originalButtonText = button.textContent;
+
+      preloader.style.display = 'block';
+      button.disabled = true;
+      button.textContent = 'Executing...';
+      updateStatus(`Executing ${queryDef.label}...`, 'loading');
+
+      try {
+        const values = getInputValues();
+        let result;
+        
+        // Identity queries
+        if (queryType === 'getIdentity' && values.id) {
+          result = await identity_fetch(sdk, values.id);
+          result = result.toJSON();
+        } else if (queryType === 'getIdentityKeys') {
+          const keyIds = values.keyRequestType === 'specific' ? values.specificKeyIds : undefined;
+          result = await get_identity_keys(
+            sdk,
+            values.identityId,
+            values.keyRequestType,
+            keyIds,
+            values.limit,
+            values.offset
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentitiesContractKeys') {
+          const purposes = values.purposes ? values.purposes.map(p => parseInt(p)) : undefined;
+          result = await get_identities_contract_keys(
+            sdk,
+            values.identitiesIds,
+            values.contractId,
+            values.documentTypeName || undefined,
+            purposes
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentityNonce') {
+          result = await get_identity_nonce(sdk, values.identityId);
+        } else if (queryType === 'getIdentityContractNonce') {
+          result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
+        } else if (queryType === 'getIdentityBalance') {
+          result = await get_identity_balance(sdk, values.id);
+        } else if (queryType === 'getIdentitiesBalances') {
+          result = await get_identities_balances(sdk, values.ids);
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentityBalanceAndRevision') {
+          result = await get_identity_balance_and_revision(sdk, values.id);
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentityByPublicKeyHash') {
+          result = await get_identity_by_public_key_hash(sdk, values.publicKeyHash);
+          result = result.toJSON();
+        } else if (queryType === 'getIdentityByNonUniquePublicKeyHash') {
+          result = await get_identity_by_non_unique_public_key_hash(
+            sdk,
+            values.publicKeyHash,
+            values.startAfter || undefined
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentityTokenBalances') {
+          result = await get_identity_token_balances(sdk, values.identityId, values.tokenIds);
+          result = JSON.parse(result);
+        }
+        // Data contract queries
+        else if (queryType === 'getDataContract' && values.id) {
+          result = await data_contract_fetch(sdk, values.id);
+          result = result.toJSON();
+        } else if (queryType === 'getDataContractHistory') {
+          result = await get_data_contract_history(
+            sdk,
+            values.id,
+            values.limit,
+            values.offset,
+            values.startAtMs
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getDataContracts') {
+          result = await get_data_contracts(sdk, values.ids);
+          result = JSON.parse(result);
+        }
+        // Document queries
+        else if (queryType === 'getDocuments') {
+          const startAfter = values.startOption === 'startAfter' ? values.startValue : undefined;
+          const startAt = values.startOption === 'startAt' ? values.startValue : undefined;
+          result = await get_documents(
+            sdk,
+            values.dataContractId,
+            values.documentType,
+            values.where ? JSON.stringify(values.where) : undefined,
+            values.orderBy ? JSON.stringify(values.orderBy) : undefined,
+            values.limit,
+            startAfter,
+            startAt
+          );
+          result = JSON.parse(result);
+        }
+        // Protocol/Version queries
+        else if (queryType === 'getProtocolVersionUpgradeState') {
+          result = await get_protocol_version_upgrade_state(sdk);
+          result = JSON.parse(result);
+        } else if (queryType === 'getProtocolVersionUpgradeVoteStatus') {
+          result = await get_protocol_version_upgrade_vote_status(
+            sdk,
+            values.startProTxHash,
+            values.count
+          );
+          result = JSON.parse(result);
+        }
+        // Epoch/Block queries
+        else if (queryType === 'getEpochsInfo') {
+          result = await get_epochs_info(
+            sdk,
+            values.startEpoch,
+            values.count,
+            values.ascending
+          );
+          result = JSON.parse(result);
+        }
+        // System/Utility queries
+        else if (queryType === 'getStatus') {
+          result = await get_status(sdk);
+          result = JSON.parse(result);
+        } else if (queryType === 'getTotalCreditsInPlatform') {
+          result = await get_total_credits_in_platform(sdk);
+        } else if (queryType === 'waitForStateTransitionResult') {
+          result = await wait_for_state_transition_result(sdk, values.stateTransitionHash);
+          result = JSON.parse(result);
+        } else if (queryType === 'getCurrentQuorumsInfo') {
+          result = await get_current_quorums_info(sdk);
+          result = JSON.parse(result);
+        } else if (queryType === 'getPrefundedSpecializedBalance') {
+          result = await get_prefunded_specialized_balance(sdk, values.identityId);
+          result = JSON.parse(result);
+        } else if (queryType === 'getPathElements') {
+          result = await get_path_elements(sdk, values.keys);
+          result = JSON.parse(result);
+        }
+        // Token queries
+        else if (queryType === 'getIdentitiesTokenBalances') {
+          result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentityTokenInfos') {
+          result = await get_identity_token_infos(
+            sdk,
+            values.identityId,
+            values.tokenIds,
+            values.withPurchaseInfo,
+            values.limit,
+            values.offset
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentitiesTokenInfos') {
+          result = await get_identities_token_infos(
+            sdk,
+            values.identityIds,
+            values.tokenId,
+            values.withPurchaseInfo
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getTokenStatuses') {
+          result = await get_token_statuses(sdk, values.tokenIds);
+          result = JSON.parse(result);
+        } else if (queryType === 'getTokenDirectPurchasePrices') {
+          result = await get_token_direct_purchase_prices(sdk, values.tokenIds);
+          result = JSON.parse(result);
+        } else if (queryType === 'getTokenContractInfo') {
+          result = await get_token_contract_info(sdk, values.dataContractId);
+          result = JSON.parse(result);
+        } else if (queryType === 'getTokenPerpetualDistributionLastClaim') {
+          result = await get_token_perpetual_distribution_last_claim(
+            sdk,
+            values.identityId,
+            values.distributionId
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getTokenTotalSupply') {
+          result = await get_token_total_supply(sdk, values.tokenId);
+          result = JSON.parse(result);
+        }
+        // Voting/Contested Resource queries
+        else if (queryType === 'getContestedResources') {
+          const startAtValue = values.startAtValue ? new TextEncoder().encode(values.startAtValue) : undefined;
+          result = await get_contested_resources(
+            sdk,
+            values.documentTypeName,
+            values.dataContractId,
+            values.indexName,
+            values.resultType,
+            values.allowIncludeLockedAndAbstainingVoteTally,
+            startAtValue,
+            values.limit,
+            values.offset,
+            values.orderAscending
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getContestedResourceVoteState') {
+          result = await get_contested_resource_vote_state(
+            sdk,
+            values.dataContractId,
+            values.documentTypeName,
+            values.indexName,
+            values.resultType,
+            values.allowIncludeLockedAndAbstainingVoteTally,
+            values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
+            values.count,
+            values.orderAscending
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getContestedResourceVotersForIdentity') {
+          result = await get_contested_resource_voters_for_identity(
+            sdk,
+            values.dataContractId,
+            values.documentTypeName,
+            values.indexName,
+            values.contestantId,
+            values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
+            values.count,
+            values.orderAscending
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getContestedResourceIdentityVotes') {
+          result = await get_contested_resource_identity_votes(
+            sdk,
+            values.identityId,
+            values.limit,
+            values.offset,
+            values.orderAscending
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getVotePollsByEndDate') {
+          result = await get_vote_polls_by_end_date(
+            sdk,
+            values.startTimeMs,
+            values.endTimeMs,
+            values.limit,
+            values.offset,
+            values.orderAscending
+          );
+          result = JSON.parse(result);
+        }
+        // Epoch/Block queries
+        else if (queryType === 'getFinalizedEpochInfos') {
+          result = await get_finalized_epoch_infos(
+            sdk,
+            values.startEpoch,
+            values.count,
+            values.ascending
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getEvonodesProposedEpochBlocksByIds') {
+          result = await get_evonodes_proposed_epoch_blocks_by_ids(
+            sdk,
+            values.epoch,
+            values.ids
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getEvonodesProposedEpochBlocksByRange') {
+          result = await get_evonodes_proposed_epoch_blocks_by_range(
+            sdk,
+            values.epoch,
+            values.limit,
+            values.startAfter,
+            values.orderAscending
+          );
+          result = JSON.parse(result);
+        }
+        // Group queries
+        else if (queryType === 'getGroupInfo') {
+          result = await get_group_info(sdk, values.groupContractId);
+          result = JSON.parse(result);
+        } else if (queryType === 'getGroupMembers') {
+          result = await get_group_members(
+            sdk,
+            values.groupContractId,
+            values.memberIds,
+            values.startAt,
+            values.limit
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getIdentityGroups') {
+          result = await get_identity_groups(
+            sdk,
+            values.identityId,
+            values.memberDataContracts,
+            values.ownerDataContracts,
+            values.moderatorDataContracts
+          );
+          result = JSON.parse(result);
+        } else if (queryType === 'getGroupsDataContracts') {
+          result = await get_groups_data_contracts(sdk, values.dataContractIds);
+          result = JSON.parse(result);
+        } else {
+          // Placeholder for unimplemented queries
+          throw new Error(`Query ${queryType} is not yet implemented in the WASM SDK bindings`);
+        }
+        
+        displayResult(result);
+        updateStatus(`${queryDef.label} executed successfully`, 'success');
+      } catch (error) {
+        console.error(`Error executing ${queryType}:`, error);
+        displayResult(`Error executing query: ${error.message || error}`, true);
+        updateStatus(`Error: ${error.message || error}`, 'error');
+      } finally {
+        preloader.style.display = 'none';
+        button.disabled = false;
+        button.textContent = originalButtonText;
+      }
+    }
+
+    // Event handlers
+    document.getElementById('queryCategory').addEventListener('change', (e) => {
+      const category = e.target.value;
+      const queryTypeSelect = document.getElementById('queryType');
+      const queryInputs = document.getElementById('queryInputs');
+      const executeButton = document.getElementById('executeQuery');
+      const queryDescription = document.getElementById('queryDescription');
+      
+      // Clear query type
+      queryTypeSelect.innerHTML = '<option value="">Select Query Type</option>';
+      queryTypeSelect.style.display = category ? 'block' : 'none';
+      
+      // Hide inputs and button
+      queryInputs.style.display = 'none';
+      executeButton.style.display = 'none';
+      queryDescription.style.display = 'none';
+      
+      if (category && queryDefinitions[category]) {
+        // Populate query types
+        Object.entries(queryDefinitions[category].queries).forEach(([key, query]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = query.label;
+          queryTypeSelect.appendChild(option);
+        });
+      }
+    });
+
+    document.getElementById('queryType').addEventListener('change', (e) => {
+      const queryType = e.target.value;
+      const category = document.getElementById('queryCategory').value;
+      const queryInputs = document.getElementById('queryInputs');
+      const dynamicInputs = document.getElementById('dynamicInputs');
+      const executeButton = document.getElementById('executeQuery');
+      const queryTitle = document.getElementById('queryTitle');
+      const queryDescription = document.getElementById('queryDescription');
+      
+      // Clear existing inputs
+      dynamicInputs.innerHTML = '';
+      
+      if (queryType && category && queryDefinitions[category].queries[queryType]) {
+        const query = queryDefinitions[category].queries[queryType];
+        queryTitle.textContent = query.label;
+        
+        // Show description
+        if (query.description) {
+          queryDescription.textContent = query.description;
+          queryDescription.style.display = 'block';
+        } else {
+          queryDescription.style.display = 'none';
+        }
+        
+        // Create inputs
+        query.inputs.forEach(inputDef => {
+          createInput(inputDef, dynamicInputs);
+        });
+        
+        // Setup dependency handlers
+        dynamicInputs.querySelectorAll('select, input[type="checkbox"]').forEach(input => {
+          input.addEventListener('change', () => {
+            dynamicInputs.querySelectorAll('[data-depends-on]').forEach(dependent => {
+              const dependsOn = dependent.dataset.dependsOn;
+              const dependsOnValues = dependent.dataset.dependsOnValue.split(',');
+              const currentValue = dynamicInputs.querySelector(`[name="${dependsOn}"]`)?.value;
+              
+              if (dependsOnValues.includes(currentValue)) {
+                dependent.style.display = 'block';
+              } else {
+                dependent.style.display = 'none';
+              }
+            });
+          });
+        });
+        
+        queryInputs.style.display = 'block';
+        executeButton.style.display = 'block';
+      } else {
+        queryInputs.style.display = 'none';
+        executeButton.style.display = 'none';
+        queryDescription.style.display = 'none';
+      }
+    });
+
+    document.getElementById('executeQuery').addEventListener('click', async () => {
+      const category = document.getElementById('queryCategory').value;
+      const queryType = document.getElementById('queryType').value;
+      await executeQuery(category, queryType);
+    });
+
+    // Network toggle handlers
+    document.querySelectorAll('input[name="network"]').forEach(radio => {
+      radio.addEventListener('change', async (event) => {
+        const network = event.target.value;
+        const indicator = document.getElementById('networkIndicator');
+        
+        indicator.textContent = network.toUpperCase();
+        indicator.className = `network-indicator ${network}`;
+        
+        clearResults();
+        await initializeSdk(network);
+      });
+    });
+
+    document.getElementById('trustedMode').addEventListener('change', async () => {
+      const network = document.querySelector('input[name="network"]:checked').value;
+      clearResults();
+      await initializeSdk(network);
+    });
+
+    // Initialize
     async function run() {
       try {
         updateStatus('Loading WASM module...', 'loading');
         await init();
         updateStatus('WASM module loaded, initializing SDK...', 'loading');
-        
-        // Initialize with mainnet by default
         await initializeSdk('mainnet');
       } catch (error) {
         console.error('Failed to initialize WASM:', error);
         updateStatus(`Failed to load WASM module: ${error.message || error}`, 'error');
       }
-
-      // Handle network toggle
-      document.querySelectorAll('input[name="network"]').forEach(radio => {
-        radio.addEventListener('change', async (event) => {
-          const network = event.target.value;
-          const indicator = document.getElementById('networkIndicator');
-          
-          // Update indicator
-          indicator.textContent = network.toUpperCase();
-          indicator.className = `network-indicator ${network}`;
-          
-          // Clear any existing results
-          clearResults();
-          
-          // Reinitialize SDK with new network
-          await initializeSdk(network);
-        });
-      });
-
-      // Handle trusted mode toggle
-      document.getElementById('trustedMode').addEventListener('change', async () => {
-        // Get current network selection
-        const network = document.querySelector('input[name="network"]:checked').value;
-        
-        // Clear any existing results
-        clearResults();
-        
-        // Reinitialize SDK with current network and new trusted mode
-        await initializeSdk(network);
-      });
-
-      document.getElementById('fetchButton').addEventListener('click', async () => {
-        if (!sdk) {
-          alert('SDK not initialized. Please wait or refresh the page.');
-          return;
-        }
-
-        const identityId = document.getElementById('identityInput').value;
-        if (!identityId.trim()) {
-          alert('Please enter an Identity ID');
-          return;
-        }
-
-        const preloader = document.getElementById('preloader');
-        const button = document.getElementById('fetchButton');
-        const originalButtonText = button.textContent;
-
-        preloader.style.display = 'block';
-        button.disabled = true;
-        button.textContent = 'Fetching...';
-        updateStatus('Fetching identity...', 'loading');
-
-        try {
-          const identity = await identity_fetch(sdk, identityId);
-          console.log("fetched identity", identity);
-          displayResult(identity.toJSON());
-          updateStatus('Identity fetched successfully', 'success');
-        } catch (error) {
-          console.error("Error fetching identity:", error);
-          displayResult(`Error fetching identity: ${error}`, true);
-          updateStatus(`Error: ${error.message || error}`, 'error');
-        } finally {
-          preloader.style.display = 'none';
-          button.disabled = false;
-          button.textContent = originalButtonText;
-        }
-      });
-
-      document.getElementById('fetchButton2').addEventListener('click', async () => {
-        if (!sdk) {
-          alert('SDK not initialized. Please wait or refresh the page.');
-          return;
-        }
-
-        const contractId = document.getElementById('identityInput2').value;
-        if (!contractId.trim()) {
-          alert('Please enter a Data Contract ID');
-          return;
-        }
-
-        const preloader = document.getElementById('preloader');
-        const button = document.getElementById('fetchButton2');
-        const originalButtonText = button.textContent;
-
-        preloader.style.display = 'block';
-        button.disabled = true;
-        button.textContent = 'Fetching...';
-        updateStatus('Fetching data contract...', 'loading');
-
-        try {
-          const dataContract = await data_contract_fetch(sdk, contractId);
-          console.log("fetched data contract", dataContract);
-          displayResult(dataContract.toJSON());
-          updateStatus('Data contract fetched successfully', 'success');
-        } catch (error) {
-          console.error("Error fetching contract:", error);
-          displayResult(`Error fetching data contract: ${error}`, true);
-          updateStatus(`Error: ${error.message || error}`, 'error');
-        } finally {
-          preloader.style.display = 'none';
-          button.disabled = false;
-          button.textContent = originalButtonText;
-        }
-      });
     }
 
     run();

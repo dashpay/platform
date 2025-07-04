@@ -6,6 +6,7 @@ pub mod error;
 pub mod sdk;
 pub mod state_transitions;
 pub mod verify;
+pub mod queries;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

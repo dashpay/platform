@@ -1,5 +1,4 @@
 use crate::context_provider::WasmContext;
-use crate::dpp::{DataContractWasm, IdentityWasm};
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -42,6 +41,13 @@ impl AsRef<Sdk> for WasmSdk {
 impl From<Sdk> for WasmSdk {
     fn from(sdk: Sdk) -> Self {
         WasmSdk(sdk)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    pub fn version(&self) -> u32 {
+        self.0.version().protocol_version
     }
 }
 
@@ -635,34 +641,7 @@ pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
     Ok(())
 }
 
-#[wasm_bindgen]
-pub async fn identity_fetch(sdk: &WasmSdk, base58_id: &str) -> Result<IdentityWasm, JsError> {
-    let id = Identifier::from_string(
-        base58_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )?;
-
-    Identity::fetch_by_identifier(sdk, id)
-        .await?
-        .ok_or_else(|| JsError::new("Identity not found"))
-        .map(Into::into)
-}
-
-#[wasm_bindgen]
-pub async fn data_contract_fetch(
-    sdk: &WasmSdk,
-    base58_id: &str,
-) -> Result<DataContractWasm, JsError> {
-    let id = Identifier::from_string(
-        base58_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )?;
-
-    DataContract::fetch_by_identifier(sdk, id)
-        .await?
-        .ok_or_else(|| JsError::new("Data contract not found"))
-        .map(Into::into)
-}
+// Query functions have been moved to src/queries/ modules
 
 #[wasm_bindgen]
 pub async fn identity_put(sdk: &WasmSdk) {
@@ -724,7 +703,7 @@ pub async fn docs_testing(sdk: &WasmSdk) {
         .expect("data contract not found");
 
     let dcs = dc
-        .serialize_to_bytes_with_platform_version(sdk.version())
+        .serialize_to_bytes_with_platform_version(sdk.0.version())
         .expect("serialize data contract");
 
     let query = DocumentQuery::new(dc.clone(), "asd").expect("create query");
@@ -737,7 +716,7 @@ pub async fn docs_testing(sdk: &WasmSdk) {
         .document_type_for_name("aaa")
         .expect("document type for name");
     let doc_serialized = doc
-        .serialize(document_type, &dc, sdk.version())
+        .serialize(document_type, &dc, sdk.0.version())
         .expect("serialize document");
 
     let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))
