@@ -41,7 +41,7 @@ if command -v wasm-opt &> /dev/null; then
   echo "Optimizing wasm using Binaryen"
   
   # Check if we're in a release build (via CARGO_BUILD_PROFILE or GitHub event)
-  if [ "${CARGO_BUILD_PROFILE}" = "release" ] || [ "${GITHUB_EVENT_NAME}" = "release" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+  if [ "${CARGO_BUILD_PROFILE:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
     echo "Running full optimizations for release build"
     wasm-opt \
         --code-folding \
