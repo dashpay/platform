@@ -32,7 +32,7 @@ struct CurrentQuorumsInfo {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct TotalCreditsResponse {
-    total_credits_in_platform: u64,
+    total_credits_in_platform: String,  // Use String to handle large numbers
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -133,7 +133,7 @@ pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsE
     };
     
     let response = TotalCreditsResponse {
-        total_credits_in_platform: credits_value,
+        total_credits_in_platform: credits_value.to_string(),
     };
     
     serde_wasm_bindgen::to_value(&response)

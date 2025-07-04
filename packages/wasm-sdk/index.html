@@ -223,7 +223,7 @@
 
     .status-banner {
       position: fixed;
-      top: 0;
+      bottom: 0;
       left: 0;
       right: 0;
       padding: 10px 20px;
@@ -724,8 +724,8 @@
             label: "Get Protocol Version Upgrade Vote Status",
             description: "Get voting status for protocol version upgrades",
             inputs: [
-              { name: "startProTxHash", type: "text", label: "Start ProTx Hash", required: true },
-              { name: "count", type: "number", label: "Count", required: true }
+              { name: "startProTxHash", type: "text", label: "Start ProTx Hash (optional - leave empty to start from beginning)", required: false },
+              { name: "count", type: "number", label: "Count (default: 100)", required: false }
             ]
           }
         }
@@ -1316,13 +1316,10 @@
           result = await get_protocol_version_upgrade_state(sdk);
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getProtocolVersionUpgradeVoteStatus') {
-          if (!values.startProTxHash || values.count === undefined) {
-            throw new Error('Missing required parameters: startProTxHash and count are required');
-          }
           result = await get_protocol_version_upgrade_vote_status(
             sdk,
-            values.startProTxHash,
-            values.count
+            values.startProTxHash || '',  // Empty string if not provided
+            values.count || 100           // Default to 100 if not provided
           );
           // Result is already a JS object from serde_wasm_bindgen
         }
