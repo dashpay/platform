@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# Unified WASM build script for Dash Platform WASM packages
+set -euo pipefail
+
+# Function to display usage
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  -p, --package NAME     Package name (required)"
+    echo "  -t, --target TYPE      wasm-pack target type (default: web)"
+    echo "  -o, --opt-level LEVEL  Optimization level: full, minimal, none (default: full)"
+    echo "  -h, --help             Display this help message"
+    echo ""
+    echo "Example:"
+    echo "  $0 --package wasm-sdk"
+    echo "  $0 --package wasm-drive-verify --opt-level minimal"
+}
+
+# Default values
+PACKAGE_NAME=""
+TARGET_TYPE="web"
+OPT_LEVEL="full"
+USE_WASM_PACK=false
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--package)
+            PACKAGE_NAME="$2"
+            shift 2
+            ;;
+        -t|--target)
+            TARGET_TYPE="$2"
+            shift 2
+            ;;
+        -o|--opt-level)
+            OPT_LEVEL="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [ -z "$PACKAGE_NAME" ]; then
+    echo "Error: Package name is required"
+    usage
+    exit 1
+fi
+
+# Determine build method based on package
+case "$PACKAGE_NAME" in
+    "wasm-sdk")
+        USE_WASM_PACK=true
+        WASM_FILE="wasm_sdk_bg.wasm"
+        ;;
+    "wasm-drive-verify")
+        USE_WASM_PACK=false
+        WASM_FILE="wasm_drive_verify_bg.wasm"
+        ;;
+    *)
+        echo "Error: Unknown package '$PACKAGE_NAME'"
+        exit 1
+        ;;
+esac
+
+# Get script directory and package directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_DIR="$(dirname "$SCRIPT_DIR")/$PACKAGE_NAME"
+
+# Change to package directory
+cd "$PACKAGE_DIR"
+
+echo "Building $PACKAGE_NAME..."
+
+# Create pkg directory if it doesn't exist
+mkdir -p pkg
+
+if [ "$USE_WASM_PACK" = true ]; then
+    # Build using wasm-pack
+    echo "Building with wasm-pack..."
+    
+    # Disable LTO for wasm-pack builds to avoid conflicts
+    export CARGO_PROFILE_RELEASE_LTO=false
+    export RUSTFLAGS="-C lto=off"
+    
+    wasm-pack build --target "$TARGET_TYPE" --release --no-opt
+else
+    # Build using cargo directly
+    echo "Building with cargo..."
+    
+    cargo build --target wasm32-unknown-unknown --release \
+        --config 'profile.release.panic="abort"' \
+        --config 'profile.release.strip=true' \
+        --config 'profile.release.debug=false' \
+        --config 'profile.release.incremental=false' \
+        --config 'profile.release.lto=true' \
+        --config 'profile.release.opt-level="z"' \
+        --config 'profile.release.codegen-units=1'
+    
+    # Run wasm-snip if available
+    if command -v wasm-snip &> /dev/null; then
+        wasm-snip "../../target/wasm32-unknown-unknown/release/${PACKAGE_NAME//-/_}.wasm" \
+            -o "../../target/wasm32-unknown-unknown/release/${PACKAGE_NAME//-/_}.wasm" \
+            --snip-rust-fmt-code \
+            --snip-rust-panicking-code
+    fi
+    
+    # Run wasm-bindgen
+    echo "Running wasm-bindgen..."
+    if ! command -v wasm-bindgen &> /dev/null; then
+        echo "Error: 'wasm-bindgen' not found. Install via 'cargo install wasm-bindgen-cli'." >&2
+        exit 1
+    fi
+    
+    wasm-bindgen \
+        --typescript \
+        --out-dir=pkg \
+        --target="$TARGET_TYPE" \
+        --omit-default-module-path \
+        "../../target/wasm32-unknown-unknown/release/${PACKAGE_NAME//-/_}.wasm"
+fi
+
+# Optimize the WASM file
+if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
+    echo "Optimizing wasm using Binaryen (level: $OPT_LEVEL)..."
+    
+    WASM_PATH="pkg/$WASM_FILE"
+    
+    if [ "$OPT_LEVEL" = "full" ]; then
+        # Full optimization for production builds
+        wasm-opt \
+            --code-folding \
+            --const-hoisting \
+            --abstract-type-refining \
+            --dce \
+            --strip-producers \
+            -Oz \
+            --generate-global-effects \
+            --enable-bulk-memory \
+            --enable-nontrapping-float-to-int \
+            -tnh \
+            --flatten \
+            --rereloop \
+            -Oz \
+            --converge \
+            --vacuum \
+            --dce \
+            --gsi \
+            --inlining-optimizing \
+            --merge-blocks \
+            --simplify-locals \
+            --optimize-added-constants \
+            --optimize-casts \
+            --optimize-instructions \
+            --optimize-stack-ir \
+            --remove-unused-brs \
+            --remove-unused-module-elements \
+            --remove-unused-names \
+            --remove-unused-types \
+            --post-emscripten \
+            -Oz \
+            -Oz \
+            "$WASM_PATH" \
+            -o \
+            "$WASM_PATH"
+            
+        # Create optimized version for wasm-sdk
+        if [ "$PACKAGE_NAME" = "wasm-sdk" ]; then
+            cp "$WASM_PATH" "pkg/optimized.wasm"
+        fi
+    else
+        # Minimal optimization for development builds
+        wasm-opt \
+            --strip-producers \
+            -O2 \
+            "$WASM_PATH" \
+            -o \
+            "$WASM_PATH"
+    fi
+else
+    if [ "$OPT_LEVEL" != "none" ]; then
+        echo "wasm-opt command not found. Skipping wasm optimization."
+    fi
+fi
+
+echo "Build complete!"
+echo "Output files are in the pkg/ directory"
+ls -lah pkg/

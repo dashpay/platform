@@ -8,8 +8,15 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = []
+
+mocks = ["dash-sdk/mocks"]
+system-data-contracts = ["dash-sdk/system-data-contracts"]
+token_reward_explanations = ["dash-sdk/token_reward_explanations"]
+
 [dependencies]
-dash-sdk = { path = "../rs-sdk", default-features = false, features = ["mocks"] }
+dash-sdk = { path = "../rs-sdk", default-features = false }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [
