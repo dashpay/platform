@@ -146,7 +146,6 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
             --dce
             --strip-producers
             -Oz
-            --generate-global-effects
             --enable-bulk-memory
             --enable-nontrapping-float-to-int
             -tnh
@@ -173,24 +172,29 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
             -Oz
         )
         
-        # Try to run with abstract-type-refining first
-        if wasm-opt --abstract-type-refining "$WASM_PATH" -o /dev/null 2>/dev/null; then
-            # If it works, add it to the flags
-            wasm-opt \
-                "${BASE_FLAGS[@]}" \
-                --abstract-type-refining \
-                "$WASM_PATH" \
-                -o \
-                "$WASM_PATH"
-        else
-            # Otherwise run without it
-            echo "Note: --abstract-type-refining not supported by this wasm-opt version, skipping..."
-            wasm-opt \
-                "${BASE_FLAGS[@]}" \
-                "$WASM_PATH" \
-                -o \
-                "$WASM_PATH"
-        fi
+        # Additional flags to test for compatibility
+        OPTIONAL_FLAGS=(
+            "--generate-global-effects"
+            "--abstract-type-refining"
+        )
+        
+        # Test which optional flags are supported
+        SUPPORTED_FLAGS=()
+        for flag in "${OPTIONAL_FLAGS[@]}"; do
+            if wasm-opt "$flag" "$WASM_PATH" -o /dev/null 2>/dev/null; then
+                SUPPORTED_FLAGS+=("$flag")
+            else
+                echo "Note: $flag not supported by this wasm-opt version, skipping..."
+            fi
+        done
+        
+        # Run optimization with base flags and any supported optional flags
+        wasm-opt \
+            "${BASE_FLAGS[@]}" \
+            "${SUPPORTED_FLAGS[@]}" \
+            "$WASM_PATH" \
+            -o \
+            "$WASM_PATH"
             
         # Create optimized version for wasm-sdk
         if [ "$PACKAGE_NAME" = "wasm-sdk" ]; then
