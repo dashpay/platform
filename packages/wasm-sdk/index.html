@@ -1139,8 +1139,17 @@
       
       // Text, number, and select inputs
       dynamicInputs.querySelectorAll('input[type="text"], input[type="number"], select').forEach(input => {
-        if (input.name && input.value) {
-          values[input.name] = input.type === 'number' ? parseInt(input.value) : input.value;
+        if (input.name) {
+          if (input.type === 'number') {
+            if (input.value !== '') {
+              const numValue = parseInt(input.value);
+              if (!isNaN(numValue)) {
+                values[input.name] = numValue;
+              }
+            }
+          } else if (input.value) {
+            values[input.name] = input.value;
+          }
         }
       });
       
@@ -1305,14 +1314,17 @@
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
           result = await get_protocol_version_upgrade_state(sdk);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getProtocolVersionUpgradeVoteStatus') {
+          if (!values.startProTxHash || values.count === undefined) {
+            throw new Error('Missing required parameters: startProTxHash and count are required');
+          }
           result = await get_protocol_version_upgrade_vote_status(
             sdk,
             values.startProTxHash,
             values.count
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Epoch/Block queries
         else if (queryType === 'getEpochsInfo') {
@@ -1327,21 +1339,31 @@
         // System/Utility queries
         else if (queryType === 'getStatus') {
           result = await get_status(sdk);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTotalCreditsInPlatform') {
           result = await get_total_credits_in_platform(sdk);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'waitForStateTransitionResult') {
+          if (!values.stateTransitionHash) {
+            throw new Error('Missing required parameter: stateTransitionHash is required');
+          }
           result = await wait_for_state_transition_result(sdk, values.stateTransitionHash);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getCurrentQuorumsInfo') {
           result = await get_current_quorums_info(sdk);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getPrefundedSpecializedBalance') {
+          if (!values.identityId) {
+            throw new Error('Missing required parameter: identityId is required');
+          }
           result = await get_prefunded_specialized_balance(sdk, values.identityId);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getPathElements') {
+          if (!values.keys || values.keys.length === 0) {
+            throw new Error('Missing required parameter: keys array is required');
+          }
           result = await get_path_elements(sdk, values.keys);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Token queries
         else if (queryType === 'getIdentitiesTokenBalances') {
