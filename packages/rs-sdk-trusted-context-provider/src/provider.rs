@@ -12,16 +12,6 @@ use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::version::PlatformVersion;
 
-/// Get the LLMQ type for the network
-#[allow(dead_code)]
-fn get_llmq_type_for_network(network: Network) -> u32 {
-    match network {
-        Network::Dash => 4,     // Mainnet uses LLMQ type 4
-        Network::Testnet => 6,  // Testnet uses LLMQ type 6
-        Network::Devnet => 107, // Devnet uses LLMQ type 107
-        _ => 6,                 // Default to testnet type
-    }
-}
 use lru::LruCache;
 use reqwest::Client;
 use std::collections::HashMap;
@@ -124,7 +114,7 @@ impl TrustedHttpContextProvider {
 
         #[cfg(target_arch = "wasm32")]
         let client = Client::builder().build()?;
-        
+
         #[cfg(not(target_arch = "wasm32"))]
         let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
@@ -167,19 +157,24 @@ impl TrustedHttpContextProvider {
     pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
         // Fetch current quorums
         let current = self.fetch_current_quorums().await?;
-        
+
         // Fetch previous quorums
         let previous = self.fetch_previous_quorums().await?;
-        
+
         // The caches are already updated by the fetch methods
-        debug!("Successfully updated quorum caches with {} current and {} previous quorums", 
-               current.data.len(), previous.data.quorums.len());
-        
+        debug!(
+            "Successfully updated quorum caches with {} current and {} previous quorums",
+            current.data.len(),
+            previous.data.quorums.len()
+        );
+
         Ok(())
     }
 
     /// Fetch current quorums from the HTTP endpoint
-    pub async fn fetch_current_quorums(&self) -> Result<QuorumsResponse, TrustedContextProviderError> {
+    pub async fn fetch_current_quorums(
+        &self,
+    ) -> Result<QuorumsResponse, TrustedContextProviderError> {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
@@ -245,7 +240,10 @@ impl TrustedHttpContextProvider {
 
         debug!("Parsing JSON response for previous quorums");
         let quorums: PreviousQuorumsResponse = response.json().await?;
-        debug!("Successfully parsed {} previous quorums", quorums.data.quorums.len());
+        debug!(
+            "Successfully parsed {} previous quorums",
+            quorums.data.quorums.len()
+        );
 
         // Update cache
         self.last_previous_quorums
@@ -280,14 +278,6 @@ impl TrustedHttpContextProvider {
         quorum_type: u32,
         quorum_hash: QuorumHash,
     ) -> Result<QuorumData, TrustedContextProviderError> {
-        let expected_type = get_llmq_type_for_network(self.network);
-        if quorum_type != expected_type {
-            debug!(
-                "Quorum type {} doesn't match network type {}",
-                quorum_type, expected_type
-            );
-        }
-
         // Check current cache first
         if let Ok(mut cache) = self.current_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
@@ -313,7 +303,10 @@ impl TrustedHttpContextProvider {
         }
 
         // Fetch fresh data
-        info!("Quorum not in cache, fetching fresh data for hash: {}", hex::encode(quorum_hash));
+        info!(
+            "Quorum not in cache, fetching fresh data for hash: {}",
+            hex::encode(quorum_hash)
+        );
 
         // Try current quorums first
         debug!("Attempting to fetch current quorums");
@@ -363,13 +356,17 @@ impl ContextProvider for TrustedHttpContextProvider {
         quorum_hash: QuorumHash,
         _core_chain_locked_height: CoreBlockHeight,
     ) -> Result<[u8; 48], ContextProviderError> {
-        debug!("get_quorum_public_key called for type {} hash {}", quorum_type, hex::encode(quorum_hash));
-        
+        debug!(
+            "get_quorum_public_key called for type {} hash {}",
+            quorum_type,
+            hex::encode(quorum_hash)
+        );
+
         // Check current cache first
         if let Ok(mut cache) = self.current_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in current cache");
-                
+
                 // Parse the public key from the 'key' field
                 let pubkey_hex = quorum.key.trim_start_matches("0x");
                 let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
@@ -384,7 +381,9 @@ impl ContextProvider for TrustedHttpContextProvider {
                 }
 
                 return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic("Failed to convert public key to array".to_string())
+                    ContextProviderError::Generic(
+                        "Failed to convert public key to array".to_string(),
+                    )
                 });
             }
         }
@@ -393,7 +392,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.previous_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in previous cache");
-                
+
                 // Parse the public key from the 'key' field
                 let pubkey_hex = quorum.key.trim_start_matches("0x");
                 let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
@@ -408,7 +407,9 @@ impl ContextProvider for TrustedHttpContextProvider {
                 }
 
                 return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic("Failed to convert public key to array".to_string())
+                    ContextProviderError::Generic(
+                        "Failed to convert public key to array".to_string(),
+                    )
                 });
             }
         }
@@ -422,16 +423,20 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
 
         // For non-WASM targets, we can use block_on to fetch
-        #[cfg(not(target_arch = "wasm32"))]  
+        #[cfg(not(target_arch = "wasm32"))]
         {
             // Use blocking to run async code in sync context
-            let quorum = match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
-                Ok(q) => q,
-                Err(e) => {
-                    debug!("Error finding quorum: {}", e);
-                    return Err(ContextProviderError::Generic(format!("Failed to find quorum: {}", e)));
-                }
-            };
+            let quorum =
+                match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
+                    Ok(q) => q,
+                    Err(e) => {
+                        debug!("Error finding quorum: {}", e);
+                        return Err(ContextProviderError::Generic(format!(
+                            "Failed to find quorum: {}",
+                            e
+                        )));
+                    }
+                };
 
             // Parse the public key from the 'key' field
             let pubkey_hex = quorum.key.trim_start_matches("0x");
@@ -454,7 +459,8 @@ impl ContextProvider for TrustedHttpContextProvider {
         {
             // For WASM, we rely on pre-fetched cache
             Err(ContextProviderError::Generic(
-                "Quorum not found in cache. In WASM, call update_quorum_caches() first.".to_string()
+                "Quorum not found in cache. In WASM, call update_quorum_caches() first."
+                    .to_string(),
             ))
         }
     }

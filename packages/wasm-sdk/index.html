@@ -380,7 +380,7 @@
         // Only show error if this is still the latest request
         if (currentRequestToken === initRequestCounter) {
           console.error(`Error initializing ${network} SDK:`, error);
-          document.getElementById('identityInfo').textContent = `Error initializing ${network} SDK: ${error}`;
+          clearResults();
           updateStatus(`Error loading WASM SDK: ${error.message || error}`, 'error');
         }
       } finally {
@@ -415,7 +415,7 @@
           indicator.className = `network-indicator ${network}`;
           
           // Clear any existing results
-          document.getElementById('identityInfo').textContent = '';
+          clearResults();
           
           // Reinitialize SDK with new network
           await initializeSdk(network);
@@ -428,7 +428,7 @@
         const network = document.querySelector('input[name="network"]:checked').value;
         
         // Clear any existing results
-        document.getElementById('identityInfo').textContent = '';
+        clearResults();
         
         // Reinitialize SDK with current network and new trusted mode
         await initializeSdk(network);
