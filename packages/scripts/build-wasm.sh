@@ -26,14 +26,29 @@ USE_WASM_PACK=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         -p|--package)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: Missing argument for $1"
+                usage
+                exit 1
+            fi
             PACKAGE_NAME="$2"
             shift 2
             ;;
         -t|--target)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: Missing argument for $1"
+                usage
+                exit 1
+            fi
             TARGET_TYPE="$2"
             shift 2
             ;;
         -o|--opt-level)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: Missing argument for $1"
+                usage
+                exit 1
+            fi
             OPT_LEVEL="$2"
             shift 2
             ;;
@@ -139,41 +154,40 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
         # Check wasm-opt version to determine available options
         WASM_OPT_VERSION=$(wasm-opt --version 2>/dev/null || echo "")
         
-        # Base optimization flags that work with all versions
-        BASE_FLAGS=(
-            --code-folding
-            --const-hoisting
-            --dce
+        # Core optimization flags that should work with most versions
+        CORE_FLAGS=(
             --strip-producers
             -Oz
             --enable-bulk-memory
             --enable-nontrapping-float-to-int
-            -tnh
             --flatten
             --rereloop
             -Oz
             --converge
             --vacuum
-            --dce
-            --gsi
-            --inlining-optimizing
             --merge-blocks
             --simplify-locals
-            --optimize-added-constants
-            --optimize-casts
-            --optimize-instructions
-            --optimize-stack-ir
             --remove-unused-brs
             --remove-unused-module-elements
             --remove-unused-names
-            --remove-unused-types
-            --post-emscripten
             -Oz
             -Oz
         )
         
         # Additional flags to test for compatibility
         OPTIONAL_FLAGS=(
+            "--code-folding"
+            "--const-hoisting"
+            "--dce"
+            "-tnh"
+            "--gsi"
+            "--inlining-optimizing"
+            "--optimize-added-constants"
+            "--optimize-casts"
+            "--optimize-instructions"
+            "--optimize-stack-ir"
+            "--remove-unused-types"
+            "--post-emscripten"
             "--generate-global-effects"
             "--abstract-type-refining"
         )
@@ -188,9 +202,9 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
             fi
         done
         
-        # Run optimization with base flags and any supported optional flags
+        # Run optimization with core flags and any supported optional flags
         wasm-opt \
-            "${BASE_FLAGS[@]}" \
+            "${CORE_FLAGS[@]}" \
             "${SUPPORTED_FLAGS[@]}" \
             "$WASM_PATH" \
             -o \
