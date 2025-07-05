@@ -1046,7 +1046,8 @@
         const contractData = dataContract.toJSON();
         
         // Find the document type
-        const docType = contractData.documentTypes?.[documentType];
+        // Note: The serialized format uses 'documentSchemas' while internal representation might use 'documentTypes'
+        const docType = contractData.documentSchemas?.[documentType];
         if (!docType) {
           throw new Error(`Document type '${documentType}' not found in contract`);
         }
