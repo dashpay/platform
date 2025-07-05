@@ -357,6 +357,41 @@
       border-radius: 4px;
       line-height: 1.4;
     }
+
+    .action-button {
+      padding: 8px 16px;
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    .action-button:hover {
+      background-color: #1976d2;
+    }
+
+    .dynamic-fields-container {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #fafafa;
+    }
+
+    .field-group {
+      margin-bottom: 10px;
+      padding: 8px;
+      background-color: white;
+      border-radius: 4px;
+    }
+
+    .field-group label {
+      display: inline-block;
+      width: 150px;
+      font-weight: 500;
+    }
   </style>
 </head>
 
@@ -668,8 +703,10 @@
             inputs: [
               { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
               { name: "documentType", type: "text", label: "Document Type", required: true },
-              { name: "where", type: "json", label: "Where Clause (JSON)", required: false },
-              { name: "orderBy", type: "json", label: "Order By (JSON)", required: false },
+              { name: "loadContract", type: "button", label: "Load Contract", action: "loadDataContractForDocuments" },
+              { name: "indexSelector", type: "select", label: "Select Index", required: false, dynamic: true },
+              { name: "whereFields", type: "dynamic", label: "Where Fields", required: false },
+              { name: "orderByFields", type: "dynamic", label: "Order By Fields", required: false },
               { name: "limit", type: "number", label: "Limit", required: false },
               { name: "startOption", type: "select", label: "Start Option", required: false,
                 options: [
@@ -988,6 +1025,160 @@
         });
     };
 
+    // Function to load data contract and populate index selector
+    window.loadDataContractForDocuments = async function() {
+      const contractIdInput = document.querySelector('input[name="dataContractId"]');
+      const documentTypeInput = document.querySelector('input[name="documentType"]');
+      
+      if (!contractIdInput?.value || !documentTypeInput?.value) {
+        alert('Please enter both Data Contract ID and Document Type');
+        return;
+      }
+
+      const contractId = contractIdInput.value;
+      const documentType = documentTypeInput.value;
+      
+      try {
+        updateStatus('Loading data contract...', 'loading');
+        
+        // Fetch the data contract
+        const dataContract = await data_contract_fetch(sdk, contractId);
+        const contractData = dataContract.toJSON();
+        
+        // Find the document type
+        const docType = contractData.documentTypes?.[documentType];
+        if (!docType) {
+          throw new Error(`Document type '${documentType}' not found in contract`);
+        }
+
+        // Extract indexes
+        const indexes = docType.indices || [];
+        
+        // Populate index selector
+        const indexSelector = document.querySelector('select[name="indexSelector"]');
+        if (indexSelector) {
+          // Clear existing options
+          indexSelector.innerHTML = '<option value="">Select an index</option>';
+          
+          // Add index options
+          indexes.forEach((index, idx) => {
+            const option = document.createElement('option');
+            option.value = idx;
+            option.textContent = index.name || `Index ${idx}`;
+            option.dataset.indexData = JSON.stringify(index);
+            indexSelector.appendChild(option);
+          });
+
+          // Show the selector
+          indexSelector.parentElement.style.display = 'block';
+        }
+
+        // Add index change handler
+        indexSelector.addEventListener('change', function() {
+          const selectedOption = this.options[this.selectedIndex];
+          if (selectedOption.value && selectedOption.dataset.indexData) {
+            const indexData = JSON.parse(selectedOption.dataset.indexData);
+            populateIndexFields(indexData, docType);
+          } else {
+            clearIndexFields();
+          }
+        });
+
+        updateStatus('Data contract loaded successfully', 'success');
+      } catch (error) {
+        console.error('Error loading data contract:', error);
+        updateStatus(`Error loading data contract: ${error.message}`, 'error');
+      }
+    };
+
+    // Function to populate where and order by fields based on selected index
+    function populateIndexFields(index, docType) {
+      const whereContainer = document.getElementById('dynamic_whereFields');
+      const orderByContainer = document.getElementById('dynamic_orderByFields');
+      
+      if (!whereContainer || !orderByContainer) return;
+
+      // Clear existing fields
+      whereContainer.innerHTML = '<h5>Where Conditions</h5>';
+      orderByContainer.innerHTML = '<h5>Order By</h5>';
+
+      // Extract properties from index
+      const indexProperties = index.properties || [];
+      
+      // Create where fields for each indexed property
+      indexProperties.forEach(prop => {
+        const propName = prop.name || prop;
+        const propDef = docType.properties?.[propName];
+        
+        // Where field
+        const whereGroup = document.createElement('div');
+        whereGroup.className = 'field-group';
+        
+        const whereLabel = document.createElement('label');
+        whereLabel.textContent = `${propName}:`;
+        
+        const whereInput = document.createElement('input');
+        whereInput.type = 'text';
+        whereInput.name = `where_${propName}`;
+        whereInput.placeholder = `Filter by ${propName}`;
+        
+        whereGroup.appendChild(whereLabel);
+        whereGroup.appendChild(whereInput);
+        whereContainer.appendChild(whereGroup);
+
+        // Order by field (only for sortable properties)
+        if (prop.sortOrder || index.name === propName) {
+          const orderGroup = document.createElement('div');
+          orderGroup.className = 'field-group';
+          
+          const orderLabel = document.createElement('label');
+          orderLabel.textContent = `Sort by ${propName}:`;
+          
+          const orderSelect = document.createElement('select');
+          orderSelect.name = `orderBy_${propName}`;
+          
+          const noneOption = document.createElement('option');
+          noneOption.value = '';
+          noneOption.textContent = 'None';
+          orderSelect.appendChild(noneOption);
+          
+          const ascOption = document.createElement('option');
+          ascOption.value = 'asc';
+          ascOption.textContent = 'Ascending';
+          orderSelect.appendChild(ascOption);
+          
+          const descOption = document.createElement('option');
+          descOption.value = 'desc';
+          descOption.textContent = 'Descending';
+          orderSelect.appendChild(descOption);
+          
+          orderGroup.appendChild(orderLabel);
+          orderGroup.appendChild(orderSelect);
+          orderByContainer.appendChild(orderGroup);
+        }
+      });
+
+      // Show the containers
+      whereContainer.parentElement.style.display = 'block';
+      orderByContainer.parentElement.style.display = 'block';
+    }
+
+    // Function to clear index fields
+    function clearIndexFields() {
+      const whereContainer = document.getElementById('dynamic_whereFields');
+      const orderByContainer = document.getElementById('dynamic_orderByFields');
+      
+      if (whereContainer) {
+        whereContainer.innerHTML = '';
+        whereContainer.parentElement.style.display = 'none';
+      }
+      
+      if (orderByContainer) {
+        orderByContainer.innerHTML = '';
+        orderByContainer.parentElement.style.display = 'none';
+      }
+    }
+
     function displayResult(data, isError = false) {
       const resultContent = document.getElementById('identityInfo');
       if (isError) {
@@ -1165,14 +1356,21 @@
         defaultOption.textContent = `Select ${inputDef.label}`;
         select.appendChild(defaultOption);
         
-        inputDef.options.forEach(opt => {
-          const option = document.createElement('option');
-          option.value = opt.value;
-          option.textContent = opt.label;
-          select.appendChild(option);
-        });
+        if (!inputDef.dynamic) {
+          inputDef.options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            select.appendChild(option);
+          });
+        }
         
         inputGroup.appendChild(select);
+        
+        // Hide dynamic selects initially
+        if (inputDef.dynamic) {
+          inputGroup.style.display = 'none';
+        }
       } else if (inputDef.type === 'multiselect') {
         const selectContainer = document.createElement('div');
         selectContainer.className = 'array-input-container';
@@ -1222,6 +1420,20 @@
         textarea.style.borderRadius = '4px';
         textarea.style.fontFamily = 'monospace';
         inputGroup.appendChild(textarea);
+      } else if (inputDef.type === 'button') {
+        const button = document.createElement('button');
+        button.textContent = inputDef.label;
+        button.className = 'action-button';
+        button.onclick = () => window[inputDef.action]();
+        inputGroup.appendChild(button);
+      } else if (inputDef.type === 'dynamic') {
+        // Container for dynamically generated fields
+        const dynamicContainer = document.createElement('div');
+        dynamicContainer.id = `dynamic_${inputDef.name}`;
+        dynamicContainer.className = 'dynamic-fields-container';
+        inputGroup.appendChild(dynamicContainer);
+        // Hide initially
+        inputGroup.style.display = 'none';
       }
 
       // Handle dependencies
@@ -1319,6 +1531,36 @@
           }
         }
       });
+      
+      // Handle dynamic where fields
+      const whereInputs = dynamicInputs.querySelectorAll('input[name^="where_"]');
+      if (whereInputs.length > 0) {
+        const whereClause = [];
+        whereInputs.forEach(input => {
+          if (input.value) {
+            const fieldName = input.name.replace('where_', '');
+            whereClause.push([fieldName, '==', input.value]);
+          }
+        });
+        if (whereClause.length > 0) {
+          values.where = whereClause;
+        }
+      }
+      
+      // Handle dynamic order by fields
+      const orderBySelects = dynamicInputs.querySelectorAll('select[name^="orderBy_"]');
+      if (orderBySelects.length > 0) {
+        const orderBy = [];
+        orderBySelects.forEach(select => {
+          if (select.value) {
+            const fieldName = select.name.replace('orderBy_', '');
+            orderBy.push([fieldName, select.value]);
+          }
+        });
+        if (orderBy.length > 0) {
+          values.orderBy = orderBy;
+        }
+      }
       
       return values;
     }
@@ -1432,7 +1674,7 @@
             startAfter,
             startAt
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDocument') {
           result = await get_document(
             sdk,
