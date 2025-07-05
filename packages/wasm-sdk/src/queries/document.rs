@@ -50,25 +50,15 @@ impl DocumentResponse {
         let mut data = serde_json::Map::new();
         let properties = doc.properties();
         
-        // Debug logging
-        web_sys::console::log_1(&JsValue::from_str(&format!("Document ID: {}", doc.id())));
-        web_sys::console::log_1(&JsValue::from_str(&format!("Document has {} properties", properties.len())));
-        
         for (key, value) in properties {
             // Convert platform Value to JSON
             let json_value: JsonValue = value.clone().try_into()
                 .map_err(|e| JsError::new(&format!("Failed to convert value to JSON: {:?}", e)))?;
             
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "Property '{}': {}", 
-                key, 
-                serde_json::to_string(&json_value).unwrap_or_else(|_| "Failed to stringify".to_string())
-            )));
-            
             data.insert(key.clone(), json_value);
         }
         
-        Ok(Self {
+        let response = Self {
             id: doc.id().to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
             owner_id: doc.owner_id().to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
             revision: doc.revision().unwrap_or(0),
@@ -82,7 +72,9 @@ impl DocumentResponse {
             updated_at_core_block_height: doc.updated_at_core_block_height(),
             transferred_at_core_block_height: doc.transferred_at_core_block_height(),
             data,
-        })
+        };
+        
+        Ok(response)
     }
 }
 
@@ -176,7 +168,9 @@ pub async fn get_documents(
         }
     }
     
-    serde_wasm_bindgen::to_value(&responses)
+    // Use json_compatible serializer to convert maps to objects
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    responses.serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -229,7 +223,10 @@ pub async fn get_document(
     match document_result {
         Some(doc) => {
             let response = DocumentResponse::from_document(&doc, &data_contract, document_type)?;
-            serde_wasm_bindgen::to_value(&response)
+            
+            // Use json_compatible serializer to convert maps to objects
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            response.serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
         },
         None => Ok(JsValue::NULL),

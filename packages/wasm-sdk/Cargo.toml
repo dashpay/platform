@@ -47,4 +47,4 @@ debug = false
 lto = "fat"
 
 [package.metadata.wasm-pack]
-wasm-opt = false
+"wasm-opt" = false
