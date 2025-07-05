@@ -447,12 +447,14 @@
       get_data_contracts,
       // Document queries
       get_documents,
+      get_document,
       // Protocol/Version queries
       get_protocol_version_upgrade_state,
       get_protocol_version_upgrade_vote_status,
       // Epoch/Block queries
       get_epochs_info,
       get_finalized_epoch_infos,
+      get_current_epoch,
       get_evonodes_proposed_epoch_blocks_by_ids,
       get_evonodes_proposed_epoch_blocks_by_range,
       // System/Utility queries
@@ -679,6 +681,15 @@
               { name: "startValue", type: "text", label: "Start Value (Document ID)", required: false,
                 dependsOn: { field: "startOption", value: ["startAfter", "startAt"] } }
             ]
+          },
+          getDocument: {
+            label: "Get Document",
+            description: "Fetch a specific document by ID",
+            inputs: [
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "documentId", type: "text", label: "Document ID", required: true }
+            ]
           }
         }
       },
@@ -788,9 +799,14 @@
             description: "Get information about epochs",
             inputs: [
               { name: "startEpoch", type: "number", label: "Start Epoch", required: false },
-              { name: "count", type: "number", label: "Count", required: true },
+              { name: "count", type: "number", label: "Count", required: false },
               { name: "ascending", type: "checkbox", label: "Ascending Order", required: false }
             ]
+          },
+          getCurrentEpoch: {
+            label: "Get Current Epoch",
+            description: "Get information about the current epoch",
+            inputs: []
           },
           getFinalizedEpochInfos: {
             label: "Get Finalized Epoch Info",
@@ -1417,6 +1433,14 @@
             startAt
           );
           result = JSON.parse(result);
+        } else if (queryType === 'getDocument') {
+          result = await get_document(
+            sdk,
+            values.dataContractId,
+            values.documentType,
+            values.documentId
+          );
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
@@ -1438,7 +1462,34 @@
             values.count,
             values.ascending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getCurrentEpoch') {
+          result = await get_current_epoch(sdk);
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getFinalizedEpochInfos') {
+          result = await get_finalized_epoch_infos(
+            sdk,
+            values.startEpoch,
+            values.count,
+            values.ascending
+          );
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getEvonodesProposedEpochBlocksByIds') {
+          result = await get_evonodes_proposed_epoch_blocks_by_ids(
+            sdk,
+            values.epoch,
+            values.ids
+          );
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getEvonodesProposedEpochBlocksByRange') {
+          result = await get_evonodes_proposed_epoch_blocks_by_range(
+            sdk,
+            values.epoch,
+            values.limit,
+            values.startAfter || undefined,
+            values.orderAscending
+          );
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // System/Utility queries
         else if (queryType === 'getStatus') {
@@ -1580,14 +1631,14 @@
             values.count,
             values.ascending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getEvonodesProposedEpochBlocksByIds') {
           result = await get_evonodes_proposed_epoch_blocks_by_ids(
             sdk,
             values.epoch,
             values.ids
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getEvonodesProposedEpochBlocksByRange') {
           result = await get_evonodes_proposed_epoch_blocks_by_range(
             sdk,
@@ -1596,7 +1647,7 @@
             values.startAfter,
             values.orderAscending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Group queries
         else if (queryType === 'getGroupInfo') {

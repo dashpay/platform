@@ -37,7 +37,7 @@ impl From<ExtendedEpochInfo> for EpochInfo {
 pub async fn get_epochs_info(
     sdk: &WasmSdk,
     start_epoch: Option<u16>,
-    count: u32,
+    count: Option<u32>,
     ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::types::epoch::EpochQuery;
@@ -47,7 +47,7 @@ pub async fn get_epochs_info(
             start: start_epoch,
             ascending: ascending.unwrap_or(true),
         },
-        limit: Some(count),
+        limit: count,
         start_info: None,
     };
     
