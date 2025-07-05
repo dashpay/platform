@@ -13,14 +13,23 @@ struct DocumentResponse {
     id: String,
     owner_id: String,
     revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     updated_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     transferred_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     created_at_block_height: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     updated_at_block_height: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     transferred_at_block_height: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     created_at_core_block_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     updated_at_core_block_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     transferred_at_core_block_height: Option<u32>,
     data: serde_json::Map<String, JsonValue>,
 }
@@ -33,11 +42,22 @@ impl DocumentResponse {
         let mut data = serde_json::Map::new();
         
         // Get document properties directly
-        // Use the built-in try_into() method from platform_value
-        for (key, value) in doc.properties() {
+        let properties = doc.properties();
+        
+        // Debug logging
+        web_sys::console::log_1(&JsValue::from_str(&format!("Document ID: {}", doc.id())));
+        web_sys::console::log_1(&JsValue::from_str(&format!("Document has {} properties", properties.len())));
+        
+        for (key, value) in properties {
+            web_sys::console::log_1(&JsValue::from_str(&format!("Processing property '{}': {:?}", key, value)));
             let json_value: JsonValue = value.clone().try_into()
                 .map_err(|e| JsError::new(&format!("Failed to convert value to JSON: {:?}", e)))?;
             data.insert(key.clone(), json_value);
+        }
+        
+        // If no properties found, log the entire document for debugging
+        if data.is_empty() {
+            web_sys::console::log_1(&JsValue::from_str(&format!("Document debug: {:?}", doc)));
         }
         
         Ok(Self {
