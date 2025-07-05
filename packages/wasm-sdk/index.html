@@ -392,6 +392,20 @@
       width: 150px;
       font-weight: 500;
     }
+
+    .where-field-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .operator-select {
+      width: 120px;
+    }
+
+    .where-value-input {
+      flex: 1;
+    }
   </style>
 </head>
 
@@ -1129,17 +1143,70 @@
         
         // Where field
         const whereGroup = document.createElement('div');
-        whereGroup.className = 'field-group';
+        whereGroup.className = 'field-group where-field-group';
         
         const whereLabel = document.createElement('label');
         whereLabel.textContent = `${propName}:`;
+        whereLabel.style.minWidth = '200px';
         
+        // Operator dropdown
+        const operatorSelect = document.createElement('select');
+        operatorSelect.name = `whereOp_${propName}`;
+        operatorSelect.className = 'operator-select';
+        
+        // Determine property type from schema if available
+        const propDef = docType.properties?.[propName] || docType.properties?.[propName.split('.')[0]];
+        const isStringType = propDef?.type === 'string' || propName.includes('label') || propName.includes('name');
+        const isNumericType = propDef?.type === 'number' || propDef?.type === 'integer';
+        const isArrayType = propDef?.type === 'array' || propDef?.byteArray;
+        
+        // Add common operators
+        const operators = [
+          { value: '==', label: '==' },
+          { value: '!=', label: '!=' },
+        ];
+        
+        if (isStringType) {
+          operators.push(
+            { value: 'startsWith', label: 'starts with' },
+            { value: 'endsWith', label: 'ends with' },
+            { value: 'contains', label: 'contains' }
+          );
+        }
+        
+        if (isNumericType || isArrayType) {
+          operators.push(
+            { value: '>', label: '>' },
+            { value: '>=', label: '>=' },
+            { value: '<', label: '<' },
+            { value: '<=', label: '<=' }
+          );
+        }
+        
+        if (isArrayType) {
+          operators.push(
+            { value: 'in', label: 'in' },
+            { value: 'contains', label: 'contains' },
+            { value: 'elementMatch', label: 'element match' }
+          );
+        }
+        
+        operators.forEach(op => {
+          const option = document.createElement('option');
+          option.value = op.value;
+          option.textContent = op.label;
+          operatorSelect.appendChild(option);
+        });
+        
+        // Value input
         const whereInput = document.createElement('input');
         whereInput.type = 'text';
         whereInput.name = `where_${propName}`;
-        whereInput.placeholder = `Filter by ${propName}`;
+        whereInput.placeholder = `Value`;
+        whereInput.className = 'where-value-input';
         
         whereGroup.appendChild(whereLabel);
+        whereGroup.appendChild(operatorSelect);
         whereGroup.appendChild(whereInput);
         whereContainer.appendChild(whereGroup);
 
@@ -1556,7 +1623,10 @@
         whereInputs.forEach(input => {
           if (input.value) {
             const fieldName = input.name.replace('where_', '');
-            whereClause.push([fieldName, '==', input.value]);
+            // Find the corresponding operator
+            const operatorSelect = dynamicInputs.querySelector(`select[name="whereOp_${fieldName}"]`);
+            const operator = operatorSelect?.value || '==';
+            whereClause.push([fieldName, operator, input.value]);
           }
         });
         if (whereClause.length > 0) {
