@@ -33,8 +33,10 @@ impl DocumentResponse {
         let mut data = serde_json::Map::new();
         
         // Get document properties directly
+        // Use the built-in try_into() method from platform_value
         for (key, value) in doc.properties() {
-            let json_value = platform_value_to_json(value)?;
+            let json_value: JsonValue = value.clone().try_into()
+                .map_err(|e| JsError::new(&format!("Failed to convert value to JSON: {:?}", e)))?;
             data.insert(key.clone(), json_value);
         }
         
@@ -56,52 +58,6 @@ impl DocumentResponse {
     }
 }
 
-fn platform_value_to_json(value: &dash_sdk::dpp::platform_value::Value) -> Result<JsonValue, JsError> {
-    use dash_sdk::dpp::platform_value::Value;
-    
-    match value {
-        Value::Null => Ok(JsonValue::Null),
-        Value::Bool(b) => Ok(JsonValue::Bool(*b)),
-        Value::I128(i) => Ok(JsonValue::String(i.to_string())),
-        Value::I64(i) => Ok(JsonValue::Number(serde_json::Number::from(*i))),
-        Value::I32(i) => Ok(JsonValue::Number(serde_json::Number::from(*i))),
-        Value::I16(i) => Ok(JsonValue::Number(serde_json::Number::from(*i))),
-        Value::I8(i) => Ok(JsonValue::Number(serde_json::Number::from(*i))),
-        Value::U128(u) => Ok(JsonValue::String(u.to_string())),
-        Value::U64(u) => Ok(JsonValue::String(u.to_string())),
-        Value::U32(u) => Ok(JsonValue::Number(serde_json::Number::from(*u))),
-        Value::U16(u) => Ok(JsonValue::Number(serde_json::Number::from(*u))),
-        Value::U8(u) => Ok(JsonValue::Number(serde_json::Number::from(*u))),
-        Value::Float(f) => Ok(JsonValue::Number(serde_json::Number::from_f64(*f).ok_or_else(|| JsError::new("Invalid float value"))?)),
-        Value::Text(s) => Ok(JsonValue::String(s.clone())),
-        Value::Bytes(b) => Ok(JsonValue::String(hex::encode(b))),
-        Value::Bytes20(b) => Ok(JsonValue::String(hex::encode(b))),
-        Value::Bytes32(b) => Ok(JsonValue::String(hex::encode(b))),
-        Value::Bytes36(b) => Ok(JsonValue::String(hex::encode(b))),
-        Value::Identifier(id) => Ok(JsonValue::String(hex::encode(id))),
-        Value::Array(arr) => {
-            let json_arr: Result<Vec<JsonValue>, JsError> = arr.iter()
-                .map(platform_value_to_json)
-                .collect();
-            Ok(JsonValue::Array(json_arr?))
-        },
-        Value::Map(map) => {
-            let mut json_map = serde_json::Map::new();
-            for (k, v) in map {
-                let key = match k {
-                    Value::Text(s) => s.clone(),
-                    _ => format!("{:?}", k),
-                };
-                json_map.insert(key, platform_value_to_json(v)?);
-            }
-            Ok(JsonValue::Object(json_map))
-        },
-        _ => {
-            // Handle any other Value variants that might be added in the future
-            Ok(JsonValue::String(format!("<unsupported value type: {:?}>", value)))
-        }
-    }
-}
 
 #[wasm_bindgen]
 pub async fn get_documents(
