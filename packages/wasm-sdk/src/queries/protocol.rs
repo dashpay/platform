@@ -17,8 +17,7 @@ struct ProtocolVersionUpgradeState {
 #[serde(rename_all = "camelCase")]
 struct ProtocolVersionUpgradeVoteStatus {
     pro_tx_hash: String,
-    voted: bool,
-    vote_choice: Option<bool>, // true = yes, false = no
+    version: u32,
 }
 
 #[wasm_bindgen]
@@ -91,20 +90,10 @@ pub async fn get_protocol_version_upgrade_vote_status(
         .into_iter()
         .filter_map(|(pro_tx_hash, vote_opt)| {
             // vote_opt is Option<MasternodeProtocolVote>
-            if let Some(vote) = vote_opt {
-                Some(ProtocolVersionUpgradeVoteStatus {
-                    pro_tx_hash: pro_tx_hash.to_string(),
-                    voted: true,
-                    vote_choice: Some(vote.voted_version > 0), // True if voting for a non-zero version
-                })
-            } else {
-                // No vote from this masternode
-                Some(ProtocolVersionUpgradeVoteStatus {
-                    pro_tx_hash: pro_tx_hash.to_string(),
-                    voted: false,
-                    vote_choice: None,
-                })
-            }
+            vote_opt.map(|vote| ProtocolVersionUpgradeVoteStatus {
+                pro_tx_hash: pro_tx_hash.to_string(),
+                version: vote.voted_version,
+            })
         })
         .collect();
     

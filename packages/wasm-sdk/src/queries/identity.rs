@@ -97,7 +97,7 @@ pub async fn get_identity_keys(
 }
 
 #[wasm_bindgen]
-pub async fn get_identity_nonce(sdk: &WasmSdk, identity_id: &str) -> Result<u64, JsError> {
+pub async fn get_identity_nonce(sdk: &WasmSdk, identity_id: &str) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::prelude::IdentityNonce;
     use dash_sdk::platform::Fetch;
     
@@ -110,7 +110,20 @@ pub async fn get_identity_nonce(sdk: &WasmSdk, identity_id: &str) -> Result<u64,
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch identity nonce: {}", e)))?;
     
-    nonce_result.ok_or_else(|| JsError::new("Identity nonce not found"))
+    let nonce = nonce_result.ok_or_else(|| JsError::new("Identity nonce not found"))?;
+    
+    // Return as a JSON object with nonce as string to avoid BigInt serialization issues
+    #[derive(Serialize)]
+    struct NonceResponse {
+        nonce: String,
+    }
+    
+    let response = NonceResponse {
+        nonce: nonce.to_string(),
+    };
+    
+    serde_wasm_bindgen::to_value(&response)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -118,7 +131,7 @@ pub async fn get_identity_contract_nonce(
     sdk: &WasmSdk,
     identity_id: &str,
     contract_id: &str,
-) -> Result<u64, JsError> {
+) -> Result<JsValue, JsError> {
     use drive_proof_verifier::types::IdentityContractNonceFetcher;
     use dash_sdk::platform::Fetch;
     
@@ -136,9 +149,22 @@ pub async fn get_identity_contract_nonce(
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch identity contract nonce: {}", e)))?;
     
-    nonce_result
+    let nonce = nonce_result
         .map(|fetcher| fetcher.0)
-        .ok_or_else(|| JsError::new("Identity contract nonce not found"))
+        .ok_or_else(|| JsError::new("Identity contract nonce not found"))?;
+    
+    // Return as a JSON object with nonce as string to avoid BigInt serialization issues
+    #[derive(Serialize)]
+    struct NonceResponse {
+        nonce: String,
+    }
+    
+    let response = NonceResponse {
+        nonce: nonce.to_string(),
+    };
+    
+    serde_wasm_bindgen::to_value(&response)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -156,8 +182,18 @@ pub async fn get_identity_balance(sdk: &WasmSdk, id: &str) -> Result<JsValue, Js
         .map_err(|e| JsError::new(&format!("Failed to fetch identity balance: {}", e)))?;
     
     if let Some(balance) = balance_result {
-        // Return as string to handle large numbers
-        Ok(JsValue::from_str(&balance.to_string()))
+        // Return as object with balance as string to handle large numbers
+        #[derive(Serialize)]
+        struct BalanceResponse {
+            balance: String,
+        }
+        
+        let response = BalanceResponse {
+            balance: balance.to_string(),
+        };
+        
+        serde_wasm_bindgen::to_value(&response)
+            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     } else {
         Err(JsError::new("Identity balance not found"))
     }
