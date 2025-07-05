@@ -38,12 +38,13 @@ hex = "0.4"
 getrandom = { version = "0.2", features = ["js"] }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 once_cell = "1.19"
+js-sys = "0.3"
 
 [profile.release]
 opt-level = "z"
 panic = "abort"
 debug = false
+lto = "fat"
 
-#[package.metadata.wasm-pack.profile.release]
-#wasm-opt = ['-g', '-O'] # -g for profiling
-#  -Oz -Oz -g
+[package.metadata.wasm-pack]
+wasm-opt = false
