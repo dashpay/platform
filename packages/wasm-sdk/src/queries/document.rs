@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 use dash_sdk::platform::Fetch;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use serde_json::Value as JsonValue;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -35,13 +36,18 @@ struct DocumentResponse {
 }
 
 impl DocumentResponse {
-    fn from_document(doc: &Document) -> Result<Self, JsError> {
+    fn from_document(
+        doc: &Document, 
+        _data_contract: &dash_sdk::platform::DataContract,
+        _document_type: dash_sdk::dpp::data_contract::document_type::DocumentTypeRef
+    ) -> Result<Self, JsError> {
         use dash_sdk::dpp::document::DocumentV0Getters;
         
-        // Convert the document properties to JSON
-        let mut data = serde_json::Map::new();
+        // For now, we'll continue with the existing approach
+        // In the future, we could use the document type to better interpret the data
         
-        // Get document properties directly
+        // Get document properties and convert each to JSON
+        let mut data = serde_json::Map::new();
         let properties = doc.properties();
         
         // Debug logging
@@ -49,15 +55,17 @@ impl DocumentResponse {
         web_sys::console::log_1(&JsValue::from_str(&format!("Document has {} properties", properties.len())));
         
         for (key, value) in properties {
-            web_sys::console::log_1(&JsValue::from_str(&format!("Processing property '{}': {:?}", key, value)));
+            // Convert platform Value to JSON
             let json_value: JsonValue = value.clone().try_into()
                 .map_err(|e| JsError::new(&format!("Failed to convert value to JSON: {:?}", e)))?;
+            
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "Property '{}': {}", 
+                key, 
+                serde_json::to_string(&json_value).unwrap_or_else(|_| "Failed to stringify".to_string())
+            )));
+            
             data.insert(key.clone(), json_value);
-        }
-        
-        // If no properties found, log the entire document for debugging
-        if data.is_empty() {
-            web_sys::console::log_1(&JsValue::from_str(&format!("Document debug: {:?}", doc)));
         }
         
         Ok(Self {
@@ -149,11 +157,22 @@ pub async fn get_documents(
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch documents: {}", e)))?;
     
+    // Fetch the data contract to get the document type
+    let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch data contract: {}", e)))?
+        .ok_or_else(|| JsError::new("Data contract not found"))?;
+    
+    // Get the document type
+    let document_type_ref = data_contract
+        .document_type_for_name(document_type)
+        .map_err(|e| JsError::new(&format!("Document type not found: {}", e)))?;
+    
     // Convert documents to response format
     let mut responses: Vec<DocumentResponse> = Vec::new();
     for (_, doc_opt) in documents_result {
         if let Some(doc) = doc_opt {
-            responses.push(DocumentResponse::from_document(&doc)?);
+            responses.push(DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?);
         }
     }
     
@@ -191,6 +210,17 @@ pub async fn get_document(
     .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?
     .with_document_id(&doc_id);
     
+    // Fetch the data contract to get the document type
+    let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch data contract: {}", e)))?
+        .ok_or_else(|| JsError::new("Data contract not found"))?;
+    
+    // Get the document type
+    let document_type = data_contract
+        .document_type_for_name(document_type)
+        .map_err(|e| JsError::new(&format!("Document type not found: {}", e)))?;
+    
     // Execute query
     let document_result: Option<Document> = Document::fetch(sdk.as_ref(), query)
         .await
@@ -198,7 +228,7 @@ pub async fn get_document(
     
     match document_result {
         Some(doc) => {
-            let response = DocumentResponse::from_document(&doc)?;
+            let response = DocumentResponse::from_document(&doc, &data_contract, document_type)?;
             serde_wasm_bindgen::to_value(&response)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
         },
