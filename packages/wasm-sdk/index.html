@@ -409,7 +409,7 @@
         <span id="networkIndicator" class="network-indicator mainnet">MAINNET</span>
         <br>
         <label style="margin-top: 10px; display: block;">
-          <input type="checkbox" id="trustedMode" style="margin-right: 5px;">
+          <input type="checkbox" id="trustedMode" style="margin-right: 5px;" checked disabled>
           Trusted Quorums Mode
         </label>
       </div>
@@ -1108,8 +1108,24 @@
       
       // Create where fields for each indexed property
       indexProperties.forEach(prop => {
-        const propName = prop.name || prop;
-        const propDef = docType.properties?.[propName];
+        // Properties are objects like {"records.identity": "asc"}
+        let propName;
+        let sortOrder;
+        
+        if (typeof prop === 'object' && !Array.isArray(prop)) {
+          // Extract the property name and sort order from the object
+          const keys = Object.keys(prop);
+          if (keys.length > 0) {
+            propName = keys[0];
+            sortOrder = prop[propName];
+          }
+        } else if (typeof prop === 'string') {
+          propName = prop;
+        } else {
+          return; // Skip invalid properties
+        }
+        
+        if (!propName) return;
         
         // Where field
         const whereGroup = document.createElement('div');
@@ -1127,8 +1143,8 @@
         whereGroup.appendChild(whereInput);
         whereContainer.appendChild(whereGroup);
 
-        // Order by field (only for sortable properties)
-        if (prop.sortOrder || index.name === propName) {
+        // Order by field (only if the property has a sort order)
+        if (sortOrder) {
           const orderGroup = document.createElement('div');
           orderGroup.className = 'field-group';
           
@@ -1260,8 +1276,8 @@
       
       const preloader = document.getElementById('preloader');
       preloader.style.display = 'block';
-      const useTrusted = document.getElementById('trustedMode').checked;
-      const modeStr = useTrusted ? 'trusted' : 'standard';
+      const useTrusted = true; // Always use trusted mode
+      const modeStr = 'trusted';
       updateStatus(`Initializing ${network.toUpperCase()} SDK (${modeStr} mode)...`, 'loading');
       
       try {
@@ -2038,11 +2054,7 @@
       });
     });
 
-    document.getElementById('trustedMode').addEventListener('change', async () => {
-      const network = document.querySelector('input[name="network"]:checked').value;
-      clearResults();
-      await initializeSdk(network);
-    });
+    // Trusted mode is always on, no need for event listener
 
     // Initialize
     async function run() {
