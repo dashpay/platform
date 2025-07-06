@@ -1447,15 +1447,17 @@ ${indentStr}]`;
       const inputGroup = document.createElement('div');
       inputGroup.className = 'input-group';
       
-      const label = document.createElement('label');
-      label.textContent = inputDef.label;
-      if (!inputDef.required) {
-        const optionalSpan = document.createElement('span');
-        optionalSpan.className = 'optional-label';
-        optionalSpan.textContent = ' (optional)';
-        label.appendChild(optionalSpan);
+      if (inputDef.type !== 'checkbox') {
+        const label = document.createElement('label');
+        label.textContent = inputDef.label;
+        if (!inputDef.required) {
+          const optionalSpan = document.createElement('span');
+          optionalSpan.className = 'optional-label';
+          optionalSpan.textContent = ' (optional)';
+          label.appendChild(optionalSpan);
+        }
+        inputGroup.appendChild(label);
       }
-      inputGroup.appendChild(label);
 
       if (inputDef.type === 'text' || inputDef.type === 'number') {
         const input = document.createElement('input');
@@ -1473,6 +1475,12 @@ ${indentStr}]`;
         const checkboxLabel = document.createElement('label');
         checkboxLabel.htmlFor = checkbox.id;
         checkboxLabel.textContent = inputDef.label;
+        if (!inputDef.required) {
+          const optionalSpan = document.createElement('span');
+          optionalSpan.className = 'optional-label';
+          optionalSpan.textContent = ' (optional)';
+          checkboxLabel.appendChild(optionalSpan);
+        }
         
         checkboxContainer.appendChild(checkbox);
         checkboxContainer.appendChild(checkboxLabel);
@@ -1950,7 +1958,7 @@ ${indentStr}]`;
             values.offset,
             values.orderAscending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getContestedResourceVoteState') {
           result = await get_contested_resource_vote_state(
             sdk,
@@ -1963,7 +1971,7 @@ ${indentStr}]`;
             values.count,
             values.orderAscending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getContestedResourceVotersForIdentity') {
           result = await get_contested_resource_voters_for_identity(
             sdk,
@@ -1975,7 +1983,7 @@ ${indentStr}]`;
             values.count,
             values.orderAscending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getContestedResourceIdentityVotes') {
           result = await get_contested_resource_identity_votes(
             sdk,
@@ -1984,7 +1992,7 @@ ${indentStr}]`;
             values.offset,
             values.orderAscending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getVotePollsByEndDate') {
           result = await get_vote_polls_by_end_date(
             sdk,
@@ -1994,7 +2002,7 @@ ${indentStr}]`;
             values.offset,
             values.orderAscending
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Epoch/Block queries
         else if (queryType === 'getFinalizedEpochInfos') {

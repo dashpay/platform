@@ -142,29 +142,100 @@ pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsE
 
 #[wasm_bindgen]
 pub async fn get_prefunded_specialized_balance(
-    _sdk: &WasmSdk,
+    sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<JsValue, JsError> {
-    // TODO: Query actual prefunded balance from the platform
-    let response = PrefundedSpecializedBalance {
-        identity_id: identity_id.to_string(),
-        balance: 0,
-    };
+    use dash_sdk::platform::{Identifier, Fetch};
+    use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
     
-    serde_wasm_bindgen::to_value(&response)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+    // Parse identity ID
+    let identity_identifier = Identifier::from_string(
+        identity_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Fetch prefunded specialized balance
+    let balance_result = PrefundedBalance::fetch(sdk.as_ref(), identity_identifier)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch prefunded specialized balance: {}", e)))?;
+    
+    if let Some(balance) = balance_result {
+        let response = PrefundedSpecializedBalance {
+            identity_id: identity_id.to_string(),
+            balance: balance.0, // PrefundedSpecializedBalance is a newtype wrapper around u64
+        };
+        
+        serde_wasm_bindgen::to_value(&response)
+            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+    } else {
+        // Return zero balance if not found
+        let response = PrefundedSpecializedBalance {
+            identity_id: identity_id.to_string(),
+            balance: 0,
+        };
+        
+        serde_wasm_bindgen::to_value(&response)
+            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+    }
 }
 
 #[wasm_bindgen]
 pub async fn wait_for_state_transition_result(
-    _sdk: &WasmSdk,
+    sdk: &WasmSdk,
     state_transition_hash: &str,
 ) -> Result<JsValue, JsError> {
-    // TODO: Implement actual polling for state transition result
+    use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
+        Version, WaitForStateTransitionResultRequestV0,
+    };
+    use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
+    use dapi_grpc::platform::VersionedGrpcResponse;
+    use dash_sdk::RequestSettings;
+    use rs_dapi_client::{DapiRequestExecutor, ExecutionResponse};
+    
+    // Parse the hash from hex string to bytes
+    let hash_bytes = hex::decode(state_transition_hash)
+        .map_err(|e| JsError::new(&format!("Invalid state transition hash: {}", e)))?;
+    
+    // Create the gRPC request
+    let request = WaitForStateTransitionResultRequest {
+        version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
+            state_transition_hash: hash_bytes,
+            prove: sdk.prove(),
+        })),
+    };
+    
+    // Execute the request
+    let response = sdk
+        .as_ref()
+        .execute(request, RequestSettings::default())
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to wait for state transition result: {}", e)))?;
+    
+    // Parse the response
+    use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
+        wait_for_state_transition_result_response_v0::Result as V0Result,
+        Version as ResponseVersion,
+    };
+    
+    let (status, error) = match response.inner.version {
+        Some(ResponseVersion::V0(v0)) => match v0.result {
+            Some(V0Result::Error(e)) => {
+                let error_message = format!("Code: {}, Message: {}", e.code, e.message);
+                ("ERROR".to_string(), Some(error_message))
+            },
+            Some(V0Result::Proof(_)) => {
+                // State transition was successful
+                ("SUCCESS".to_string(), None)
+            },
+            None => ("UNKNOWN".to_string(), Some("No result returned".to_string())),
+        },
+        None => ("UNKNOWN".to_string(), Some("No version in response".to_string())),
+    };
+    
     let result = StateTransitionResult {
         state_transition_hash: state_transition_hash.to_string(),
-        status: "UNKNOWN".to_string(),
-        error: Some("Not implemented - cannot query state transition status".to_string()),
+        status,
+        error,
     };
     
     serde_wasm_bindgen::to_value(&result)
@@ -173,16 +244,49 @@ pub async fn wait_for_state_transition_result(
 
 #[wasm_bindgen]
 pub async fn get_path_elements(
-    _sdk: &WasmSdk,
+    sdk: &WasmSdk,
     keys: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    // TODO: Query actual path elements from the platform state tree
-    let elements: Vec<PathElement> = keys.into_iter().map(|key| {
-        PathElement {
-            path: vec![key],
-            value: None,
-        }
-    }).collect();
+    use dash_sdk::platform::FetchMany;
+    use drive_proof_verifier::types::{KeysInPath, Elements};
+    use dash_sdk::drive::grovedb::Element;
+    
+    // Convert string keys to byte vectors
+    let key_bytes: Vec<Vec<u8>> = keys.iter()
+        .map(|k| k.as_bytes().to_vec())
+        .collect();
+    
+    // Create the query
+    let query = KeysInPath {
+        path: vec![], // Root path - can be adjusted if needed
+        keys: key_bytes,
+    };
+    
+    // Fetch path elements
+    let path_elements_result: Elements = Element::fetch_many(sdk.as_ref(), query)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch path elements: {}", e)))?;
+    
+    // Convert the result to our response format
+    let elements: Vec<PathElement> = keys.into_iter()
+        .map(|key| {
+            // Check if this key exists in the result
+            let value = path_elements_result.get(key.as_bytes())
+                .and_then(|element_opt| element_opt.as_ref())
+                .and_then(|element| {
+                    // Element can contain different types, we'll serialize it as base64
+                    element.as_item_bytes().ok().map(|bytes| {
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    })
+                });
+            
+            PathElement {
+                path: vec![key],
+                value,
+            }
+        })
+        .collect();
     
     serde_wasm_bindgen::to_value(&elements)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
