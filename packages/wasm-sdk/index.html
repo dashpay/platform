@@ -905,7 +905,6 @@
             inputs: [
               { name: "identityId", type: "text", label: "Identity ID", required: true },
               { name: "tokenIds", type: "array", label: "Token IDs", required: false },
-              { name: "withPurchaseInfo", type: "checkbox", label: "With Purchase Info", required: false },
               { name: "limit", type: "number", label: "Limit", required: false },
               { name: "offset", type: "number", label: "Offset", required: false }
             ]
@@ -915,8 +914,7 @@
             description: "Get token information (frozen status) for multiple identities",
             inputs: [
               { name: "identityIds", type: "array", label: "Identity IDs", required: true },
-              { name: "tokenId", type: "text", label: "Token ID", required: true },
-              { name: "withPurchaseInfo", type: "checkbox", label: "With Purchase Info", required: false }
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
             ]
           },
           getTokenStatuses: {
@@ -1882,34 +1880,12 @@
         // Token queries
         else if (queryType === 'getIdentitiesTokenBalances') {
           result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityTokenInfos') {
           result = await get_identity_token_infos(
             sdk,
             values.identityId,
             values.tokenIds,
-            values.withPurchaseInfo,
-            values.limit,
-            values.offset
-          );
-          result = JSON.parse(result);
-        } else if (queryType === 'getIdentitiesTokenInfos') {
-          result = await get_identities_token_infos(
-            sdk,
-            values.identityIds,
-            values.tokenId,
-            values.withPurchaseInfo
-          );
-          result = JSON.parse(result);
-        } else if (queryType === 'getIdentitiesTokenBalances') {
-          result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
-          // Result is already a JS object from serde_wasm_bindgen
-        } else if (queryType === 'getIdentityTokenInfos') {
-          result = await get_identity_token_infos(
-            sdk,
-            values.identityId,
-            values.tokenIds || undefined,
-            values.withPurchaseInfo,
             values.limit,
             values.offset
           );
@@ -1918,29 +1894,28 @@
           result = await get_identities_token_infos(
             sdk,
             values.identityIds,
-            values.tokenId,
-            values.withPurchaseInfo
+            values.tokenId
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenStatuses') {
           result = await get_token_statuses(sdk, values.tokenIds);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenDirectPurchasePrices') {
           result = await get_token_direct_purchase_prices(sdk, values.tokenIds);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenContractInfo') {
           result = await get_token_contract_info(sdk, values.dataContractId);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenPerpetualDistributionLastClaim') {
           result = await get_token_perpetual_distribution_last_claim(
             sdk,
             values.identityId,
             values.tokenId
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenTotalSupply') {
           result = await get_token_total_supply(sdk, values.tokenId);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Voting/Contested Resource queries
         else if (queryType === 'getContestedResources') {

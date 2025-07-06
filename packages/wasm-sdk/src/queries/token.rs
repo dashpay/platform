@@ -88,7 +88,6 @@ pub async fn get_identity_token_infos(
     sdk: &WasmSdk,
     identity_id: &str,
     token_ids: Option<Vec<String>>,
-    _with_purchase_info: Option<bool>,
     _limit: Option<u32>,
     _offset: Option<u32>,
 ) -> Result<JsValue, JsError> {
@@ -168,7 +167,6 @@ pub async fn get_identities_token_infos(
     sdk: &WasmSdk,
     identity_ids: Vec<String>,
     token_id: &str,
-    _with_purchase_info: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
     use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
