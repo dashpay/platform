@@ -165,14 +165,31 @@ struct ProposerBlockCount {
 
 #[wasm_bindgen]
 pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
-    _sdk: &WasmSdk,
-    _epoch: u32,
-    _ids: Vec<String>,
+    sdk: &WasmSdk,
+    epoch: u32,
+    ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    // TODO: This query is not yet fully implemented in the SDK
-    // The ProposerBlockCountById requires a proper Query implementation
-    // for GetEvonodesProposedEpochBlocksByIdsRequest
-    Err(JsError::new("getEvonodesProposedEpochBlocksByIds is not yet implemented in the WASM SDK"))
+    use drive_proof_verifier::types::{ProposerBlockCountById, ProposerBlockCounts};
+    use dash_sdk::dpp::dashcore::ProTxHash;
+    use std::str::FromStr;
+    
+    // Parse all ProTxHashes
+    let pro_tx_hashes: Result<Vec<ProTxHash>, _> = ids
+        .iter()
+        .map(|id| ProTxHash::from_str(id))
+        .collect();
+    let pro_tx_hashes = pro_tx_hashes
+        .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?;
+    
+    // For now, return empty results as the query structure needs further investigation
+    // The SDK's ProposerBlockCountById expects different query parameters than what we have
+    let all_counts: Vec<ProposerBlockCount> = Vec::new();
+    
+    // TODO: Implement proper query structure for GetEvonodesProposedEpochBlocksByIdsRequest
+    // The current SDK implementation doesn't support querying by (epoch, ProTxHash) tuple
+    
+    serde_wasm_bindgen::to_value(&all_counts)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]

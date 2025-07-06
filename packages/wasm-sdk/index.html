@@ -891,6 +891,34 @@
       token: {
         label: "Token Queries",
         queries: {
+          getIdentitiesTokenBalances: {
+            label: "Get Identities Token Balances",
+            description: "Get token balances for multiple identities",
+            inputs: [
+              { name: "identityIds", type: "array", label: "Identity IDs", required: true },
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
+            ]
+          },
+          getIdentityTokenInfos: {
+            label: "Get Identity Token Infos",
+            description: "Get token information (frozen status) for specific tokens of an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "tokenIds", type: "array", label: "Token IDs", required: false },
+              { name: "withPurchaseInfo", type: "checkbox", label: "With Purchase Info", required: false },
+              { name: "limit", type: "number", label: "Limit", required: false },
+              { name: "offset", type: "number", label: "Offset", required: false }
+            ]
+          },
+          getIdentitiesTokenInfos: {
+            label: "Get Identities Token Infos",
+            description: "Get token information (frozen status) for multiple identities",
+            inputs: [
+              { name: "identityIds", type: "array", label: "Identity IDs", required: true },
+              { name: "tokenId", type: "text", label: "Token ID", required: true },
+              { name: "withPurchaseInfo", type: "checkbox", label: "With Purchase Info", required: false }
+            ]
+          },
           getTokenStatuses: {
             label: "Get Token Statuses",
             description: "Get pause/unpause status for tokens",
@@ -917,7 +945,7 @@
             description: "Get last claim information for token perpetual distribution",
             inputs: [
               { name: "identityId", type: "text", label: "Identity ID", required: true },
-              { name: "distributionId", type: "text", label: "Distribution ID", required: true }
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
             ]
           },
           getTokenTotalSupply: {
@@ -936,14 +964,16 @@
             label: "Get Group Info",
             description: "Get information about a specific group",
             inputs: [
-              { name: "groupContractId", type: "text", label: "Group Contract ID", required: true }
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "groupContractPosition", type: "number", label: "Group Contract Position", required: true }
             ]
           },
           getGroupMembers: {
             label: "Get Group Members",
             description: "Get members of a specific group",
             inputs: [
-              { name: "groupContractId", type: "text", label: "Group Contract ID", required: true },
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "groupContractPosition", type: "number", label: "Group Contract Position", required: true },
               { name: "memberIds", type: "array", label: "Member IDs (optional)", required: false },
               { name: "startAt", type: "text", label: "Start At (Member ID)", required: false },
               { name: "limit", type: "number", label: "Limit", required: false }
@@ -1871,6 +1901,27 @@
             values.withPurchaseInfo
           );
           result = JSON.parse(result);
+        } else if (queryType === 'getIdentitiesTokenBalances') {
+          result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getIdentityTokenInfos') {
+          result = await get_identity_token_infos(
+            sdk,
+            values.identityId,
+            values.tokenIds || undefined,
+            values.withPurchaseInfo,
+            values.limit,
+            values.offset
+          );
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getIdentitiesTokenInfos') {
+          result = await get_identities_token_infos(
+            sdk,
+            values.identityIds,
+            values.tokenId,
+            values.withPurchaseInfo
+          );
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenStatuses') {
           result = await get_token_statuses(sdk, values.tokenIds);
           result = JSON.parse(result);
@@ -1884,7 +1935,7 @@
           result = await get_token_perpetual_distribution_last_claim(
             sdk,
             values.identityId,
-            values.distributionId
+            values.tokenId
           );
           result = JSON.parse(result);
         } else if (queryType === 'getTokenTotalSupply') {
@@ -1980,17 +2031,18 @@
         }
         // Group queries
         else if (queryType === 'getGroupInfo') {
-          result = await get_group_info(sdk, values.groupContractId);
-          result = JSON.parse(result);
+          result = await get_group_info(sdk, values.dataContractId, values.groupContractPosition);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getGroupMembers') {
           result = await get_group_members(
             sdk,
-            values.groupContractId,
+            values.dataContractId,
+            values.groupContractPosition,
             values.memberIds,
             values.startAt,
             values.limit
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityGroups') {
           result = await get_identity_groups(
             sdk,
@@ -1999,10 +2051,10 @@
             values.ownerDataContracts,
             values.moderatorDataContracts
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getGroupsDataContracts') {
           result = await get_groups_data_contracts(sdk, values.dataContractIds);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else {
           // Placeholder for unimplemented queries
           throw new Error(`Query ${queryType} is not yet implemented in the WASM SDK bindings`);

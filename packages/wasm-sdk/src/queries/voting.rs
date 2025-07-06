@@ -15,8 +15,9 @@ pub async fn get_contested_resources(
     _offset: Option<u32>,
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    Err(JsError::new("getContestedResources is not yet implemented in the WASM SDK"))
+    Err(JsError::new("getContestedResources is not yet implemented in the WASM SDK. The voting/contested resource queries require additional SDK support that is not yet available in the WASM build."))
 }
+
 
 #[wasm_bindgen]
 pub async fn get_contested_resource_vote_state(
@@ -30,8 +31,9 @@ pub async fn get_contested_resource_vote_state(
     _count: Option<u32>,
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    Err(JsError::new("getContestedResourceVoteState is not yet implemented in the WASM SDK"))
+    Err(JsError::new("getContestedResourceVoteState is not yet implemented in the WASM SDK. The voting/contested resource queries require additional SDK support that is not yet available in the WASM build."))
 }
+
 
 #[wasm_bindgen]
 pub async fn get_contested_resource_voters_for_identity(
@@ -44,8 +46,9 @@ pub async fn get_contested_resource_voters_for_identity(
     _count: Option<u32>,
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    Err(JsError::new("getContestedResourceVotersForIdentity is not yet implemented in the WASM SDK"))
+    Err(JsError::new("getContestedResourceVotersForIdentity is not yet implemented in the WASM SDK. The voting/contested resource queries require additional SDK support that is not yet available in the WASM build."))
 }
+
 
 #[wasm_bindgen]
 pub async fn get_contested_resource_identity_votes(
@@ -55,8 +58,9 @@ pub async fn get_contested_resource_identity_votes(
     _offset: Option<u32>,
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    Err(JsError::new("getContestedResourceIdentityVotes is not yet implemented in the WASM SDK"))
+    Err(JsError::new("getContestedResourceIdentityVotes is not yet implemented in the WASM SDK. The voting/contested resource queries require additional SDK support that is not yet available in the WASM build."))
 }
+
 
 #[wasm_bindgen]
 pub async fn get_vote_polls_by_end_date(
@@ -67,5 +71,5 @@ pub async fn get_vote_polls_by_end_date(
     _offset: Option<u32>,
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    Err(JsError::new("getVotePollsByEndDate is not yet implemented in the WASM SDK"))
+    Err(JsError::new("getVotePollsByEndDate is not yet implemented in the WASM SDK. The voting/contested resource queries require additional SDK support that is not yet available in the WASM build."))
 }

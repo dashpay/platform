@@ -87,7 +87,7 @@ pub async fn get_identity_keys(
                 purpose: format!("{:?}", key.purpose()),
                 security_level: format!("{:?}", key.security_level()),
                 read_only: key.read_only(),
-                disabled: key.is_disabled(),
+                disabled: key.disabled_at().is_some(),
             });
         }
     }
@@ -314,6 +314,13 @@ struct IdentityContractKeyResponse {
     disabled: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct IdentityContractKeysResponse {
+    identity_id: String,
+    keys: Vec<IdentityKeyResponse>,
+}
+
 #[wasm_bindgen]
 pub async fn get_identities_contract_keys(
     sdk: &WasmSdk,
@@ -323,19 +330,18 @@ pub async fn get_identities_contract_keys(
     purposes: Option<Vec<u32>>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::identity::Purpose;
-    // TODO: IdentitiesContractKeysQuery is not available yet
-    use dash_sdk::platform::dapi::RequestSettings;
     
     // Convert string IDs to Identifiers
     let identity_ids: Vec<Identifier> = identities_ids
-        .into_iter()
+        .iter()
         .map(|id| Identifier::from_string(
-            &id,
+            id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         ))
         .collect::<Result<Vec<_>, _>>()?;
     
-    let contract_id = Identifier::from_string(
+    // Contract ID is not used in the individual key queries, but we validate it
+    let _contract_identifier = Identifier::from_string(
         contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
@@ -344,22 +350,64 @@ pub async fn get_identities_contract_keys(
     let purposes_opt = purposes.map(|p| {
         p.into_iter()
             .filter_map(|purpose_int| match purpose_int {
-                0 => Some(Purpose::AUTHENTICATION),
-                1 => Some(Purpose::ENCRYPTION),
-                2 => Some(Purpose::DECRYPTION),
-                3 => Some(Purpose::TRANSFER),
-                4 => Some(Purpose::SYSTEM),
-                5 => Some(Purpose::VOTING),
+                0 => Some(Purpose::AUTHENTICATION as u32),
+                1 => Some(Purpose::ENCRYPTION as u32),
+                2 => Some(Purpose::DECRYPTION as u32),
+                3 => Some(Purpose::TRANSFER as u32),
+                4 => Some(Purpose::SYSTEM as u32),
+                5 => Some(Purpose::VOTING as u32),
                 _ => None,
             })
             .collect::<Vec<_>>()
     });
     
-    // TODO: IdentitiesContractKeysQuery is not implemented yet in SDK
-    return Err(JsError::new("get_identities_contract_keys is not yet implemented"));
+    // For now, we'll implement this by fetching keys for each identity individually
+    // The SDK doesn't fully expose the batch query yet
+    let mut responses: Vec<IdentityContractKeysResponse> = Vec::new();
     
-    #[allow(unreachable_code)]
-    let responses = Vec::<IdentityContractKeyResponse>::new();
+    for identity_id_str in identities_ids {
+        let identity_id = Identifier::from_string(
+            &identity_id_str,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )?;
+        
+        // Get keys for this identity using the regular identity keys query
+        let keys_result = IdentityPublicKey::fetch_many(sdk.as_ref(), identity_id)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch keys for identity {}: {}", identity_id_str, e)))?;
+        
+        let mut identity_keys = Vec::new();
+        
+        // Filter keys by purpose if specified
+        for (key_id, key_opt) in keys_result {
+            if let Some(key) = key_opt {
+                // Check if this key matches the requested purposes
+                if let Some(ref purposes) = purposes_opt {
+                    if !purposes.contains(&(key.purpose() as u32)) {
+                        continue;
+                    }
+                }
+                
+                let key_response = IdentityKeyResponse {
+                    key_id: key_id,
+                    key_type: format!("{:?}", key.key_type()),
+                    public_key_data: hex::encode(key.data().as_slice()),
+                    purpose: format!("{:?}", key.purpose()),
+                    security_level: format!("{:?}", key.security_level()),
+                    read_only: key.read_only(),
+                    disabled: key.disabled_at().is_some(),
+                };
+                identity_keys.push(key_response);
+            }
+        }
+        
+        if !identity_keys.is_empty() {
+            responses.push(IdentityContractKeysResponse {
+                identity_id: identity_id_str,
+                keys: identity_keys,
+            });
+        }
+    }
     
     serde_wasm_bindgen::to_value(&responses)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
