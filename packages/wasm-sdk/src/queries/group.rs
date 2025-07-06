@@ -6,7 +6,10 @@ use dash_sdk::platform::{Fetch, FetchMany, Identifier};
 use dash_sdk::dpp::data_contract::group::Group;
 use dash_sdk::dpp::data_contract::GroupContractPosition;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
-use dash_sdk::platform::group_actions::{GroupQuery, GroupInfosQuery};
+use dash_sdk::platform::group_actions::{GroupQuery, GroupInfosQuery, GroupActionsQuery, GroupActionSignersQuery};
+use dash_sdk::dpp::group::group_action::GroupAction;
+use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+use dash_sdk::dpp::data_contract::group::GroupMemberPower;
 use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -251,6 +254,219 @@ struct GroupsDataContractInfo {
 struct GroupContractPositionInfo {
     position: u32,
     group: GroupInfoResponse,
+}
+
+#[wasm_bindgen]
+pub async fn get_group_infos(
+    sdk: &WasmSdk,
+    contract_id: &str,
+    start_at_info: JsValue,
+    count: Option<u32>,
+) -> Result<JsValue, JsError> {
+    // Parse contract ID
+    let contract_id = Identifier::from_string(
+        contract_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Parse start at info if provided
+    let start_group_contract_position = if !start_at_info.is_null() && !start_at_info.is_undefined() {
+        let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
+        match info {
+            Ok(json) => {
+                let position = json["position"].as_u64().ok_or_else(|| JsError::new("Invalid start position"))? as u32;
+                let included = json["included"].as_bool().unwrap_or(false);
+                Some((position as GroupContractPosition, included))
+            }
+            Err(_) => None
+        }
+    } else {
+        None
+    };
+    
+    // Create query
+    let query = GroupInfosQuery {
+        contract_id,
+        start_group_contract_position,
+        limit: count.map(|c| c as u16),
+    };
+    
+    // Fetch groups
+    let groups_result = Group::fetch_many(sdk.as_ref(), query)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch groups: {}", e)))?;
+    
+    // Convert result to response format
+    let mut group_infos = Vec::new();
+    for (position, group_opt) in groups_result {
+        if let Some(group) = group_opt {
+            let members: Vec<serde_json::Value> = group.members()
+                .iter()
+                .map(|(id, power)| {
+                    serde_json::json!({
+                        "memberId": id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                        "power": *power
+                    })
+                })
+                .collect();
+            
+            group_infos.push(serde_json::json!({
+                "groupContractPosition": position,
+                "members": members,
+                "groupRequiredPower": group.required_power()
+            }));
+        }
+    }
+    
+    let response = serde_json::json!({
+        "groupInfos": group_infos
+    });
+    
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+}
+
+#[wasm_bindgen]
+pub async fn get_group_actions(
+    sdk: &WasmSdk,
+    contract_id: &str,
+    group_contract_position: u32,
+    status: &str,
+    start_at_info: JsValue,
+    count: Option<u32>,
+) -> Result<JsValue, JsError> {
+    // Parse contract ID
+    let contract_id = Identifier::from_string(
+        contract_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Parse status
+    let status = match status {
+        "ACTIVE" => GroupActionStatus::ActionActive,
+        "CLOSED" => GroupActionStatus::ActionClosed,
+        _ => return Err(JsError::new(&format!("Invalid status: {}. Must be ACTIVE or CLOSED", status))),
+    };
+    
+    // Parse start action ID if provided
+    let start_at_action_id = if !start_at_info.is_null() && !start_at_info.is_undefined() {
+        let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
+        match info {
+            Ok(json) => {
+                let action_id = json["actionId"].as_str().ok_or_else(|| JsError::new("Invalid action ID"))?;
+                let included = json["included"].as_bool().unwrap_or(false);
+                Some((
+                    Identifier::from_string(
+                        action_id,
+                        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                    )?,
+                    included
+                ))
+            }
+            Err(_) => None
+        }
+    } else {
+        None
+    };
+    
+    // Create query
+    let query = GroupActionsQuery {
+        contract_id,
+        group_contract_position: group_contract_position as GroupContractPosition,
+        status,
+        start_at_action_id,
+        limit: count.map(|c| c as u16),
+    };
+    
+    // Fetch actions
+    let actions_result = GroupAction::fetch_many(sdk.as_ref(), query)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch group actions: {}", e)))?;
+    
+    // Convert result to response format
+    let mut group_actions = Vec::new();
+    for (action_id, action_opt) in actions_result {
+        if let Some(_action) = action_opt {
+            // For now, just return the action ID
+            // The full action structure requires custom serialization
+            group_actions.push(serde_json::json!({
+                "actionId": action_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                // TODO: Serialize the full action event structure
+            }));
+        }
+    }
+    
+    let response = serde_json::json!({
+        "groupActions": group_actions
+    });
+    
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+}
+
+#[wasm_bindgen]
+pub async fn get_group_action_signers(
+    sdk: &WasmSdk,
+    contract_id: &str,
+    group_contract_position: u32,
+    status: &str,
+    action_id: &str,
+) -> Result<JsValue, JsError> {
+    // Parse contract ID
+    let contract_id = Identifier::from_string(
+        contract_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Parse action ID
+    let action_id = Identifier::from_string(
+        action_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Parse status
+    let status = match status {
+        "ACTIVE" => GroupActionStatus::ActionActive,
+        "CLOSED" => GroupActionStatus::ActionClosed,
+        _ => return Err(JsError::new(&format!("Invalid status: {}. Must be ACTIVE or CLOSED", status))),
+    };
+    
+    // Create query
+    let query = GroupActionSignersQuery {
+        contract_id,
+        group_contract_position: group_contract_position as GroupContractPosition,
+        status,
+        action_id,
+    };
+    
+    // Fetch signers
+    let signers_result = GroupMemberPower::fetch_many(sdk.as_ref(), query)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch group action signers: {}", e)))?;
+    
+    // Convert result to response format
+    let mut signers = Vec::new();
+    for (signer_id, power_opt) in signers_result {
+        if let Some(power) = power_opt {
+            signers.push(serde_json::json!({
+                "signerId": signer_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                "power": power
+            }));
+        }
+    }
+    
+    let response = serde_json::json!({
+        "signers": signers
+    });
+    
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]

@@ -530,9 +530,9 @@
       get_vote_polls_by_end_date,
       // Group queries
       get_group_info,
-      get_group_members,
-      get_identity_groups,
-      get_groups_data_contracts
+      get_group_infos,
+      get_group_actions,
+      get_group_action_signers
     } from './pkg/wasm_sdk.js';
     
     // Import all placeholder query functions
@@ -935,7 +935,7 @@
             label: "Get Token Contract Info",
             description: "Get contract information for a token",
             inputs: [
-              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true }
+              { name: "dataContractId", type: "text", label: "Token ID", required: true }
             ]
           },
           getTokenPerpetualDistributionLastClaim: {
@@ -962,36 +962,46 @@
             label: "Get Group Info",
             description: "Get information about a specific group",
             inputs: [
-              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "contractId", type: "text", label: "Contract ID", required: true },
               { name: "groupContractPosition", type: "number", label: "Group Contract Position", required: true }
             ]
           },
-          getGroupMembers: {
-            label: "Get Group Members",
-            description: "Get members of a specific group",
+          getGroupInfos: {
+            label: "Get Group Infos",
+            description: "Get information about multiple groups",
             inputs: [
-              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "contractId", type: "text", label: "Contract ID", required: true },
+              { name: "startAtGroupContractPosition", type: "number", label: "Start at Position", required: false },
+              { name: "startGroupContractPositionIncluded", type: "checkbox", label: "Include Start Position", required: false },
+              { name: "count", type: "number", label: "Count", required: false }
+            ]
+          },
+          getGroupActions: {
+            label: "Get Group Actions",
+            description: "Get actions for a specific group",
+            inputs: [
+              { name: "contractId", type: "text", label: "Contract ID", required: true },
               { name: "groupContractPosition", type: "number", label: "Group Contract Position", required: true },
-              { name: "memberIds", type: "array", label: "Member IDs (optional)", required: false },
-              { name: "startAt", type: "text", label: "Start At (Member ID)", required: false },
-              { name: "limit", type: "number", label: "Limit", required: false }
+              { name: "status", type: "select", label: "Status", required: true, options: [
+                { value: "ACTIVE", label: "Active" },
+                { value: "CLOSED", label: "Closed" }
+              ]},
+              { name: "startActionId", type: "text", label: "Start Action ID", required: false },
+              { name: "startActionIdIncluded", type: "checkbox", label: "Include Start Action", required: false },
+              { name: "count", type: "number", label: "Count", required: false }
             ]
           },
-          getIdentityGroups: {
-            label: "Get Identity Groups",
-            description: "Get groups associated with an identity",
+          getGroupActionSigners: {
+            label: "Get Group Action Signers",
+            description: "Get signers for a specific group action",
             inputs: [
-              { name: "identityId", type: "text", label: "Identity ID", required: true },
-              { name: "memberDataContracts", type: "array", label: "Member Data Contracts", required: false },
-              { name: "ownerDataContracts", type: "array", label: "Owner Data Contracts", required: false },
-              { name: "moderatorDataContracts", type: "array", label: "Moderator Data Contracts", required: false }
-            ]
-          },
-          getGroupsDataContracts: {
-            label: "Get Groups Data Contracts",
-            description: "Get data contracts for multiple groups",
-            inputs: [
-              { name: "dataContractIds", type: "array", label: "Data Contract IDs", required: true }
+              { name: "contractId", type: "text", label: "Contract ID", required: true },
+              { name: "groupContractPosition", type: "number", label: "Group Contract Position", required: true },
+              { name: "status", type: "select", label: "Status", required: true, options: [
+                { value: "ACTIVE", label: "Active" },
+                { value: "CLOSED", label: "Closed" }
+              ]},
+              { name: "actionId", type: "text", label: "Action ID", required: true }
             ]
           }
         }
@@ -1315,7 +1325,7 @@
         return `<span class="credits-value" title="${dashFormatted} DASH">${credits}</span>`;
       }
       
-      function processValue(value, key) {
+      function processValue(value, key, indent = 0) {
         // Check if this is a credits field
         const creditsFields = ['balance', 'totalCreditsInPlatform', 'credits', 'amount', 'totalCredits'];
         const isCreditsField = creditsFields.some(field => key.toLowerCase().includes(field.toLowerCase()));
@@ -1323,32 +1333,40 @@
         if (typeof value === 'string' && isCreditsField && /^\d+$/.test(value)) {
           return formatCreditsValue(value);
         } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          return formatObject(value);
+          return formatObject(value, indent);
         } else if (Array.isArray(value)) {
-          return formatArray(value);
+          return formatArray(value, indent);
         } else {
           return escapeHtml(JSON.stringify(value));
         }
       }
       
-      function formatObject(obj) {
+      function formatObject(obj, indent = 0) {
+        const indentStr = '  '.repeat(indent);
+        const innerIndentStr = '  '.repeat(indent + 1);
         const entries = Object.entries(obj).map(([key, value]) => {
-          return `<span class="json-key">"${escapeHtml(key)}"</span>: ${processValue(value, key)}`;
+          const formattedValue = processValue(value, key, indent + 1);
+          return `${innerIndentStr}<span class="json-key">"${escapeHtml(key)}"</span>: ${formattedValue}`;
         });
         return `{
-  ${entries.join(',\n  ')}
-}`;
+${entries.join(',\n')}
+${indentStr}}`;
       }
       
-      function formatArray(arr) {
+      function formatArray(arr, indent = 0) {
+        const indentStr = '  '.repeat(indent);
+        const innerIndentStr = '  '.repeat(indent + 1);
         const items = arr.map((item, index) => {
-          const indent = '  ';
-          const formatted = processValue(item, '');
-          return formatted.split('\n').map((line, i) => i === 0 ? line : indent + line).join('\n');
+          const formatted = processValue(item, '', indent + 1);
+          // If the formatted value is multiline, we need to handle it differently
+          if (formatted.includes('\n')) {
+            return `${innerIndentStr}${formatted}`;
+          }
+          return `${innerIndentStr}${formatted}`;
         });
         return `[
-  ${items.join(',\n  ')}
-]`;
+${items.join(',\n')}
+${indentStr}]`;
       }
       
       function escapeHtml(text) {
@@ -2006,29 +2024,48 @@
         }
         // Group queries
         else if (queryType === 'getGroupInfo') {
-          result = await get_group_info(sdk, values.dataContractId, values.groupContractPosition);
+          result = await get_group_info(sdk, values.contractId, values.groupContractPosition);
           // Result is already a JS object from serde_wasm_bindgen
-        } else if (queryType === 'getGroupMembers') {
-          result = await get_group_members(
+        } else if (queryType === 'getGroupInfos') {
+          let startAtInfo = null;
+          if (values.startAtGroupContractPosition !== undefined) {
+            startAtInfo = {
+              position: values.startAtGroupContractPosition,
+              included: values.startGroupContractPositionIncluded || false
+            };
+          }
+          result = await get_group_infos(
             sdk,
-            values.dataContractId,
+            values.contractId,
+            startAtInfo,
+            values.count
+          );
+          // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getGroupActions') {
+          let startAtInfo = null;
+          if (values.startActionId) {
+            startAtInfo = {
+              actionId: values.startActionId,
+              included: values.startActionIdIncluded || false
+            };
+          }
+          result = await get_group_actions(
+            sdk,
+            values.contractId,
             values.groupContractPosition,
-            values.memberIds,
-            values.startAt,
-            values.limit
+            values.status,
+            startAtInfo,
+            values.count
           );
           // Result is already a JS object from serde_wasm_bindgen
-        } else if (queryType === 'getIdentityGroups') {
-          result = await get_identity_groups(
+        } else if (queryType === 'getGroupActionSigners') {
+          result = await get_group_action_signers(
             sdk,
-            values.identityId,
-            values.memberDataContracts,
-            values.ownerDataContracts,
-            values.moderatorDataContracts
+            values.contractId,
+            values.groupContractPosition,
+            values.status,
+            values.actionId
           );
-          // Result is already a JS object from serde_wasm_bindgen
-        } else if (queryType === 'getGroupsDataContracts') {
-          result = await get_groups_data_contracts(sdk, values.dataContractIds);
           // Result is already a JS object from serde_wasm_bindgen
         } else {
           // Placeholder for unimplemented queries
