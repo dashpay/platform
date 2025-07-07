@@ -47,6 +47,9 @@ zeroize = { version = "1.8", features = ["derive"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }

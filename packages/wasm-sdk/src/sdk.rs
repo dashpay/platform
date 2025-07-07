@@ -51,6 +51,13 @@ impl WasmSdk {
     }
 }
 
+impl WasmSdk {
+    /// Clone the inner Sdk (not exposed to WASM)
+    pub(crate) fn inner_clone(&self) -> Sdk {
+        self.0.clone()
+    }
+}
+
 #[wasm_bindgen]
 pub struct WasmSdkBuilder(SdkBuilder);
 
@@ -600,9 +607,9 @@ impl WasmSdkBuilder {
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
+pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
-static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
+pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen]

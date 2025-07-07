@@ -96,6 +96,26 @@
       border-radius: 8px;
       margin-bottom: 15px;
     }
+    
+    .input-group {
+      margin-bottom: 15px;
+    }
+    
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .input-group input[type="text"],
+    .input-group input[type="password"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
 
     .query-inputs h4 {
       margin: 0 0 15px 0;
@@ -416,7 +436,7 @@
     <div class="sidebar">
       <div class="network-toggle">
         <label>Network:</label>
-        <input type="radio" id="mainnet" name="network" value="mainnet" checked>
+        <input type="radio" id="mainnet" name="network" value="mainnet">
         <label for="mainnet">Mainnet</label>
         <input type="radio" id="testnet" name="network" value="testnet">
         <label for="testnet">Testnet</label>
@@ -430,6 +450,11 @@
       
       <div class="query-container">
         <div class="query-selector">
+          <select id="operationType">
+            <option value="queries">Queries</option>
+            <option value="transitions">State Transitions</option>
+          </select>
+          
           <select id="queryCategory">
             <option value="">Select Query Category</option>
             <option value="identity">Identity Queries</option>
@@ -446,6 +471,18 @@
           <select id="queryType" style="display: none;">
             <option value="">Select Query Type</option>
           </select>
+        </div>
+        
+        <div id="authenticationInputs" class="query-inputs" style="display: none;">
+          <h4>Authentication</h4>
+          <div class="input-group">
+            <label for="identityId">Identity ID</label>
+            <input type="text" id="identityId" placeholder="Enter identity ID">
+          </div>
+          <div class="input-group">
+            <label for="privateKey">Private Key (WIF)</label>
+            <input type="password" id="privateKey" placeholder="Enter private key in WIF format">
+          </div>
         </div>
         
         <div id="queryDescription" class="query-description" style="display: none;"></div>
@@ -541,6 +578,232 @@
     let sdk = null;
     let currentResult = null;
     let initRequestCounter = 0;
+    
+    // State Transition definitions
+    const stateTransitionDefinitions = {
+      identity: {
+        label: "Identity Transitions",
+        transitions: {
+          identityCreate: {
+            label: "Identity Create",
+            description: "Create a new identity with initial credits",
+            inputs: [
+              { name: "publicKeys", type: "keyArray", label: "Public Keys", required: true },
+              { name: "assetLockProof", type: "assetLockProof", label: "Asset Lock Proof", required: true }
+            ]
+          },
+          identityTopUp: {
+            label: "Identity Top Up",
+            description: "Add credits to an existing identity",
+            inputs: [
+              { name: "assetLockProof", type: "assetLockProof", label: "Asset Lock Proof", required: true }
+            ]
+          },
+          identityUpdate: {
+            label: "Identity Update",
+            description: "Update identity keys (add or disable)",
+            inputs: [
+              { name: "revision", type: "number", label: "Revision", required: true },
+              { name: "addPublicKeys", type: "keyArray", label: "Keys to Add", required: false },
+              { name: "disablePublicKeys", type: "array", label: "Key IDs to Disable", required: false }
+            ]
+          },
+          identityCreditTransfer: {
+            label: "Identity Credit Transfer",
+            description: "Transfer credits between identities",
+            inputs: [
+              { name: "recipientId", type: "text", label: "Recipient Identity ID", required: true },
+              { name: "amount", type: "number", label: "Amount (credits)", required: true }
+            ]
+          },
+          identityCreditWithdrawal: {
+            label: "Identity Credit Withdrawal",
+            description: "Withdraw credits from identity to Core chain",
+            inputs: [
+              { name: "amount", type: "number", label: "Amount (credits)", required: true },
+              { name: "outputScript", type: "text", label: "Core Output Script (hex)", required: true },
+              { name: "coreFeePerByte", type: "number", label: "Core Fee Per Byte", required: true },
+              { name: "pooling", type: "select", label: "Pooling", required: true,
+                options: [
+                  { value: "never", label: "Never" },
+                  { value: "ifAvailable", label: "If Available" },
+                  { value: "preferPooling", label: "Prefer Pooling" }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      dataContract: {
+        label: "Data Contract Transitions",
+        transitions: {
+          dataContractCreate: {
+            label: "Data Contract Create",
+            description: "Create a new data contract",
+            inputs: [
+              { name: "dataContract", type: "json", label: "Data Contract JSON", required: true }
+            ]
+          },
+          dataContractUpdate: {
+            label: "Data Contract Update",
+            description: "Update an existing data contract",
+            inputs: [
+              { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "dataContract", type: "json", label: "Updated Data Contract JSON", required: true }
+            ]
+          }
+        }
+      },
+      document: {
+        label: "Document Transitions",
+        transitions: {
+          documentCreate: {
+            label: "Document Create",
+            description: "Create a new document",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "fetchSchema", type: "button", label: "Fetch Schema", action: "fetchDocumentSchema" },
+              { name: "documentFields", type: "dynamic", label: "Document Fields" }
+            ]
+          },
+          documentReplace: {
+            label: "Document Replace",
+            description: "Replace an existing document",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "documentId", type: "text", label: "Document ID", required: true },
+              { name: "revision", type: "number", label: "Revision", required: true },
+              { name: "data", type: "json", label: "New Document Data (JSON)", required: true }
+            ]
+          },
+          documentDelete: {
+            label: "Document Delete",
+            description: "Delete an existing document",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "documentId", type: "text", label: "Document ID", required: true }
+            ]
+          },
+          documentTransfer: {
+            label: "Document Transfer",
+            description: "Transfer document ownership",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "documentId", type: "text", label: "Document ID", required: true },
+              { name: "recipientOwnerId", type: "text", label: "Recipient Identity ID", required: true }
+            ]
+          },
+          documentPurchase: {
+            label: "Document Purchase",
+            description: "Purchase a document",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "documentId", type: "text", label: "Document ID", required: true },
+              { name: "price", type: "number", label: "Price (credits)", required: true }
+            ]
+          },
+          documentUpdatePrice: {
+            label: "Document Update Price",
+            description: "Update document price",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "documentType", type: "text", label: "Document Type", required: true },
+              { name: "documentId", type: "text", label: "Document ID", required: true },
+              { name: "price", type: "number", label: "New Price (credits)", required: true }
+            ]
+          }
+        }
+      },
+      token: {
+        label: "Token Transitions",
+        transitions: {
+          tokenBurn: {
+            label: "Token Burn",
+            description: "Burn tokens",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
+              { name: "amount", type: "text", label: "Amount to Burn", required: true },
+              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
+              { name: "publicNote", type: "text", label: "Public Note", required: false }
+            ]
+          },
+          tokenMint: {
+            label: "Token Mint",
+            description: "Mint new tokens",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
+              { name: "amount", type: "text", label: "Amount to Mint", required: true },
+              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
+              { name: "issuedToIdentityId", type: "text", label: "Issue To Identity ID", required: false },
+              { name: "publicNote", type: "text", label: "Public Note", required: false }
+            ]
+          },
+          tokenTransfer: {
+            label: "Token Transfer",
+            description: "Transfer tokens to another identity",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
+              { name: "amount", type: "number", label: "Amount to Transfer", required: true },
+              { name: "recipientId", type: "text", label: "Recipient Identity ID", required: true }
+            ]
+          },
+          tokenFreeze: {
+            label: "Token Freeze",
+            description: "Freeze tokens for an identity",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
+              { name: "identityId", type: "text", label: "Identity ID to Freeze", required: true }
+            ]
+          },
+          tokenUnfreeze: {
+            label: "Token Unfreeze",
+            description: "Unfreeze tokens for an identity",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
+              { name: "identityId", type: "text", label: "Identity ID to Unfreeze", required: true }
+            ]
+          },
+          tokenDestroyFrozen: {
+            label: "Token Destroy Frozen Funds",
+            description: "Destroy frozen tokens",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
+              { name: "identityId", type: "text", label: "Identity ID", required: true }
+            ]
+          }
+        }
+      },
+      voting: {
+        label: "Voting Transitions",
+        transitions: {
+          masternodeVote: {
+            label: "Masternode Vote",
+            description: "Cast a vote as a masternode",
+            inputs: [
+              { name: "proTxHash", type: "text", label: "ProTx Hash", required: true },
+              { name: "voteType", type: "select", label: "Vote Type", required: true,
+                options: [
+                  { value: "dpnsName", label: "DPNS Name Vote" },
+                  { value: "contestedResource", label: "Contested Resource Vote" }
+                ]
+              },
+              { name: "voteData", type: "json", label: "Vote Data", required: true }
+            ]
+          }
+        }
+      }
+    };
 
     // Query definitions
     const queryDefinitions = {
@@ -673,7 +936,7 @@
             description: "Get token information for multiple identities",
             inputs: [
               { name: "identityIds", type: "array", label: "Identity IDs", required: true },
-              { name: "tokenId", type: "text", label: "Token ID", required: true },
+              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
               { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false }
             ]
           }
@@ -1557,6 +1820,7 @@ ${indentStr}]`;
         textarea.style.border = '1px solid #ddd';
         textarea.style.borderRadius = '4px';
         textarea.style.fontFamily = 'monospace';
+        textarea.setAttribute('data-json', 'true'); // Mark as JSON textarea
         inputGroup.appendChild(textarea);
       } else if (inputDef.type === 'button') {
         const button = document.createElement('button');
@@ -1659,14 +1923,21 @@ ${indentStr}]`;
         }
       });
       
-      // JSON inputs
-      dynamicInputs.querySelectorAll('textarea').forEach(textarea => {
+      // JSON inputs (only for textareas explicitly marked as JSON)
+      dynamicInputs.querySelectorAll('textarea[data-json="true"]').forEach(textarea => {
         if (textarea.name && textarea.value) {
           try {
             values[textarea.name] = JSON.parse(textarea.value);
           } catch (e) {
             throw new Error(`Invalid JSON in ${textarea.name}: ${e.message}`);
           }
+        }
+      });
+      
+      // Regular text textareas (not JSON)
+      dynamicInputs.querySelectorAll('textarea:not([data-json="true"])').forEach(textarea => {
+        if (textarea.name && textarea.value) {
+          values[textarea.name] = textarea.value;
         }
       });
       
@@ -2092,17 +2363,157 @@ ${indentStr}]`;
         button.textContent = originalButtonText;
       }
     }
+    
+    async function executeStateTransition(category, transitionType) {
+      const button = document.getElementById('executeQuery');
+      const originalButtonText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Processing...';
+      
+      const preloader = document.getElementById('preloader');
+      preloader.style.display = 'block';
+      updateStatus(`Executing ${transitionType} state transition...`, 'loading');
+      
+      try {
+        // Check if this transition is disabled
+        if (transitionType === 'identityCreate' || transitionType === 'identityTopUp') {
+          throw new Error('This transition requires an Asset Lock Proof and is not available in the web interface');
+        }
+        
+        // Get authentication values
+        const identityId = document.getElementById('identityId').value.trim();
+        const privateKey = document.getElementById('privateKey').value.trim();
+        
+        if (!identityId || !privateKey) {
+          throw new Error('Identity ID and Private Key are required for state transitions');
+        }
+        
+        // Get input values
+        const values = getInputValues();
+        let result;
+        
+        // Execute the state transition based on type
+        if (transitionType === 'tokenMint') {
+          result = await sdk.tokenMint(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.amount,
+            identityId,
+            privateKey,
+            Number(values.keyId),
+            values.issuedToIdentityId || null,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatus('Token mint executed successfully', 'success');
+        } else if (transitionType === 'tokenBurn') {
+          result = await sdk.tokenBurn(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.amount,
+            identityId,
+            privateKey,
+            Number(values.keyId),
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatus('Token burn executed successfully', 'success');
+        } else if (transitionType === 'documentCreate') {
+          // Collect document fields from dynamic inputs
+          const documentData = collectDocumentFields();
+          
+          // Generate entropy (32 bytes)
+          const entropy = new Uint8Array(32);
+          crypto.getRandomValues(entropy);
+          const entropyHex = Array.from(entropy)
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+          
+          // Create the document using the SDK
+          result = await sdk.documentCreate(
+            values.contractId,
+            values.documentType,
+            identityId,
+            JSON.stringify(documentData),
+            entropyHex,
+            privateKey
+          );
+          
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatus('Document created successfully', 'success');
+        } else {
+          // For other transitions not yet implemented
+          const transitionData = {
+            type: transitionType,
+            category: category,
+            identityId: identityId,
+            privateKey: '***hidden***',
+            inputs: values
+          };
+          
+          displayResult(JSON.stringify(transitionData, null, 2));
+          updateStatus(`${transitionType} state transition not yet implemented in WASM SDK`, 'warning');
+        }
+        
+      } catch (error) {
+        console.error(`Error executing ${transitionType}:`, error);
+        displayResult(`Error executing state transition: ${error.message || error}`, true);
+        updateStatus(`Error: ${error.message || error}`, 'error');
+      } finally {
+        preloader.style.display = 'none';
+        button.disabled = false;
+        button.textContent = originalButtonText;
+      }
+    }
 
     // Event handlers
+    document.getElementById('operationType').addEventListener('change', (e) => {
+      const operationType = e.target.value;
+      const categorySelect = document.getElementById('queryCategory');
+      const authInputs = document.getElementById('authenticationInputs');
+      
+      // Clear category
+      categorySelect.innerHTML = '<option value="">Select Category</option>';
+      
+      // Show/hide auth inputs
+      authInputs.style.display = operationType === 'transitions' ? 'block' : 'none';
+      
+      if (operationType === 'queries') {
+        // Populate query categories
+        Object.entries(queryDefinitions).forEach(([key, category]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = category.label;
+          categorySelect.appendChild(option);
+        });
+      } else if (operationType === 'transitions') {
+        // Populate transition categories
+        Object.entries(stateTransitionDefinitions).forEach(([key, category]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = category.label;
+          categorySelect.appendChild(option);
+        });
+      }
+      
+      // Reset the rest
+      document.getElementById('queryType').innerHTML = '<option value="">Select Type</option>';
+      document.getElementById('queryType').style.display = 'none';
+      document.getElementById('queryInputs').style.display = 'none';
+      document.getElementById('executeQuery').style.display = 'none';
+      document.getElementById('queryDescription').style.display = 'none';
+    });
+    
     document.getElementById('queryCategory').addEventListener('change', (e) => {
       const category = e.target.value;
+      const operationType = document.getElementById('operationType').value;
       const queryTypeSelect = document.getElementById('queryType');
       const queryInputs = document.getElementById('queryInputs');
       const executeButton = document.getElementById('executeQuery');
       const queryDescription = document.getElementById('queryDescription');
       
       // Clear query type
-      queryTypeSelect.innerHTML = '<option value="">Select Query Type</option>';
+      queryTypeSelect.innerHTML = '<option value="">Select Type</option>';
       queryTypeSelect.style.display = category ? 'block' : 'none';
       
       // Hide inputs and button
@@ -2110,12 +2521,28 @@ ${indentStr}]`;
       executeButton.style.display = 'none';
       queryDescription.style.display = 'none';
       
-      if (category && queryDefinitions[category]) {
+      if (operationType === 'queries' && category && queryDefinitions[category]) {
         // Populate query types
         Object.entries(queryDefinitions[category].queries).forEach(([key, query]) => {
           const option = document.createElement('option');
           option.value = key;
           option.textContent = query.label;
+          queryTypeSelect.appendChild(option);
+        });
+      } else if (operationType === 'transitions' && category && stateTransitionDefinitions[category]) {
+        // Populate transition types
+        Object.entries(stateTransitionDefinitions[category].transitions).forEach(([key, transition]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = transition.label;
+          
+          // Disable transitions that require asset lock proofs
+          if (key === 'identityCreate' || key === 'identityTopUp') {
+            option.disabled = true;
+            option.textContent += ' (Requires Asset Lock Proof)';
+            option.style.color = '#999';
+          }
+          
           queryTypeSelect.appendChild(option);
         });
       }
@@ -2124,6 +2551,7 @@ ${indentStr}]`;
     document.getElementById('queryType').addEventListener('change', (e) => {
       const queryType = e.target.value;
       const category = document.getElementById('queryCategory').value;
+      const operationType = document.getElementById('operationType').value;
       const queryInputs = document.getElementById('queryInputs');
       const dynamicInputs = document.getElementById('dynamicInputs');
       const executeButton = document.getElementById('executeQuery');
@@ -2133,20 +2561,26 @@ ${indentStr}]`;
       // Clear existing inputs
       dynamicInputs.innerHTML = '';
       
-      if (queryType && category && queryDefinitions[category].queries[queryType]) {
-        const query = queryDefinitions[category].queries[queryType];
-        queryTitle.textContent = query.label;
+      let definition;
+      if (operationType === 'queries' && queryType && category && queryDefinitions[category]?.queries[queryType]) {
+        definition = queryDefinitions[category].queries[queryType];
+      } else if (operationType === 'transitions' && queryType && category && stateTransitionDefinitions[category]?.transitions[queryType]) {
+        definition = stateTransitionDefinitions[category].transitions[queryType];
+      }
+      
+      if (definition) {
+        queryTitle.textContent = definition.label;
         
         // Show description
-        if (query.description) {
-          queryDescription.textContent = query.description;
+        if (definition.description) {
+          queryDescription.textContent = definition.description;
           queryDescription.style.display = 'block';
         } else {
           queryDescription.style.display = 'none';
         }
         
         // Create inputs
-        query.inputs.forEach(inputDef => {
+        definition.inputs.forEach(inputDef => {
           createInput(inputDef, dynamicInputs);
         });
         
@@ -2169,6 +2603,9 @@ ${indentStr}]`;
         
         queryInputs.style.display = 'block';
         executeButton.style.display = 'block';
+        
+        // Update button text based on operation type
+        executeButton.textContent = operationType === 'transitions' ? 'Execute' : 'Execute Query';
       } else {
         queryInputs.style.display = 'none';
         executeButton.style.display = 'none';
@@ -2177,9 +2614,15 @@ ${indentStr}]`;
     });
 
     document.getElementById('executeQuery').addEventListener('click', async () => {
+      const operationType = document.getElementById('operationType').value;
       const category = document.getElementById('queryCategory').value;
       const queryType = document.getElementById('queryType').value;
-      await executeQuery(category, queryType);
+      
+      if (operationType === 'queries') {
+        await executeQuery(category, queryType);
+      } else if (operationType === 'transitions') {
+        await executeStateTransition(category, queryType);
+      }
     });
 
     // Network toggle handlers
@@ -2191,6 +2634,9 @@ ${indentStr}]`;
         indicator.textContent = network.toUpperCase();
         indicator.className = `network-indicator ${network}`;
         
+        // Save network preference to localStorage
+        localStorage.setItem('wasm-sdk-network', network);
+        
         clearResults();
         await initializeSdk(network);
       });
@@ -2198,13 +2644,264 @@ ${indentStr}]`;
 
     // Trusted mode is always on, no need for event listener
 
+    // Fetch document schema and generate dynamic fields
+    window.fetchDocumentSchema = async function() {
+      const contractId = document.querySelector('input[name="contractId"]')?.value;
+      const documentType = document.querySelector('input[name="documentType"]')?.value;
+      
+      if (!contractId || !documentType) {
+        updateStatus('Please enter both Data Contract ID and Document Type', 'error');
+        return;
+      }
+      
+      try {
+        updateStatus('Fetching data contract...', 'loading');
+        
+        // Fetch the data contract
+        const contract = await data_contract_fetch(sdk, contractId);
+        if (!contract) {
+          updateStatus('Data contract not found', 'error');
+          return;
+        }
+        
+        // Get the document schema
+        const contractJson = contract.toJSON();
+        const documentSchema = contractJson.documentSchemas?.[documentType];
+        
+        if (!documentSchema) {
+          updateStatus(`Document type '${documentType}' not found in contract`, 'error');
+          return;
+        }
+        
+        // Generate dynamic fields
+        generateDocumentFields(documentSchema);
+        updateStatus(`Schema loaded for ${documentType}`, 'success');
+        
+      } catch (error) {
+        console.error('Error fetching schema:', error);
+        updateStatus(`Error: ${error.message || error}`, 'error');
+      }
+    };
+    
+    function generateDocumentFields(schema) {
+      const container = document.getElementById('dynamic_documentFields');
+      if (!container) return;
+      
+      // Clear existing fields
+      container.innerHTML = '';
+      
+      // Show the container
+      container.parentElement.style.display = 'block';
+      
+      // Add header
+      const header = document.createElement('h4');
+      header.textContent = 'Document Fields';
+      header.style.marginBottom = '10px';
+      container.appendChild(header);
+      
+      // Generate fields based on schema properties
+      const properties = schema.properties || {};
+      const required = schema.required || [];
+      
+      Object.entries(properties).forEach(([fieldName, fieldSchema]) => {
+        const fieldGroup = document.createElement('div');
+        fieldGroup.className = 'input-group';
+        fieldGroup.style.marginBottom = '10px';
+        
+        const label = document.createElement('label');
+        const isRequired = required.includes(fieldName);
+        label.textContent = `${fieldName}${isRequired ? ' *' : ' (optional)'}`;
+        label.style.display = 'block';
+        label.style.marginBottom = '5px';
+        label.style.fontWeight = isRequired ? 'bold' : 'normal';
+        fieldGroup.appendChild(label);
+        
+        // Create appropriate input based on field type
+        const input = createInputForField(fieldName, fieldSchema);
+        fieldGroup.appendChild(input);
+        
+        // Add description if available
+        if (fieldSchema.description) {
+          const desc = document.createElement('small');
+          desc.textContent = fieldSchema.description;
+          desc.style.display = 'block';
+          desc.style.color = '#666';
+          desc.style.marginTop = '2px';
+          fieldGroup.appendChild(desc);
+        }
+        
+        container.appendChild(fieldGroup);
+      });
+    }
+    
+    function createInputForField(fieldName, fieldSchema) {
+      const fieldType = fieldSchema.type;
+      const format = fieldSchema.format;
+      
+      let input;
+      
+      if (fieldType === 'string') {
+        if (format === 'date-time') {
+          input = document.createElement('input');
+          input.type = 'datetime-local';
+        } else if (fieldSchema.maxLength && fieldSchema.maxLength > 100) {
+          input = document.createElement('textarea');
+          input.rows = 4;
+          input.style.width = '100%';
+        } else {
+          input = document.createElement('input');
+          input.type = 'text';
+        }
+        
+        if (fieldSchema.maxLength) {
+          input.maxLength = fieldSchema.maxLength;
+        }
+        if (fieldSchema.minLength) {
+          input.minLength = fieldSchema.minLength;
+        }
+        if (fieldSchema.pattern) {
+          input.pattern = fieldSchema.pattern;
+        }
+      } else if (fieldType === 'integer' || fieldType === 'number') {
+        input = document.createElement('input');
+        input.type = 'number';
+        
+        if (fieldSchema.minimum !== undefined) {
+          input.min = fieldSchema.minimum;
+        }
+        if (fieldSchema.maximum !== undefined) {
+          input.max = fieldSchema.maximum;
+        }
+        if (fieldType === 'integer') {
+          input.step = '1';
+        }
+      } else if (fieldType === 'boolean') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+      } else if (fieldType === 'array') {
+        // Check if it's a byte array (identifier)
+        if (fieldSchema.byteArray === true) {
+          input = document.createElement('input');
+          input.type = 'text';
+          input.placeholder = fieldSchema.description || 'Enter identifier (base58)';
+        } else {
+          input = document.createElement('textarea');
+          input.placeholder = fieldSchema.description || 'Enter array values';
+          input.rows = 3;
+          input.style.width = '100%';
+        }
+      } else if (fieldType === 'object') {
+        input = document.createElement('textarea');
+        input.placeholder = fieldSchema.description || 'Enter object data';
+        input.rows = 4;
+        input.style.width = '100%';
+      } else {
+        // Default to text input
+        input = document.createElement('input');
+        input.type = 'text';
+      }
+      
+      input.name = `doc_field_${fieldName}`;
+      input.dataset.fieldName = fieldName;
+      input.dataset.fieldType = fieldType;
+      if (fieldSchema.byteArray === true) {
+        input.dataset.byteArray = 'true';
+      }
+      
+      if (fieldSchema.default !== undefined) {
+        if (fieldType === 'boolean') {
+          input.checked = fieldSchema.default;
+        } else {
+          input.value = typeof fieldSchema.default === 'object' 
+            ? JSON.stringify(fieldSchema.default) 
+            : fieldSchema.default;
+        }
+      }
+      
+      return input;
+    }
+    
+    // Collect document fields for submission
+    function collectDocumentFields() {
+      const container = document.getElementById('dynamic_documentFields');
+      if (!container) return {};
+      
+      const fields = {};
+      const inputs = container.querySelectorAll('input, textarea');
+      
+      inputs.forEach(input => {
+        const fieldName = input.dataset.fieldName;
+        const fieldType = input.dataset.fieldType;
+        
+        if (!fieldName) return;
+        
+        let value;
+        
+        if (input.type === 'checkbox') {
+          value = input.checked;
+        } else if (fieldType === 'integer' || fieldType === 'number') {
+          value = input.value ? parseFloat(input.value) : undefined;
+          if (fieldType === 'integer' && value !== undefined) {
+            value = Math.floor(value);
+          }
+        } else if (fieldType === 'array') {
+          // Check if it's a byte array (identifier)
+          if (input.dataset.byteArray === 'true') {
+            // For byte arrays, we need to convert the base58 string to bytes
+            // For now, just pass the string - the SDK will handle conversion
+            value = input.value || undefined;
+          } else {
+            try {
+              value = input.value ? JSON.parse(input.value) : undefined;
+            } catch (e) {
+              console.error(`Invalid JSON for field ${fieldName}:`, e);
+              value = undefined;
+            }
+          }
+        } else if (fieldType === 'object') {
+          try {
+            value = input.value ? JSON.parse(input.value) : undefined;
+          } catch (e) {
+            console.error(`Invalid JSON for field ${fieldName}:`, e);
+            value = undefined;
+          }
+        } else if (input.type === 'datetime-local' && input.value) {
+          // Convert to Unix timestamp in milliseconds
+          value = new Date(input.value).getTime();
+        } else {
+          value = input.value || undefined;
+        }
+        
+        if (value !== undefined) {
+          fields[fieldName] = value;
+        }
+      });
+      
+      return fields;
+    }
+
     // Initialize
     async function run() {
       try {
         updateStatus('Loading WASM module...', 'loading');
         await init();
         updateStatus('WASM module loaded, initializing SDK...', 'loading');
-        await initializeSdk('mainnet');
+        
+        // Load saved network preference or default to mainnet
+        const savedNetwork = localStorage.getItem('wasm-sdk-network') || 'mainnet';
+        
+        // Update the radio button to match saved preference
+        const networkRadio = document.getElementById(savedNetwork);
+        if (networkRadio) {
+          networkRadio.checked = true;
+          
+          // Update the network indicator
+          const indicator = document.getElementById('networkIndicator');
+          indicator.textContent = savedNetwork.toUpperCase();
+          indicator.className = `network-indicator ${savedNetwork}`;
+        }
+        
+        await initializeSdk(savedNetwork);
       } catch (error) {
         console.error('Failed to initialize WASM:', error);
         updateStatus(`Failed to load WASM module: ${error.message || error}`, 'error');
@@ -2212,6 +2909,9 @@ ${indentStr}]`;
     }
 
     run();
+    
+    // Initialize with queries selected
+    document.getElementById('operationType').dispatchEvent(new Event('change'));
   </script>
 </body>
 
