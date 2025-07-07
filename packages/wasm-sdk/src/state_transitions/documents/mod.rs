@@ -10,7 +10,7 @@ use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use dash_sdk::dpp::platform_value::{Identifier, BinaryData, string_encoding::Encoding, Value as PlatformValue};
+use dash_sdk::dpp::platform_value::{Identifier, BinaryData, string_encoding::Encoding, Value as PlatformValue, Value};
 use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -28,6 +28,7 @@ use serde_json;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use web_sys;
+use js_sys;
 
 /// A simple signer for WASM that uses a single private key
 struct WasmSigner {
@@ -292,43 +293,176 @@ impl WasmSdk {
                 
                 if let Some((doc_id, maybe_doc)) = documents.into_iter().next() {
                     if let Some(doc) = maybe_doc {
-                        to_value(&serde_json::json!({
-                            "type": "DocumentCreated",
-                            "documentId": doc_id.to_string(Encoding::Base58),
-                            "document": {
-                                "id": doc.id().to_string(Encoding::Base58),
-                                "ownerId": doc.owner_id().to_string(Encoding::Base58),
-                                "dataContractId": data_contract_id,
-                                "documentType": document_type,
-                                "revision": doc.revision(),
-                                "createdAt": doc.created_at(),
-                                "updatedAt": doc.updated_at(),
+                        // Create JsValue directly instead of using serde_wasm_bindgen
+                        let js_result = js_sys::Object::new();
+                        
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("type"),
+                            &JsValue::from_str("DocumentCreated"),
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("documentId"),
+                            &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
+                        ).unwrap();
+                        
+                        // Create document object
+                        let js_document = js_sys::Object::new();
+                        
+                        js_sys::Reflect::set(
+                            &js_document,
+                            &JsValue::from_str("id"),
+                            &JsValue::from_str(&doc.id().to_string(Encoding::Base58)),
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_document,
+                            &JsValue::from_str("ownerId"),
+                            &JsValue::from_str(&doc.owner_id().to_string(Encoding::Base58)),
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_document,
+                            &JsValue::from_str("dataContractId"),
+                            &JsValue::from_str(&data_contract_id),
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_document,
+                            &JsValue::from_str("documentType"),
+                            &JsValue::from_str(&document_type),
+                        ).unwrap();
+                        
+                        if let Some(revision) = doc.revision() {
+                            js_sys::Reflect::set(
+                                &js_document,
+                                &JsValue::from_str("revision"),
+                                &JsValue::from_f64(revision as f64),
+                            ).unwrap();
+                        }
+                        
+                        if let Some(created_at) = doc.created_at() {
+                            js_sys::Reflect::set(
+                                &js_document,
+                                &JsValue::from_str("createdAt"),
+                                &JsValue::from_f64(created_at as f64),
+                            ).unwrap();
+                        }
+                        
+                        if let Some(updated_at) = doc.updated_at() {
+                            js_sys::Reflect::set(
+                                &js_document,
+                                &JsValue::from_str("updatedAt"),
+                                &JsValue::from_f64(updated_at as f64),
+                            ).unwrap();
+                        }
+                        
+                        // Add document properties in a "data" field (like DocumentResponse does)
+                        let data_obj = js_sys::Object::new();
+                        let properties = doc.properties();
+                        
+                        for (key, value) in properties {
+                            // Convert platform Value to JSON value first, then to JsValue
+                            if let Ok(json_value) = serde_json::to_value(value) {
+                                if let Ok(js_value) = serde_wasm_bindgen::to_value(&json_value) {
+                                    js_sys::Reflect::set(
+                                        &data_obj,
+                                        &JsValue::from_str(key),
+                                        &js_value,
+                                    ).unwrap();
+                                }
                             }
-                        })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                        }
+                        
+                        js_sys::Reflect::set(
+                            &js_document,
+                            &JsValue::from_str("data"),
+                            &data_obj,
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("document"),
+                            &js_document,
+                        ).unwrap();
+                        
+                        web_sys::console::log_1(&JsValue::from_str("Document created successfully, returning JS object"));
+                        
+                        Ok(js_result.into())
                     } else {
                         // Document was created but not included in response (this is normal)
-                        to_value(&serde_json::json!({
-                            "type": "DocumentCreated",
-                            "documentId": doc_id.to_string(Encoding::Base58),
-                            "message": "Document created successfully"
-                        })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                        let js_result = js_sys::Object::new();
+                        
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("type"),
+                            &JsValue::from_str("DocumentCreated"),
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("documentId"),
+                            &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
+                        ).unwrap();
+                        
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("message"),
+                            &JsValue::from_str("Document created successfully"),
+                        ).unwrap();
+                        
+                        Ok(js_result.into())
                     }
                 } else {
                     // No documents in result, but transition was successful
-                    to_value(&serde_json::json!({
-                        "type": "DocumentCreated",
-                        "documentId": document.id().to_string(Encoding::Base58),
-                        "message": "Document created successfully"
-                    })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                    let js_result = js_sys::Object::new();
+                    
+                    js_sys::Reflect::set(
+                        &js_result,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("DocumentCreated"),
+                    ).unwrap();
+                    
+                    js_sys::Reflect::set(
+                        &js_result,
+                        &JsValue::from_str("documentId"),
+                        &JsValue::from_str(&document.id().to_string(Encoding::Base58)),
+                    ).unwrap();
+                    
+                    js_sys::Reflect::set(
+                        &js_result,
+                        &JsValue::from_str("message"),
+                        &JsValue::from_str("Document created successfully"),
+                    ).unwrap();
+                    
+                    Ok(js_result.into())
                 }
             }
             _ => {
                 // For other result types, just indicate success
-                to_value(&serde_json::json!({
-                    "type": "DocumentCreated",
-                    "documentId": document.id().to_string(Encoding::Base58),
-                    "message": "Document created successfully"
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                let js_result = js_sys::Object::new();
+                
+                js_sys::Reflect::set(
+                    &js_result,
+                    &JsValue::from_str("type"),
+                    &JsValue::from_str("DocumentCreated"),
+                ).unwrap();
+                
+                js_sys::Reflect::set(
+                    &js_result,
+                    &JsValue::from_str("documentId"),
+                    &JsValue::from_str(&document.id().to_string(Encoding::Base58)),
+                ).unwrap();
+                
+                js_sys::Reflect::set(
+                    &js_result,
+                    &JsValue::from_str("message"),
+                    &JsValue::from_str("Document created successfully"),
+                ).unwrap();
+                
+                Ok(js_result.into())
             }
         }
     }

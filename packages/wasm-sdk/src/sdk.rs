@@ -19,8 +19,9 @@ use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsError;
+use wasm_bindgen::{JsError, JsValue};
 use web_sys::{console, js_sys};
+use serde_json;
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -48,6 +49,53 @@ impl From<Sdk> for WasmSdk {
 impl WasmSdk {
     pub fn version(&self) -> u32 {
         self.0.version().protocol_version
+    }
+    
+    /// Test serialization of different object types
+    #[wasm_bindgen(js_name = testSerialization)]
+    pub fn test_serialization(&self, test_type: &str) -> Result<JsValue, JsValue> {
+        use serde_wasm_bindgen::to_value;
+        
+        match test_type {
+            "simple" => {
+                let simple = serde_json::json!({
+                    "type": "simple",
+                    "value": "test"
+                });
+                to_value(&simple).map_err(|e| JsValue::from_str(&format!("Simple serialization failed: {}", e)))
+            }
+            "complex" => {
+                let complex = serde_json::json!({
+                    "type": "complex",
+                    "nested": {
+                        "id": "123",
+                        "number": 42,
+                        "array": [1, 2, 3],
+                        "null_value": null,
+                        "bool_value": true
+                    }
+                });
+                to_value(&complex).map_err(|e| JsValue::from_str(&format!("Complex serialization failed: {}", e)))
+            }
+            "document" => {
+                // Simulate the exact structure we're trying to return
+                let doc = serde_json::json!({
+                    "type": "DocumentCreated",
+                    "documentId": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
+                    "document": {
+                        "id": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
+                        "ownerId": "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+                        "dataContractId": "9nzpvjVSStUrhkEs3eNHw2JYpcNoLh1MjmqW45QiyjSa",
+                        "documentType": "post",
+                        "revision": 1,
+                        "createdAt": 1736300191752i64,
+                        "updatedAt": 1736300191752i64,
+                    }
+                });
+                to_value(&doc).map_err(|e| JsValue::from_str(&format!("Document serialization failed: {}", e)))
+            }
+            _ => Err(JsValue::from_str("Unknown test type"))
+        }
     }
 }
 

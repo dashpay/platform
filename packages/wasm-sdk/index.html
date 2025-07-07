@@ -1572,8 +1572,18 @@
         currentResult = null;
       } else {
         resultContent.className = 'result-content';
+        // Parse JSON string if necessary
+        let dataToFormat = data;
+        if (typeof data === 'string') {
+          try {
+            dataToFormat = JSON.parse(data);
+          } catch (e) {
+            // If parsing fails, use the string as-is
+            dataToFormat = data;
+          }
+        }
         // Use custom formatter for better display with credit tooltips
-        resultContent.innerHTML = formatResultWithCredits(data);
+        resultContent.innerHTML = formatResultWithCredits(dataToFormat);
         currentResult = data;
       }
     }
@@ -2439,7 +2449,8 @@ ${indentStr}]`;
             privateKey
           );
           
-          displayResult(JSON.stringify(result, null, 2));
+          // Pass the result object directly to displayResult
+          displayResult(result);
           updateStatus('Document created successfully', 'success');
         } else {
           // For other transitions not yet implemented
