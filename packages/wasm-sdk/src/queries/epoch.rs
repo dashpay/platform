@@ -167,9 +167,15 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     epoch: u32,
     ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    
     use dash_sdk::dpp::dashcore::ProTxHash;
     use std::str::FromStr;
+    use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::{
+        Version, GetEvonodesProposedEpochBlocksByIdsRequestV0,
+    };
+    use dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest;
+    use dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksResponse;
+    use rs_dapi_client::{DapiRequestExecutor, ExecutionResponse};
+    use dash_sdk::RequestSettings;
     
     // Parse all ProTxHashes
     let pro_tx_hashes: Result<Vec<ProTxHash>, _> = ids
@@ -179,12 +185,57 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     let pro_tx_hashes = pro_tx_hashes
         .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?;
     
-    // For now, return empty results as the query structure needs further investigation
-    // The SDK's ProposerBlockCountById expects different query parameters than what we have
-    let all_counts: Vec<ProposerBlockCount> = Vec::new();
+    // Convert ProTxHashes to bytes for the request
+    let id_bytes: Vec<Vec<u8>> = pro_tx_hashes
+        .iter()
+        .map(|hash| hash.as_byte_array().to_vec())
+        .collect();
     
-    // TODO: Implement proper query structure for GetEvonodesProposedEpochBlocksByIdsRequest
-    // The current SDK implementation doesn't support querying by (epoch, ProTxHash) tuple
+    // Create the gRPC request
+    let request = GetEvonodesProposedEpochBlocksByIdsRequest {
+        version: Some(Version::V0(GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+            epoch: Some(epoch),
+            ids: id_bytes,
+            prove: sdk.prove(),
+        })),
+    };
+    
+    // Execute the request directly
+    let response: ExecutionResponse<GetEvonodesProposedEpochBlocksResponse> = sdk
+        .as_ref()
+        .execute(request, RequestSettings::default())
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to get evonodes proposed blocks: {}", e)))?;
+    
+    // Parse the response
+    use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_response::Version as ResponseVersion;
+    
+    let all_counts = match response.inner.version {
+        Some(ResponseVersion::V0(v0)) => {
+            match v0.result {
+                Some(dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_response::get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(info)) => {
+                    // Convert the response to our format
+                    info.evonodes_proposed_block_counts
+                        .into_iter()
+                        .map(|block_info| {
+                            let hex_str = hex::encode(&block_info.pro_tx_hash);
+                            ProposerBlockCount {
+                                proposer_pro_tx_hash: hex_str,
+                                count: block_info.count,
+                            }
+                        })
+                        .collect()
+                }
+                Some(dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_response::get_evonodes_proposed_epoch_blocks_response_v0::Result::Proof(_)) => {
+                    // For proof responses, we would need to verify the proof
+                    // For now, return empty as proof verification is complex
+                    vec![]
+                }
+                None => vec![],
+            }
+        }
+        None => vec![],
+    };
     
     serde_wasm_bindgen::to_value(&all_counts)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))

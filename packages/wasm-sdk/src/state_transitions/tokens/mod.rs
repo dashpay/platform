@@ -18,11 +18,146 @@ use dash_sdk::platform::Fetch;
 use simple_signer::SingleKeySigner;
 use serde_wasm_bindgen::to_value;
 use serde_json;
-use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
 // WasmSigner has been replaced with SingleKeySigner from simple-signer crate
+
+// Helper functions for token operations
+impl WasmSdk {
+    /// Parse and validate token operation parameters
+    async fn parse_token_params(
+        &self,
+        data_contract_id: &str,
+        identity_id: &str,
+        amount: &str,
+        recipient_id: Option<String>,
+    ) -> Result<(Identifier, Identifier, TokenAmount, Option<Identifier>), JsValue> {
+        // Parse identifiers
+        let contract_id = Identifier::from_string(data_contract_id, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid contract ID: {}", e)))?;
+        
+        let identity_identifier = Identifier::from_string(identity_id, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid identity ID: {}", e)))?;
+        
+        let recipient = if let Some(recipient_str) = recipient_id {
+            Some(Identifier::from_string(&recipient_str, Encoding::Base58)
+                .map_err(|e| JsValue::from_str(&format!("Invalid recipient ID: {}", e)))?)
+        } else {
+            None
+        };
+        
+        // Parse amount
+        let token_amount = amount.parse::<TokenAmount>()
+            .map_err(|e| JsValue::from_str(&format!("Invalid amount: {}", e)))?;
+        
+        Ok((contract_id, identity_identifier, token_amount, recipient))
+    }
+    
+    /// Fetch and cache data contract in trusted context
+    async fn fetch_and_cache_token_contract(
+        &self,
+        contract_id: Identifier,
+    ) -> Result<dash_sdk::platform::DataContract, JsValue> {
+        let sdk = self.inner_clone();
+        
+        // Fetch the data contract
+        let data_contract = dash_sdk::platform::DataContract::fetch(&sdk, contract_id)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch data contract: {}", e)))?
+            .ok_or_else(|| JsValue::from_str("Data contract not found"))?;
+        
+        // Add the contract to the context provider's cache if using trusted mode
+        match sdk.network {
+            dash_sdk::dpp::dashcore::Network::Testnet => {
+                if let Some(ref context) = *crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
+                    context.add_known_contract(data_contract.clone());
+                }
+            }
+            dash_sdk::dpp::dashcore::Network::Dash => {
+                if let Some(ref context) = *crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
+                    context.add_known_contract(data_contract.clone());
+                }
+            }
+            _ => {} // Other networks don't use trusted context
+        }
+        
+        Ok(data_contract)
+    }
+    
+    /// Create signer and derive public key from private key
+    fn create_signer_and_public_key(
+        &self,
+        private_key_wif: &str,
+        key_id: u32,
+    ) -> Result<(SingleKeySigner, IdentityPublicKey), JsValue> {
+        let sdk = self.inner_clone();
+        
+        // Create signer
+        let signer = SingleKeySigner::from_string(private_key_wif, sdk.network)
+            .map_err(|e| JsValue::from_str(&e))?;
+        
+        // Derive public key
+        let private_key_bytes = signer.private_key().to_bytes();
+        let public_key_bytes = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(
+            &dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new(),
+            &dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
+                .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?
+        ).serialize().to_vec();
+        
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: key_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(public_key_bytes),
+            disabled_at: None,
+        });
+        
+        Ok((signer, public_key))
+    }
+    
+    /// Convert state transition proof result to JsValue
+    fn format_token_result(
+        &self,
+        proof_result: StateTransitionProofResult,
+    ) -> Result<JsValue, JsValue> {
+        match proof_result {
+            StateTransitionProofResult::VerifiedTokenBalance(recipient_id, new_balance) => {
+                to_value(&serde_json::json!({
+                    "type": "VerifiedTokenBalance",
+                    "recipientId": recipient_id.to_string(Encoding::Base58),
+                    "newBalance": new_balance.to_string()
+                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+            }
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
+                to_value(&serde_json::json!({
+                    "type": "VerifiedTokenActionWithDocument",
+                    "documentId": doc.id().to_string(Encoding::Base58),
+                    "message": "Token operation recorded successfully"
+                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+            }
+            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
+                to_value(&serde_json::json!({
+                    "type": "VerifiedTokenGroupActionWithDocument",
+                    "groupPower": power,
+                    "document": doc.is_some()
+                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+            }
+            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(power, status, balance) => {
+                to_value(&serde_json::json!({
+                    "type": "VerifiedTokenGroupActionWithTokenBalance",
+                    "groupPower": power,
+                    "status": format!("{:?}", status),
+                    "balance": balance.map(|b| b.to_string())
+                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+            }
+            _ => Err(JsValue::from_str("Unexpected result type for token transition"))
+        }
+    }
+}
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -56,47 +191,19 @@ impl WasmSdk {
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
-        // Parse identifiers
-        let contract_id = Identifier::from_string(&data_contract_id, Encoding::Base58)
-            .map_err(|e| JsValue::from_str(&format!("Invalid contract ID: {}", e)))?;
+        // Parse and validate parameters
+        let (contract_id, issuer_id, token_amount, recipient) = self.parse_token_params(
+            &data_contract_id,
+            &identity_id,
+            &amount,
+            recipient_id,
+        ).await?;
         
-        let issuer_id = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| JsValue::from_str(&format!("Invalid identity ID: {}", e)))?;
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
         
-        let recipient = if let Some(recipient_str) = recipient_id {
-            Some(Identifier::from_string(&recipient_str, Encoding::Base58)
-                .map_err(|e| JsValue::from_str(&format!("Invalid recipient ID: {}", e)))?)
-        } else {
-            None
-        };
-        
-        // Parse amount
-        let token_amount = amount.parse::<TokenAmount>()
-            .map_err(|e| JsValue::from_str(&format!("Invalid amount: {}", e)))?;
-        
-        // Fetch the data contract first to ensure it's in the cache
-        let data_contract = dash_sdk::platform::DataContract::fetch(&sdk, contract_id)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to fetch data contract: {}", e)))?
-            .ok_or_else(|| JsValue::from_str("Data contract not found"))?;
-        
-        // Add the contract to the context provider's cache if using trusted mode
-        match sdk.network {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                if let Some(ref context) = *crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                if let Some(ref context) = *crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            _ => {} // Other networks don't use trusted context
-        }
-        
-        // Get identity to construct public key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, issuer_id)
+        // Get identity to construct public key (still needed for mint-specific logic)
+        let _identity = dash_sdk::platform::Identity::fetch(&sdk, issuer_id)
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch identity: {}", e)))?
             .ok_or_else(|| JsValue::from_str("Identity not found"))?;
@@ -107,30 +214,8 @@ impl WasmSdk {
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
-        // Create public key from the private key and key ID
-        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
-            .map_err(|e| JsValue::from_str(&e))?;
-        let private_key_bytes = signer.private_key().to_bytes();
-        let public_key_bytes = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(
-            &dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new(),
-            &dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?
-        ).serialize().to_vec();
-        
-        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: key_id,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::CRITICAL,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_SECP256K1,
-            read_only: false,
-            data: BinaryData::new(public_key_bytes),
-            disabled_at: None,
-        });
-        
-        // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
-            .map_err(|e| JsValue::from_str(&e))?;
+        // Create signer and public key
+        let (signer, public_key) = self.create_signer_and_public_key(&private_key_wif, key_id)?;
         
         // Calculate token ID
         let token_id = Identifier::from(calculate_token_id(
@@ -163,41 +248,8 @@ impl WasmSdk {
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
         
-        // Convert result to JsValue based on the type
-        match proof_result {
-            StateTransitionProofResult::VerifiedTokenBalance(recipient_id, new_balance) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenBalance",
-                    "recipientId": recipient_id.to_string(Encoding::Base58),
-                    "newBalance": new_balance.to_string()
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
-                // For now, just indicate that a document was created
-                // TODO: Properly serialize the document once we figure out the correct trait import
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenActionWithDocument",
-                    "documentId": doc.id().to_string(Encoding::Base58),
-                    "message": "Token mint operation recorded successfully"
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithDocument",
-                    "groupPower": power,
-                    "document": doc.is_some()
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(power, status, balance) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithTokenBalance",
-                    "groupPower": power,
-                    "status": format!("{:?}", status),
-                    "balance": balance.map(|b| b.to_string())
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            _ => Err(JsValue::from_str("Unexpected result type for mint transition"))
-        }
+        // Format and return result
+        self.format_token_result(proof_result)
     }
 
     /// Burn tokens, permanently removing them from circulation.
@@ -228,37 +280,16 @@ impl WasmSdk {
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
-        // Parse identifiers
-        let contract_id = Identifier::from_string(&data_contract_id, Encoding::Base58)
-            .map_err(|e| JsValue::from_str(&format!("Invalid contract ID: {}", e)))?;
+        // Parse and validate parameters (no recipient for burn)
+        let (contract_id, burner_id, token_amount, _) = self.parse_token_params(
+            &data_contract_id,
+            &identity_id,
+            &amount,
+            None,
+        ).await?;
         
-        let burner_id = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| JsValue::from_str(&format!("Invalid identity ID: {}", e)))?;
-        
-        // Parse amount
-        let token_amount = amount.parse::<TokenAmount>()
-            .map_err(|e| JsValue::from_str(&format!("Invalid amount: {}", e)))?;
-        
-        // Fetch the data contract first to ensure it's in the cache
-        let data_contract = dash_sdk::platform::DataContract::fetch(&sdk, contract_id)
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to fetch data contract: {}", e)))?
-            .ok_or_else(|| JsValue::from_str("Data contract not found"))?;
-        
-        // Add the contract to the context provider's cache if using trusted mode
-        match sdk.network {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                if let Some(ref context) = *crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                if let Some(ref context) = *crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            _ => {} // Other networks don't use trusted context
-        }
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
         
         // Get identity contract nonce
         let identity_contract_nonce = sdk
@@ -266,30 +297,8 @@ impl WasmSdk {
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
-        // Create public key from the private key and key ID
-        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
-            .map_err(|e| JsValue::from_str(&e))?;
-        let private_key_bytes = signer.private_key().to_bytes();
-        let public_key_bytes = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(
-            &dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new(),
-            &dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?
-        ).serialize().to_vec();
-        
-        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: key_id,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::CRITICAL,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_SECP256K1,
-            read_only: false,
-            data: BinaryData::new(public_key_bytes),
-            disabled_at: None,
-        });
-        
-        // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
-            .map_err(|e| JsValue::from_str(&e))?;
+        // Create signer and public key
+        let (signer, public_key) = self.create_signer_and_public_key(&private_key_wif, key_id)?;
         
         // Calculate token ID
         let token_id = Identifier::from(calculate_token_id(
@@ -321,41 +330,8 @@ impl WasmSdk {
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
         
-        // Convert result to JsValue based on the type
-        match proof_result {
-            StateTransitionProofResult::VerifiedTokenBalance(identity_id, new_balance) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenBalance",
-                    "identityId": identity_id.to_string(Encoding::Base58),
-                    "newBalance": new_balance.to_string()
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
-                // For now, just indicate that a document was created
-                // TODO: Properly serialize the document once we figure out the correct trait import
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenActionWithDocument",
-                    "documentId": doc.id().to_string(Encoding::Base58),
-                    "message": "Token burn operation recorded successfully"
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithDocument",
-                    "groupPower": power,
-                    "document": doc.is_some()
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(power, status, balance) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithTokenBalance",
-                    "groupPower": power,
-                    "status": format!("{:?}", status),
-                    "balance": balance.map(|b| b.to_string())
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            _ => Err(JsValue::from_str("Unexpected result type for burn transition"))
-        }
+        // Format and return result
+        self.format_token_result(proof_result)
     }
 
     /// Transfer tokens between identities.

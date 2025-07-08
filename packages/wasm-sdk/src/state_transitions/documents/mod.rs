@@ -16,7 +16,6 @@ use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
@@ -577,7 +576,7 @@ impl WasmSdk {
         // Find matching authentication key and create signer
         let (_, matching_key) = Self::find_authentication_key(&identity, &private_key_wif)?;
         let public_key = matching_key.clone();
-        let signer = Self::create_signer_from_wif(&private_key_wif, self.network)?;
+        let signer = Self::create_signer_from_wif(&private_key_wif, self.network())?;
         
         // Create the state transition
         let state_transition = BatchTransition::new_document_replacement_transition_from_document(
@@ -1098,7 +1097,7 @@ impl WasmSdk {
         
         // Find matching authentication key and create signer
         let (_, matching_key) = Self::find_authentication_key(&buyer_identity, &private_key_wif)?;
-        let signer = Self::create_signer_from_wif(&private_key_wif, self.network)?;
+        let signer = Self::create_signer_from_wif(&private_key_wif, self.network())?;
         
         // Get identity contract nonce
         let identity_contract_nonce = sdk

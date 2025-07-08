@@ -35,7 +35,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "data-contract-json-conversion",
   "data-contract-cbor-conversion",
 ] }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 platform-version = { path = "../rs-platform-version" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
