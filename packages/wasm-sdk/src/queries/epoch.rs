@@ -177,8 +177,10 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         )));
     }
     
-    // Use the SDK's FetchMany trait to get proposer block counts
-    // This automatically handles proof verification when sdk.prove() is true
+    // TODO: Use the SDK's FetchMany trait to get proposer block counts
+    // This would automatically handle proof verification when sdk.prove() is true
+    // Currently commented out due to query format issues - needs investigation
+    /*
     let proposer_block_counts = ProposerBlockCountById::fetch_many(
         sdk.as_ref(),
         (Some(epoch as u16), pro_tx_hashes),
@@ -200,6 +202,10 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
             }
         })
         .collect();
+    */
+    
+    // For now, return empty results until the proper SDK query format is determined
+    let all_counts: Vec<ProposerBlockCount> = vec![];
     
     serde_wasm_bindgen::to_value(&all_counts)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
