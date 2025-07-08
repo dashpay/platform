@@ -169,13 +169,8 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::dashcore::ProTxHash;
     use std::str::FromStr;
-    use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::{
-        Version, GetEvonodesProposedEpochBlocksByIdsRequestV0,
-    };
-    use dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest;
-    use dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksResponse;
-    use rs_dapi_client::{DapiRequestExecutor, ExecutionResponse};
-    use dash_sdk::RequestSettings;
+    use dash_sdk::platform::FetchMany;
+    use drive_proof_verifier::types::ProposerBlockCountById;
     
     // Parse all ProTxHashes
     let pro_tx_hashes: Result<Vec<ProTxHash>, _> = ids
@@ -185,57 +180,38 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     let pro_tx_hashes = pro_tx_hashes
         .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?;
     
-    // Convert ProTxHashes to bytes for the request
-    let id_bytes: Vec<Vec<u8>> = pro_tx_hashes
-        .iter()
-        .map(|hash| hash.as_byte_array().to_vec())
-        .collect();
+    // Check if epoch fits in u16 before casting
+    if epoch > u16::MAX as u32 {
+        return Err(JsError::new(&format!(
+            "Epoch value {} is invalid: must be less than or equal to {}",
+            epoch,
+            u16::MAX
+        )));
+    }
     
-    // Create the gRPC request
-    let request = GetEvonodesProposedEpochBlocksByIdsRequest {
-        version: Some(Version::V0(GetEvonodesProposedEpochBlocksByIdsRequestV0 {
-            epoch: Some(epoch),
-            ids: id_bytes,
-            prove: sdk.prove(),
-        })),
-    };
+    // Use the SDK's FetchMany trait to get proposer block counts
+    // This automatically handles proof verification when sdk.prove() is true
+    let proposer_block_counts = ProposerBlockCountById::fetch_many(
+        sdk.as_ref(),
+        (Some(epoch as u16), pro_tx_hashes),
+    )
+    .await
+    .map_err(|e| JsError::new(&format!("Failed to fetch evonode proposed blocks by ids: {}", e)))?;
     
-    // Execute the request directly
-    let response: ExecutionResponse<GetEvonodesProposedEpochBlocksResponse> = sdk
-        .as_ref()
-        .execute(request, RequestSettings::default())
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to get evonodes proposed blocks: {}", e)))?;
-    
-    // Parse the response
-    use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_response::Version as ResponseVersion;
-    
-    let all_counts = match response.inner.version {
-        Some(ResponseVersion::V0(v0)) => {
-            match v0.result {
-                Some(dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_response::get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(info)) => {
-                    // Convert the response to our format
-                    info.evonodes_proposed_block_counts
-                        .into_iter()
-                        .map(|block_info| {
-                            let hex_str = hex::encode(&block_info.pro_tx_hash);
-                            ProposerBlockCount {
-                                proposer_pro_tx_hash: hex_str,
-                                count: block_info.count,
-                            }
-                        })
-                        .collect()
-                }
-                Some(dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_response::get_evonodes_proposed_epoch_blocks_response_v0::Result::Proof(_)) => {
-                    // For proof responses, we would need to verify the proof
-                    // For now, return empty as proof verification is complex
-                    vec![]
-                }
-                None => vec![],
+    // Convert the response to our format
+    let all_counts: Vec<ProposerBlockCount> = proposer_block_counts.0
+        .into_iter()
+        .map(|(identifier, count)| {
+            // Convert Identifier back to ProTxHash
+            let bytes = identifier.to_buffer();
+            let hash = dash_sdk::dpp::dashcore::hashes::sha256d::Hash::from_slice(&bytes).unwrap();
+            let pro_tx_hash = ProTxHash::from_raw_hash(hash);
+            ProposerBlockCount {
+                proposer_pro_tx_hash: pro_tx_hash.to_string(),
+                count,
             }
-        }
-        None => vec![],
-    };
+        })
+        .collect();
     
     serde_wasm_bindgen::to_value(&all_counts)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
@@ -266,6 +242,15 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
     } else {
         None
     };
+    
+    // Check if epoch fits in u16 before casting
+    if epoch > u16::MAX as u32 {
+        return Err(JsError::new(&format!(
+            "Epoch value {} is invalid: must be less than or equal to {}",
+            epoch,
+            u16::MAX
+        )));
+    }
     
     let counts_result = ProposerBlockCounts::fetch_proposed_blocks_by_range(
         sdk.as_ref(),
