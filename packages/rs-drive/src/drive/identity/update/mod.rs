@@ -57,7 +57,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 14202000,
-                processing_fee: 1098260,
+                // 2 extra loaded bytes because the token tree is no longer empty
+                // these 2 loaded bytes cost 20 credits each
+                processing_fee: 1098300,
                 ..Default::default()
             };
 
@@ -81,7 +83,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(None);
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -143,6 +145,9 @@ mod tests {
 
         // -------------------------------------------------
         // check_reference_below_tokens_cost (4 tests)
+        // This test exists to make sure the update cost that goes through the tokens tree
+        // (as key hash references are below the token tree)
+        // stay the same cost.
         // -------------------------------------------------
         #[test]
         fn check_reference_below_tokens_cost_first_version_apply() {
@@ -171,7 +176,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 9423000,
-                processing_fee: 406100,
+                // 2 extra loaded bytes because the token tree is no longer empty
+                // these 2 loaded bytes cost 20 credits each
+                processing_fee: 406140,
                 ..Default::default()
             };
             do_check_reference_below_tokens_cost(true, platform_version, expected_fee_result);
@@ -182,7 +189,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 9423000,
-                processing_fee: 314560,
+                // 2 extra loaded bytes because the token tree is no longer empty
+                // these 2 loaded bytes cost 20 credits each
+                processing_fee: 314600,
                 ..Default::default()
             };
             do_check_reference_below_tokens_cost(false, platform_version, expected_fee_result);
@@ -193,7 +202,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(None);
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -302,7 +311,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 347382000,
-                processing_fee: 6819220,
+                processing_fee: 6819260,
                 ..Default::default()
             };
 
@@ -334,7 +343,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(None);
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -449,7 +458,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(None);
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -563,7 +572,7 @@ mod tests {
             expected_estimated_fee_result: FeeResult,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(None);
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -682,7 +691,7 @@ mod tests {
             platform_version: &PlatformVersion,
             expected_fee_result: FeeResult,
         ) {
-            let drive = setup_drive_with_initial_state_structure(None);
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");

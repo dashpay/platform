@@ -96,9 +96,8 @@ impl Value {
                             Ok(map) => map,
                             Err(err) => return Some(Err(err)),
                         };
-                        let Some(new_value) = map.get_optional_key_mut(path_component) else {
-                            return None;
-                        };
+
+                        let new_value = map.get_optional_key_mut(path_component)?;
 
                         if split.peek().is_none() {
                             let bytes_result = match replacement_type {
@@ -256,9 +255,8 @@ impl Value {
                             Ok(map) => map,
                             Err(err) => return Some(Err(err)),
                         };
-                        let Some(new_value) = map.get_optional_key_mut(path_component) else {
-                            return None;
-                        };
+
+                        let new_value = map.get_optional_key_mut(path_component)?;
 
                         if split.peek().is_none() {
                             *new_value = match replacement_type.replace_for_value(new_value.clone())

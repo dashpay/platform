@@ -313,7 +313,6 @@ impl IdentityPublicKey {
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
     ///                      and the second element is the corresponding private key.
     ///
-
     pub fn random_ecdsa_master_authentication_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,

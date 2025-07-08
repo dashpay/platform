@@ -1,24 +1,27 @@
 [package]
 name = "wasm-dpp"
-version = "1.8.0"
+version = "2.0.0"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[lints.rust]
+dead_code = "allow"
 
 [dependencies]
-serde = { version = "1.0.197", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 # TODO: Build wasm with build.rs
 # Meantime if you want to update wasm-bindgen you also need to update version in:
 #  - packages/wasm-dpp/scripts/build-wasm.sh
 #  - Dockerfile
-wasm-bindgen = { version = "=0.2.99" }
+wasm-bindgen = { version = "=0.2.100" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
-thiserror = { version = "1.0.63" }
+thiserror = { version = "2.0.12" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-serde-conversion",
@@ -40,6 +43,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "extended-document",
     "document-value-conversion",
     "document-json-conversion",
+    "system_contracts",
 ] }
 itertools = { version = "0.13" }
 log = { version = "0.4.6" }
@@ -51,7 +55,7 @@ anyhow = { version = "1.0.75" }
 # required, cargo-machete false positive
 wasm-bindgen-futures = "0.4.49"
 async-trait = "0.1.59"
-bincode = "2.0.0-rc.3"
+bincode = { version = "=2.0.0-rc.3" }
 [profile.release]
 lto = true
 opt-level = 'z'

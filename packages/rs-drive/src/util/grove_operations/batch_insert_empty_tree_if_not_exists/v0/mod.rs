@@ -1,8 +1,8 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyInfo;
 use crate::util::object_size_info::PathKeyInfo::{
@@ -11,15 +11,16 @@ use crate::util::object_size_info::PathKeyInfo::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::GroveOp;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
-    pub(crate) fn batch_insert_empty_tree_if_not_exists_v0<const N: usize>(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn batch_insert_empty_tree_if_not_exists_v0<const N: usize>(
         &self,
         path_key_info: PathKeyInfo<N>,
-        use_sum_tree: bool,
+        tree_type: TreeType,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -30,19 +31,11 @@ impl Drive {
         //todo: clean up the duplication
         match path_key_info {
             PathKeyRef((path, key)) => {
-                let drive_operation = if use_sum_tree {
-                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
-                        path.clone(),
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                } else {
-                    LowLevelDriveOperation::for_known_path_key_empty_tree(
-                        path.clone(),
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                };
+                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
+                    path.clone(),
+                    key.to_vec(),
+                    storage_flags,
+                );
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -58,7 +51,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -105,19 +98,11 @@ impl Drive {
                 DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
             )),
             PathKey((path, key)) => {
-                let drive_operation = if use_sum_tree {
-                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
-                        path.clone(),
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                } else {
-                    LowLevelDriveOperation::for_known_path_key_empty_tree(
-                        path.clone(),
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                };
+                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
+                    path.clone(),
+                    key.to_vec(),
+                    storage_flags,
+                );
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -133,7 +118,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -178,19 +163,11 @@ impl Drive {
             }
             PathFixedSizeKey((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = if use_sum_tree {
-                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
-                        path_items,
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                } else {
-                    LowLevelDriveOperation::for_known_path_key_empty_tree(
-                        path_items,
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                };
+                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
+                    path_items,
+                    key.to_vec(),
+                    storage_flags,
+                );
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -206,7 +183,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -251,19 +228,11 @@ impl Drive {
             }
             PathFixedSizeKeyRef((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = if use_sum_tree {
-                    LowLevelDriveOperation::for_known_path_key_empty_sum_tree(
-                        path_items,
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                } else {
-                    LowLevelDriveOperation::for_known_path_key_empty_tree(
-                        path_items,
-                        key.to_vec(),
-                        storage_flags,
-                    )
-                };
+                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
+                    path_items,
+                    key.to_vec(),
+                    storage_flags,
+                );
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -279,7 +248,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
                                 found = true;
                                 existing_operations.remove(i);

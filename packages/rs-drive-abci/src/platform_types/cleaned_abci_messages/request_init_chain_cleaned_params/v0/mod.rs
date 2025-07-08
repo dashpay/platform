@@ -38,7 +38,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use drive::dpp::identity::TimestampMillis;
 use serde::{Deserialize, Serialize};
 use tenderdash_abci::proto::abci::RequestInitChain;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::ToMillis;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -65,7 +65,9 @@ impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
             .ok_or(AbciError::BadRequest(
                 "genesis time is required in init chain".to_string(),
             ))?
-            .to_milis() as TimestampMillis;
+            .to_millis()
+            .map_err(|e| AbciError::BadRequest(format!("genesis time is invalid: {}", e)))?
+            as TimestampMillis;
         let initial_core_height = match request.initial_core_height {
             0 => None,
             h => Some(h),

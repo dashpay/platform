@@ -4,7 +4,7 @@ use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::Da
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 

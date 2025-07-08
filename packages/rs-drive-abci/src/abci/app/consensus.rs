@@ -36,13 +36,13 @@ impl<'a, C> ConsensusAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> PlatformApplication<C> for ConsensusAbciApplication<'a, C> {
+impl<C> PlatformApplication<C> for ConsensusAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
     }
 }
 
-impl<'a, C> BlockExecutionApplication for ConsensusAbciApplication<'a, C> {
+impl<C> BlockExecutionApplication for ConsensusAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }
@@ -77,13 +77,13 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
     }
 }
 
-impl<'a, C> Debug for ConsensusAbciApplication<'a, C> {
+impl<C> Debug for ConsensusAbciApplication<'_, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<ConsensusAbciApplication>")
     }
 }
 
-impl<'a, C> tenderdash_abci::Application for ConsensusAbciApplication<'a, C>
+impl<C> tenderdash_abci::Application for ConsensusAbciApplication<'_, C>
 where
     C: CoreRPCLike,
 {

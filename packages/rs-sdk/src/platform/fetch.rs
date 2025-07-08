@@ -12,6 +12,7 @@ use crate::mock::MockResponse;
 use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::voting::votes::Vote;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
@@ -292,4 +293,12 @@ impl Fetch for drive_proof_verifier::types::PrefundedSpecializedBalance {
 
 impl Fetch for Vote {
     type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
+}
+
+impl Fetch for RewardDistributionMoment {
+    type Request = platform_proto::GetTokenPerpetualDistributionLastClaimRequest;
+}
+
+impl Fetch for dpp::tokens::contract_info::TokenContractInfo {
+    type Request = platform_proto::GetTokenContractInfoRequest;
 }

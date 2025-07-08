@@ -394,8 +394,8 @@ impl DocumentTypeV0 {
 
         // Generate indices
         let indices_json_schema = indices
-            .iter()
-            .map(|(_, index)| {
+            .values()
+            .map(|index| {
                 let properties_schema = index
                     .properties
                     .iter()

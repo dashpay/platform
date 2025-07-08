@@ -1,7 +1,9 @@
 use dash_sdk::{mock::Mockable, platform::Query, Sdk};
+use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
 use hex::ToHex;
 use rs_dapi_client::transport::TransportRequest;
+use std::collections::BTreeMap;
 
 use super::config::Config;
 
@@ -30,14 +32,16 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
         "additionalProperties": false,
     });
 
+    let config =
+        DataContractConfig::default_for_version(platform_version).expect("create a default config");
+
     DocumentType::try_from_schema(
         Identifier::random(),
         "document_type_name",
         schema,
         None,
-        false,
-        false,
-        false,
+        &BTreeMap::new(),
+        &config,
         true,
         &mut vec![],
         platform_version,

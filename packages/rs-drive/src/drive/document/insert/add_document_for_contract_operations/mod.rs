@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_document_for_contract_operations(
         &self,
         document_and_contract_info: DocumentAndContractInfo,

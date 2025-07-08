@@ -70,7 +70,7 @@ impl ArrayItemType {
     }
 
     pub fn encode_value_ref_with_size(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
-        return match self {
+        match self {
             ArrayItemType::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
@@ -116,7 +116,7 @@ impl ArrayItemType {
                     Ok(vec![0]) // 2 is false
                 }
             }
-        };
+        }
     }
 }
 

@@ -15,6 +15,7 @@ mod v0;
 
 impl Drive {
     /// Merges the given revision into the identity contract pair nonce
+    #[allow(clippy::too_many_arguments)]
     pub fn merge_identity_contract_nonce(
         &self,
         identity_id: [u8; 32],
@@ -51,6 +52,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Gives the operations of merging the given revision into the identity contract pair nonce
     pub fn merge_identity_contract_nonce_operations(
         &self,

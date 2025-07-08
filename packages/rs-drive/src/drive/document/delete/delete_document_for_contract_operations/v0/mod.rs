@@ -1,6 +1,6 @@
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -36,6 +36,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Prepares the operations for deleting a document.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_operations_v0(
         &self,
         document_id: Identifier,
@@ -48,13 +49,39 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-
         if !document_type.documents_can_be_deleted() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type is not mutable and can not be deleted",
             )));
         }
+
+        self.force_delete_document_for_contract_operations_v0(
+            document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Prepares the operations for deleting a document.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn force_delete_document_for_contract_operations_v0(
+        &self,
+        document_id: Identifier,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         if document_type.documents_keep_history() {
             return Err(Error::Drive(
@@ -83,7 +110,7 @@ impl Drive {
                 &platform_version.drive,
             )?;
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(
                     document_type.estimated_size(platform_version)? as u32
                 ),

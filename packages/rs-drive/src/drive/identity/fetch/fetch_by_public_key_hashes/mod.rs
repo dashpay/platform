@@ -1,4 +1,5 @@
 mod fetch_full_identities_by_unique_public_key_hashes;
+mod fetch_full_identity_by_non_unique_public_key_hash;
 mod fetch_full_identity_by_unique_public_key_hash;
 mod fetch_identity_id_by_unique_public_key_hash;
 mod fetch_identity_ids_by_non_unique_public_key_hash;
@@ -23,7 +24,6 @@ mod tests {
     fn test_fetch_all_keys_on_identity() {
         let drive = setup_drive(None);
         let platform_version = PlatformVersion::latest();
-        let drive_version = &platform_version.drive;
 
         let transaction = drive.grove.start_transaction();
 
@@ -71,8 +71,10 @@ mod tests {
                 let identity_ids = drive
                     .fetch_identity_ids_by_non_unique_public_key_hash(
                         hash,
+                        None,
+                        None,
                         Some(&transaction),
-                        &drive_version,
+                        platform_version,
                     )
                     .expect("expected to get identity ids");
                 assert!(identity_ids.contains(&identity.id().to_buffer()));

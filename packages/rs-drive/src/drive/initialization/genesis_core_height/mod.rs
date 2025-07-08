@@ -89,15 +89,11 @@ mod tests {
 
         let core_genesis_height: CoreBlockHeight = 1320;
         drive
-            .store_genesis_core_height(
-                core_genesis_height,
-                Some(&db_transaction),
-                &platform_version,
-            )
+            .store_genesis_core_height(core_genesis_height, Some(&db_transaction), platform_version)
             .expect("expected to store genesis core height");
 
         let read_core_genesis_height = drive
-            .fetch_genesis_core_height(Some(&db_transaction), &platform_version)
+            .fetch_genesis_core_height(Some(&db_transaction), platform_version)
             .expect("expected to fetch genesis core height");
 
         assert_eq!(core_genesis_height, read_core_genesis_height);

@@ -8,6 +8,8 @@ use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
+use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
+use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
@@ -20,20 +22,31 @@ use dapi_grpc::platform::v0::{
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
+    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
+    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
     GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
+    GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
+    GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
-    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
-    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
-    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
-    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetTokenContractInfoRequest, GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
+    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
+    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -63,7 +76,7 @@ impl QueryService {
         Self { platform }
     }
 
-    async fn handle_blocking_query<'a, RQ, RS>(
+    async fn handle_blocking_query<RQ, RS>(
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,
@@ -332,18 +345,6 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_proofs(
-        &self,
-        request: Request<GetProofsRequest>,
-    ) -> Result<Response<GetProofsResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_proofs,
-            "get_proofs",
-        )
-        .await
-    }
-
     async fn get_data_contract(
         &self,
         request: Request<GetDataContractRequest>,
@@ -400,6 +401,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
             "get_identity_by_public_key_hash",
+        )
+        .await
+    }
+
+    async fn get_identity_by_non_unique_public_key_hash(
+        &self,
+        request: Request<GetIdentityByNonUniquePublicKeyHashRequest>,
+    ) -> Result<Response<GetIdentityByNonUniquePublicKeyHashResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_by_non_unique_public_key_hash,
+            "get_identity_by_non_unique_public_key_hash",
         )
         .await
     }
@@ -606,6 +619,201 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_current_quorums_info,
             "query_current_quorums_info",
+        )
+        .await
+    }
+
+    async fn get_identity_token_balances(
+        &self,
+        request: Request<GetIdentityTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentityTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_balances,
+            "query_identity_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identities_token_balances(
+        &self,
+        request: Request<GetIdentitiesTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_balances,
+            "query_identities_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identity_token_infos(
+        &self,
+        request: Request<GetIdentityTokenInfosRequest>,
+    ) -> Result<Response<GetIdentityTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_infos,
+            "query_identity_token_infos",
+        )
+        .await
+    }
+
+    async fn get_identities_token_infos(
+        &self,
+        request: Request<GetIdentitiesTokenInfosRequest>,
+    ) -> Result<Response<GetIdentitiesTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_infos,
+            "query_identities_token_infos",
+        )
+        .await
+    }
+
+    async fn get_token_statuses(
+        &self,
+        request: Request<GetTokenStatusesRequest>,
+    ) -> Result<Response<GetTokenStatusesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_statuses,
+            "get_token_statuses",
+        )
+        .await
+    }
+
+    async fn get_token_pre_programmed_distributions(
+        &self,
+        request: Request<GetTokenPreProgrammedDistributionsRequest>,
+    ) -> Result<Response<GetTokenPreProgrammedDistributionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_pre_programmed_distributions,
+            "get_token_pre_programmed_distributions",
+        )
+        .await
+    }
+
+    async fn get_token_total_supply(
+        &self,
+        request: Request<GetTokenTotalSupplyRequest>,
+    ) -> Result<Response<GetTokenTotalSupplyResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_total_supply,
+            "get_token_total_supply",
+        )
+        .await
+    }
+
+    async fn get_group_info(
+        &self,
+        request: Request<GetGroupInfoRequest>,
+    ) -> Result<Response<GetGroupInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_info,
+            "get_group_info",
+        )
+        .await
+    }
+
+    async fn get_group_infos(
+        &self,
+        request: Request<GetGroupInfosRequest>,
+    ) -> Result<Response<GetGroupInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_infos,
+            "get_group_infos",
+        )
+        .await
+    }
+
+    async fn get_group_actions(
+        &self,
+        request: Request<GetGroupActionsRequest>,
+    ) -> Result<Response<GetGroupActionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_actions,
+            "get_group_actions",
+        )
+        .await
+    }
+
+    async fn get_group_action_signers(
+        &self,
+        request: Request<GetGroupActionSignersRequest>,
+    ) -> Result<Response<GetGroupActionSignersResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_action_signers,
+            "get_group_action_signers",
+        )
+        .await
+    }
+
+    async fn get_token_direct_purchase_prices(
+        &self,
+        request: Request<GetTokenDirectPurchasePricesRequest>,
+    ) -> Result<Response<GetTokenDirectPurchasePricesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_direct_purchase_prices,
+            "get_token_direct_purchase_prices",
+        )
+        .await
+    }
+
+    async fn get_token_contract_info(
+        &self,
+        request: Request<GetTokenContractInfoRequest>,
+    ) -> Result<Response<GetTokenContractInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_contract_info,
+            "get_token_contract_info",
+        )
+        .await
+    }
+
+    async fn get_token_perpetual_distribution_last_claim(
+        &self,
+        request: Request<GetTokenPerpetualDistributionLastClaimRequest>,
+    ) -> Result<Response<GetTokenPerpetualDistributionLastClaimResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_perpetual_distribution_last_claim,
+            "get_token_perpetual_distribution_last_claim",
+        )
+        .await
+    }
+
+    async fn get_finalized_epoch_infos(
+        &self,
+        request: Request<GetFinalizedEpochInfosRequest>,
+    ) -> Result<Response<GetFinalizedEpochInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_finalized_epoch_infos,
+            "get_finalized_epoch_infos",
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl DriveInternal for QueryService {
+    async fn get_proofs(
+        &self,
+        request: Request<GetProofsRequest>,
+    ) -> Result<Response<GetProofsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proofs,
+            "get_proofs",
         )
         .await
     }

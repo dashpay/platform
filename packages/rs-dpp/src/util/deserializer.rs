@@ -6,22 +6,8 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use integer_encoding::VarInt;
 use platform_version::version::FeatureVersion;
-use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::errors::ProtocolError;
-
-pub fn parse_protocol_version(
-    protocol_bytes: &[u8],
-    json_map: &mut Map<String, JsonValue>,
-) -> Result<(), ProtocolError> {
-    let protocol_version = get_protocol_version(protocol_bytes)?;
-
-    json_map.insert(
-        String::from("$protocolVersion"),
-        JsonValue::Number(Number::from(protocol_version)),
-    );
-    Ok(())
-}
 
 /// A protocol version
 pub type ProtocolVersion = u32;

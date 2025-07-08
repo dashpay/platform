@@ -16,7 +16,7 @@ pub struct ToObjectOptions {
 #[derive(Default)]
 pub struct ToObject {
     pub transition_type: u8,
-    pub revision: u32,
+    pub revision: u64,
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: KeyID,
     pub public_keys_to_add: Option<Vec<IdentityPublicKeyInCreation>>,
@@ -30,7 +30,7 @@ pub fn to_object_struct(
 ) -> ToObject {
     let mut to_object = ToObject {
         transition_type: transition.state_transition_type() as u8,
-        revision: transition.revision() as u32,
+        revision: transition.revision(),
         identity_id: transition.identity_id().to_owned(),
         ..ToObject::default()
     };

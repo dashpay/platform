@@ -1,31 +1,33 @@
 [package]
 name = "dash-sdk"
-version = "1.8.0"
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
 
 arc-swap = { version = "1.7.1" }
-backon = { version = "1.2", features = ["tokio-sleep"] }
+backon = { version = "1.2", default-features = false }
 chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
-dapi-grpc = { path = "../dapi-grpc" }
+
+dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 http = { version = "1.1" }
 rustls-pemfile = { version = "2.0.0" }
-thiserror = "1.0.64"
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+thiserror = "2.0.12"
+tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
-serde = { version = "1.0.197", default-features = false, features = [
+ciborium = { version = "0.2.2" }
+serde = { version = "1.0.219", default-features = false, features = [
   "rc",
 ], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
@@ -36,17 +38,21 @@ envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
 derive_more = { version = "1.0", features = ["from"] }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.16.0" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
+
 [dev-dependencies]
+rs-dapi-client = { path = "../rs-dapi-client" }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
-rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-dpp = { path = "../rs-dpp", features = [
+dpp = { path = "../rs-dpp", default-features = false, features = [
   "client",
   "validation",
   "random-documents",
@@ -54,12 +60,13 @@ dpp = { path = "../rs-dpp", features = [
 data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
-sanitize-filename = { version = "0.5.0" }
+sanitize-filename = { version = "0.6.0" }
 test-case = { version = "3.3.1" }
 assert_matches = "1.5.0"
 
 [features]
-default = ["mocks", "offline-testing"]
+# TODO: remove mocks from default features
+default = ["mocks", "offline-testing", "dapi-grpc/client", "token_reward_explanations"]
 
 mocks = [
   "dep:serde",
@@ -68,6 +75,7 @@ mocks = [
   "rs-dapi-client/dump",
   "dpp/document-cbor-conversion",
   "dpp/random-identities",
+  "dpp/fixtures-and-mocks",
   "drive/serde",
   "drive-proof-verifier/mocks",
   "dep:dotenvy",
@@ -89,6 +97,9 @@ offline-testing = ["mocks"]
 # Requires configuration of Dash Platform connectivity.
 # See [README.md] for more details.
 #
+# Without this feature enabled, tests will use test vectors from `tests/vectors/` instead of connecting to live
+# Dash Platform.
+#
 # If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 network-testing = ["mocks"]
 
@@ -103,7 +114,12 @@ generate-test-vectors = ["network-testing"]
 
 system-data-contracts = ["dpp/data-contracts"]
 
+token_reward_explanations = ["dpp/token-reward-explanations"]
+
 [[example]]
 
 name = "read_contract"
 required-features = ["mocks"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]

@@ -35,21 +35,6 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
         }
     }
 
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume_to_bytes(
-        self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(document_v0) => {
-                document_v0.serialize_consume_to_bytes(platform_version)
-            }
-        }
-    }
-
     /// Reads a serialized document and creates a Document from it.
     fn from_bytes(
         serialized_document: &[u8],

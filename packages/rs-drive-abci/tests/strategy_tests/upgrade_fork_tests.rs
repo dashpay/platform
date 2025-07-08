@@ -122,6 +122,7 @@ mod tests {
                     config.clone(),
                     13,
                     &mut None,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -406,6 +407,7 @@ mod tests {
                     config.clone(),
                     13,
                     &mut None,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -645,6 +647,7 @@ mod tests {
             config.clone(),
             13,
             &mut None,
+            &mut None,
         );
 
         let platform = abci_app.platform;
@@ -828,6 +831,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     16,
+                    &mut None,
                     &mut None,
                 );
                 let platform = abci_app.platform;
@@ -1068,6 +1072,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     15,
+                    &mut None,
                     &mut None,
                 );
 
@@ -1412,6 +1417,7 @@ mod tests {
                     strategy,
                     config.clone(),
                     15,
+                    &mut None,
                     &mut None,
                 );
                 let state = abci_app.platform.state.load();

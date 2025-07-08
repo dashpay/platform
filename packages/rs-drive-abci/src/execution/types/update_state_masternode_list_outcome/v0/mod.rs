@@ -1,5 +1,5 @@
-use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::{MasternodeListDiff, MasternodeListItem};
+use dpp::dashcore::ProTxHash;
 use std::collections::BTreeMap;
 
 /// Represents the outcome of an attempt to update the state of a masternode list.

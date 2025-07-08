@@ -57,14 +57,14 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let mut identity = Identity::random_identity(1, Some(64), &platform_version)
+        let mut identity = Identity::random_identity(1, Some(64), platform_version)
             .expect("create random identity");
 
         let (transfer_key1, _) =
-            IdentityPublicKey::random_masternode_transfer_key(2, Some(64), &platform_version)
+            IdentityPublicKey::random_masternode_transfer_key(2, Some(64), platform_version)
                 .expect("create random masternode transfer key");
         let (transfer_key2, _) =
-            IdentityPublicKey::random_masternode_transfer_key(3, Some(64), &platform_version)
+            IdentityPublicKey::random_masternode_transfer_key(3, Some(64), platform_version)
                 .expect("create random masternode transfer key");
 
         identity.add_public_keys([transfer_key1, transfer_key2]);

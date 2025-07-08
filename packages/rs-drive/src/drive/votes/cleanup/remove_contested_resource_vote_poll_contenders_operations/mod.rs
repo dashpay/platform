@@ -18,6 +18,8 @@ use grovedb::TransactionArg;
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any votes poll should be closed. This will remove them to recoup space
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub fn remove_contested_resource_vote_poll_contenders_operations(
         &self,
         vote_polls: &[(

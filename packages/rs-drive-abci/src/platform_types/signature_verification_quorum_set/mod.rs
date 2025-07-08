@@ -3,8 +3,9 @@ mod v0;
 use crate::config::QuorumLikeConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::signature_verification_quorum_set::v0::for_saving::SignatureVerificationQuorumSetForSavingV0;
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0::SignatureVerificationQuorumSetForSavingV0;
 use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v1::SignatureVerificationQuorumSetForSavingV1;
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v2::SignatureVerificationQuorumSetForSavingV2;
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
     QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator, SignatureVerificationQuorumSetV0,
     SignatureVerificationQuorumSetV0Methods, SIGN_OFFSET,
@@ -121,13 +122,15 @@ pub enum SignatureVerificationQuorumSetForSaving {
     V0(SignatureVerificationQuorumSetForSavingV0),
     /// Version 1 of the signature verification quorums
     V1(SignatureVerificationQuorumSetForSavingV1),
+    /// Version 2 of the signature verification quorums
+    V2(SignatureVerificationQuorumSetForSavingV2),
 }
 
 impl From<SignatureVerificationQuorumSet> for SignatureVerificationQuorumSetForSaving {
     fn from(value: SignatureVerificationQuorumSet) -> Self {
         match value {
             SignatureVerificationQuorumSet::V0(v0) => {
-                SignatureVerificationQuorumSetForSaving::V1(v0.into())
+                SignatureVerificationQuorumSetForSaving::V2(v0.into())
             }
         }
     }
@@ -141,6 +144,9 @@ impl From<SignatureVerificationQuorumSetForSaving> for SignatureVerificationQuor
             }
             SignatureVerificationQuorumSetForSaving::V1(v1) => {
                 SignatureVerificationQuorumSet::V0(v1.into())
+            }
+            SignatureVerificationQuorumSetForSaving::V2(v2) => {
+                SignatureVerificationQuorumSet::V0(v2.into())
             }
         }
     }

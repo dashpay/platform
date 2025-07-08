@@ -7,7 +7,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Applies the given groveDB operation
-    pub(crate) fn grove_apply_operation_v0(
+    pub(super) fn grove_apply_operation_v0(
         &self,
         operation: QualifiedGroveDbOp,
         validate: bool,

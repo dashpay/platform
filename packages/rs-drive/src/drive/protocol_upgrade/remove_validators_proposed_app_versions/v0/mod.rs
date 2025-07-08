@@ -14,7 +14,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
 
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, MaybeTree, TransactionArg};
 use integer_encoding::VarInt;
 
 impl Drive {
@@ -121,7 +121,7 @@ impl Drive {
                 (&path).into(),
                 validator_pro_tx_hash.as_slice(),
                 StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum: Some((false, false)),
+                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
                 transaction,
                 drive_operations,

@@ -9,7 +9,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
     /// to `drive_operations`.
-    pub(crate) fn grove_insert_if_not_exists_return_existing_element_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_insert_if_not_exists_return_existing_element_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

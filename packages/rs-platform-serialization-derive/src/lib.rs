@@ -652,7 +652,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
             let derive_into_clause = if derive_into {
-                let variant_into = variants.iter().enumerate().map(|(_i, variant)| {
+                let variant_into = variants.iter().map(|variant| {
                     let variant_ident = &variant.ident;
                     let variant_fields = match &variant.fields {
                         syn::Fields::Unnamed(fields) => fields.unnamed.iter().collect::<Vec<_>>(),

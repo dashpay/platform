@@ -1,0 +1,29 @@
+{
+  "name": "@dashevo/token-history-contract",
+  "version": "2.0.0",
+  "description": "The token history contract",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "yarn run test:unit",
+    "test:unit": "mocha 'test/unit/**/*.spec.js'"
+  },
+  "contributors": [
+    {
+      "name": "Samuel Westrich",
+      "email": "sam@dash.org",
+      "url": "https://github.com/quantumexplorer"
+    }
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@dashevo/wasm-dpp": "workspace:*",
+    "chai": "^4.3.10",
+    "dirty-chai": "^2.0.1",
+    "eslint": "^8.53.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.0",
+    "mocha": "^11.1.0",
+    "sinon": "^17.0.1",
+    "sinon-chai": "^3.7.0"
+  }
+}

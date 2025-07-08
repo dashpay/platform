@@ -13,7 +13,7 @@ To use this crate, define it as a dependency in your `Cargo.toml`:
 ```toml
 [dependencies]
 
-dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
+dash-sdk = { git="https://github.com/dashpay/platform" }
 ```
 
 ### Implementing Dash Platform SDK application
@@ -87,14 +87,14 @@ Refer to rich comments / help in the forementioned scripts for more details.
 
 To generate test vectors for offline testing, you need to have access acredentials to Dash Platform instance, either by
 specifying configuration manually in `packages/rs-sdk/tests/.env`. or starting a local devnet.
-
-When you start local dev environment of Dash Platform using `yarn start`, the `.env` file is automatically generated during `yarn setup` or `yarn reset`, using `platform/scripts/configure_dotenv.sh` script. See [Dash Platform documentation](../../README.md) for more details about starting and using local devnet.
+The `.env` file is automatically generated during `yarn setup` or `yarn reset`, using `platform/scripts/configure_dotenv.sh` script. See [Dash Platform documentation](../../README.md) for more details about starting and using local devnet.
 
 To generate test vectors:
 
-1. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
-2. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
-3. (Optional) commit generated files with `git commit packages/rs-sdk/tests/vectors/`.
+1. Start local dev environment of Dash Platform using `SDK_TEST_DATA=true yarn start`.
+2. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
+3. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
+4. (Optional) commit generated files with `git commit packages/rs-sdk/tests/vectors/`.
 
 ### Running tests in offline mode
 
@@ -133,12 +133,13 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    that will store collection of  returned objects, indexed by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
-7. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
+7. [ ] Implement `MockResponse` for `Object` in `packages/rs-sdk/src/mock/requests.rs`.
+8. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
    in `packages/rs-sdk/src/platform/fetch.rs`.
-8. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
+9. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
    with inner type Request = `Request`, in `packages/rs-sdk/src/platform/fetch_many.rs`.
-9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
-10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
-11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
-12. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
-13. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
+10. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
+11. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
+12. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
+13. [ ] Start local devnet with `yarn reset && SDK_TEST_DATA=true yarn start`
+14. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`

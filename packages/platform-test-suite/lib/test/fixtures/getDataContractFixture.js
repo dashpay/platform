@@ -10,7 +10,7 @@ const {
 let randomOwnerId = null;
 
 /**
- * @param {number} identityNonce
+ * @param {string|number|bigint} identityNonce
  * @param {Identifier} [ownerId]
  * @return {Promise<DataContract>}
  */

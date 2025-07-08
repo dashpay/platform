@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-impl<'a> DocumentJsonMethodsV0<'a> for Document {
+impl DocumentJsonMethodsV0<'_> for Document {
     /// Convert the document to JSON with identifiers using bytes.
     fn to_json_with_identifiers_using_bytes(
         &self,

@@ -55,7 +55,15 @@ describe('waitForStateTransitionResultFactory', () => {
 
     const result = await waitForStateTransitionResult(hash, options);
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.equal(undefined);
 
@@ -89,7 +97,15 @@ describe('waitForStateTransitionResultFactory', () => {
 
     const result = await waitForStateTransitionResult(hash, options);
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.be.deep.equal({
       merkleProof: Buffer.from('merkleProof'),
@@ -119,10 +135,12 @@ describe('waitForStateTransitionResultFactory', () => {
   });
 
   it('should return response with error', async () => {
+    const data = cbor.encode({ data: 'error data' });
+
     const error = new StateTransitionBroadcastError();
     error.setCode(2);
     error.setMessage('Some error');
-    error.setData(cbor.encode({ data: 'error data' }));
+    error.setData(data);
 
     response.getV0().setError(error);
 
@@ -130,12 +148,20 @@ describe('waitForStateTransitionResultFactory', () => {
 
     const result = await waitForStateTransitionResult(hash, options);
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getProof()).to.equal(undefined);
     expect(result.getError()).to.be.deep.equal({
       code: 2,
       message: 'Some error',
-      data: { data: 'error data' },
+      data: Buffer.from(data),
     });
 
     const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;

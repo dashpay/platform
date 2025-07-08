@@ -26,6 +26,13 @@ impl DataContractSchemaMethodsV0 for DataContract {
                 validation_operations,
                 platform_version,
             ),
+            DataContract::V1(v1) => v1.set_document_schemas(
+                schemas,
+                defs,
+                full_validation,
+                validation_operations,
+                platform_version,
+            ),
         }
     }
 
@@ -45,18 +52,27 @@ impl DataContractSchemaMethodsV0 for DataContract {
                 validation_operations,
                 platform_version,
             ),
+            DataContract::V1(v1) => v1.set_document_schema(
+                name,
+                schema,
+                full_validation,
+                validation_operations,
+                platform_version,
+            ),
         }
     }
 
     fn document_schemas(&self) -> BTreeMap<DocumentName, &Value> {
         match self {
             DataContract::V0(v0) => v0.document_schemas(),
+            DataContract::V1(v1) => v1.document_schemas(),
         }
     }
 
     fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
         match self {
             DataContract::V0(v0) => v0.schema_defs(),
+            DataContract::V1(v1) => v1.schema_defs(),
         }
     }
 
@@ -69,6 +85,12 @@ impl DataContractSchemaMethodsV0 for DataContract {
     ) -> Result<(), ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.set_schema_defs(
+                defs,
+                full_validation,
+                validation_operations,
+                platform_version,
+            ),
+            DataContract::V1(v1) => v1.set_schema_defs(
                 defs,
                 full_validation,
                 validation_operations,

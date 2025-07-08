@@ -9,7 +9,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 
-/// Extended Block information
+/// Extended Epoch information
 #[derive(
     Clone,
     Debug,

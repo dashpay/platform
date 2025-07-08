@@ -3,13 +3,14 @@ use grovedb_costs::storage_cost::removal::Identifier;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
+use std::collections::BTreeMap;
 
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::MaxReferenceHop;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags};
+use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
 use itertools::Itertools;
 
@@ -239,20 +240,32 @@ impl LowLevelDriveOperation {
                                 (FeeRefunds::default(), amount)
                             }
                             SectionedStorageRemoval(mut removal_per_epoch_by_identifier) => {
-                                let previous_fee_versions = previous_fee_versions.ok_or(Error::Drive(DriveError::CorruptedCodeExecution("expected previous epoch index fee versions to be able to offer refunds")))?;
+
                                 let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
-
-                                (
-                                    FeeRefunds::from_storage_removal(
-                                        removal_per_epoch_by_identifier,
-                                        epoch.index,
-                                        epochs_per_era,
-                                        previous_fee_versions,
-                                    )?,
-                                    system_amount,
-                                )
+                                if fee_version.fee_version_number == 1 {
+                                    (
+                                        FeeRefunds::from_storage_removal(
+                                            removal_per_epoch_by_identifier,
+                                            epoch.index,
+                                            epochs_per_era,
+                                            &BTreeMap::default(),
+                                        )?,
+                                        system_amount,
+                                    )
+                                } else {
+                                    let previous_fee_versions = previous_fee_versions.ok_or(Error::Drive(DriveError::CorruptedCodeExecution("expected previous epoch index fee versions to be able to offer refunds")))?;
+                                    (
+                                        FeeRefunds::from_storage_removal(
+                                            removal_per_epoch_by_identifier,
+                                            epoch.index,
+                                            epochs_per_era,
+                                            previous_fee_versions,
+                                        )?,
+                                        system_amount,
+                                    )
+                                }
                             }
                         };
                     Ok(FeeResult {
@@ -382,6 +395,54 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty sum tree at the given path and key
+    pub fn for_known_path_key_empty_big_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::new_big_sum_tree_with_flags(None, storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_big_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty count tree at the given path and key
+    pub fn for_known_path_key_empty_count_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::new_count_tree_with_flags(None, storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty count tree at the given path and key
+    pub fn for_known_path_key_empty_count_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::new_count_sum_tree_with_flags(None, storage_flags.to_some_element_flags())
+            }
+            None => Element::new_count_sum_tree(None),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     pub fn for_estimated_path_key_empty_tree(
         path: KeyInfoPath,
@@ -393,6 +454,22 @@ impl LowLevelDriveOperation {
                 Element::empty_tree_with_flags(storage_flags.to_some_element_flags())
             }
             None => Element::empty_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty sum tree at the given path and key
+    pub fn for_estimated_path_key_empty_sum_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_sum_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_sum_tree(),
         };
 
         LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
@@ -470,6 +547,38 @@ impl LowLevelDriveOperation {
     }
 }
 
+/// A trait for getting an empty tree operation based on the tree type
+pub trait LowLevelDriveOperationTreeTypeConverter {
+    /// Sets `GroveOperation` for inserting an empty tree at the given path and key
+    fn empty_tree_operation_for_known_path_key(
+        &self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> LowLevelDriveOperation;
+}
+
+impl LowLevelDriveOperationTreeTypeConverter for TreeType {
+    /// Sets `GroveOperation` for inserting an empty tree at the given path and key
+    fn empty_tree_operation_for_known_path_key(
+        &self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> LowLevelDriveOperation {
+        let element_flags = storage_flags.map(|storage_flags| storage_flags.to_element_flags());
+        let element = match self {
+            TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
+            TreeType::SumTree => Element::empty_sum_tree_with_flags(element_flags),
+            TreeType::BigSumTree => Element::empty_big_sum_tree_with_flags(element_flags),
+            TreeType::CountTree => Element::empty_count_tree_with_flags(element_flags),
+            TreeType::CountSumTree => Element::empty_count_sum_tree_with_flags(element_flags),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)
+    }
+}
+
 /// Drive cost trait
 pub trait DriveCost {
     /// Ephemeral cost
@@ -501,7 +610,7 @@ impl DriveCost for OperationCost {
                 .checked_mul(epoch_cost_for_processing_credit_per_byte)
                 .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         // not accessible
-        let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
+        let storage_loaded_bytes_cost = { *storage_loaded_bytes }
             .checked_mul(fee_version.storage.storage_load_credit_per_byte)
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
 

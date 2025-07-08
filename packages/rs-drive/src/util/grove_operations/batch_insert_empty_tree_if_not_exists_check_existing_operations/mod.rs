@@ -28,6 +28,7 @@ impl Drive {
     /// * `Ok(bool)` if the operation was successful. Returns true if the path key already exists without references.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
+    #[allow(clippy::too_many_arguments)]
     pub fn batch_insert_empty_tree_if_not_exists_check_existing_operations<const N: usize>(
         &self,
         path_key_info: PathKeyInfo<N>,

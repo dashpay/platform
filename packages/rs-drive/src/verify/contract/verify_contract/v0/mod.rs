@@ -174,6 +174,8 @@ impl Drive {
     ///
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     pub fn verify_contracts(
         proof: &[u8],
         _is_proof_subset: bool, //this will be used later

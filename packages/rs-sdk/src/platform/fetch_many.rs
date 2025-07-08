@@ -6,40 +6,37 @@
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
 use super::LimitQuery;
-use crate::{
-    error::Error,
-    mock::MockResponse,
-    platform::{document_query::DocumentQuery, query::Query},
-    sync::retry,
-    Sdk,
-};
+use crate::platform::documents::document_query::DocumentQuery;
+use crate::{error::Error, mock::MockResponse, platform::query::Query, sync::retry, Sdk};
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
-    GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest, Proof,
-    ResponseMetadata,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetFinalizedEpochInfosRequest,
+    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetTokenDirectPurchasePricesRequest, GetVotePollsByEndDateRequest, Proof, ResponseMetadata,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
 use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
 use dpp::{
-    block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
+    block::extended_epoch_info::ExtendedEpochInfo, block::finalized_epoch_info::FinalizedEpochInfo,
+    voting::votes::resource_vote::ResourceVote,
 };
+use dpp::{data_contract::DataContract, tokens::token_pricing_schedule::TokenPricingSchedule};
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
 use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
-    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
-    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
-    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+    FinalizedEpochInfos, IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote,
+    MasternodeProtocolVotes, ProposerBlockCountById, ProposerBlockCountByRange,
+    ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVotesByIdentity,
+    TokenDirectPurchasePrices, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{
@@ -314,7 +311,7 @@ where
 /// ## Supported query types
 ///
 /// * [DriveQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
-/// * [DocumentQuery](crate::platform::document_query::DocumentQuery)
+/// * [DocumentQuery](crate::platform::documents::document_query::DocumentQuery)
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Documents> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
@@ -385,6 +382,19 @@ impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
 ///   that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
+}
+
+/// Retrieve finalized epochs.
+///
+/// Returns [FinalizedEpochInfos](drive_proof_verifier::types::FinalizedEpochInfos).
+///
+/// ## Supported query types
+///
+/// * [FinalizedEpochQuery](super::types::finalized_epoch::FinalizedEpochQuery) - query that specifies finalized epoch matching criteria
+/// * [`(EpochIndex, EpochIndex)`] - tuple of (start_epoch, end_epoch) indices
+/// * [`LimitQuery<FinalizedEpochQuery>`](super::LimitQuery) - limit query that allows to specify maximum number of objects to fetch
+impl FetchMany<EpochIndex, FinalizedEpochInfos> for FinalizedEpochInfo {
+    type Request = GetFinalizedEpochInfosRequest;
 }
 
 /// Fetch information about number of votes for each protocol version upgrade.
@@ -539,4 +549,13 @@ impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::Id
 /// * [KeysInPath]
 impl FetchMany<Key, Elements> for Element {
     type Request = GetPathElementsRequest;
+}
+
+/// Fetch multiple prices for token direct purchase.
+///
+/// ## Supported query types
+///
+/// * [`&\[Identifier\]`](dpp::prelude::Identifier) - list of identifiers of tokens whose prices we want to fetch
+impl FetchMany<Identifier, TokenDirectPurchasePrices> for TokenPricingSchedule {
+    type Request = GetTokenDirectPurchasePricesRequest;
 }

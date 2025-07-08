@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dash-spv",
-  "version": "2.8.0",
+  "version": "3.0.0",
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
@@ -24,7 +24,7 @@
     "eslint": "^8.53.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.29.0",
-    "mocha": "^10.2.0",
+    "mocha": "^11.1.0",
     "should": "^13.2.3",
     "sinon": "^17.0.1"
   }

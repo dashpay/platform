@@ -3,7 +3,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 class GetTotalCreditsInPlatformResponse extends AbstractResponse {
   /**
-   * @param {number} totalCreditsInPlatform
+   * @param {bigint} totalCreditsInPlatform
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,7 +14,7 @@ class GetTotalCreditsInPlatformResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {number}
+   * @returns {bigint}
    */
   getTotalCreditsInPlatform() {
     return this.totalCreditsInPlatform;
@@ -26,7 +26,7 @@ class GetTotalCreditsInPlatformResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
-    const totalCreditsInPlatform = proto.getV0().getCredits();
+    const totalCreditsInPlatform = BigInt(proto.getV0().getCredits());
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
     );

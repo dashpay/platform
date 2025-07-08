@@ -1,6 +1,6 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 
-use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
+use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
@@ -8,7 +8,7 @@ use crate::error::Error;
 
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
+use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
 use intmap::IntMap;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -41,7 +41,7 @@ impl Drive {
     pub(super) fn stateless_delete_of_non_tree_for_costs_v0(
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
-        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
+        is_known_to_be_subtree_with_sum: Option<MaybeTree>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -77,7 +77,7 @@ impl Drive {
                             )),
                         ))?;
 
-                        Ok((s, layer_info.clone()))
+                        Ok((s, *layer_info))
                     })
                     .collect::<Result<IntMap<u16, EstimatedLayerInformation>, Error>>()?;
                 // We need to update the current layer to only have 1 element that we want to delete

@@ -183,7 +183,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `revision`: An `Option<Revision>` to set as the document's revision. `None` indicates
-    /// the document does not have a revision.
+    ///   the document does not have a revision.
     fn set_revision(&mut self, revision: Option<Revision>) {
         self.revision = revision;
     }
@@ -202,7 +202,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `created_at`: An `Option<TimestampMillis>` to set as the document's creation timestamp.
-    /// `None` indicates the timestamp is not available.
+    ///   `None` indicates the timestamp is not available.
     fn set_created_at(&mut self, created_at: Option<TimestampMillis>) {
         self.created_at = created_at;
     }
@@ -212,7 +212,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `updated_at`: An `Option<TimestampMillis>` to set as the document's last update timestamp.
-    /// `None` indicates the timestamp is not available.
+    ///   `None` indicates the timestamp is not available.
     fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
         self.updated_at = updated_at;
     }
@@ -226,7 +226,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `created_at_block_height`: An `Option<u64>` to set as the document's creation block height.
-    /// `None` indicates the block height is not available.
+    ///   `None` indicates the block height is not available.
     fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>) {
         self.created_at_block_height = created_at_block_height;
     }
@@ -236,7 +236,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `updated_at_block_height`: An `Option<u64>` to set as the document's last update block height.
-    /// `None` indicates the block height is not available.
+    ///   `None` indicates the block height is not available.
     fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>) {
         self.updated_at_block_height = updated_at_block_height;
     }
@@ -250,7 +250,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `created_at_core_block_height`: An `Option<u32>` to set as the document's creation core block height.
-    /// `None` indicates the core block height is not available.
+    ///   `None` indicates the core block height is not available.
     fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>) {
         self.created_at_core_block_height = created_at_core_block_height;
     }
@@ -260,7 +260,7 @@ impl DocumentV0Setters for DocumentV0 {
     ///
     /// # Parameters
     /// - `updated_at_core_block_height`: An `Option<u32>` to set as the document's last update core block height.
-    /// `None` indicates the core block height is not available.
+    ///   `None` indicates the core block height is not available.
     fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
         self.updated_at_core_block_height = updated_at_core_block_height;
     }

@@ -135,7 +135,7 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 /// instead of byte arrays
 struct InstantLockDebug<'a>(&'a InstantLock);
 
-impl<'a> Debug for InstantLockDebug<'a> {
+impl Debug for InstantLockDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let instant_lock = &self.0;
         f.debug_struct("InstantLock")

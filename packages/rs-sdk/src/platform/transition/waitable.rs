@@ -43,7 +43,7 @@ impl Waitable for Document {
         state_transition: StateTransition,
         settings: Option<PutSettings>,
     ) -> Result<Self, Error> {
-        let doc_id = if let StateTransition::DocumentsBatch(transition) = &state_transition {
+        let doc_id = if let StateTransition::Batch(transition) = &state_transition {
             let ids = transition.modified_data_ids();
             if ids.len() != 1 {
                 return Err(Error::Protocol(

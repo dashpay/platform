@@ -1,13 +1,13 @@
 [package]
 name = "dashpay-contract"
 description = "DashPay data contract schema and tools"
-version = "1.8.0"
+version = "2.0.0"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
 platform-version = { path = "../rs-platform-version" }
-thiserror = "1.0.64"
+thiserror = "2.0.12"
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }

@@ -2,10 +2,12 @@ use crate::version::FeatureVersion;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;
+use drive_group_method_versions::DriveGroupMethodVersions;
 use drive_grove_method_versions::DriveGroveMethodVersions;
 use drive_identity_method_versions::DriveIdentityMethodVersions;
 use drive_state_transition_method_versions::DriveStateTransitionMethodVersions;
 use drive_structure_version::DriveStructureVersion;
+use drive_token_method_versions::DriveTokenMethodVersions;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
@@ -13,15 +15,18 @@ use grovedb_version::version::GroveVersion;
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
 pub mod drive_document_method_versions;
+pub mod drive_group_method_versions;
 pub mod drive_grove_method_versions;
 pub mod drive_identity_method_versions;
 pub mod drive_state_transition_method_versions;
 pub mod drive_structure_version;
+pub mod drive_token_method_versions;
 pub mod drive_verify_method_versions;
 pub mod drive_vote_method_versions;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
@@ -46,6 +51,7 @@ pub struct DriveMethodVersions {
     pub asset_lock: DriveAssetLockMethodVersions,
     pub verify: DriveVerifyMethodVersions,
     pub identity: DriveIdentityMethodVersions,
+    pub token: DriveTokenMethodVersions,
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
@@ -53,6 +59,7 @@ pub struct DriveMethodVersions {
     pub prove: DriveProveMethodVersions,
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
+    pub group: DriveGroupMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -75,6 +82,7 @@ pub struct DriveFetchMethodVersions {
 pub struct DriveProveMethodVersions {
     pub prove_elements: FeatureVersion,
     pub prove_multiple_state_transition_results: FeatureVersion,
+    pub prove_state_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

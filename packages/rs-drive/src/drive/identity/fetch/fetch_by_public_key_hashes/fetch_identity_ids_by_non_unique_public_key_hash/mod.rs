@@ -2,8 +2,9 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
-use dpp::version::drive_versions::DriveVersion;
+use crate::fees::op::LowLevelDriveOperation;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Fetches identity ids from storage based on a non-unique public key hash.
@@ -13,8 +14,9 @@ impl Drive {
     /// # Arguments
     ///
     /// * `public_key_hash` - A non-unique public key hash corresponding to the identity ids to be fetched.
+    /// * `limit` - An optional limit.
     /// * `transaction` - Transaction arguments.
-    /// * `drive_version` - A reference to the drive version.
+    /// * `platform_version` - A reference to the platform version.
     ///
     /// # Returns
     ///
@@ -22,10 +24,13 @@ impl Drive {
     pub fn fetch_identity_ids_by_non_unique_public_key_hash(
         &self,
         public_key_hash: [u8; 20],
+        limit: Option<u16>,
+        after: Option<[u8; 32]>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -34,11 +39,46 @@ impl Drive {
         {
             0 => self.fetch_identity_ids_by_non_unique_public_key_hash_v0(
                 public_key_hash,
+                limit,
+                after,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_ids_by_non_unique_public_key_hash".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    pub(crate) fn fetch_identity_ids_by_non_unique_public_key_hash_operations(
+        &self,
+        public_key_hash: [u8; 20],
+        limit: Option<u16>,
+        after: Option<[u8; 32]>,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<[u8; 32]>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .fetch
+            .public_key_hashes
+            .fetch_identity_ids_by_non_unique_public_key_hash
+        {
+            0 => self.fetch_identity_ids_by_non_unique_public_key_hash_operations_v0(
+                public_key_hash,
+                limit,
+                after,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_identity_ids_by_non_unique_public_key_hash_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

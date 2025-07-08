@@ -5,9 +5,10 @@ const BlockHeadersReader = require('./BlockHeadersReader');
 
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
- * @property {string} [network=testnet]
+ * @property {string} [network='testnet'] network type
  * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
  * @property {number} [targetBatchSize=100000] a target batch size per stream
+ * @property {number} [fromBlockHeight=1] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
  */
 const defaultOptions = {
@@ -35,9 +36,9 @@ const STATES = {
 
 class BlockHeadersProvider extends EventEmitter {
   /**
-   * @param {BlockHeadersProviderOptions} options
-   * @param {Function} [createHistoricalSyncStream]
-   * @param {Function} [createContinuousSyncStream]
+   * @param {BlockHeadersProviderOptions} options for block headers
+   * @param {Function} [createHistoricalSyncStream] createHistoricalSyncStream
+   * @param {Function} [createContinuousSyncStream] createContinuousSyncStream
    */
   // TODO move options to as last param
   // eslint-disable-next-line default-param-last
@@ -60,7 +61,7 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   /**
-   * @param {BlockHeadersReader} blockHeadersReader
+   * @param {BlockHeadersReader} blockHeadersReader instance
    */
   setBlockHeadersReader(blockHeadersReader) {
     this.blockHeadersReader = blockHeadersReader;
@@ -68,7 +69,7 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    *
-   * @param {SpvChain} spvChain
+   * @param {SpvChain} spvChain instance
    */
   setSpvChain(spvChain) {
     this.spvChain = spvChain;
@@ -104,8 +105,8 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * Initializes SPV chain with a list of headers and a known lastSyncedHeaderHeight
-   * @param headers
-   * @param firstHeaderHeight
+   * @param {BlockHeader[]} headers array of headers
+   * @param firstHeaderHeight {number} first block header height
    */
   async initializeChainWith(headers, firstHeaderHeight) {
     await SpvChain.wasmX11Ready();
@@ -122,7 +123,7 @@ class BlockHeadersProvider extends EventEmitter {
   /**
    * Checks whether spv chain has header at specified height and flushes chains if not
    * @private
-   * @param height
+   * @param {number} height block height
    */
   ensureChainRoot(height) {
     // Flush spv chain in case header at specified height was not found
@@ -134,8 +135,8 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * Reads historical block headers
-   * @param fromBlockHeight
-   * @param toBlockHeight
+   * @param {number} fromBlockHeight height block height
+   * @param {number} toBlockHeight height block height
    * @returns {Promise<void>}
    */
   async readHistorical(fromBlockHeight, toBlockHeight) {
@@ -196,8 +197,8 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * @private
-   * @param headersData
-   * @param reject
+   * @param {object} headersData object with header and headHeight
+   * @param {function} reject callback function
    */
   headersHandler(headersData, reject) {
     const { headers, headHeight } = headersData;

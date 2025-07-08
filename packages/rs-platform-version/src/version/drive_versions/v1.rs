@@ -1,10 +1,12 @@
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
+use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v1::DRIVE_VERIFY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_vote_method_versions::v1::DRIVE_VOTE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::{
@@ -36,6 +38,7 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
         prove: DriveProveMethodVersions {
             prove_elements: 0,
             prove_multiple_state_transition_results: 0,
+            prove_state_transition: 0,
         },
         balances: DriveBalancesMethodVersions {
             add_to_system_credits: 0,
@@ -61,6 +64,7 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V1,
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V1,
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V1,
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 0,
@@ -95,6 +99,7 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
             estimated_cost_for_prefunded_specialized_balance_update: 0,
             empty_prefunded_specialized_balance: 0,
         },
+        group: DRIVE_GROUP_METHOD_VERSIONS_V1,
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
     grove_version: GROVE_V1,

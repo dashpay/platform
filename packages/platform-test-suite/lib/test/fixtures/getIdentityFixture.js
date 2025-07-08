@@ -27,7 +27,7 @@ module.exports = async function getIdentityFixture() {
   const identity = new Identity(1);
   identity.setId(id);
   identity.setPublicKeys([key1, key2]);
-  identity.setBalance(10000);
+  identity.setBalance(BigInt(10000));
 
   return identity;
 };

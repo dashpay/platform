@@ -494,7 +494,7 @@ where
     }
 }
 
-impl<'a, T> PlatformVersionEncode for &'a T
+impl<T> PlatformVersionEncode for &T
 where
     T: PlatformVersionEncode + ?Sized,
 {

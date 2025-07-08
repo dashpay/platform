@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.8.0"
+version = "2.0.0"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -14,10 +14,10 @@ license = "MIT"
 
 [dependencies]
 arc-swap = "1.7.0"
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
-serde = { version = "1.0.197", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "server",
@@ -28,8 +28,8 @@ rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.16.0" }
-dpp = { path = "../rs-dpp", features = ["abci"] }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
+dpp = { path = "../rs-dpp", default-features = false, features = ["abci"] }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
@@ -39,7 +39,10 @@ tracing = { version = "0.1.37", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.7" }
-dapi-grpc = { path = "../dapi-grpc", features = ["server"] }
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
+  "server",
+  "platform",
+] }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
   "env-filter",
   "ansi",
@@ -49,9 +52,10 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.2.1", tag = "v1.2.1+1.3.0", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.4.0", tag = "v1.4.0", features = [
   "grpc",
 ] }
+
 lazy_static = "1.4.0"
 itertools = { version = "0.13" }
 file-rotate = { version = "0.7.3" }
@@ -73,7 +77,7 @@ tokio-util = { version = "0.7" }
 derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3", optional = true }
 
 [dev-dependencies]
 bs58 = { version = "0.5.0" }
@@ -81,7 +85,7 @@ base64 = "0.22.1"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
-dpp = { path = "../rs-dpp", features = [
+dpp = { path = "../rs-dpp", default-features = false, features = [
   "abci",
   "random-documents",
   "state-transition-signing",
@@ -93,19 +97,20 @@ dpp = { path = "../rs-dpp", features = [
   "data-contract-json-conversion",
   "data-contract-cbor-conversion",
 ] }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 strategy-tests = { path = "../strategy-tests" }
 assert_matches = "1.5.0"
-drive-abci = { path = ".", features = ["testing-config"] }
+drive-abci = { path = ".", features = ["testing-config", "mocks"] }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3" }
+mockall = { version = "0.13" }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.23.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-
-default = ["mocks"]
-mocks = ["mockall", "drive/fixtures-and-mocks"]
+default = ["bls-signatures"]
+mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 grovedbg = ["drive/grovedbg"]
@@ -113,3 +118,9 @@ grovedbg = ["drive/grovedbg"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(tokio_unstable)',
+  'cfg(create_sdk_test_data)',
+] }

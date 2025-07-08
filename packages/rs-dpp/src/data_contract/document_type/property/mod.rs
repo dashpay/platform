@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -5,13 +6,19 @@ use std::io::{BufReader, Cursor, Read};
 use crate::data_contract::errors::DataContractError;
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::config::v1::DataContractConfigGettersV1;
+use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::property_names;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
+use itertools::Itertools;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -66,6 +73,7 @@ pub enum DocumentPropertyType {
 }
 
 impl DocumentPropertyType {
+    #[deprecated = "this method is missing required information to create a type. Use TryFrom<&Value> instead."]
     pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
         match name {
             "u128" => Ok(DocumentPropertyType::U128),
@@ -159,69 +167,93 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn min_byte_size(&self) -> Option<u16> {
+    pub fn min_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
         match self {
-            DocumentPropertyType::U128 => Some(16),
-            DocumentPropertyType::I128 => Some(16),
-            DocumentPropertyType::U64 => Some(8),
-            DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
-            DocumentPropertyType::I32 => Some(4),
-            DocumentPropertyType::U16 => Some(2),
-            DocumentPropertyType::I16 => Some(2),
-            DocumentPropertyType::U8 => Some(1),
-            DocumentPropertyType::I8 => Some(1),
-            DocumentPropertyType::F64 => Some(8),
+            DocumentPropertyType::U128 => Ok(Some(16)),
+            DocumentPropertyType::I128 => Ok(Some(16)),
+            DocumentPropertyType::U64 => Ok(Some(8)),
+            DocumentPropertyType::I64 => Ok(Some(8)),
+            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::I32 => Ok(Some(4)),
+            DocumentPropertyType::U16 => Ok(Some(2)),
+            DocumentPropertyType::I16 => Ok(Some(2)),
+            DocumentPropertyType::U8 => Ok(Some(1)),
+            DocumentPropertyType::I8 => Ok(Some(1)),
+            DocumentPropertyType::F64 => Ok(Some(8)),
             DocumentPropertyType::String(sizes) => match sizes.min_length {
-                None => Some(0),
-                Some(size) => Some(size * 4),
+                None => Ok(Some(0)),
+                Some(size) => {
+                    if platform_version.protocol_version > 8 {
+                        match size.checked_mul(4) {
+                            Some(mul) => Ok(Some(mul)),
+                            None => Err(ProtocolError::Overflow("min_byte_size overflow")),
+                        }
+                    } else {
+                        Ok(Some(size.wrapping_mul(4)))
+                    }
+                }
             },
             DocumentPropertyType::ByteArray(sizes) => match sizes.min_size {
-                None => Some(0),
-                Some(size) => Some(size),
+                None => Ok(Some(0)),
+                Some(size) => Ok(Some(size)),
             },
-            DocumentPropertyType::Boolean => Some(1),
-            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Boolean => Ok(Some(1)),
+            DocumentPropertyType::Date => Ok(Some(8)),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.property_type.min_byte_size())
+                .map(|(_, sub_field)| sub_field.property_type.min_byte_size(platform_version))
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
-            DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => Ok(None),
+            DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::Identifier => Ok(Some(32)),
         }
     }
 
-    pub fn max_byte_size(&self) -> Option<u16> {
+    pub fn max_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
         match self {
-            DocumentPropertyType::U128 => Some(16),
-            DocumentPropertyType::I128 => Some(16),
-            DocumentPropertyType::U64 => Some(8),
-            DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
-            DocumentPropertyType::I32 => Some(4),
-            DocumentPropertyType::U16 => Some(2),
-            DocumentPropertyType::I16 => Some(2),
-            DocumentPropertyType::U8 => Some(1),
-            DocumentPropertyType::I8 => Some(1),
-            DocumentPropertyType::F64 => Some(8),
+            DocumentPropertyType::U128 => Ok(Some(16)),
+            DocumentPropertyType::I128 => Ok(Some(16)),
+            DocumentPropertyType::U64 => Ok(Some(8)),
+            DocumentPropertyType::I64 => Ok(Some(8)),
+            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::I32 => Ok(Some(4)),
+            DocumentPropertyType::U16 => Ok(Some(2)),
+            DocumentPropertyType::I16 => Ok(Some(2)),
+            DocumentPropertyType::U8 => Ok(Some(1)),
+            DocumentPropertyType::I8 => Ok(Some(1)),
+            DocumentPropertyType::F64 => Ok(Some(8)),
             DocumentPropertyType::String(sizes) => match sizes.max_length {
-                None => Some(u16::MAX),
-                Some(size) => Some(size * 4),
+                None => Ok(Some(u16::MAX)),
+                Some(size) => {
+                    if platform_version.protocol_version > 8 {
+                        match size.checked_mul(4) {
+                            Some(mul) => Ok(Some(mul)),
+                            None => Err(ProtocolError::Overflow("max_byte_size overflow")),
+                        }
+                    } else {
+                        Ok(Some(size.wrapping_mul(4)))
+                    }
+                }
             },
             DocumentPropertyType::ByteArray(sizes) => match sizes.max_size {
-                None => Some(u16::MAX),
-                Some(size) => Some(size),
+                None => Ok(Some(u16::MAX)),
+                Some(size) => Ok(Some(size)),
             },
-            DocumentPropertyType::Boolean => Some(1),
-            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Boolean => Ok(Some(1)),
+            DocumentPropertyType::Date => Ok(Some(8)),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.property_type.max_byte_size())
+                .map(|(_, sub_field)| sub_field.property_type.max_byte_size(platform_version))
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
-            DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => Ok(None),
+            DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::Identifier => Ok(Some(32)),
         }
     }
 
@@ -259,60 +291,66 @@ impl DocumentPropertyType {
     }
 
     /// The middle size rounded down halfway between min and max size
-    pub fn middle_size(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_size(&self, platform_version: &PlatformVersion) -> Option<u16> {
+        let min_size = self.min_size()?;
+        let max_size = self.max_size()?;
+        if platform_version.protocol_version > 8 {
+            Some(((min_size as u32 + max_size as u32) / 2) as u16)
+        } else {
+            Some(min_size.wrapping_add(max_size) / 2)
         }
-        let min_size = self.min_size().unwrap();
-        let max_size = self.max_size().unwrap();
-        Some((min_size + max_size) / 2)
     }
 
     /// The middle size rounded up halfway between min and max size
-    pub fn middle_size_ceil(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_size_ceil(&self, platform_version: &PlatformVersion) -> Option<u16> {
+        let min_size = self.min_size()?;
+        let max_size = self.max_size()?;
+        if platform_version.protocol_version > 8 {
+            Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16)
+        } else {
+            Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2)
         }
-        let min_size = self.min_size().unwrap();
-        let max_size = self.max_size().unwrap();
-        Some((min_size + max_size + 1) / 2)
     }
 
     /// The middle size rounded down halfway between min and max byte size
-    pub fn middle_byte_size(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        if platform_version.protocol_version > 8 {
+            Ok(Some(((min_size as u32 + max_size as u32) / 2) as u16))
+        } else {
+            Ok(Some(min_size.wrapping_add(max_size) / 2))
         }
-        let min_size = self.min_byte_size().unwrap();
-        let max_size = self.max_byte_size().unwrap();
-        Some((min_size + max_size) / 2)
     }
 
     /// The middle size rounded up halfway between min and max byte size
-    pub fn middle_byte_size_ceil(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_byte_size_ceil(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        if platform_version.protocol_version > 8 {
+            Ok(Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16))
+        } else {
+            Ok(Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2))
         }
-        let min_size = self.min_byte_size().unwrap() as u32;
-        let max_size = self.max_byte_size().unwrap() as u32;
-        Some(((min_size + max_size + 1) / 2) as u16)
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
-        let min_size = self.min_size().unwrap();
-        let max_size = self.max_size().unwrap();
+        let min_size = self.min_size().unwrap_or_default();
+        let max_size = self.max_size().unwrap_or_default();
         rng.gen_range(min_size..=max_size)
     }
 
@@ -493,9 +531,10 @@ impl DocumentPropertyType {
         } else {
             let mut value: Vec<u8> = vec![0u8; bytes];
             buf.read_exact(&mut value).map_err(|_| {
-                DataContractError::CorruptedSerialization(
-                    "error reading varint from serialized document".to_string(),
-                )
+                DataContractError::CorruptedSerialization(format!(
+                    "error reading varint of length {} from serialized document",
+                    bytes
+                ))
             })?;
             Ok(value)
         }
@@ -952,7 +991,7 @@ impl DocumentPropertyType {
         if value.is_null() {
             return Ok(vec![]);
         }
-        return match self {
+        match self {
             DocumentPropertyType::String(_) => {
                 let value_as_text = value
                     .as_text()
@@ -1095,7 +1134,7 @@ impl DocumentPropertyType {
                     "serialization of arrays not yet supported".to_string(),
                 ),
             )),
-        };
+        }
     }
 
     // Given a field type and a value this function chooses and executes the right encoding method
@@ -1200,7 +1239,7 @@ impl DocumentPropertyType {
         }
         match self {
             DocumentPropertyType::String(_) => {
-                if value == &vec![0] {
+                if value == [0] {
                     // we don't want to collide with the definition of an empty string
                     Ok(Value::Text("".to_string()))
                 } else {
@@ -1291,9 +1330,9 @@ impl DocumentPropertyType {
                 Ok(identifier.into())
             }
             DocumentPropertyType::Boolean => {
-                if value == &vec![0] {
+                if value == [0] {
                     Ok(Value::Bool(false))
-                } else if value == &vec![1] {
+                } else if value == [1] {
                     Ok(Value::Bool(true))
                 } else {
                     Err(ProtocolError::DecodingError(
@@ -1730,6 +1769,7 @@ impl DocumentPropertyType {
     }
 
     pub fn encode_u16(val: u16) -> Vec<u8> {
+        //todo this should just be to_be_bytes (and for all unsigned integers)
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -1754,7 +1794,7 @@ impl DocumentPropertyType {
         wtr
     }
 
-    /// Decodes an unsigned integer on 32 bits.
+    /// Decodes an unsigned integer on 16 bits.
     pub fn decode_u16(val: &[u8]) -> Option<u16> {
         // Flip the sign bit
         // to deal with interaction between the domains
@@ -1974,6 +2014,98 @@ impl DocumentPropertyType {
         let mut cursor = Cursor::new(wtr);
         cursor.read_f64::<BigEndian>().ok()
     }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::I8
+                | DocumentPropertyType::I16
+                | DocumentPropertyType::I32
+                | DocumentPropertyType::I64
+                | DocumentPropertyType::U8
+                | DocumentPropertyType::U16
+                | DocumentPropertyType::U32
+                | DocumentPropertyType::U64
+        )
+    }
+
+    pub fn try_from_value_map(
+        value_map: &BTreeMap<String, &Value>,
+        options: &DocumentPropertyTypeParsingOptions,
+    ) -> Result<Self, DataContractError> {
+        let type_value = value_map.get_str(property_names::TYPE)?;
+
+        let property_type = match type_value {
+            "integer" => {
+                if options.sized_integer_types {
+                    find_integer_type_for_subschema_value(value_map)?
+                } else {
+                    DocumentPropertyType::I64
+                }
+            }
+            "string" => DocumentPropertyType::String(StringPropertySizes {
+                min_length: value_map.get_optional_integer(property_names::MIN_LENGTH)?,
+                max_length: value_map.get_optional_integer(property_names::MAX_LENGTH)?,
+            }),
+            "array" => {
+                // Only handling bytearrays for v1
+                // Return an error if it is not a byte array
+                let Some(is_byte_array) =
+                    value_map.get_optional_bool(property_names::BYTE_ARRAY)?
+                else {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "only byte arrays are supported now".to_string(),
+                    ));
+                };
+
+                if !is_byte_array {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "byteArray should always be true if defined".to_string(),
+                    ));
+                }
+
+                match value_map.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                    Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
+                    Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                        min_size: value_map.get_optional_integer(property_names::MIN_ITEMS)?,
+                        max_size: value_map.get_optional_integer(property_names::MAX_ITEMS)?,
+                    }),
+                }
+            }
+            "object" => Self::Object(Default::default()),
+            "boolean" => DocumentPropertyType::Boolean,
+            "number" => DocumentPropertyType::F64,
+            _ => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "unsupported property type: {}",
+                    type_value
+                )));
+            }
+        };
+
+        Ok(property_type)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DocumentPropertyTypeParsingOptions {
+    pub sized_integer_types: bool,
+}
+
+impl Default for DocumentPropertyTypeParsingOptions {
+    fn default() -> Self {
+        Self {
+            sized_integer_types: true,
+        }
+    }
+}
+
+impl From<&DataContractConfig> for DocumentPropertyTypeParsingOptions {
+    fn from(config: &DataContractConfig) -> Self {
+        Self {
+            sized_integer_types: config.sized_integer_types(),
+        }
+    }
 }
 
 fn get_field_type_matching_error(value: &Value) -> DataContractError {
@@ -1981,4 +2113,79 @@ fn get_field_type_matching_error(value: &Value) -> DataContractError {
         "document field type doesn't match \"{}\" document value",
         value
     ))
+}
+
+fn find_integer_type_for_subschema_value(
+    value: &BTreeMap<String, &Value>,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let minimum = value.get_optional_integer::<i64>(property_names::MINIMUM)?;
+    let maximum = value.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+
+    let property_type = match (minimum, maximum) {
+        (Some(min), Some(max)) => find_integer_type_for_min_and_max_values(min, max),
+        (Some(min), None) => {
+            if min >= 0 {
+                DocumentPropertyType::U64
+            } else {
+                DocumentPropertyType::I64
+            }
+        }
+        (None, Some(max)) => find_unsigned_integer_type_for_max_value(max),
+        (None, None) => {
+            // If enum is defined, we can try to figure out type based on minimal and maximal values
+            let enum_type = if let Some(enum_values) =
+                value.get_optional_inner_value_array::<Vec<_>>(property_names::ENUM)?
+            {
+                match enum_values
+                    .into_iter()
+                    .filter_map(|v| v.as_integer())
+                    .minmax()
+                {
+                    itertools::MinMaxResult::MinMax(min, max) => {
+                        Some(find_integer_type_for_min_and_max_values(min, max))
+                    }
+                    itertools::MinMaxResult::OneElement(val) => {
+                        Some(find_unsigned_integer_type_for_max_value(val))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            if let Some(enum_type) = enum_type {
+                enum_type
+            } else {
+                DocumentPropertyType::I64
+            }
+        }
+    };
+
+    Ok(property_type)
+}
+
+fn find_unsigned_integer_type_for_max_value(max_value: i64) -> DocumentPropertyType {
+    if max_value <= u8::MAX as i64 {
+        DocumentPropertyType::U8
+    } else if max_value <= u16::MAX as i64 {
+        DocumentPropertyType::U16
+    } else if max_value <= u32::MAX as i64 {
+        DocumentPropertyType::U32
+    } else {
+        DocumentPropertyType::U64
+    }
+}
+
+fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPropertyType {
+    if min >= 0 {
+        find_unsigned_integer_type_for_max_value(max)
+    } else if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
+        DocumentPropertyType::I8
+    } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
+        DocumentPropertyType::I16
+    } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
+        DocumentPropertyType::I32
+    } else {
+        DocumentPropertyType::I64
+    }
 }

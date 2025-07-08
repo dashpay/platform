@@ -27,6 +27,7 @@ pub use identity_public_key::*;
 //
 // pub mod credits_converter;
 pub mod errors;
+#[allow(clippy::module_inception)]
 mod identity;
 pub mod state_transition;
 

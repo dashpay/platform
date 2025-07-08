@@ -1,0 +1,65 @@
+use crate::version::consensus_versions::ConsensusVersions;
+use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_contract_versions::v2::CONTRACT_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_document_versions::v2::DOCUMENT_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_state_transition_versions::v2::STATE_TRANSITION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
+use crate::version::dpp_versions::DPPVersion;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v6::DRIVE_ABCI_METHOD_VERSIONS_V6;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRIVE_ABCI_VALIDATION_VERSIONS_V6;
+use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
+use crate::version::drive_abci_versions::DriveAbciVersion;
+use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
+use crate::version::fee::v2::FEE_VERSION2;
+use crate::version::protocol_version::PlatformVersion;
+use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
+use crate::version::system_limits::v1::SYSTEM_LIMITS_V1;
+use crate::version::ProtocolVersion;
+
+pub const PROTOCOL_VERSION_9: ProtocolVersion = 9;
+
+/// This version adds token support and was for Platform release 2.0.0
+pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
+    protocol_version: PROTOCOL_VERSION_9,
+    drive: DRIVE_VERSION_V4, // changed (for data contract insert and update)
+    drive_abci: DriveAbciVersion {
+        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V6, // changed because of the genesis state
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V6, // changed
+        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
+        query: DRIVE_ABCI_QUERY_VERSIONS_V1,
+    },
+    dpp: DPPVersion {
+        costs: DPP_COSTS_VERSIONS_V1,
+        validation: DPP_VALIDATION_VERSIONS_V2,
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2, // changed
+        state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
+        state_transitions: STATE_TRANSITION_VERSIONS_V2,
+        contract_versions: CONTRACT_VERSIONS_V2, // changed
+        document_versions: DOCUMENT_VERSIONS_V2, // changed to support new serialization
+        identity_versions: IDENTITY_VERSIONS_V1,
+        voting_versions: VOTING_VERSION_V2,
+        token_versions: TOKEN_VERSIONS_V1,
+        asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
+        methods: DPP_METHOD_VERSIONS_V2,
+        factory_versions: DPP_FACTORY_VERSIONS_V1,
+    },
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
+    fee_version: FEE_VERSION2, //changed to have data contract pay registration fees
+    system_limits: SYSTEM_LIMITS_V1,
+    consensus: ConsensusVersions {
+        tenderdash_consensus_version: 1,
+    },
+};

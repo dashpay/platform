@@ -265,6 +265,7 @@ mod tests {
             let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
                 &document,
                 document_type,
+                &contract,
                 platform_version,
             )
             .expect("should serialize");
@@ -306,6 +307,7 @@ mod tests {
             let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
                 &document,
                 document_type,
+                &contract,
                 platform_version,
             )
             .expect("should serialize");
@@ -322,6 +324,7 @@ mod tests {
             let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
                 &document,
                 document_type,
+                &contract,
                 platform_version,
             )
             .expect("should serialize");

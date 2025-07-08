@@ -45,9 +45,7 @@ impl Drive {
                         "we should not be seeing internal grovedb operations",
                     )));
                 }
-                Some(GroveOp::Delete { .. })
-                | Some(GroveOp::DeleteTree { .. })
-                | Some(GroveOp::DeleteSumTree { .. }) => false,
+                Some(GroveOp::Delete { .. }) | Some(GroveOp::DeleteTree { .. }) => false,
                 _ => true,
             };
 
@@ -70,7 +68,7 @@ impl Drive {
         if needs_removal_from_state {
             let delete_operation = match apply_type {
                 BatchDeleteApplyType::StatelessBatchDelete {
-                    is_sum_tree,
+                    in_tree_type: is_sum_tree,
                     estimated_key_size,
                     estimated_value_size,
                 } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(

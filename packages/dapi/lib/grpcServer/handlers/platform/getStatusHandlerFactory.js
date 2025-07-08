@@ -164,11 +164,11 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       chain.setCatchingUp(tenderdashStatus.sync_info.catching_up);
       chain.setLatestBlockHash(Buffer.from(tenderdashStatus.sync_info.latest_block_hash, 'hex'));
       chain.setLatestAppHash(Buffer.from(tenderdashStatus.sync_info.latest_app_hash, 'hex'));
-      chain.setLatestBlockHeight(Number(tenderdashStatus.sync_info.latest_block_height));
+      chain.setLatestBlockHeight(tenderdashStatus.sync_info.latest_block_height.toString());
       chain.setEarliestBlockHash(Buffer.from(tenderdashStatus.sync_info.earliest_block_hash, 'hex'));
       chain.setEarliestAppHash(Buffer.from(tenderdashStatus.sync_info.earliest_app_hash, 'hex'));
-      chain.setEarliestBlockHeight(Number(tenderdashStatus.sync_info.earliest_block_height));
-      chain.setMaxPeerBlockHeight(Number(tenderdashStatus.sync_info.max_peer_block_height));
+      chain.setEarliestBlockHeight(tenderdashStatus.sync_info.earliest_block_height.toString());
+      chain.setMaxPeerBlockHeight(tenderdashStatus.sync_info.max_peer_block_height.toString());
       if (driveStatus.chain?.coreChainLockedHeight) {
         chain.setCoreChainLockedHeight(driveStatus.chain.coreChainLockedHeight);
       }
@@ -176,16 +176,16 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       v0.setChain(chain);
 
       const stateSync = new GetStatusResponse.GetStatusResponseV0.StateSync();
-      stateSync.setTotalSyncedTime(Number(tenderdashStatus.sync_info.total_synced_time));
-      stateSync.setRemainingTime(Number(tenderdashStatus.sync_info.remaining_time));
+      stateSync.setTotalSyncedTime(tenderdashStatus.sync_info.total_synced_time.toString());
+      stateSync.setRemainingTime(tenderdashStatus.sync_info.remaining_time.toString());
       stateSync.setTotalSnapshots(Number(tenderdashStatus.sync_info.total_snapshots));
       stateSync.setChunkProcessAvgTime(
-        Number(tenderdashStatus.sync_info.chunk_process_avg_time),
+        tenderdashStatus.sync_info.chunk_process_avg_time.toString(),
       );
-      stateSync.setSnapshotHeight(Number(tenderdashStatus.sync_info.snapshot_height));
-      stateSync.setSnapshotChunksCount(Number(tenderdashStatus.sync_info.snapshot_chunks_count));
-      stateSync.setBackfilledBlocks(Number(tenderdashStatus.sync_info.backfilled_blocks));
-      stateSync.setBackfillBlocksTotal(Number(tenderdashStatus.sync_info.backfill_blocks_total));
+      stateSync.setSnapshotHeight(tenderdashStatus.sync_info.snapshot_height.toString());
+      stateSync.setSnapshotChunksCount(tenderdashStatus.sync_info.snapshot_chunks_count.toString());
+      stateSync.setBackfilledBlocks(tenderdashStatus.sync_info.backfilled_blocks.toString());
+      stateSync.setBackfillBlocksTotal(tenderdashStatus.sync_info.backfill_blocks_total.toString());
 
       v0.setStateSync(stateSync);
     }
@@ -215,7 +215,7 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       time.setEpoch(driveStatus.time.epoch);
     }
 
-    time.setLocal(Date.now());
+    time.setLocal(Date.now().toString());
 
     v0.setTime(time);
 

@@ -38,8 +38,8 @@ impl UnsignedWithdrawalTxs {
     pub fn from_vec(transactions: Vec<Transaction>) -> Self {
         Self(transactions)
     }
-    /// Drains all withdrawal transactions from the collection
 
+    /// Drains all withdrawal transactions from the collection
     pub fn drain(&mut self) -> UnsignedWithdrawalTxs {
         Self(self.0.drain(..).collect())
     }

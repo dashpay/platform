@@ -33,6 +33,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function may return an `Error` if the operation creation process fails or if the platform version does not match any of the implemented method versions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn refresh_potential_contract_info_key_references(
         &self,
         identity_id: [u8; 32],

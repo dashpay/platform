@@ -290,26 +290,6 @@
              responseClass:[GetEvonodesProposedEpochBlocksResponse class]];
 }
 
-#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
-
-- (void)getProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetProofsWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getProofs"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetProofsResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getProofsWithMessage:(GetProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getProofs"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetProofsResponse class]];
-}
-
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
 - (void)getDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -773,6 +753,246 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetCurrentQuorumsInfoResponse class]];
+}
+
+#pragma mark getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse)
+
+- (void)getIdentityTokenBalancesWithRequest:(GetIdentityTokenBalancesRequest *)request handler:(void(^)(GetIdentityTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityTokenBalancesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityTokenBalancesWithRequest:(GetIdentityTokenBalancesRequest *)request handler:(void(^)(GetIdentityTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityTokenBalances"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityTokenBalancesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityTokenBalancesWithMessage:(GetIdentityTokenBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityTokenBalances"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityTokenBalancesResponse class]];
+}
+
+#pragma mark getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse)
+
+- (void)getIdentitiesTokenBalancesWithRequest:(GetIdentitiesTokenBalancesRequest *)request handler:(void(^)(GetIdentitiesTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesTokenBalancesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentitiesTokenBalancesWithRequest:(GetIdentitiesTokenBalancesRequest *)request handler:(void(^)(GetIdentitiesTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentitiesTokenBalances"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentitiesTokenBalancesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentitiesTokenBalancesWithMessage:(GetIdentitiesTokenBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentitiesTokenBalances"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentitiesTokenBalancesResponse class]];
+}
+
+#pragma mark getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse)
+
+- (void)getIdentityTokenInfosWithRequest:(GetIdentityTokenInfosRequest *)request handler:(void(^)(GetIdentityTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityTokenInfosWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityTokenInfosWithRequest:(GetIdentityTokenInfosRequest *)request handler:(void(^)(GetIdentityTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityTokenInfos"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityTokenInfosResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityTokenInfosWithMessage:(GetIdentityTokenInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityTokenInfos"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityTokenInfosResponse class]];
+}
+
+#pragma mark getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse)
+
+- (void)getIdentitiesTokenInfosWithRequest:(GetIdentitiesTokenInfosRequest *)request handler:(void(^)(GetIdentitiesTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesTokenInfosWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentitiesTokenInfosWithRequest:(GetIdentitiesTokenInfosRequest *)request handler:(void(^)(GetIdentitiesTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentitiesTokenInfos"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentitiesTokenInfosResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentitiesTokenInfosWithMessage:(GetIdentitiesTokenInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentitiesTokenInfos"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentitiesTokenInfosResponse class]];
+}
+
+#pragma mark getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse)
+
+- (void)getTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenStatusesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenStatuses"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenStatusesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenStatusesWithMessage:(GetTokenStatusesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenStatuses"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenStatusesResponse class]];
+}
+
+#pragma mark getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse)
+
+- (void)getTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenDirectPurchasePricesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenDirectPurchasePrices"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenDirectPurchasePricesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenDirectPurchasePricesWithMessage:(GetTokenDirectPurchasePricesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenDirectPurchasePrices"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenDirectPurchasePricesResponse class]];
+}
+
+#pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
+
+- (void)getTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenPreProgrammedDistributionsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenPreProgrammedDistributions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenPreProgrammedDistributionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenPreProgrammedDistributionsWithMessage:(GetTokenPreProgrammedDistributionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenPreProgrammedDistributions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenPreProgrammedDistributionsResponse class]];
+}
+
+#pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)
+
+- (void)getTokenTotalSupplyWithRequest:(GetTokenTotalSupplyRequest *)request handler:(void(^)(GetTokenTotalSupplyResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenTotalSupplyWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenTotalSupplyWithRequest:(GetTokenTotalSupplyRequest *)request handler:(void(^)(GetTokenTotalSupplyResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenTotalSupply"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenTotalSupplyResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenTotalSupplyWithMessage:(GetTokenTotalSupplyRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenTotalSupply"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenTotalSupplyResponse class]];
+}
+
+#pragma mark getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse)
+
+- (void)getGroupInfoWithRequest:(GetGroupInfoRequest *)request handler:(void(^)(GetGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetGroupInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetGroupInfoWithRequest:(GetGroupInfoRequest *)request handler:(void(^)(GetGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getGroupInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetGroupInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getGroupInfoWithMessage:(GetGroupInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getGroupInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetGroupInfoResponse class]];
+}
+
+#pragma mark getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse)
+
+- (void)getGroupInfosWithRequest:(GetGroupInfosRequest *)request handler:(void(^)(GetGroupInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetGroupInfosWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetGroupInfosWithRequest:(GetGroupInfosRequest *)request handler:(void(^)(GetGroupInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getGroupInfos"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetGroupInfosResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getGroupInfosWithMessage:(GetGroupInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getGroupInfos"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetGroupInfosResponse class]];
+}
+
+#pragma mark getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse)
+
+- (void)getGroupActionsWithRequest:(GetGroupActionsRequest *)request handler:(void(^)(GetGroupActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetGroupActionsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetGroupActionsWithRequest:(GetGroupActionsRequest *)request handler:(void(^)(GetGroupActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getGroupActions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetGroupActionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getGroupActionsWithMessage:(GetGroupActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getGroupActions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetGroupActionsResponse class]];
+}
+
+#pragma mark getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse)
+
+- (void)getGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetGroupActionSignersWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getGroupActionSigners"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetGroupActionSignersResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getGroupActionSignersWithMessage:(GetGroupActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getGroupActionSigners"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetGroupActionSignersResponse class]];
 }
 
 @end

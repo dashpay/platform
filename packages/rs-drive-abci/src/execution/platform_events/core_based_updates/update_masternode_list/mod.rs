@@ -34,6 +34,7 @@ where
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
     ///   there is a problem fetching the masternode list difference or updating the state.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_masternode_list(
         &self,
         platform_state: Option<&PlatformState>,
@@ -115,21 +116,20 @@ mod test {
         fn adjust_path_based_on_current_dir(relative_path: &str) -> PathBuf {
             let current_dir = env::current_dir().expect("expected to get current directory");
             // Check if the current directory ends with "platform"
-            let adjusted_path = if current_dir.ends_with("platform") {
+
+            if current_dir.ends_with("platform") {
                 current_dir
                     .join("packages/rs-drive-abci")
                     .join(relative_path)
             } else {
                 current_dir.join(relative_path)
-            };
-
-            adjusted_path
+            }
         }
 
         platform
             .core_rpc
             .expect_get_protx_diff_with_masternodes()
-            .returning(move |base_block, block| {
+            .returning(move |_base_block, block| {
                 if block == 2128896 {
                     let file_path = adjust_path_based_on_current_dir(
                         "tests/supporting_files/mainnet_protx_list_diffs/1-2128896.json",

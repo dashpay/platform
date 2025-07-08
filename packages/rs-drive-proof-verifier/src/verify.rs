@@ -130,7 +130,7 @@ pub fn verify_signature_digest(
         });
     }
     let signature = Signature::Basic(
-        <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature)
+        <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
             .into_option()
             .ok_or(Error::SignatureVerificationError {
                 error: "Could not verify signature digest".to_string(),

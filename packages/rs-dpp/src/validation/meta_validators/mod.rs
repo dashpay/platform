@@ -36,7 +36,7 @@ lazy_static! {
         "../../../schema/meta_schemas/draft2020-12/meta/content.json"
     ))
     .expect("Valid schema!");
-    static ref DATA_CONTRACT_V0: Value = serde_json::from_str::<Value>(include_str!(
+    static ref DOCUMENT_META_JSON_V0: Value = serde_json::from_str::<Value>(include_str!(
         "../../../schema/meta_schemas/document/v0/document-meta.json"
     ))
     .unwrap();
@@ -85,8 +85,7 @@ lazy_static! {
         .compile(&DRAFT202012)
         .expect("Invalid data contract schema");
 
-
-    // Compiled version of data contract meta schema
+    // Compiled version of document meta schema
     pub static ref DOCUMENT_META_SCHEMA_V0: JSONSchema = JSONSchema::options()
         .with_keyword(
             "byteArray",
@@ -137,6 +136,7 @@ lazy_static! {
             DRAFT202012.clone(),
         )
         .to_owned()
-        .compile(&DATA_CONTRACT_V0)
+        .compile(&DOCUMENT_META_JSON_V0)
         .expect("Invalid data contract schema");
+
 }

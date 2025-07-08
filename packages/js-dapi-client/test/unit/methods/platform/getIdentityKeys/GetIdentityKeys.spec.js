@@ -105,7 +105,15 @@ describe('GetIdentityKeysResponse', () => {
 
     expect(getIdentityKeysResponse.getIdentityKeys())
       .to.deep.equal([]);
-    expect(getIdentityKeysResponse.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getIdentityKeysResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getIdentityKeysResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentityKeysResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentityKeysResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getIdentityKeysResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);

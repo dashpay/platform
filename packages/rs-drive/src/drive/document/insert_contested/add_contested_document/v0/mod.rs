@@ -15,6 +15,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Adds a contested document using bincode serialization
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contested_document_v0(
         &self,
         owned_document_info: OwnedDocumentInfo,

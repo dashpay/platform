@@ -1,5 +1,5 @@
-use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
+use dpp::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::identity::TimestampMillis;
 use dpp::version::FeatureVersion;
 use drive::error::Error as DriveError;
@@ -108,6 +108,10 @@ pub enum ExecutionError {
     /// Corrupted credits are not balanced.
     #[error("corrupted credits not balanced error: {0}")]
     CorruptedCreditsNotBalanced(String),
+
+    /// Corrupted tokens are not balanced.
+    #[error("corrupted tokens not balanced error: {0}")]
+    CorruptedTokensNotBalanced(String),
 
     /// The transaction is not present.
     #[error("transaction not present error: {0}")]

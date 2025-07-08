@@ -9,10 +9,10 @@ use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
-#[cfg(feature = "data-contract-value-conversion")]
-use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+#[cfg(feature = "data-contract-value-conversion")]
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 #[cfg(feature = "state-transitions")]
@@ -20,6 +20,8 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+#[cfg(feature = "data-contract-value-conversion")]
+use crate::data_contract::v1::DataContractV1;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
 use crate::{errors::ProtocolError, prelude::Identifier};
@@ -117,9 +119,15 @@ impl DataContractFactoryV0 {
                 platform_version,
             )?
             .into()),
+            1 => Ok(DataContractV1::from_value(
+                data_contract_object,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -272,7 +280,6 @@ mod tests {
         assert_eq!(data_contract.schema_defs(), result.schema_defs());
         assert_eq!(data_contract.document_schemas(), result.document_schemas());
         assert_eq!(data_contract.owner_id(), result.owner_id());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -295,7 +302,6 @@ mod tests {
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -321,7 +327,6 @@ mod tests {
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[test]

@@ -14,7 +14,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const cbor = require('cbor');
 const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
 const TransactionErrorResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
@@ -24,7 +23,6 @@ const TransactionErrorResult = require('../../../externalApis/tenderdash/waitFor
  * @param {fetchProofForStateTransition} fetchProofForStateTransition
  * @param {waitForTransactionToBeProvable} waitForTransactionToBeProvable
  * @param {BlockchainListener} blockchainListener
- * @param {DashPlatformProtocol} dpp
  * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
  * @param {number} stateTransitionWaitTimeout
  * @return {waitForStateTransitionResultHandler}
@@ -33,7 +31,6 @@ function waitForStateTransitionResultHandlerFactory(
   fetchProofForStateTransition,
   waitForTransactionToBeProvable,
   blockchainListener,
-  dpp,
   createGrpcErrorFromDriveResponse,
   stateTransitionWaitTimeout,
 ) {
@@ -49,9 +46,13 @@ function waitForStateTransitionResultHandlerFactory(
 
     const error = new StateTransitionBroadcastError();
 
+    const metadata = grpcError.getRawMetadata();
+    if (metadata['dash-serialized-consensus-error-bin']) {
+      error.setData(metadata['dash-serialized-consensus-error-bin']);
+    }
+
     error.setCode(txDeliverResult.code);
     error.setMessage(grpcError.getMessage());
-    error.setData(cbor.encode(grpcError.getRawMetadata()));
 
     return error;
   }
@@ -109,19 +110,17 @@ function waitForStateTransitionResultHandlerFactory(
 
       v0.setError(error);
       response.setV0(v0);
+
       return response;
     }
 
     if (prove) {
-      const stateTransition = await dpp.stateTransition.createFromBuffer(
-        result.getTransaction(),
-        { skipValidation: true },
-      );
+      const stateTransitionProof = await fetchProofForStateTransition(result.getTransaction());
 
-      const stateTransitionProof = await fetchProofForStateTransition(stateTransition);
-      v0.setMetadata(stateTransitionProof.getV0().getMetadata());
-      v0.setProof(stateTransitionProof.getV0().getProof());
+      v0.setMetadata(stateTransitionProof.getMetadata());
+      v0.setProof(stateTransitionProof.getProof());
     }
+
     response.setV0(v0);
 
     return response;

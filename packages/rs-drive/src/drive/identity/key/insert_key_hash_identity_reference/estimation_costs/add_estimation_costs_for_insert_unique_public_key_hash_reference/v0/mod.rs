@@ -5,7 +5,7 @@ use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllItems;
 
 use crate::util::type_constants::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32};
-use grovedb::EstimatedLayerInformation;
+use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -18,7 +18,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(unique_key_hashes_path),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_160_SIZE_U8,

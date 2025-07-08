@@ -10,14 +10,16 @@ use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v1::
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v1::STATE_TRANSITION_SERIALIZATION_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_versions::v1::STATE_TRANSITION_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
-    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
-    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
+    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
@@ -26,10 +28,12 @@ use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
+use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v1::DRIVE_VERIFY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_vote_method_versions::v1::DRIVE_VOTE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::{
@@ -70,6 +74,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             prove: DriveProveMethodVersions {
                 prove_elements: 0,
                 prove_multiple_state_transition_results: 0,
+                prove_state_transition: 0,
             },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,
@@ -95,6 +100,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             verify: DRIVE_VERIFY_METHOD_VERSIONS_V1,
             identity: DRIVE_IDENTITY_METHOD_VERSIONS_V1,
+            token: DRIVE_TOKEN_METHOD_VERSIONS_V1,
             platform_system: DrivePlatformSystemMethodVersions {
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
@@ -129,6 +135,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 estimated_cost_for_prefunded_specialized_balance_update: 0,
                 empty_prefunded_specialized_balance: 0,
             },
+            group: DRIVE_GROUP_METHOD_VERSIONS_V1,
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -141,11 +148,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         query: DriveAbciQueryVersions {
             max_returned_elements: 100,
             response_metadata: 0,
-            proofs_query: FeatureVersionBounds {
-                min_version: 0,
-                max_version: 0,
-                default_current_version: 0,
-            },
+            proofs_query: 0,
             document_query: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
@@ -194,12 +197,69 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identity_by_public_key_hash: FeatureVersionBounds {
+                identity_by_unique_public_key_hash: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
                 },
                 identities_contract_keys: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identity_by_non_unique_public_key_hash: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            token_queries: DriveAbciQueryTokenVersions {
+                identity_token_balances: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identities_token_balances: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identities_token_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identity_token_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_statuses: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_total_supply: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_direct_purchase_prices:FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_pre_programmed_distributions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_perpetual_distribution_last_claim: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                token_contract_info: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -297,6 +357,33 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                finalized_epoch_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            group_queries: DriveAbciQueryGroupVersions {
+                group_info: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                group_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                group_actions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                group_action_signers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
         },
     },
@@ -311,6 +398,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V1,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
+        token_versions: TOKEN_VERSIONS_V1,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V1,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
@@ -325,6 +413,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         withdrawal_transactions_per_block_limit: 4,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
+        max_contract_group_size: 256,
+        max_token_redemption_cycles: 128,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

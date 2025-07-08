@@ -27,6 +27,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::document) fn remove_document_from_primary_storage(
         &self,
         document_id: Identifier,

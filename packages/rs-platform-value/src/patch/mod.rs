@@ -360,50 +360,45 @@ fn apply_patches(
         PatchOperation::Add(ref op) => {
             let prev = add(doc, &op.path, op.value.clone())
                 .map_err(|e| translate_error(e, operation, &op.path))?;
-            apply_patches(doc, operation + 1, tail).map_err(move |e| {
+            apply_patches(doc, operation + 1, tail).inspect_err(move |_| {
                 match prev {
                     None => remove(doc, &op.path, true).unwrap(),
                     Some(v) => add(doc, &op.path, v).unwrap().unwrap(),
                 };
-                e
             })
         }
         PatchOperation::Remove(ref op) => {
             let prev = remove(doc, &op.path, false)
                 .map_err(|e| translate_error(e, operation, &op.path))?;
-            apply_patches(doc, operation + 1, tail).map_err(move |e| {
+            apply_patches(doc, operation + 1, tail).inspect_err(move |_| {
                 assert!(add(doc, &op.path, prev).unwrap().is_none());
-                e
             })
         }
         PatchOperation::Replace(ref op) => {
             let prev = replace(doc, &op.path, op.value.clone())
                 .map_err(|e| translate_error(e, operation, &op.path))?;
-            apply_patches(doc, operation + 1, tail).map_err(move |e| {
+            apply_patches(doc, operation + 1, tail).inspect_err(move |_| {
                 replace(doc, &op.path, prev).unwrap();
-                e
             })
         }
         PatchOperation::Move(ref op) => {
             let prev = mov(doc, op.from.as_str(), &op.path, false)
                 .map_err(|e| translate_error(e, operation, &op.path))?;
-            apply_patches(doc, operation + 1, tail).map_err(move |e| {
+            apply_patches(doc, operation + 1, tail).inspect_err(move |_| {
                 mov(doc, &op.path, op.from.as_str(), true).unwrap();
                 if let Some(prev) = prev {
                     assert!(add(doc, &op.path, prev).unwrap().is_none());
                 }
-                e
             })
         }
         PatchOperation::Copy(ref op) => {
             let prev = copy(doc, op.from.as_str(), &op.path)
                 .map_err(|e| translate_error(e, operation, &op.path))?;
-            apply_patches(doc, operation + 1, tail).map_err(move |e| {
+            apply_patches(doc, operation + 1, tail).inspect_err(move |_| {
                 match prev {
                     None => remove(doc, &op.path, true).unwrap(),
                     Some(v) => add(doc, &op.path, v).unwrap().unwrap(),
                 };
-                e
             })
         }
         PatchOperation::Test(ref op) => {

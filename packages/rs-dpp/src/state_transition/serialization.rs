@@ -27,9 +27,9 @@ mod tests {
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
-    use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-    use crate::state_transition::documents_batch_transition::{
-        DocumentsBatchTransition, DocumentsBatchTransitionV0,
+    use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use crate::state_transition::batch_transition::{
+        BatchTransition, BatchTransitionV1,
     };
     use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -39,7 +39,7 @@ mod tests {
     use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
-        get_data_contract_fixture, get_document_transitions_fixture,
+        get_data_contract_fixture, get_batched_transitions_fixture,
         get_extended_documents_fixture_with_owner_id_from_contract,
         raw_instant_asset_lock_proof_fixture,
     };
@@ -335,14 +335,15 @@ mod tests {
                         .document_type_for_name(extended_document.document_type_name())
                         .unwrap(),
                     *extended_document.entropy(),
+                    None,
                 )
             })
             .collect::<Vec<_>>();
-        let transitions = get_document_transitions_fixture(
+        let transitions = get_batched_transitions_fixture(
             [(DocumentTransitionActionType::Create, documents)],
             &mut nonces,
         );
-        let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()

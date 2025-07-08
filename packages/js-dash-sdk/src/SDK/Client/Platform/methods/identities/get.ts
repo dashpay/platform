@@ -31,12 +31,12 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
   let metadata;
   const responseMetadata = identityResponse.getMetadata();
   if (responseMetadata) {
-    metadata = new Metadata({
-      blockHeight: responseMetadata.getHeight(),
-      coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
-      timeMs: responseMetadata.getTimeMs(),
-      protocolVersion: responseMetadata.getProtocolVersion(),
-    });
+    metadata = new Metadata(
+      responseMetadata.getHeight(),
+      responseMetadata.getCoreChainLockedHeight(),
+      responseMetadata.getTimeMs(),
+      responseMetadata.getProtocolVersion(),
+    );
   }
 
   identity.setMetadata(metadata);

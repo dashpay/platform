@@ -16,6 +16,7 @@ use crate::ProtocolError;
 use anyhow::anyhow;
 
 use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
+#[cfg(feature = "validation")]
 use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
@@ -25,6 +26,7 @@ use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
 #[cfg(feature = "index-serde-conversion")]
 use std::fmt;
+use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
@@ -53,8 +55,35 @@ impl TryFrom<u8> for ContestedIndexResolution {
 #[repr(u8)]
 #[derive(Debug)]
 pub enum ContestedIndexFieldMatch {
-    Regex(regex::Regex),
+    Regex(LazyRegex),
     PositiveIntegerMatch(u128),
+}
+
+#[derive(Debug, Clone)]
+pub struct LazyRegex {
+    regex: OnceLock<Regex>,
+    regex_str: String,
+}
+
+impl LazyRegex {
+    pub fn new(regex_str: String) -> Self {
+        LazyRegex {
+            regex: OnceLock::new(),
+            regex_str,
+        }
+    }
+
+    pub fn is_match(&self, string: &str) -> bool {
+        let regexp = self
+            .regex
+            .get_or_init(|| Regex::new(&self.regex_str).expect("valid regexp"));
+
+        regexp.is_match(string)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.regex_str.as_str()
+    }
 }
 
 #[cfg(feature = "index-serde-conversion")]
@@ -96,7 +125,7 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
 
         struct FieldVisitor;
 
-        impl<'de> Visitor<'de> for FieldVisitor {
+        impl Visitor<'_> for FieldVisitor {
             type Value = Field;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -133,10 +162,9 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
             {
                 match visitor.variant()? {
                     (Field::Regex, v) => {
-                        let regex_str: &str = v.newtype_variant()?;
-                        Regex::new(regex_str)
-                            .map(ContestedIndexFieldMatch::Regex)
-                            .map_err(de::Error::custom)
+                        let regex_str: String = v.newtype_variant()?;
+
+                        Ok(ContestedIndexFieldMatch::Regex(LazyRegex::new(regex_str)))
                     }
                     (Field::PositiveIntegerMatch, v) => {
                         let num: u128 = v.newtype_variant()?;
@@ -154,6 +182,7 @@ impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ContestedIndexFieldMatch {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         use ContestedIndexFieldMatch::*;
@@ -192,7 +221,7 @@ impl Clone for ContestedIndexFieldMatch {
     fn clone(&self) -> Self {
         match self {
             ContestedIndexFieldMatch::Regex(regex) => {
-                ContestedIndexFieldMatch::Regex(regex::Regex::new(regex.as_str()).unwrap())
+                ContestedIndexFieldMatch::Regex(regex.clone())
             }
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
                 ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
@@ -494,15 +523,20 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                                 name = Some(field);
                                             }
                                             "regexPattern" => {
-                                                let regex = field_match_value.to_str()?.to_owned();
+                                                let regex_str =
+                                                    field_match_value.to_str()?.to_owned();
+
+                                                #[cfg(feature = "validation")]
+                                                Regex::new(&regex_str).map_err(|e| {
+                                                    RegexError(format!(
+                                                        "invalid field match regex: {}",
+                                                        e
+                                                    ))
+                                                })?;
+
                                                 field_matches =
                                                     Some(ContestedIndexFieldMatch::Regex(
-                                                        Regex::new(&regex).map_err(|e| {
-                                                            RegexError(format!(
-                                                                "invalid field match regex: {}",
-                                                                e.to_string()
-                                                            ))
-                                                        })?,
+                                                        LazyRegex::new(regex_str),
                                                     ));
                                             }
                                             key => {

@@ -20,5 +20,4 @@ pub enum Pooling {
 pub type WithdrawalTransactionIndex = u64;
 
 /// Simple type alias for withdrawal transaction with it's index
-
 pub type WithdrawalTransactionIndexAndBytes = (WithdrawalTransactionIndex, Vec<u8>);

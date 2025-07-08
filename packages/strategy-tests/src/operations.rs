@@ -1,6 +1,7 @@
 use crate::frequency::Frequency;
 use bincode::{Decode, Encode};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::{
     DocumentFieldFillSize, DocumentFieldFillType,
@@ -8,7 +9,7 @@ use dpp::data_contract::document_type::random_document::{
 use dpp::data_contract::document_type::v0::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-use dpp::data_contract::{DataContract as Contract, DataContract};
+use dpp::data_contract::{DataContract as Contract, DataContract, TokenContractPosition};
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
@@ -17,6 +18,7 @@ use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
+use dpp::tokens::token_event::TokenEvent;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
@@ -28,6 +30,106 @@ use rand::distributions::{Distribution, WeightedIndex};
 use rand::prelude::StdRng;
 use std::collections::BTreeMap;
 use std::ops::{Range, RangeInclusive};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TokenOp {
+    pub contract: Contract,
+    pub token_id: Identifier,
+    pub token_pos: TokenContractPosition,
+    pub use_identity_with_id: Option<Identifier>,
+    pub action: TokenEvent,
+}
+
+#[derive(Clone, Debug, Encode, Decode)]
+pub struct TokenOpInSerializationFormat {
+    pub contract: DataContractInSerializationFormat,
+    pub token_id: Identifier,
+    pub token_pos: TokenContractPosition,
+    pub use_identity_with_id: Option<Identifier>,
+    pub action: TokenEvent,
+}
+
+impl PlatformSerializableWithPlatformVersion for TokenOp {
+    type Error = ProtocolError;
+
+    fn serialize_to_bytes_with_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.clone()
+            .serialize_consume_to_bytes_with_platform_version(platform_version)
+    }
+
+    fn serialize_consume_to_bytes_with_platform_version(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let TokenOp {
+            contract,
+            token_id,
+            token_pos,
+            use_identity_with_id,
+            action,
+        } = self;
+        let data_contract_serialization_format: DataContractInSerializationFormat =
+            contract.try_into_platform_versioned(platform_version)?;
+
+        let document_op = TokenOpInSerializationFormat {
+            contract: data_contract_serialization_format,
+            token_id,
+            token_pos,
+            use_identity_with_id,
+            action,
+        };
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        bincode::encode_to_vec(document_op, config).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize DocumentOp: {}", e))
+        })
+    }
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for TokenOp {
+    fn versioned_deserialize(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let token_op_in_serialization_format: TokenOpInSerializationFormat =
+            bincode::borrow_decode_from_slice(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!("unable to deserialize DocumentOp: {}", e))
+                })?
+                .0;
+        let TokenOpInSerializationFormat {
+            contract,
+            token_id,
+            token_pos,
+            use_identity_with_id,
+            action,
+        } = token_op_in_serialization_format;
+        let data_contract = DataContract::try_from_platform_versioned(
+            contract,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )?;
+        Ok(TokenOp {
+            contract: data_contract,
+            token_id,
+            token_pos,
+            use_identity_with_id,
+            action,
+        })
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub enum DocumentAction {
@@ -323,16 +425,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                             let name_str = name.to_str().expect(
                                 "Couldn't convert document type name to str in deserialization",
                             );
-                            let schema = Value::try_from(schema_json).unwrap();
                             let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
                             DocumentType::try_from_schema(
                                 owner_id,
                                 name_str,
-                                schema,
+                                schema_json,
                                 None,
-                                true,
-                                true,
-                                true,
+                                contract.tokens(),
+                                contract.config(),
                                 full_validation,
                                 &mut vec![],
                                 platform_version,
@@ -514,6 +614,7 @@ pub enum OperationType {
     ContractUpdate(DataContractUpdateOp),
     IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOp),
+    Token(TokenOp),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -526,6 +627,7 @@ enum OperationTypeInSerializationFormat {
     ContractUpdate(Vec<u8>),
     IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOpSerializable),
+    Token(Vec<u8>),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -577,6 +679,11 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 let vote_op_in_serialization_format =
                     resource_vote_op.try_into_platform_versioned(platform_version)?;
                 OperationTypeInSerializationFormat::ResourceVote(vote_op_in_serialization_format)
+            }
+            OperationType::Token(token_op) => {
+                let token_op_in_serialization_format =
+                    token_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                OperationTypeInSerializationFormat::Token(token_op_in_serialization_format)
             }
         };
         let config = bincode::config::standard()
@@ -641,6 +748,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             OperationTypeInSerializationFormat::ResourceVote(resource_vote_op) => {
                 let vote_op = resource_vote_op.try_into_platform_versioned(platform_version)?;
                 OperationType::ResourceVote(vote_op)
+            }
+            OperationTypeInSerializationFormat::Token(serialized_token_op) => {
+                let token_op = TokenOp::versioned_deserialize(
+                    serialized_token_op.as_slice(),
+                    full_validation,
+                    platform_version,
+                )?;
+                OperationType::Token(token_op)
             }
         })
     }

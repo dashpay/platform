@@ -10,4 +10,6 @@ pub struct SystemDataContractVersions {
     pub masternode_reward_shares: FeatureVersion,
     pub feature_flags: FeatureVersion,
     pub wallet: FeatureVersion,
+    pub token_history: FeatureVersion,
+    pub keyword_search: FeatureVersion,
 }

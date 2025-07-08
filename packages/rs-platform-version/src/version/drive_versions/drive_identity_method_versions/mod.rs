@@ -58,6 +58,8 @@ pub struct DriveIdentityContractInfoMethodVersions {
 pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_authentication_keys_security_level_in_key_reference_tree: FeatureVersion,
     pub for_balances: FeatureVersion,
+    pub for_token_balances: FeatureVersion,
+    pub for_token_total_supply: FeatureVersion,
     pub for_contract_info: FeatureVersion,
     pub for_contract_info_group: FeatureVersion,
     pub for_contract_info_group_keys: FeatureVersion,
@@ -67,6 +69,12 @@ pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_purpose_in_key_reference_tree: FeatureVersion,
     pub for_root_key_reference_tree: FeatureVersion,
     pub for_update_revision: FeatureVersion,
+    pub for_token_identity_infos: FeatureVersion,
+    pub for_token_pre_programmed_distribution: FeatureVersion,
+    pub for_root_token_ms_interval_distribution: FeatureVersion,
+    pub for_token_perpetual_distribution: FeatureVersion,
+    pub for_token_selling_prices: FeatureVersion,
+    pub for_token_contract_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -89,6 +97,7 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
     pub has_non_unique_public_key_hash: FeatureVersion,
     pub has_non_unique_public_key_hash_already_for_identity: FeatureVersion,
     pub has_unique_public_key_hash: FeatureVersion,
+    pub fetch_full_identity_by_non_unique_public_key_hash: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -127,6 +136,7 @@ pub struct DriveIdentityProveMethodVersions {
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_ids_by_unique_public_key_hashes: FeatureVersion,
+    pub prove_full_identity_by_non_unique_public_key_hash: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

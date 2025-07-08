@@ -15,13 +15,14 @@ use std::{
     future::Future,
     sync::{mpsc::SendError, Arc},
 };
-use tokio::{runtime::TryCurrentError, sync::Mutex};
+use tokio::sync::Mutex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
     /// Not running inside tokio runtime
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("not running inside tokio runtime: {0}")]
-    NotInTokioRuntime(#[from] TryCurrentError),
+    NotInTokioRuntime(#[from] tokio::runtime::TryCurrentError),
 
     /// Cannot receive response from async function
     #[error("cannot receive response from async function: {0}")]
@@ -61,6 +62,7 @@ impl From<AsyncError> for crate::Error {
 ///
 /// Due to limitations of tokio runtime, we cannot use `tokio::runtime::Runtime::block_on` if we are already inside a tokio runtime.
 /// This function is a workaround for that limitation.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn block_on<F>(fut: F) -> Result<F::Output, AsyncError>
 where
     F: Future + Send + 'static,
@@ -81,6 +83,15 @@ where
     }
 
     Ok(resp)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn block_on<F>(_fut: F) -> Result<F::Output, AsyncError>
+where
+    F: Future + Send + 'static,
+    F::Output: Send,
+{
+    unimplemented!("block_on is not supported in wasm");
 }
 
 /// Worker function that runs the provided future and sends the result back to the caller using oneshot channel.
@@ -229,6 +240,7 @@ where
                 false
             }
         })
+        .sleep(rs_dapi_client::transport::BackonSleeper::default())
         .notify(|error, duration| {
             tracing::warn!(?duration, ?error, "request failed, retrying");
         })
@@ -244,7 +256,6 @@ where
 mod test {
     use super::*;
     use derive_more::Display;
-    use http::Uri;
     use rs_dapi_client::ExecutionError;
     use std::{
         future::Future,

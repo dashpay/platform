@@ -1,3 +1,748 @@
+## [2.0.0](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0) (2025-06-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** properly use withdrawal system data contract. (#2675)
+
+### Features
+
+* **dpp:** add detailed interval evaluation explanation functionality ([#2662](https://github.com/dashpay/platform/issues/2662))
+* replace diskusage with diskusage-ng for improved functionality ([#2680](https://github.com/dashpay/platform/issues/2680))
+* **sdk:** fetch token contract info ([#2670](https://github.com/dashpay/platform/issues/2670))
+
+
+### Bug Fixes
+
+* **drive-abci:** fixed issue with adding a key with contract bounds ([#2673](https://github.com/dashpay/platform/issues/2673))
+* **platform:** properly use withdrawal system data contract. ([#2675](https://github.com/dashpay/platform/issues/2675))
+
+
+### Continuous Integration
+
+* add gRPC coverage check and cache management ([#2667](https://github.com/dashpay/platform/issues/2667))
+
+
+### Miscellaneous Chores
+
+* **platform:** remove dash devs discord from readme ([#2668](https://github.com/dashpay/platform/issues/2668))
+* **release:** update changelog and bump version to 2.0.0-rc.17 ([#2674](https://github.com/dashpay/platform/issues/2674))
+* **release:** update changelog and bump version to 2.0.0-rc.18 ([#2681](https://github.com/dashpay/platform/issues/2681))
+* remove unused token meta schema and references ([#2677](https://github.com/dashpay/platform/issues/2677))
+* update js dependencies to latest versions ([#2678](https://github.com/dashpay/platform/issues/2678))
+* update minimatch to version 9.0.5 and brace-expansion to version 2.0.2 ([#2672](https://github.com/dashpay/platform/issues/2672))
+
+## [2.0.0-rc.16](https://github.com/dashpay/platform/compare/v2.0.0-rc.15...v2.0.0-rc.16) (2025-06-10)
+
+
+### Features
+
+* **platform:** add finalized epoch infos query and proof functionality ([#2665](https://github.com/dashpay/platform/issues/2665))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.16 ([#2666](https://github.com/dashpay/platform/issues/2666))
+
+## [2.0.0-rc.15](https://github.com/dashpay/platform/compare/v2.0.0-rc.14...v2.0.0-rc.15) (2025-06-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. (#2658)
+
+### Features
+
+* **dpp:** export more token transition fields ([#2655](https://github.com/dashpay/platform/issues/2655))
+* **sdk:** add sdk wrappers for easily pushing document transitions for create, delete, purchase, replace, set price, and transfer to platform ([#2659](https://github.com/dashpay/platform/issues/2659))
+* **sdk:** add token state transition functionalities to rs-sdk ([#2657](https://github.com/dashpay/platform/issues/2657))
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. ([#2658](https://github.com/dashpay/platform/issues/2658))
+
+
+### Bug Fixes
+
+* fixes issue [#2653](https://github.com/dashpay/platform/issues/2653) Cannot decode DataContractCreateV1 with WASM-DPP ([#2654](https://github.com/dashpay/platform/issues/2654))
+* **platform:** npm audit security for tar-fs ([#2656](https://github.com/dashpay/platform/issues/2656))
+* **platform:** resolve direct purchase from self issue causing chain stall ([#2663](https://github.com/dashpay/platform/issues/2663))
+
+
+### Documentation
+
+* add CLAUDE.md for development guidance ([#2652](https://github.com/dashpay/platform/issues/2652))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.15 ([#2664](https://github.com/dashpay/platform/issues/2664))
+
+## [2.0.0-rc.14](https://github.com/dashpay/platform/compare/v2.0.0-rc.13...v2.0.0-rc.14) (2025-05-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** set minimum intervals for perpetual distribution (#2622)
+
+### Features
+
+* add checks for authorized action takers in data contract create and update validations ([#2647](https://github.com/dashpay/platform/issues/2647))
+* **dpp:** add validation for minimum group member count ([#2646](https://github.com/dashpay/platform/issues/2646))
+* **dpp:** set minimum intervals for perpetual distribution ([#2622](https://github.com/dashpay/platform/issues/2622))
+* **sdk:** add DataContractMismatch enum for detailed contract comparison ([#2648](https://github.com/dashpay/platform/issues/2648))
+
+
+### Tests
+
+* **drive:** add test for invalid owner on document delete ([#2643](https://github.com/dashpay/platform/issues/2643))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.14 ([#2649](https://github.com/dashpay/platform/issues/2649))
+
+## [2.0.0-rc.13](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.13) (2025-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** load data contracts in their respective versions (#2644)
+
+### Features
+
+* **platform:** add token contract info and query ([#2641](https://github.com/dashpay/platform/issues/2641))
+
+
+### Bug Fixes
+
+* **dpp:** unclear error message for missing document types if no tokens defined ([#2639](https://github.com/dashpay/platform/issues/2639))
+* **drive:** proved identity update was giving error ([#2642](https://github.com/dashpay/platform/issues/2642))
+* **platform:** load data contracts in their respective versions ([#2644](https://github.com/dashpay/platform/issues/2644))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.13 ([#2645](https://github.com/dashpay/platform/issues/2645))
+
+## [2.0.0-rc.12](https://github.com/dashpay/platform/compare/v2.0.0-rc.11...v2.0.0-rc.12) (2025-05-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** disable changes to perpetual distribution in token configuration (#2627)
+
+### Features
+
+* **dpp:** add marketplace rules to token configuration ([#2635](https://github.com/dashpay/platform/issues/2635))
+* **dpp:** disable changes to perpetual distribution in token configuration ([#2627](https://github.com/dashpay/platform/issues/2627))
+* **sdk:** add token payment info to put_document ([#2630](https://github.com/dashpay/platform/issues/2630))
+
+
+### Bug Fixes
+
+* **dashmate:** sync max-tx-bytes between tenderdash and drive ([#2625](https://github.com/dashpay/platform/issues/2625))
+* **dpp:** allow changing main control group for token configuration ([#2628](https://github.com/dashpay/platform/issues/2628))
+* **dpp:** correct stepwise distribution logic in evaluate.rs ([#2636](https://github.com/dashpay/platform/issues/2636))
+* **dpp:** missing tags on Groups needed for deserialization ([#2624](https://github.com/dashpay/platform/issues/2624))
+* **drive:** ignore time based update fields in proof verification of data contract updates ([#2634](https://github.com/dashpay/platform/issues/2634))
+* **platform:** ensure document types only target valid tokens for token payments ([#2631](https://github.com/dashpay/platform/issues/2631))
+* **platform:** fix evonode distribution for token perpetual distribution (part 1) ([#2623](https://github.com/dashpay/platform/issues/2623))
+* **platform:** paying for a document action with tokens where tokens would be transferred to yourself as contract owner was breaking ([#2633](https://github.com/dashpay/platform/issues/2633))
+* **platform:** resolved grovedb error during signing group action finalization on check tx ([#2629](https://github.com/dashpay/platform/issues/2629))
+
+
+### Tests
+
+* **drive-abci:** add tests for epoch-based token distribution for evonodes ([#2626](https://github.com/dashpay/platform/issues/2626))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.12 ([#2637](https://github.com/dashpay/platform/issues/2637))
+
+## [2.0.0-rc.11](https://github.com/dashpay/platform/compare/v2.0.0-rc.10...v2.0.0-rc.11) (2025-05-19)
+
+
+### Features
+
+* **platform:** don't allow freezing non existent identity ([#2612](https://github.com/dashpay/platform/issues/2612))
+* **sdk:** token purchase and set price transitions ([#2613](https://github.com/dashpay/platform/issues/2613))
+
+
+### Bug Fixes
+
+* **dpp:** historical document type name for token direct pricing ([#2616](https://github.com/dashpay/platform/issues/2616))
+* **drive:** resolve deserialization issue in check_tx for group actions ([#2619](https://github.com/dashpay/platform/issues/2619))
+* **drive:** verification of token purchase can not verify the purchase cost as this can be lower than the agreed price ([#2617](https://github.com/dashpay/platform/issues/2617))
+* **platform:** consensus error for invalid group position, config update won't allow group action if group action is not required, and tests ([#2614](https://github.com/dashpay/platform/issues/2614))
+* **platform:** correct burn identity in group actions ([#2615](https://github.com/dashpay/platform/issues/2615))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.11 ([#2618](https://github.com/dashpay/platform/issues/2618))
+
+
+### Documentation
+
+* **dashmate:** document services, configuration and cli ([#2532](https://github.com/dashpay/platform/issues/2532))
+
+
+### Code Refactoring
+
+* **dpp:** import CREDITS_PER_DUFF for use in credit converter ([#2473](https://github.com/dashpay/platform/issues/2473))
+
+## [2.0.0-rc.10](https://github.com/dashpay/platform/compare/v2.0.0-rc.9...v2.0.0-rc.10) (2025-05-13)
+
+
+### Features
+
+* **platform:** only allow token notes when you are the proposer and use proposer notes in historical documents ([#2609](https://github.com/dashpay/platform/issues/2609))
+
+
+### Bug Fixes
+
+* **drive:** fix group action query target as tree in stateless execution ([#2608](https://github.com/dashpay/platform/issues/2608))
+* **platform:** ensure group action parameters cannot be modified ([#2610](https://github.com/dashpay/platform/issues/2610))
+* update package versions to 2.0.0-rc.10 ([#2611](https://github.com/dashpay/platform/issues/2611))
+
+
+### Code Refactoring
+
+* **sdk:** set group info for config update transition ([#2603](https://github.com/dashpay/platform/issues/2603))
+
+## [2.0.0-rc.9](https://github.com/dashpay/platform/compare/v2.0.0-rc.8...v2.0.0-rc.9) (2025-05-12)
+
+
+### Features
+
+* **platform:** group action proofs ([#2605](https://github.com/dashpay/platform/issues/2605))
+
+
+### Documentation
+
+* **dapi:** document architecture and implementation ([#2539](https://github.com/dashpay/platform/issues/2539))
+
+
+### Miscellaneous Chores
+
+* update package versions to 2.0.0-rc.9 ([#2606](https://github.com/dashpay/platform/issues/2606))
+
+## [2.0.0-rc.8](https://github.com/dashpay/platform/compare/v2.0.0-rc.7...v2.0.0-rc.8) (2025-05-08)
+
+
+### Miscellaneous Chores
+
+* integrate keyword-search-contract into yarn lock ([#2601](https://github.com/dashpay/platform/issues/2601))
+* update dependencies to version 2.0.0-rc.8 ([#2602](https://github.com/dashpay/platform/issues/2602))
+
+## [2.0.0-rc.7](https://github.com/dashpay/platform/compare/v2.0.0-rc.6...v2.0.0-rc.7) (2025-05-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** ensure correct critical security level for token transitions and allow any security level key in signing if allowed to do so with options (#2597)
+
+### Bug Fixes
+
+* **platform:** ensure correct critical security level for token transitions and allow any security level key in signing if allowed to do so with options ([#2597](https://github.com/dashpay/platform/issues/2597))
+
+
+### Code Refactoring
+
+* rename search-contract to token-search-contract ([#2598](https://github.com/dashpay/platform/issues/2598))
+* rename token-search-contract to keyword-search-contract ([#2599](https://github.com/dashpay/platform/issues/2599))
+
+
+### Miscellaneous Chores
+
+* update dependencies to 2.0.0-rc-7 ([#2600](https://github.com/dashpay/platform/issues/2600))
+
+## [2.0.0-rc.6](https://github.com/dashpay/platform/compare/v2.0.0-rc.5...v2.0.0-rc.6) (2025-05-07)
+
+
+### Features
+
+* **drive-abci:** improve token name localization validation ([#2593](https://github.com/dashpay/platform/issues/2593))
+
+
+### Bug Fixes
+
+* **dpp:** handle MainGroupIsNotDefinedError in token configuration ([#2594](https://github.com/dashpay/platform/issues/2594))
+* **dpp:** validate group required power to prevent invalid configurations ([#2595](https://github.com/dashpay/platform/issues/2595))
+* **drive:** add estimation costs for token status information when registering a contract ([#2591](https://github.com/dashpay/platform/issues/2591))
+* **token-history-contract:** public note proof verification for token history contract ([#2590](https://github.com/dashpay/platform/issues/2590))
+
+
+### Miscellaneous Chores
+
+* add .gitaipconfig to .gitignore ([#2592](https://github.com/dashpay/platform/issues/2592))
+* bump to 2.0.0-rc.6 ([#2596](https://github.com/dashpay/platform/issues/2596))
+
+## [2.0.0-rc.5](https://github.com/dashpay/platform/compare/v2.0.0-rc.4...v2.0.0-rc.5) (2025-05-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** fees for data contract creation and update (#2584)
+
+### Features
+
+* **platform:** fees for data contract creation and update ([#2584](https://github.com/dashpay/platform/issues/2584))
+
+
+### Bug Fixes
+
+* **dpp:** do not allow mint of 0 tokens ([#2581](https://github.com/dashpay/platform/issues/2581))
+* **drive-abci:** make sure all group identities exist ([#2585](https://github.com/dashpay/platform/issues/2585))
+* **drive-abci:** make sure identities in token config exist ([#2583](https://github.com/dashpay/platform/issues/2583))
+* **platform:** force allow choosing minting destination if no default minting destination recipient ([#2586](https://github.com/dashpay/platform/issues/2586))
+* **platform:** start as paused was not working ([#2582](https://github.com/dashpay/platform/issues/2582))
+* **sdk:** compare underlying returned data on proof verification ([#2580](https://github.com/dashpay/platform/issues/2580))
+
+
+### Miscellaneous Chores
+
+* update to rc.5 ([#2587](https://github.com/dashpay/platform/issues/2587))
+
+## [2.0.0-rc.4](https://github.com/dashpay/platform/compare/v2.0.0-rc.3...v2.0.0-rc.4) (2025-04-28)
+
+
+### Bug Fixes
+
+* **platform:** document serialization v1 to fix serialization and deserialization of integers ([#2578](https://github.com/dashpay/platform/issues/2578))
+* **platform:** set recipient ID in token history claim document to being required ([#2577](https://github.com/dashpay/platform/issues/2577))
+
+
+### Documentation
+
+* **dpp:** add better documentation for token configuration ([#2574](https://github.com/dashpay/platform/issues/2574))
+
+
+### Code Refactoring
+
+* **dpp:** remove document serialize consume ([#2575](https://github.com/dashpay/platform/issues/2575))
+* **platform:** various improvements for proof debugging ([#2576](https://github.com/dashpay/platform/issues/2576))
+
+
+### Build System
+
+* update dependencies with known security issues ([#2572](https://github.com/dashpay/platform/issues/2572))
+* update javascript elliptic lib to 6.6.1 ([#2573](https://github.com/dashpay/platform/issues/2573))
+
+
+### Miscellaneous Chores
+
+* bump to v2.0.0-rc.4 ([#2579](https://github.com/dashpay/platform/issues/2579))
+* removed Ivan Shumkov as code owner at his request ([#2571](https://github.com/dashpay/platform/issues/2571))
+
+## [2.0.0-rc.3](https://github.com/dashpay/platform/compare/v2.0.0-rc.2...v2.0.0-rc.3) (2025-04-24)
+
+
+### Features
+
+* **drive:** get token config using provider ([#2567](https://github.com/dashpay/platform/issues/2567))
+* **sdk:** fetch last distribution claim moment ([#2566](https://github.com/dashpay/platform/issues/2566))
+
+
+### Bug Fixes
+
+* **drive:** allow getting tree sum value from element directly ([#2570](https://github.com/dashpay/platform/issues/2570))
+* **drive:** limit in perpetual_distribution_last_paid_moment_query ([#2569](https://github.com/dashpay/platform/issues/2569))
+
+
+### Miscellaneous Chores
+
+* **platform:** enable bls-signatures by default and upgrade to rc-3 ([#2568](https://github.com/dashpay/platform/issues/2568))
+
+## [2.0.0-rc.2](https://github.com/dashpay/platform/compare/v2.0.0-rc.1...v2.0.0-rc.2) (2025-04-21)
+
+
+### Features
+
+* **dpp:** token configuration presets ([#2561](https://github.com/dashpay/platform/issues/2561))
+* **drive-abci:** do not allow old state transitions to be processed before fork ([#2564](https://github.com/dashpay/platform/issues/2564))
+* **platform:** token last claim query ([#2559](https://github.com/dashpay/platform/issues/2559))
+
+
+### Bug Fixes
+
+* **dapi-grpc:** add GetTokenPerpetualDistributionLastClaim to versioned requests ([#2563](https://github.com/dashpay/platform/issues/2563))
+* **drive:** add path query back to GroveDBError ([#2555](https://github.com/dashpay/platform/issues/2555))
+* **token-history-contract:** fixed claim indexes ([#2562](https://github.com/dashpay/platform/issues/2562))
+
+
+### Miscellaneous Chores
+
+* update to 2.0.0-rc.2 ([#2565](https://github.com/dashpay/platform/issues/2565))
+
+## [2.0.0-rc.1](https://github.com/dashpay/platform/compare/v2.0.0-dev.1...v2.0.0-rc.1) (2025-04-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** token payment info (#2517)
+
+### Features
+
+* **platform:** allow new tokens on contract update and refactor contract struct validations ([#2542](https://github.com/dashpay/platform/issues/2542))
+* **platform:** direct selling of tokens to users ([#2534](https://github.com/dashpay/platform/issues/2534))
+* **platform:** get identities by non-unique public key hashes ([#2507](https://github.com/dashpay/platform/issues/2507))
+* **platform:** keyword search system contract ([#2523](https://github.com/dashpay/platform/issues/2523))
+* **platform:** require token for document actions ([#2498](https://github.com/dashpay/platform/issues/2498))
+* **platform:** token payment info ([#2517](https://github.com/dashpay/platform/issues/2517))
+* **platform:** transfer to frozen account is allowed ([#2478](https://github.com/dashpay/platform/issues/2478))
+* **sdk:** fetch defined token direct purchase prices ([#2544](https://github.com/dashpay/platform/issues/2544))
+* **sdk:** token claim state transition ([#2522](https://github.com/dashpay/platform/issues/2522))
+* **sdk:** token config update transition ([#2554](https://github.com/dashpay/platform/issues/2554))
+
+
+### Bug Fixes
+
+* **dapi:** invalid proof for destroy frozen funds transition ([#2513](https://github.com/dashpay/platform/issues/2513))
+* data contract proof doesn't work  with new auto fields ([#2501](https://github.com/dashpay/platform/issues/2501))
+* **dpp:** decoding invalid consensus error variants ([#2510](https://github.com/dashpay/platform/issues/2510))
+* **dpp:** missing closing bracket in validate contract update ([#2541](https://github.com/dashpay/platform/issues/2541))
+* **drive-abci:** data contract create transition advanced structure version ([#2543](https://github.com/dashpay/platform/issues/2543))
+* group member power validation ([#2520](https://github.com/dashpay/platform/issues/2520))
+* **platform:** unique token keeps history documents ([#2506](https://github.com/dashpay/platform/issues/2506))
+* **sdk:** make some things public ([#2496](https://github.com/dashpay/platform/issues/2496))
+* **sdk:** no process-level CryptoProvider available ([#2546](https://github.com/dashpay/platform/issues/2546))
+* token distribution timestamp in the past ([#2509](https://github.com/dashpay/platform/issues/2509))
+* token transfer to non-existing identity ([#2505](https://github.com/dashpay/platform/issues/2505))
+
+
+### Build System
+
+* bump wasm-bindgen to 0.2.100 to satisfy js-sys deps ([#2503](https://github.com/dashpay/platform/issues/2503))
+* enforce bincode version 2.0.0-rc3 ([#2504](https://github.com/dashpay/platform/issues/2504))
+
+
+### Code Refactoring
+
+* fix clippy warnings ([#2515](https://github.com/dashpay/platform/issues/2515))
+* move proof retrieval from DAPI to Drive ABCI ([#2535](https://github.com/dashpay/platform/issues/2535))
+
+
+### Tests
+
+* **dpp:** add test for group with all unilateral members ([#2514](https://github.com/dashpay/platform/issues/2514))
+* **drive:** test various token distribution algorithms ([#2511](https://github.com/dashpay/platform/issues/2511))
+* **platform:** Add data contract basic validation of distributions
+* **platform:** distribution inverted log tests ([#2547](https://github.com/dashpay/platform/issues/2547))
+* **platform:** distribution log tests ([#2548](https://github.com/dashpay/platform/issues/2548))
+* **platform:** tests for exp and polynomial distributions ([#2556](https://github.com/dashpay/platform/issues/2556))
+* **platform:** token distribution step decreasing tests and improvements ([#2545](https://github.com/dashpay/platform/issues/2545))
+
+
+### Miscellaneous Chores
+
+* **platform:** bump rust dashcore version to 0.39.6 ([#2553](https://github.com/dashpay/platform/issues/2553))
+* **platform:** bump rust-dashcore version ([#2549](https://github.com/dashpay/platform/issues/2549))
+* update to 2.0.0 rc-1 ([#2557](https://github.com/dashpay/platform/issues/2557))
+* update tonic to version 0.13 ([#2540](https://github.com/dashpay/platform/issues/2540))
+
+## [2.0.0-dev.1](https://github.com/dashpay/platform/compare/v1.8.0...v2.0.0-dev.1) (2025-03-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** token distribution fixes and tests (#2494)
+* **platform:** token advanced distribution and updates (#2471)
+* **sdk:** bigint for uint64 values (#2443)
+* **platform:** enhance token configuration and validation mechanisms (#2439)
+* **platform:** improved token validation and token config update transition (#2435)
+* **dpp:** wrapping overflow issue (#2430)
+* **platform:** token base support (#2383)
+* optimize for x86-64-v3 cpu microarchitecture (Haswell+) (#2374)
+
+### Features
+
+* add token transitions to SDK and DAPI ([#2434](https://github.com/dashpay/platform/issues/2434))
+* check if token is paused on token transfers
+* **dpp:** extra methods for state transitions in wasm ([#2401](https://github.com/dashpay/platform/issues/2401))
+* **dpp:** extra methods for state transitions in wasm ([#2462](https://github.com/dashpay/platform/issues/2462))
+* **dpp:** token distribution model ([#2447](https://github.com/dashpay/platform/issues/2447))
+* get proofs for tokens ([#2433](https://github.com/dashpay/platform/issues/2433))
+* group queries ([#2432](https://github.com/dashpay/platform/issues/2432))
+* **js-dash-sdk:** fix tests after merge
+* more granular integer document property types ([#2455](https://github.com/dashpay/platform/issues/2455))
+* **platform:** enhance token configuration and validation mechanisms ([#2439](https://github.com/dashpay/platform/issues/2439))
+* **platform:** improved token validation and token config update transition ([#2435](https://github.com/dashpay/platform/issues/2435))
+* **platform:** proof verification for many queries and a few more queries ([#2431](https://github.com/dashpay/platform/issues/2431))
+* **platform:** token advanced distribution and updates ([#2471](https://github.com/dashpay/platform/issues/2471))
+* **platform:** token base support ([#2383](https://github.com/dashpay/platform/issues/2383))
+* **platform:** token distribution part two ([#2450](https://github.com/dashpay/platform/issues/2450))
+* **sdk:** add option to request all keys ([#2445](https://github.com/dashpay/platform/issues/2445))
+* **sdk:** return state transition execution error ([#2454](https://github.com/dashpay/platform/issues/2454))
+* **sdk:** token and group queries ([#2449](https://github.com/dashpay/platform/issues/2449))
+* validate token name localizations ([#2468](https://github.com/dashpay/platform/issues/2468))
+* wasm sdk build proof-of-concept ([#2405](https://github.com/dashpay/platform/issues/2405))
+
+
+### Bug Fixes
+
+* destroy frozen funds used wrong identity and proof verification ([#2467](https://github.com/dashpay/platform/issues/2467))
+* **dpp:** invalid feature flag instructions ([#2448](https://github.com/dashpay/platform/issues/2448))
+* **dpp:** invalid feature flag usage ([#2477](https://github.com/dashpay/platform/issues/2477))
+* **dpp:** invalid imports and tests ([#2459](https://github.com/dashpay/platform/issues/2459))
+* **dpp:** wrapping overflow issue ([#2430](https://github.com/dashpay/platform/issues/2430))
+* **drive:** using new rust dash core methods for reversed quorum hash to maintain backwards compatibility ([#2489](https://github.com/dashpay/platform/issues/2489))
+* **platform:** token distribution fixes and tests ([#2494](https://github.com/dashpay/platform/issues/2494))
+* proof result error for credit transfers in sdk ([#2451](https://github.com/dashpay/platform/issues/2451))
+* **sdk:** bigint for uint64 values ([#2443](https://github.com/dashpay/platform/issues/2443))
+* token already paused unpaused and frozen validation ([#2466](https://github.com/dashpay/platform/issues/2466))
+* token history contract ([#2474](https://github.com/dashpay/platform/issues/2474))
+* wrong order of parameters in UnauthorizedTokenActionError
+* xss vulnerability in mocha ([#2469](https://github.com/dashpay/platform/issues/2469))
+
+
+### Continuous Integration
+
+* use github-hosted arm runner for release workflow ([#2452](https://github.com/dashpay/platform/issues/2452))
+
+
+### Build System
+
+* bump Alpine version to 3.21 ([#2074](https://github.com/dashpay/platform/issues/2074))
+* bump rust version to 1.85 ([#2480](https://github.com/dashpay/platform/issues/2480))
+* optimize for x86-64-v3 cpu microarchitecture (Haswell+) ([#2374](https://github.com/dashpay/platform/issues/2374))
+
+
+### Tests
+
+* **dpp:** fix assertion with the same value
+* fix `fetchProofForStateTransition` tests and warnings ([#2460](https://github.com/dashpay/platform/issues/2460))
+* fix slowdown of JS SDK unit tests ([#2475](https://github.com/dashpay/platform/issues/2475))
+* fix token history contract tests ([#2470](https://github.com/dashpay/platform/issues/2470))
+
+
+### Documentation
+
+* update comment for data contract code range ([#2476](https://github.com/dashpay/platform/issues/2476))
+
+
+### Miscellaneous Chores
+
+* dapi grpc queries ([#2437](https://github.com/dashpay/platform/issues/2437))
+* **dpp:** remove unnecessary type conversion
+* ignore deprecated `lodash.get` ([#2441](https://github.com/dashpay/platform/issues/2441))
+* **platform:** bump to version 2.0.0-dev.1 ([#2495](https://github.com/dashpay/platform/issues/2495))
+* **platform:** make bls sig compatibility an optional feature ([#2440](https://github.com/dashpay/platform/issues/2440))
+* **platform:** npm audit fix ([#2463](https://github.com/dashpay/platform/issues/2463))
+* remove duplicated commented code
+* update to latest dash core 37 ([#2483](https://github.com/dashpay/platform/issues/2483))
+
+## [2.0.0-rc.18](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0-rc.18) (2025-06-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** properly use withdrawal system data contract. (#2675)
+
+### Features
+
+* **dpp:** add detailed interval evaluation explanation functionality ([#2662](https://github.com/dashpay/platform/issues/2662))
+* replace diskusage with diskusage-ng for improved functionality ([#2680](https://github.com/dashpay/platform/issues/2680))
+* **sdk:** fetch token contract info ([#2670](https://github.com/dashpay/platform/issues/2670))
+
+
+### Bug Fixes
+
+* **drive-abci:** fixed issue with adding a key with contract bounds ([#2673](https://github.com/dashpay/platform/issues/2673))
+* **platform:** properly use withdrawal system data contract. ([#2675](https://github.com/dashpay/platform/issues/2675))
+
+
+### Continuous Integration
+
+* add gRPC coverage check and cache management ([#2667](https://github.com/dashpay/platform/issues/2667))
+
+
+### Miscellaneous Chores
+
+* **platform:** remove dash devs discord from readme ([#2668](https://github.com/dashpay/platform/issues/2668))
+* **release:** update changelog and bump version to 2.0.0-rc.17 ([#2674](https://github.com/dashpay/platform/issues/2674))
+* remove unused token meta schema and references ([#2677](https://github.com/dashpay/platform/issues/2677))
+* update js dependencies to latest versions ([#2678](https://github.com/dashpay/platform/issues/2678))
+* update minimatch to version 9.0.5 and brace-expansion to version 2.0.2 ([#2672](https://github.com/dashpay/platform/issues/2672))
+
+## [2.0.0-rc.17](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0-rc.17) (2025-06-18)
+
+
+### Features
+
+* **dpp:** add detailed interval evaluation explanation functionality ([#2662](https://github.com/dashpay/platform/issues/2662))
+* **sdk:** fetch token contract info ([#2670](https://github.com/dashpay/platform/issues/2670))
+
+
+### Bug Fixes
+
+* **drive-abci:** fixed issue with adding a key with contract bounds ([#2673](https://github.com/dashpay/platform/issues/2673))
+
+
+### Continuous Integration
+
+* add gRPC coverage check and cache management ([#2667](https://github.com/dashpay/platform/issues/2667))
+
+
+### Miscellaneous Chores
+
+* **platform:** remove dash devs discord from readme ([#2668](https://github.com/dashpay/platform/issues/2668))
+* update minimatch to version 9.0.5 and brace-expansion to version 2.0.2 ([#2672](https://github.com/dashpay/platform/issues/2672))
+
+## [2.0.0-rc.16](https://github.com/dashpay/platform/compare/v2.0.0-rc.14...v2.0.0-rc.16) (2025-06-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. (#2658)
+
+### Features
+
+* **dpp:** export more token transition fields ([#2655](https://github.com/dashpay/platform/issues/2655))
+* **platform:** add finalized epoch infos query and proof functionality ([#2665](https://github.com/dashpay/platform/issues/2665))
+* **sdk:** add sdk wrappers for easily pushing document transitions for create, delete, purchase, replace, set price, and transfer to platform ([#2659](https://github.com/dashpay/platform/issues/2659))
+* **sdk:** add token state transition functionalities to rs-sdk ([#2657](https://github.com/dashpay/platform/issues/2657))
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. ([#2658](https://github.com/dashpay/platform/issues/2658))
+
+
+### Bug Fixes
+
+* fixes issue [#2653](https://github.com/dashpay/platform/issues/2653) Cannot decode DataContractCreateV1 with WASM-DPP ([#2654](https://github.com/dashpay/platform/issues/2654))
+* **platform:** npm audit security for tar-fs ([#2656](https://github.com/dashpay/platform/issues/2656))
+* **platform:** resolve direct purchase from self issue causing chain stall ([#2663](https://github.com/dashpay/platform/issues/2663))
+
+
+### Documentation
+
+* add CLAUDE.md for development guidance ([#2652](https://github.com/dashpay/platform/issues/2652))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.15 ([#2664](https://github.com/dashpay/platform/issues/2664))
+
+## [2.0.0-rc.15](https://github.com/dashpay/platform/compare/v2.0.0-rc.14...v2.0.0-rc.15) (2025-06-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. (#2658)
+
+### Features
+
+* **dpp:** export more token transition fields ([#2655](https://github.com/dashpay/platform/issues/2655))
+* **sdk:** add sdk wrappers for easily pushing document transitions for create, delete, purchase, replace, set price, and transfer to platform ([#2659](https://github.com/dashpay/platform/issues/2659))
+* **sdk:** add token state transition functionalities to rs-sdk ([#2657](https://github.com/dashpay/platform/issues/2657))
+* **sdk:** make document state transition entropy optional, will do a replace if revision is not 1. ([#2658](https://github.com/dashpay/platform/issues/2658))
+
+
+### Bug Fixes
+
+* fixes issue [#2653](https://github.com/dashpay/platform/issues/2653) Cannot decode DataContractCreateV1 with WASM-DPP ([#2654](https://github.com/dashpay/platform/issues/2654))
+* **platform:** npm audit security for tar-fs ([#2656](https://github.com/dashpay/platform/issues/2656))
+* **platform:** resolve direct purchase from self issue causing chain stall ([#2663](https://github.com/dashpay/platform/issues/2663))
+
+
+### Documentation
+
+* add CLAUDE.md for development guidance ([#2652](https://github.com/dashpay/platform/issues/2652))
+
+## [2.0.0-rc.14](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.14) (2025-05-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** set minimum intervals for perpetual distribution (#2622)
+* **platform:** load data contracts in their respective versions (#2644)
+
+### Features
+
+* add checks for authorized action takers in data contract create and update validations ([#2647](https://github.com/dashpay/platform/issues/2647))
+* **dpp:** add validation for minimum group member count ([#2646](https://github.com/dashpay/platform/issues/2646))
+* **dpp:** set minimum intervals for perpetual distribution ([#2622](https://github.com/dashpay/platform/issues/2622))
+* **platform:** add token contract info and query ([#2641](https://github.com/dashpay/platform/issues/2641))
+* **sdk:** add DataContractMismatch enum for detailed contract comparison ([#2648](https://github.com/dashpay/platform/issues/2648))
+
+
+### Bug Fixes
+
+* **dpp:** unclear error message for missing document types if no tokens defined ([#2639](https://github.com/dashpay/platform/issues/2639))
+* **drive:** proved identity update was giving error ([#2642](https://github.com/dashpay/platform/issues/2642))
+* **platform:** load data contracts in their respective versions ([#2644](https://github.com/dashpay/platform/issues/2644))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.0.0-rc.13 ([#2645](https://github.com/dashpay/platform/issues/2645))
+
+
+### Tests
+
+* **drive:** add test for invalid owner on document delete ([#2643](https://github.com/dashpay/platform/issues/2643))
+
+## [2.0.0-rc.13](https://github.com/dashpay/platform/compare/v2.0.0-rc.12...v2.0.0-rc.13) (2025-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** load data contracts in their respective versions (#2644)
+
+### Features
+
+* **platform:** add token contract info and query ([#2641](https://github.com/dashpay/platform/issues/2641))
+
+
+### Bug Fixes
+
+* **dpp:** unclear error message for missing document types if no tokens defined ([#2639](https://github.com/dashpay/platform/issues/2639))
+* **drive:** proved identity update was giving error ([#2642](https://github.com/dashpay/platform/issues/2642))
+* **platform:** load data contracts in their respective versions ([#2644](https://github.com/dashpay/platform/issues/2644))
+
+## [2.0.0-rc.12](https://github.com/dashpay/platform/compare/v2.0.0-rc.11...v2.0.0-rc.12) (2025-05-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** disable changes to perpetual distribution in token configuration (#2627)
+
+### Features
+
+* **dpp:** add marketplace rules to token configuration ([#2635](https://github.com/dashpay/platform/issues/2635))
+* **dpp:** disable changes to perpetual distribution in token configuration ([#2627](https://github.com/dashpay/platform/issues/2627))
+* **sdk:** add token payment info to put_document ([#2630](https://github.com/dashpay/platform/issues/2630))
+
+
+### Bug Fixes
+
+* **dashmate:** sync max-tx-bytes between tenderdash and drive ([#2625](https://github.com/dashpay/platform/issues/2625))
+* **dpp:** allow changing main control group for token configuration ([#2628](https://github.com/dashpay/platform/issues/2628))
+* **dpp:** correct stepwise distribution logic in evaluate.rs ([#2636](https://github.com/dashpay/platform/issues/2636))
+* **dpp:** missing tags on Groups needed for deserialization ([#2624](https://github.com/dashpay/platform/issues/2624))
+* **drive:** ignore time based update fields in proof verification of data contract updates ([#2634](https://github.com/dashpay/platform/issues/2634))
+* **platform:** ensure document types only target valid tokens for token payments ([#2631](https://github.com/dashpay/platform/issues/2631))
+* **platform:** fix evonode distribution for token perpetual distribution (part 1) ([#2623](https://github.com/dashpay/platform/issues/2623))
+* **platform:** paying for a document action with tokens where tokens would be transferred to yourself as contract owner was breaking ([#2633](https://github.com/dashpay/platform/issues/2633))
+* **platform:** resolved grovedb error during signing group action finalization on check tx ([#2629](https://github.com/dashpay/platform/issues/2629))
+
+
+### Tests
+
+* **drive-abci:** add tests for epoch-based token distribution for evonodes ([#2626](https://github.com/dashpay/platform/issues/2626))
+
+## [2.0.0-rc.11](https://github.com/dashpay/platform/compare/v2.0.0-rc.10...v2.0.0-rc.11) (2025-05-19)
+
+
+### Features
+
+* **platform:** don't allow freezing non existent identity ([#2612](https://github.com/dashpay/platform/issues/2612))
+* **sdk:** token purchase and set price transitions ([#2613](https://github.com/dashpay/platform/issues/2613))
+
+
+### Bug Fixes
+
+* **dpp:** historical document type name for token direct pricing ([#2616](https://github.com/dashpay/platform/issues/2616))
+* **drive:** verification of token purchase can not verify the purchase cost as this can be lower than the agreed price ([#2617](https://github.com/dashpay/platform/issues/2617))
+* **platform:** consensus error for invalid group position, config update won't allow group action if group action is not required, and tests ([#2614](https://github.com/dashpay/platform/issues/2614))
+
 ## [1.8.0](https://github.com/dashpay/platform/compare/v1.7.1...v1.8.0) (2025-01-16)
 
 

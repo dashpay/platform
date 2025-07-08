@@ -156,9 +156,7 @@ impl FeeRefunds {
         &self,
         identity_id: Identifier,
     ) -> Option<Credits> {
-        let Some(credits_per_epoch) = self.get(identity_id.as_bytes()) else {
-            return None;
-        };
+        let credits_per_epoch = self.get(identity_id.as_bytes())?;
 
         let credits = credits_per_epoch
             .iter()

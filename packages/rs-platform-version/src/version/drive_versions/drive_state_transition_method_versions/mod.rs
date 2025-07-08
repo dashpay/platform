@@ -20,6 +20,9 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub document_replace_transition: FeatureVersion,
     pub document_transfer_transition: FeatureVersion,
     pub document_update_price_transition: FeatureVersion,
+    pub token_burn_transition: FeatureVersion,
+    pub token_mint_transition: FeatureVersion,
+    pub token_transfer_transition: FeatureVersion,
     pub documents_batch_transition: FeatureVersion,
     pub identity_create_transition: FeatureVersion,
     pub identity_credit_transfer_transition: FeatureVersion,
@@ -30,6 +33,14 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub bump_identity_data_contract_nonce: FeatureVersion,
     pub bump_identity_nonce: FeatureVersion,
     pub partially_use_asset_lock: FeatureVersion,
+    pub token_freeze_transition: FeatureVersion,
+    pub token_unfreeze_transition: FeatureVersion,
+    pub token_emergency_action_transition: FeatureVersion,
+    pub token_destroy_frozen_funds_transition: FeatureVersion,
+    pub token_config_update_transition: FeatureVersion,
+    pub token_claim_transition: FeatureVersion,
+    pub token_direct_purchase_transition: FeatureVersion,
+    pub token_set_price_for_direct_purchase_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

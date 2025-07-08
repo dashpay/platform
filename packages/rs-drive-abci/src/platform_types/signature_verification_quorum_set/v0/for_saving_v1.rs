@@ -1,21 +1,22 @@
-use crate::platform_types::signature_verification_quorum_set::v0::for_saving::{
-    PreviousPastQuorumsForSavingV0, QuorumConfigForSavingV0,
-};
+#[cfg(feature = "bls-signatures")]
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0::PreviousPastQuorumsForSavingV0;
+use crate::platform_types::signature_verification_quorum_set::v0::quorum_config_for_saving_v0::QuorumConfigForSavingV0;
+use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::PreviousPastQuorumsV0;
 use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
     ThresholdBlsPublicKey, VerificationQuorum,
 };
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::QuorumHash;
+use bincode::{Decode, Encode};
 use dpp::bls_signatures::Bls12381G2Impl;
-use dpp::identity::state_transition::asset_lock_proof::Encode;
-use dpp::platform_serialization::de::Decode;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct SignatureVerificationQuorumSetForSavingV1 {
     config: QuorumConfigForSavingV0,
     current_quorums: Vec<QuorumForSavingV1>,
+    #[cfg(feature = "bls-signatures")]
     previous_quorums: Option<PreviousPastQuorumsForSavingV0>,
 }
 
@@ -27,6 +28,7 @@ impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQu
 
 impl From<SignatureVerificationQuorumSetV0> for SignatureVerificationQuorumSetForSavingV1 {
     fn from(value: SignatureVerificationQuorumSetV0) -> Self {
+        #[allow(unused_variables)]
         let SignatureVerificationQuorumSetV0 {
             config,
             current_quorums,
@@ -36,6 +38,7 @@ impl From<SignatureVerificationQuorumSetV0> for SignatureVerificationQuorumSetFo
         Self {
             config: config.into(),
             current_quorums: current_quorums.into(),
+            #[cfg(feature = "bls-signatures")]
             previous_quorums: previous.map(|previous| previous.into()),
         }
     }
@@ -46,13 +49,17 @@ impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQu
         let SignatureVerificationQuorumSetForSavingV1 {
             config,
             current_quorums,
+            #[cfg(feature = "bls-signatures")]
             previous_quorums,
         } = value;
 
         Self {
             config: config.into(),
             current_quorums: current_quorums.into(),
+            #[cfg(feature = "bls-signatures")]
             previous: previous_quorums.map(|previous| previous.into()),
+            #[cfg(not(feature = "bls-signatures"))]
+            previous: None,
         }
     }
 }
@@ -88,5 +95,49 @@ impl From<Quorums<VerificationQuorum>> for Vec<QuorumForSavingV1> {
                 index: quorum.index,
             })
             .collect()
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct PreviousPastQuorumsForSavingV1 {
+    quorums: Vec<QuorumForSavingV1>,
+    last_active_core_height: u32,
+    updated_at_core_height: u32,
+    previous_change_height: Option<u32>,
+}
+
+impl From<PreviousPastQuorumsV0> for PreviousPastQuorumsForSavingV1 {
+    fn from(value: PreviousPastQuorumsV0) -> Self {
+        let PreviousPastQuorumsV0 {
+            quorums,
+            last_active_core_height,
+            updated_at_core_height,
+            previous_change_height,
+        } = value;
+
+        Self {
+            quorums: quorums.into(),
+            last_active_core_height,
+            updated_at_core_height,
+            previous_change_height,
+        }
+    }
+}
+
+impl From<PreviousPastQuorumsForSavingV1> for PreviousPastQuorumsV0 {
+    fn from(value: PreviousPastQuorumsForSavingV1) -> Self {
+        let PreviousPastQuorumsForSavingV1 {
+            quorums,
+            last_active_core_height,
+            updated_at_core_height,
+            previous_change_height,
+        } = value;
+
+        Self {
+            quorums: quorums.into(),
+            last_active_core_height,
+            updated_at_core_height,
+            previous_change_height,
+        }
     }
 }

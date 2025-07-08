@@ -38,7 +38,7 @@ describe('Platform', () => {
     let walletAccount;
 
     before(async () => {
-      client = await createClientWithFundedWallet(20000000);
+      client = await createClientWithFundedWallet(150000000); // 1.5 Dash
 
       walletAccount = await client.getWalletAccount();
     });
@@ -50,7 +50,7 @@ describe('Platform', () => {
     });
 
     it('should create an identity', async () => {
-      identity = await client.platform.identities.register(400000);
+      identity = await client.platform.identities.register(140000000); // 1.4 Dash
 
       expect(identity).to.exist();
     });
@@ -229,7 +229,7 @@ describe('Platform', () => {
 
       expect(fetchedIdentityWithoutBalance).to.deep.equal(localIdentityWithoutBalance);
 
-      expect(fetchedIdentity.getBalance()).to.be.greaterThan(0);
+      expect(fetchedIdentity.getBalance() > 0).to.be.true();
     });
 
     it('should be able to get newly created identity by it\'s public key', async () => {
@@ -317,7 +317,7 @@ describe('Platform', () => {
 
         expect(fetchedIdentityWithoutBalance).to.deep.equal(localIdentityWithoutBalance);
 
-        expect(fetchedIdentity.getBalance()).to.be.greaterThan(0);
+        expect(fetchedIdentity.getBalance() > 0).to.be.true();
       });
     });
 
@@ -419,7 +419,7 @@ describe('Platform', () => {
         );
         const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
         const topUpAmount = 1000000;
-        const topUpCredits = topUpAmount * 1000;
+        const topUpCredits = BigInt(topUpAmount) * BigInt(1000);
 
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
 
@@ -430,10 +430,9 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identityAfterTopUp.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
+        expect(identityAfterTopUp.getBalance() > balanceBeforeTopUp).to.be.true();
 
-        expect(identityAfterTopUp.getBalance()).to.be
-          .lessThan(balanceBeforeTopUp + topUpCredits);
+        expect(identityAfterTopUp.getBalance() < balanceBeforeTopUp + topUpCredits).to.be.true();
       });
 
       it('should be able to create more documents after the top-up', async () => {
@@ -549,10 +548,12 @@ describe('Platform', () => {
           const recipientBalanceBefore = recipientBeforeTransfer.getBalance();
           const recipientBalanceAfter = recipientAfterTransfer.getBalance();
 
-          expect(recipientBalanceAfter).to.be.equal(recipientBalanceBefore + transferAmount);
+          expect(recipientBalanceAfter).to.be
+            .equal(recipientBalanceBefore + BigInt(transferAmount));
 
           // TODO: implement the way to get the fee
-          expect(identityBalanceAfter).to.be.lessThan(identityBalanceBefore + transferAmount);
+          expect(identityBalanceAfter < identityBalanceBefore + BigInt(transferAmount))
+            .to.be.true();
         });
 
         it('should not be able to transfer more credits then have', async () => {
@@ -566,7 +567,7 @@ describe('Platform', () => {
             await client.platform.identities.creditTransfer(
               identity,
               recipient.getId(),
-              identity.getBalance() + 1,
+              identity.getBalance() + BigInt(1),
             );
           } catch (e) {
             transferError = e;
@@ -618,7 +619,7 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identity.getRevision()).to.equal(identityBeforeUpdate.revision + 1);
+        expect(identity.getRevision()).to.equal(BigInt(identityBeforeUpdate.revision) + BigInt(1));
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject(true);
@@ -650,7 +651,7 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identity.getRevision()).to.equal(identityBeforeUpdate.revision + 1);
+        expect(identity.getRevision()).to.equal(BigInt(identityBeforeUpdate.revision) + BigInt(1));
         expect(identity.getPublicKeyById(2)).to.exist();
         expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
 

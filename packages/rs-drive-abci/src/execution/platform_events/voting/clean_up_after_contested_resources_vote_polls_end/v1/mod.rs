@@ -18,6 +18,8 @@ where
 {
     /// Checks for ended vote polls
     #[inline(always)]
+    // TODO: Use type or struct
+    #[allow(clippy::type_complexity)]
     pub(super) fn clean_up_after_contested_resources_vote_polls_end_v1(
         &self,
         block_info: &BlockInfo,

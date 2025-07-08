@@ -28,6 +28,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<Vec<LowLevelDriveOperation>, Error>` - The resulting low level drive operations if successful, or an error.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_keys_to_identity_operations(
         &self,
         identity_id: [u8; 32],

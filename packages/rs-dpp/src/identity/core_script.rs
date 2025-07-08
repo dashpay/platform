@@ -158,12 +158,16 @@ impl<'de> Deserialize<'de> for CoreScript {
         if deserializer.is_human_readable() {
             let data: String = Deserialize::deserialize(deserializer)?;
 
-            Self::from_string(&data, Encoding::Base64)
-                .map_err(|e| serde::de::Error::custom(e.to_string()))
+            Self::from_string(&data, Encoding::Base64).map_err(|e| {
+                serde::de::Error::custom(format!(
+                    "expected to be able to deserialize core script from string: {}",
+                    e
+                ))
+            })
         } else {
             struct BytesVisitor;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
+            impl Visitor<'_> for BytesVisitor {
                 type Value = CoreScript;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

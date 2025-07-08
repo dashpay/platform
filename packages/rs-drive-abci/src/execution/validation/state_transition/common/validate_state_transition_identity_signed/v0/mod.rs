@@ -54,7 +54,7 @@ pub(super) trait ValidateStateTransitionIdentitySignatureV0<'a> {
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
 }
 
-impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
+impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,

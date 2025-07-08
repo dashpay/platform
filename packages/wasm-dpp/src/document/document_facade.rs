@@ -4,7 +4,7 @@ use wasm_bindgen::{prelude::*, JsValue};
 use crate::document::factory::DocumentFactoryWASM;
 use crate::{DataContractWasm, ExtendedDocumentWasm};
 
-use crate::document::state_transition::document_batch_transition::DocumentsBatchTransitionWasm;
+use crate::document::state_transition::batch_transition::BatchTransitionWasm;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DocumentFacade)]
@@ -95,8 +95,8 @@ impl DocumentFacadeWasm {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
-        nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
+        nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce (BigInt)
+    ) -> Result<BatchTransitionWasm, JsValue> {
         self.factory
             .create_state_transition(documents, nonce_counter_value)
     }

@@ -20,18 +20,21 @@ use crate::document::document_methods::DocumentMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::{
     extended_document::v0::ExtendedDocumentV0,
-    serialization_traits::DocumentPlatformConversionMethodsV0, ExtendedDocument,
+    ExtendedDocument, serialization_traits::DocumentPlatformConversionMethodsV0,
 };
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::{
-    document_transition::{
-        action_type::DocumentTransitionActionType, DocumentCreateTransition,
-        DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,
+use crate::state_transition::batch_transition::{
+    batched_transition::{
+        document_transition_action_type::DocumentTransitionActionType, DocumentCreateTransition,
+        DocumentDeleteTransition, DocumentReplaceTransition,
     },
-    DocumentsBatchTransition, DocumentsBatchTransitionV0,
+    BatchTransition, BatchTransitionV0,
 };
 use itertools::Itertools;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -189,6 +192,7 @@ impl DocumentFactoryV0 {
                 data_contract: data_contract.clone(),
                 metadata: None,
                 entropy: Bytes32::new(document_entropy),
+                token_payment_info: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -206,33 +210,40 @@ impl DocumentFactoryV0 {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
+                Vec<(
+                    Document,
+                    DocumentTypeRef<'a>,
+                    Bytes32,
+                    Option<TokenPaymentInfo>,
+                )>,
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransition, ProtocolError> {
+    ) -> Result<BatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
+        // TODO: Use struct or types
+        #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef, Bytes32)>,
+            Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)>,
         )> = documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
-        let Some((first_document, _, _)) = flattened_documents_iter.peek() else {
+        let Some((first_document, _, _, _)) = flattened_documents_iter.peek() else {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         };
 
         let owner_id = first_document.owner_id();
 
         let is_the_same_owner =
-            flattened_documents_iter.all(|(document, _, _)| document.owner_id() == owner_id);
+            flattened_documents_iter.all(|(document, _, _, _)| document.owner_id() == owner_id);
         if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents
                     .into_iter()
                     .flat_map(|(_, v)| {
                         v.into_iter()
-                            .map(|(document, _, _)| document)
+                            .map(|(document, _, _, _)| document)
                             .collect::<Vec<_>>()
                     })
                     .collect(),
@@ -249,7 +260,9 @@ impl DocumentFactoryV0 {
                 DocumentTransitionActionType::Delete => Self::document_delete_transitions(
                     documents
                         .into_iter()
-                        .map(|(document, document_type, _)| (document, document_type))
+                        .map(|(document, document_type, _, token_payment_info)| {
+                            (document, document_type, token_payment_info)
+                        })
                         .collect(),
                     nonce_counter,
                     platform_version,
@@ -257,7 +270,9 @@ impl DocumentFactoryV0 {
                 DocumentTransitionActionType::Replace => Self::document_replace_transitions(
                     documents
                         .into_iter()
-                        .map(|(document, document_type, _)| (document, document_type))
+                        .map(|(document, document_type, _, token_payment_info)| {
+                            (document, document_type, token_payment_info)
+                        })
                         .collect(),
                     nonce_counter,
                     platform_version,
@@ -275,7 +290,7 @@ impl DocumentFactoryV0 {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        Ok(DocumentsBatchTransitionV0 {
+        Ok(BatchTransitionV0 {
             owner_id,
             transitions,
             user_fee_increase: 0,
@@ -309,6 +324,7 @@ impl DocumentFactoryV0 {
                 data_contract: data_contract.clone(),
                 metadata: None,
                 entropy: Bytes32::default(),
+                token_payment_info: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -380,13 +396,13 @@ impl DocumentFactoryV0 {
     //
     #[cfg(feature = "state-transitions")]
     fn document_create_transitions(
-        documents: Vec<(Document, DocumentTypeRef, Bytes32)>,
+        documents: Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type, entropy)| {
+            .map(|(document, document_type, entropy, token_payment_info)| {
                 if document_type.documents_mutable() {
                     //we need to have revisions
                     let Some(revision) = document.revision() else {
@@ -410,6 +426,7 @@ impl DocumentFactoryV0 {
                     document,
                     document_type,
                     entropy.to_buffer(),
+                    token_payment_info,
                     *nonce,
                     platform_version,
                     None,
@@ -425,13 +442,13 @@ impl DocumentFactoryV0 {
 
     #[cfg(feature = "state-transitions")]
     fn document_replace_transitions(
-        documents: Vec<(Document, DocumentTypeRef)>,
+        documents: Vec<(Document, DocumentTypeRef, Option<TokenPaymentInfo>)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(mut document, document_type)| {
+            .map(|(mut document, document_type, token_payment_info)| {
                 if !document_type.documents_mutable() {
                     return Err(DocumentError::TryingToReplaceImmutableDocument {
                         document: Box::new(document),
@@ -455,6 +472,7 @@ impl DocumentFactoryV0 {
                 let transition = DocumentReplaceTransition::from_document(
                     document,
                     document_type,
+                    token_payment_info,
                     *nonce,
                     platform_version,
                     None,
@@ -509,13 +527,13 @@ impl DocumentFactoryV0 {
 
     #[cfg(feature = "state-transitions")]
     fn document_delete_transitions(
-        documents: Vec<(Document, DocumentTypeRef)>,
+        documents: Vec<(Document, DocumentTypeRef, Option<TokenPaymentInfo>)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(document, document_type, token_payment_info)| {
                 if !document_type.documents_can_be_deleted() {
                     return Err(DocumentError::TryingToDeleteIndelibleDocument {
                         document: Box::new(document),
@@ -535,6 +553,7 @@ impl DocumentFactoryV0 {
                 let transition = DocumentDeleteTransition::from_document(
                     document,
                     document_type,
+                    token_payment_info,
                     *nonce,
                     platform_version,
                     None,
@@ -602,7 +621,7 @@ mod test {
         let document = Document::V0(document_v0);
 
         // This will be passed to the factory
-        let documents = vec![(document, document_type_ref)];
+        let documents = vec![(document, document_type_ref, None)];
         let mut nonce_counter = BTreeMap::new();
         let platform_version = PlatformVersion::latest();
 
@@ -610,7 +629,7 @@ mod test {
         let result = DocumentFactoryV0::document_delete_transitions(
             documents,
             &mut nonce_counter,
-            &platform_version,
+            platform_version,
         );
 
         // Checks

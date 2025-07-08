@@ -3,6 +3,9 @@ use crate::execution::types::unpaid_epoch::v0::{
 };
 use derive_more::From;
 use dpp::block::epoch::EpochIndex;
+use dpp::identity::TimestampMillis;
+use dpp::prelude::FeeMultiplier;
+use dpp::util::deserializer::ProtocolVersion;
 use drive::error::Error;
 
 pub mod v0;
@@ -25,6 +28,12 @@ impl UnpaidEpochV0Getters for UnpaidEpoch {
     fn epoch_index(&self) -> EpochIndex {
         match self {
             UnpaidEpoch::V0(v0) => v0.epoch_index(),
+        }
+    }
+
+    fn epoch_start_time(&self) -> TimestampMillis {
+        match self {
+            UnpaidEpoch::V0(v0) => v0.epoch_start_time(),
         }
     }
 
@@ -57,12 +66,30 @@ impl UnpaidEpochV0Getters for UnpaidEpoch {
             UnpaidEpoch::V0(v0) => v0.next_epoch_start_block_core_height(),
         }
     }
+
+    fn protocol_version(&self) -> ProtocolVersion {
+        match self {
+            UnpaidEpoch::V0(v0) => v0.protocol_version(),
+        }
+    }
+
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            UnpaidEpoch::V0(v0) => v0.fee_multiplier(),
+        }
+    }
 }
 
 impl UnpaidEpochV0Setters for UnpaidEpoch {
     fn set_epoch_index(&mut self, epoch_index: EpochIndex) {
         match self {
             UnpaidEpoch::V0(v0) => v0.set_epoch_index(epoch_index),
+        }
+    }
+
+    fn set_epoch_start_time(&mut self, epoch_start_time: TimestampMillis) {
+        match self {
+            UnpaidEpoch::V0(v0) => v0.set_epoch_start_time(epoch_start_time),
         }
     }
 
@@ -97,6 +124,18 @@ impl UnpaidEpochV0Setters for UnpaidEpoch {
             UnpaidEpoch::V0(v0) => {
                 v0.set_next_epoch_start_block_core_height(next_epoch_start_block_core_height)
             }
+        }
+    }
+
+    fn set_protocol_version(&mut self, protocol_version: ProtocolVersion) {
+        match self {
+            UnpaidEpoch::V0(v0) => v0.set_protocol_version(protocol_version),
+        }
+    }
+
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        match self {
+            UnpaidEpoch::V0(v0) => v0.set_fee_multiplier(fee_multiplier),
         }
     }
 }

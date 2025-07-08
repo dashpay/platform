@@ -7,17 +7,21 @@
 
 pub mod block_info_from_metadata;
 mod delegate;
-mod document_query;
 mod fetch;
 pub mod fetch_current_no_parameters;
 mod fetch_many;
 mod fetch_unproved;
 mod identities_contract_keys_query;
-mod query;
+pub mod query;
 pub mod transition;
 pub mod types;
 
-pub use dapi_grpc::platform::v0::{self as proto};
+pub mod documents;
+pub mod group_actions;
+pub mod tokens;
+
+pub use dapi_grpc::platform::v0 as proto;
+pub use documents::document_query::DocumentQuery;
 pub use dpp::{
     self as dpp,
     document::Document,
@@ -29,7 +33,6 @@ pub use drive_proof_verifier::ContextProvider;
 pub use drive_proof_verifier::MockContextProvider;
 pub use rs_dapi_client as dapi;
 pub use {
-    document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,

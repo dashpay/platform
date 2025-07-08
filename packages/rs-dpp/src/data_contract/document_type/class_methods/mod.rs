@@ -9,7 +9,7 @@ mod create_document_types_from_document_schemas;
 mod try_from_schema;
 
 #[inline]
-fn consensus_or_protocol_data_contract_error(
+pub(crate) fn consensus_or_protocol_data_contract_error(
     data_contract_error: DataContractError,
 ) -> ProtocolError {
     #[cfg(feature = "validation")]
@@ -25,7 +25,9 @@ fn consensus_or_protocol_data_contract_error(
 }
 
 #[inline]
-fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error) -> ProtocolError {
+pub(crate) fn consensus_or_protocol_value_error(
+    platform_value_error: platform_value::Error,
+) -> ProtocolError {
     #[cfg(feature = "validation")]
     {
         ProtocolError::ConsensusError(
@@ -34,6 +36,6 @@ fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error
     }
     #[cfg(not(feature = "validation"))]
     {
-        ProtocolError::ValueError(platform_value_error.into())
+        ProtocolError::ValueError(platform_value_error)
     }
 }

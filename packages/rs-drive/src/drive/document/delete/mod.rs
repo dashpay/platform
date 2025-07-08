@@ -69,6 +69,7 @@ mod tests {
     use crate::query::DriveDocumentQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
@@ -86,9 +87,9 @@ mod tests {
     fn test_add_and_remove_family_one_document_no_transaction() {
         let tmp_dir = TempDir::new().unwrap();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
         let platform_version = PlatformVersion::latest();
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -97,6 +98,9 @@ mod tests {
         let contract = setup_contract(
             &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );
@@ -192,7 +196,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -315,7 +322,7 @@ mod tests {
         .expect("expected to get document");
 
         let serialized = person_document0
-            .serialize(document_type, platform_version)
+            .serialize(document_type, &contract, platform_version)
             .expect("expected to serialize");
         let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
             .expect("expected to deserialize");
@@ -333,7 +340,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -517,7 +527,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -792,7 +805,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -892,7 +908,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract

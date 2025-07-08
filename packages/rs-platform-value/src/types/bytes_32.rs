@@ -94,7 +94,7 @@ impl<'de> Deserialize<'de> for Bytes32 {
         if deserializer.is_human_readable() {
             struct StringVisitor;
 
-            impl<'de> Visitor<'de> for StringVisitor {
+            impl Visitor<'_> for StringVisitor {
                 type Value = Bytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -107,7 +107,7 @@ impl<'de> Deserialize<'de> for Bytes32 {
                 {
                     let bytes = BASE64_STANDARD
                         .decode(v)
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                        .map_err(|e| E::custom(format!("expected base 64 for bytes32: {}", e)))?;
                     if bytes.len() != 32 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }
@@ -121,7 +121,7 @@ impl<'de> Deserialize<'de> for Bytes32 {
         } else {
             struct BytesVisitor;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
+            impl Visitor<'_> for BytesVisitor {
                 type Value = Bytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

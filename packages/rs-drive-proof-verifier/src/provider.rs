@@ -1,5 +1,8 @@
 use crate::error::ContextProviderError;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
@@ -17,6 +20,45 @@ use std::{io::ErrorKind, ops::Deref, sync::Arc};
 /// A ContextProvider should be thread-safe and manage timeouts and other concurrency-related issues internally,
 /// as the [FromProof](crate::FromProof) implementations can block on ContextProvider calls.
 pub trait ContextProvider: Send + Sync {
+    /// Fetches the data contract for a specified data contract ID.
+    /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
+    /// referenced in proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract_id`: The ID of the data contract to fetch.
+    /// * `platform_version`: The platform version to use.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
+    ///   We use Arc to avoid copying the data contract.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
+
+    /// Fetches the token configuration for a specified token ID.
+    /// This method is used by [FromProof](crate::FromProof) implementations to fetch token configurations
+    /// referenced in proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `token_id`: The ID of the token to fetch.
+    /// * `platform_version`: The platform version to use.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<TokenConfiguration>)`: On success, returns the token configuration if it exists, or `None` if it does not.
+    ///   We use Arc to avoid copying the token configuration.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError>;
+
     /// Fetches the public key for a specified quorum.
     ///
     /// # Arguments
@@ -36,24 +78,6 @@ pub trait ContextProvider: Send + Sync {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
 
-    /// Fetches the data contract for a specified data contract ID.
-    /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
-    /// referenced in proofs.
-    ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id`: The ID of the data contract to fetch.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
-    ///   We use Arc to avoid copying the data contract.
-    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
-
     /// Gets the platform activation height from core. Once this has happened this can be hardcoded.
     ///
     /// # Returns
@@ -64,6 +88,21 @@ pub trait ContextProvider: Send + Sync {
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        self.as_ref().get_data_contract(id, platform_version)
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        self.as_ref().get_token_configuration(token_id)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -74,29 +113,32 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        self.as_ref().get_data_contract(id)
-    }
-
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.as_ref().get_platform_activation_height()
     }
 }
 
-impl<'a, T: ContextProvider + 'a> ContextProvider for std::sync::Mutex<T>
+impl<T: ContextProvider> ContextProvider for std::sync::Mutex<T>
 where
     Self: Sync + Send,
 {
     fn get_data_contract(
         &self,
         id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
-        lock.get_data_contract(id)
+        lock.get_data_contract(id, platform_version)
     }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_token_configuration(token_id)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -119,13 +161,19 @@ where
 /// It is used internally by the Drive proof verification functions to look up data contracts.
 pub trait DataContractProvider: Send + Sync {
     /// Returns [ContractLookupFn] function that can be used to look up a [DataContract] by its [Identifier].
-    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn>;
+    fn as_contract_lookup_fn<'a>(
+        &'a self,
+        platform_version: &'a PlatformVersion,
+    ) -> Box<ContractLookupFn<'a>>;
 }
 impl<C: ContextProvider + ?Sized> DataContractProvider for C {
     /// Returns function that uses [ContextProvider] to provide a [DataContract] to Drive proof verification functions
-    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn> {
+    fn as_contract_lookup_fn<'a>(
+        &'a self,
+        platform_version: &'a PlatformVersion,
+    ) -> Box<ContractLookupFn<'a>> {
         let f = |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
-            self.get_data_contract(id).map_err(|e| {
+            self.get_data_contract(id, platform_version).map_err(|e| {
                 drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
             })
         };
@@ -216,6 +264,7 @@ impl ContextProvider for MockContextProvider {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let path = match &self.quorum_keys_dir {
             Some(p) => p,
@@ -239,9 +288,35 @@ impl ContextProvider for MockContextProvider {
             }
         };
 
-        let dc: DataContract = serde_json::from_reader(f).expect("cannot parse data contract");
+        let serialized_form: DataContractInSerializationFormat = serde_json::from_reader(f)
+            .map_err(|e| {
+                ContextProviderError::DataContractFailure(format!(
+                    "cannot deserialized data contract with id {}: {}",
+                    data_contract_id, e
+                ))
+            })?;
+        let dc = DataContract::try_from_platform_versioned(
+            serialized_form,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .map_err(|e| {
+            ContextProviderError::DataContractFailure(format!(
+                "cannot use serialized version of data contract with id {}: {}",
+                data_contract_id, e
+            ))
+        })?;
 
         Ok(Some(Arc::new(dc)))
+    }
+
+    fn get_token_configuration(
+        &self,
+        _token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        // Token configuration files are never generated
+        Ok(None)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

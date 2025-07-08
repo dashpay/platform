@@ -19,7 +19,7 @@ pub mod from_to_string {
         String::deserialize(deserializer).and_then(|string| {
             string
                 .parse::<T>()
-                .map_err(|err| Error::custom(err.to_string()))
+                .map_err(|err| Error::custom(format!("custom dapi-grpc error: {}", err)))
         })
     }
 

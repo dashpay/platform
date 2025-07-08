@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the terminal reference.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_contested_reference_and_vote_subtree_to_document_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,

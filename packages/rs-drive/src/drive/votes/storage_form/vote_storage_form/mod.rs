@@ -24,10 +24,10 @@ impl TreePathStorageForm for VoteStorageForm {
                     .join("/")
             )));
         }
-        let key_0 = path.get(0).unwrap();
+        let key_0 = path.first().unwrap();
         let key_1 = path.get(1).unwrap();
 
-        let Some(key_0_byte) = key_0.get(0) else {
+        let Some(key_0_byte) = key_0.first() else {
             return Err(ProtocolError::VoteError(format!(
                 "path {} first element must be a byte",
                 path.into_iter()
@@ -46,7 +46,7 @@ impl TreePathStorageForm for VoteStorageForm {
             )));
         };
 
-        let Some(key_1_byte) = key_1.get(0) else {
+        let Some(key_1_byte) = key_1.first() else {
             return Err(ProtocolError::VoteError(format!(
                 "path {} second element must be a byte",
                 path.into_iter()

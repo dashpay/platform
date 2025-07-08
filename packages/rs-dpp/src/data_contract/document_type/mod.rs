@@ -14,21 +14,31 @@ pub use index_level::IndexType;
 pub mod random_document;
 pub mod restricted_creation;
 pub mod schema;
-pub mod v0;
 
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+mod token_costs;
+pub mod v0;
+pub mod v1;
+#[cfg(feature = "validation")]
+pub(crate) mod validator;
+
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::document::Document;
 use crate::fee::Credits;
-use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
-use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use derive_more::From;
-use platform_value::{Identifier, Value};
-use std::collections::BTreeMap;
 
-mod property_names {
+pub const DEFAULT_HASH_SIZE: usize = 32;
+pub const DEFAULT_FLOAT_SIZE: usize = 8;
+pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
+pub const MAX_INDEX_SIZE: usize = 255;
+pub const STORAGE_FLAGS_SIZE: usize = 2;
+
+pub(crate) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
@@ -53,6 +63,9 @@ mod property_names {
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
     pub const TRANSFERRED_AT: &str = "$transferredAt";
+    pub const MINIMUM: &str = "minimum";
+    pub const ENUM: &str = "enum";
+    pub const MAXIMUM: &str = "maximum";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const MIN_LENGTH: &str = "minLength";
@@ -66,28 +79,33 @@ mod property_names {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
+    V1(&'a DocumentTypeV1),
 }
 
 #[derive(Debug)]
 pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
+    V1(&'a mut DocumentTypeV1),
 }
 
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
+    V1(DocumentTypeV1),
 }
 
 impl DocumentType {
     pub const fn as_ref(&self) -> DocumentTypeRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
+            DocumentType::V1(v1) => DocumentTypeRef::V1(v1),
         }
     }
 
     pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
+            DocumentType::V1(v1) => DocumentTypeMutRef::V1(v1),
         }
     }
 
@@ -100,182 +118,26 @@ impl DocumentType {
             DocumentType::V0(v0) => {
                 v0.prefunded_voting_balance_for_document(document, platform_version)
             }
+            DocumentType::V1(v1) => {
+                v1.prefunded_voting_balance_for_document(document, platform_version)
+            }
         }
     }
 }
 
-impl<'a> DocumentTypeRef<'a> {
+impl DocumentTypeRef<'_> {
     pub fn to_owned_document_type(&self) -> DocumentType {
         match self {
             DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
+            DocumentTypeRef::V1(v1) => DocumentType::V1((*v1).to_owned()),
         }
     }
 }
 
-impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
-    fn index_for_types(
-        &self,
-        index_names: &[&str],
-        in_field_name: Option<&str>,
-        order_by: &[&str],
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<(&Index, u16)>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.index_for_types(index_names, in_field_name, order_by, platform_version)
-            }
-        }
-    }
+impl DocumentTypeBasicMethods for DocumentType {}
 
-    fn serialize_value_for_key(
-        &self,
-        key: &str,
-        value: &Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.serialize_value_for_key(key, value, platform_version),
-        }
-    }
+impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {}
 
-    fn deserialize_value_for_key(
-        &self,
-        key: &str,
-        serialized_value: &[u8],
-        platform_version: &PlatformVersion,
-    ) -> Result<Value, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.deserialize_value_for_key(key, serialized_value, platform_version)
-            }
-        }
-    }
+impl DocumentTypeV0Methods for DocumentType {}
 
-    fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.max_size(platform_version),
-        }
-    }
-
-    fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.estimated_size(platform_version),
-        }
-    }
-
-    fn unique_id_for_storage(&self) -> [u8; 32] {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.unique_id_for_storage(),
-        }
-    }
-
-    fn unique_id_for_document_field(
-        &self,
-        index_level: &IndexLevel,
-        base_event: [u8; 32],
-    ) -> Vec<u8> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.unique_id_for_document_field(index_level, base_event),
-        }
-    }
-
-    fn initial_revision(&self) -> Option<Revision> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.initial_revision(),
-        }
-    }
-
-    fn requires_revision(&self) -> bool {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.requires_revision(),
-        }
-    }
-
-    fn top_level_indices(&self) -> Vec<&IndexProperty> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.top_level_indices(),
-        }
-    }
-
-    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.top_level_indices_of_contested_unique_indexes(),
-        }
-    }
-
-    fn create_document_from_data(
-        &self,
-        data: Value,
-        owner_id: Identifier,
-        block_height: BlockHeight,
-        core_block_height: CoreBlockHeight,
-        document_entropy: [u8; 32],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.create_document_from_data(
-                data,
-                owner_id,
-                block_height,
-                core_block_height,
-                document_entropy,
-                platform_version,
-            ),
-        }
-    }
-
-    fn create_document_with_prevalidated_properties(
-        &self,
-        id: Identifier,
-        owner_id: Identifier,
-        block_height: BlockHeight,
-        core_block_height: CoreBlockHeight,
-        properties: BTreeMap<String, Value>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.create_document_with_prevalidated_properties(
-                id,
-                owner_id,
-                block_height,
-                core_block_height,
-                properties,
-                platform_version,
-            ),
-        }
-    }
-
-    fn prefunded_voting_balance_for_document(
-        &self,
-        document: &Document,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<(String, Credits)>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.prefunded_voting_balance_for_document(document, platform_version)
-            }
-        }
-    }
-
-    fn contested_vote_poll_for_document(
-        &self,
-        document: &Document,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.contested_vote_poll_for_document(document, platform_version)
-            }
-        }
-    }
-    fn contested_vote_poll_for_document_properties(
-        &self,
-        document_properties: &BTreeMap<String, Value>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0
-                .contested_vote_poll_for_document_properties(document_properties, platform_version),
-        }
-    }
-}
+impl DocumentTypeV0Methods for DocumentTypeRef<'_> {}

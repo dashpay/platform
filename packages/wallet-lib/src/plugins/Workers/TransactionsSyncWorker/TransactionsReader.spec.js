@@ -21,7 +21,7 @@ describe('TransactionsReader - unit', () => {
 
   const DEFAULT_ADDRESSES = ['yfLBwbdPKpKd7bSZ9ABrzTiknu67nDMqTJ', 'yYcL6ezfPgUWNV8fEp2gkw69ArDn76vus2', 'yfLBwbdPKpKd7bSZ9ABrzTiknu67nDMqTJ'];
 
-  beforeEach(function () {
+  beforeEach(function it() {
     options = {
       network: NETWORK,
       maxRetries: 3,
@@ -763,7 +763,7 @@ describe('TransactionsReader - unit', () => {
               .to.have.not.been.calledWith('error');
           });
 
-          it('should throw an error if invalid Merkle Block height provided', async function () {
+          it('should throw an error if invalid Merkle Block height provided', async function it() {
             await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             continuousSyncStream.retryOnError = this.sinon.stub()
@@ -798,7 +798,7 @@ describe('TransactionsReader - unit', () => {
             merkleBlock = mockMerkleBlock([]);
           });
 
-          it('should emit error if Merkle Block rejected', async function () {
+          it('should emit error if Merkle Block rejected', async function it() {
             await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
 
             continuousSyncStream.retryOnError = this.sinon.stub()

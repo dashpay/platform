@@ -1,4 +1,3 @@
-// @ts-ignore
 import { DataContract, Identifier } from '@dashevo/wasm-dpp';
 import {
   GetDataContractHistoryResponse,
@@ -13,15 +12,15 @@ declare type ContractIdentifier = string | Identifier;
  * Get contracts from the platform
  *
  * @param {ContractIdentifier} identifier - identifier of the contract to fetch
- * @param startAtMs
- * @param limit
- * @param offset
+ * @param {bigint} startAtMs
+ * @param {number} limit
+ * @param {number} offset
  * @returns contracts
  */
 export async function history(
   this: Platform,
   identifier: ContractIdentifier,
-  startAtMs: number,
+  startAtMs: bigint,
   limit: number,
   offset: number,
 ): Promise<any> {
@@ -43,13 +42,13 @@ export async function history(
     throw e;
   }
 
-  const rawContractHistory = dataContractHistoryResponse.getDataContractHistory();
+  const dataContractHistory = dataContractHistoryResponse.getDataContractHistory();
   const contractHistory: { [key: number]: DataContract } = {};
 
   // eslint-disable-next-line no-restricted-syntax
-  for (const [date, contractBytes] of Object.entries(rawContractHistory)) {
-    contractHistory[date] = await this.dpp.dataContract
-      .createFromBuffer(contractBytes as Uint8Array);
+  for (const dataContractHistoryEntry of dataContractHistory) {
+    contractHistory[Number(dataContractHistoryEntry.getDate().toString())] = await this.dpp
+      .dataContract.createFromBuffer(dataContractHistoryEntry.getValue() as Uint8Array);
   }
 
   this.logger.debug(`[Contracts#history] Obtained Data Contract history for "${identifier}"`);

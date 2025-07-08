@@ -25,7 +25,7 @@ where
     /// # Returns
     ///
     /// * Result<Identity, Error> - Returns the constructed identity for the voter if successful.
-    /// Otherwise, returns an error.
+    ///   Otherwise, returns an error.
     pub(crate) fn create_voter_identity(
         pro_tx_hash: &[u8; 32],
         voting_key: &[u8; 20],
@@ -59,7 +59,7 @@ where
     /// # Returns
     ///
     /// * Result<Identity, Error> - Returns the constructed identity for the voter if successful.
-    /// Otherwise, returns an error.
+    ///   Otherwise, returns an error.
     pub(crate) fn create_voter_identity_from_masternode_list_item(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,

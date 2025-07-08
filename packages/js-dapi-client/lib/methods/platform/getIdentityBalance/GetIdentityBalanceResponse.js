@@ -3,7 +3,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 class GetIdentityBalanceResponse extends AbstractResponse {
   /**
-   * @param {number} balance
+   * @param {bigint} balance
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,7 +14,7 @@ class GetIdentityBalanceResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {number}
+   * @returns {bigint}
    */
   getBalance() {
     return this.balance;
@@ -25,7 +25,7 @@ class GetIdentityBalanceResponse extends AbstractResponse {
    * @returns {GetIdentityBalanceResponse}
    */
   static createFromProto(proto) {
-    const balance = proto.getV0().getBalance();
+    const balance = BigInt(proto.getV0().getBalance());
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     if ((balance === null || balance === undefined) && !proof) {

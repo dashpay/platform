@@ -19,7 +19,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
 
@@ -57,6 +57,7 @@ impl Drive {
     }
 
     /// Adds identity creation operations to drive operations
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_new_identity_add_to_operations_v0(
         &self,
         identity: Identity,
@@ -93,6 +94,7 @@ impl Drive {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// The operations needed to create an identity
     pub(super) fn add_new_identity_operations_v0(
         &self,
@@ -122,8 +124,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
                 flags_len: storage_flags.serialized_size(),
             }
         };
@@ -131,7 +133,7 @@ impl Drive {
         // We insert the identity tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKey((identity_tree_path, id.to_vec())),
-            false,
+            TreeType::NormalTree,
             Some(&storage_flags),
             apply_type,
             transaction,
@@ -257,7 +259,7 @@ impl Drive {
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
             public_keys.into_values().collect(),
-            // if we are a masternode identity, we want to register all keys as non unique
+            // if we are a masternode identity, we want to register all keys as non-unique
             is_masternode_identity,
             &block_info.epoch,
             estimated_costs_only_with_layer_info,

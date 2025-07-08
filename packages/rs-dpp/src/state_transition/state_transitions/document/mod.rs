@@ -1,1 +1,1 @@
-pub mod documents_batch_transition;
+pub mod batch_transition;

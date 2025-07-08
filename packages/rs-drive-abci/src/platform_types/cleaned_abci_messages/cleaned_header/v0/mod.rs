@@ -23,16 +23,14 @@ pub struct CleanedHeader {
     /// Prev block info
     pub last_block_id: Option<cleaned_block_id::v0::CleanedBlockId>,
 
-    /// Hashes of block data
-
+    // Hashes of block data
     /// Commit from validators from the last block
     pub last_commit_hash: Option<[u8; 32]>,
 
     /// Transactions
     pub data_hash: [u8; 32],
 
-    /// Hashes from the app output from the prev block
-
+    // Hashes from the app output from the prev block
     /// Validators for the current block
     pub validators_hash: [u8; 32],
 
@@ -51,8 +49,7 @@ pub struct CleanedHeader {
     /// Root hash of all results from the txs from current block
     pub results_hash: [u8; 32],
 
-    /// Consensus info
-
+    // Consensus info
     /// Evidence included in the block
     pub evidence_hash: Option<[u8; 32]>,
 

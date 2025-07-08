@@ -32,6 +32,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<FeeResult, Error>` - The resulting fee if successful, or an error.
+    #[allow(clippy::too_many_arguments)]
     pub fn disable_identity_keys(
         &self,
         identity_id: [u8; 32],
@@ -79,6 +80,7 @@ impl Drive {
     ///
     /// # Returns
     ///
+    #[allow(clippy::too_many_arguments)]
     /// * `Result<Vec<LowLevelDriveOperation>, Error>` - The resulting low level drive operations if successful, or an error.
     pub fn disable_identity_keys_operations(
         &self,

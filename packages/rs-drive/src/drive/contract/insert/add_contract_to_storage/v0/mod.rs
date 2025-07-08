@@ -19,12 +19,13 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
     /// Adds a contract to storage.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contract_to_storage_v0(
         &self,
         contract_element: Element,
@@ -64,8 +65,8 @@ impl Drive {
             } else {
                 let apply_type = if estimated_costs_only_with_layer_info.is_some() {
                     BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        is_sum_tree: false,
-                        in_tree_using_sums: false,
+                        tree_type: TreeType::NormalTree,
+                        in_tree_type: TreeType::NormalTree,
                         flags_len: storage_flags
                             .as_ref()
                             .map(|flags| flags.to_element_flags().len())
@@ -79,7 +80,7 @@ impl Drive {
 
                 self.batch_insert_empty_tree_if_not_exists(
                     key_info,
-                    false,
+                    TreeType::NormalTree,
                     storage_flags.as_ref().map(|flags| flags.as_ref()),
                     apply_type,
                     transaction,

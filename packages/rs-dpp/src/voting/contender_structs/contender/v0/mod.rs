@@ -1,8 +1,9 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
@@ -39,6 +40,7 @@ impl ContenderV0 {
     pub fn try_into_contender_with_serialized_document(
         self,
         document_type_ref: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<ContenderWithSerializedDocumentV0, ProtocolError> {
         let ContenderV0 {
@@ -50,7 +52,9 @@ impl ContenderV0 {
         Ok(ContenderWithSerializedDocumentV0 {
             identity_id,
             serialized_document: document
-                .map(|document| document.serialize(document_type_ref, platform_version))
+                .map(|document| {
+                    document.serialize(document_type_ref, data_contract, platform_version)
+                })
                 .transpose()?,
             vote_tally,
         })
@@ -59,6 +63,7 @@ impl ContenderV0 {
     pub fn try_to_contender_with_serialized_document(
         &self,
         document_type_ref: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<ContenderWithSerializedDocumentV0, ProtocolError> {
         let ContenderV0 {
@@ -71,7 +76,9 @@ impl ContenderV0 {
             identity_id: *identity_id,
             serialized_document: document
                 .as_ref()
-                .map(|document| document.serialize(document_type_ref, platform_version))
+                .map(|document| {
+                    document.serialize(document_type_ref, data_contract, platform_version)
+                })
                 .transpose()?,
             vote_tally: *vote_tally,
         })

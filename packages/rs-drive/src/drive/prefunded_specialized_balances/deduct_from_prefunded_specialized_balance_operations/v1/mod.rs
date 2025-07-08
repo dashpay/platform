@@ -13,7 +13,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -41,7 +41,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: true,
+                in_tree_type: TreeType::SumTree,
                 query_target: QueryTargetValue(8),
             }
         };

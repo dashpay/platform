@@ -58,6 +58,7 @@ where
     /// This function may return an `Error` variant if there is a problem with processing the block
     /// proposal, updating the core info, processing raw state transitions, or processing block fees.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn run_block_proposal_v0(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
@@ -368,7 +369,7 @@ where
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees
-        let processed_block_fees = self.process_block_fees(
+        let processed_block_fees = self.process_block_fees_and_validate_sum_trees(
             &block_execution_context,
             block_fees_v0.into(),
             transaction,

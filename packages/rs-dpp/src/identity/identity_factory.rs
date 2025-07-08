@@ -23,8 +23,11 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::accessors::IdentityGettersV0;
-
-#[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
+#[cfg(all(
+    feature = "identity-serialization",
+    feature = "client",
+    feature = "validation"
+))]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;

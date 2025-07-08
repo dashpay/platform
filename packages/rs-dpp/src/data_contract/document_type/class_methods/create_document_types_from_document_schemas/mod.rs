@@ -1,8 +1,9 @@
 mod v0;
+mod v1;
 
-use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::DocumentName;
+use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -33,14 +34,15 @@ impl DocumentType {
     ///
     /// * `Result<BTreeMap<String, DocumentType>, ProtocolError>`: On success, a map of document types.
     ///   On failure, a ProtocolError.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_document_types_from_document_schemas(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
-        documents_keep_history_contract_default: bool,
-        documents_mutable_contract_default: bool,
-        documents_can_be_deleted_contract_default: bool,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+        data_contact_config: &DataContractConfig,
         full_validation: bool,
+        has_tokens: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
@@ -51,20 +53,31 @@ impl DocumentType {
             .class_method_versions
             .create_document_types_from_document_schemas
         {
-            0 => DocumentTypeV0::create_document_types_from_document_schemas_v0(
+            0 => DocumentType::create_document_types_from_document_schemas_v0(
                 data_contract_id,
                 document_schemas,
                 schema_defs,
-                documents_keep_history_contract_default,
-                documents_mutable_contract_default,
-                documents_can_be_deleted_contract_default,
+                token_configurations,
+                data_contact_config,
                 full_validation,
+                validation_operations,
+                platform_version,
+            ),
+            // in v1 we add the ability to have contracts without documents and just tokens
+            1 => DocumentType::create_document_types_from_document_schemas_v1(
+                data_contract_id,
+                document_schemas,
+                schema_defs,
+                token_configurations,
+                data_contact_config,
+                full_validation,
+                has_tokens,
                 validation_operations,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "create_document_types_from_document_schemas".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

@@ -9,6 +9,7 @@ use bincode::error::EncodeError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{BorrowDecode, Decode, Encode};
 use dashcore::blsful::Bls12381G2Impl;
+#[cfg(feature = "core-types-serialization")]
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
@@ -18,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 
-/// The validator set is only slightly different from a quorum as it does not contain non valid
+/// The validator set is only slightly different from a quorum as it does not contain non-valid
 /// members
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(
@@ -138,7 +139,7 @@ impl Decode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
+impl BorrowDecode<'_> for ValidatorSetV0 {
     fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded
 
@@ -311,7 +312,7 @@ mod tests {
         let node_ip = "192.168.1.1".to_string();
         let node_id = PubkeyHash::from_slice(&[4; 20]).unwrap();
         let validator = ValidatorV0 {
-            pro_tx_hash: pro_tx_hash.clone(),
+            pro_tx_hash,
             public_key,
             node_ip,
             node_id,

@@ -10,7 +10,7 @@ use integer_encoding::VarInt;
 
 impl Drive {
     /// grove_get_direct_u64 is a helper function to get a
-    pub(crate) fn grove_get_raw_value_u64_from_encoded_var_vec_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_get_raw_value_u64_from_encoded_var_vec_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],
@@ -35,8 +35,12 @@ impl Drive {
                     )))
                     .map(|(value, _)| value),
                 Element::SumItem(value, ..) => Ok(value as u64),
-                _ => Err(Error::Drive(DriveError::CorruptedQueryReturnedNonItem(
-                    "expected an item",
+                Element::SumTree(_, value, _) => Ok(value as u64),
+                element => Err(Error::Drive(DriveError::CorruptedQueryReturnedNonItem(
+                    format!(
+                        "expected an item, sum item or sum tree, got a {}",
+                        element.type_str()
+                    ),
                 ))),
             })
             .transpose()

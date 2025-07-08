@@ -13,7 +13,7 @@ impl DeriveStruct {
     pub fn generate_encode(self, generator: &mut Generator) -> Result<()> {
         let crate_name = &self.attributes.crate_name;
         generator
-            .impl_for(&format!("{}::PlatformVersionEncode", crate_name))
+            .impl_for(format!("{}::PlatformVersionEncode", crate_name))
             .modify_generic_constraints(|generics, where_constraints| {
                 if let Some((bounds, lit)) =
                     (self.attributes.encode_bounds.as_ref()).or(self.attributes.bounds.as_ref())

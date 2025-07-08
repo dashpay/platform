@@ -1,5 +1,5 @@
+use crate::batch_transition::BatchTransitionWasm;
 use crate::data_contract::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm};
-use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::{
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
@@ -7,6 +7,7 @@ use crate::identity::state_transition::{
     IdentityUpdateTransitionWasm,
 };
 use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
+use crate::state_transition::errors::state_transition_is_not_active_error::StateTransitionIsNotActiveErrorWasm;
 use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
 use dpp::state_transition::errors::StateTransitionError;
 use dpp::state_transition::state_transition_factory::StateTransitionFactory;
@@ -56,9 +57,7 @@ impl StateTransitionFactoryWasm {
                 StateTransition::IdentityCreditWithdrawal(st) => {
                     Ok(IdentityCreditWithdrawalTransitionWasm::from(st).into())
                 }
-                StateTransition::DocumentsBatch(st) => {
-                    Ok(DocumentsBatchTransitionWasm::from(st).into())
-                }
+                StateTransition::Batch(st) => Ok(BatchTransitionWasm::from(st).into()),
                 StateTransition::MasternodeVote(st) => {
                     Ok(MasternodeVoteTransitionWasm::from(st).into())
                 }
@@ -70,6 +69,16 @@ impl StateTransitionFactoryWasm {
                 } => Err(InvalidStateTransitionErrorWasm::new(
                     errors,
                     serde_wasm_bindgen::to_value(&raw_state_transition)?,
+                )
+                .into()),
+                StateTransitionError::StateTransitionIsNotActiveError {
+                    state_transition_type,
+                    active_version_range,
+                    current_protocol_version,
+                } => Err(StateTransitionIsNotActiveErrorWasm::new(
+                    state_transition_type,
+                    active_version_range,
+                    current_protocol_version,
                 )
                 .into()),
             },

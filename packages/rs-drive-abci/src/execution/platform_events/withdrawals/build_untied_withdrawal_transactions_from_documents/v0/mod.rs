@@ -1,5 +1,5 @@
-use dashcore_rpc::dashcore::consensus::Encodable;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::consensus::Encodable;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -22,7 +22,7 @@ where
     /// Build list of Core transactions from withdrawal documents
     pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
-        documents: &mut Vec<Document>,
+        documents: &mut [Document],
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,

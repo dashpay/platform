@@ -1,9 +1,13 @@
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+#[cfg(feature = "server")]
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
+#[cfg(feature = "server")]
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
+#[cfg(feature = "server")]
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
+#[cfg(feature = "server")]
 use crate::error::drive::DriveError;
 use crate::error::Error;
 #[cfg(feature = "server")]
@@ -11,6 +15,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+#[cfg(feature = "server")]
 use dpp::bincode;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -20,6 +25,7 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;

@@ -2,9 +2,9 @@ use crate::drive::identity::identity_contract_info_group_path_vec;
 use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::Mix;
 use grovedb::EstimatedSumTrees::NoSumTrees;
+use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -20,7 +20,7 @@ impl Drive {
                 group_id,
             )),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(2),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((1, NoSumTrees, None, 1)),

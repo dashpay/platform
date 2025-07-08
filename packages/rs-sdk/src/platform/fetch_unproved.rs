@@ -6,7 +6,7 @@ use dapi_grpc::platform::v0::{
     self as platform_proto, GetStatusRequest, GetStatusResponse, ResponseMetadata,
 };
 use dpp::{dashcore::Network, version::PlatformVersion};
-use drive_proof_verifier::types::EvoNodeStatus;
+use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};

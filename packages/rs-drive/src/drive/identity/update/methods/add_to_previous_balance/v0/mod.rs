@@ -14,6 +14,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// The method to add balance to the previous balance. This function is version controlled.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_to_previous_balance_v0(
         &self,
         identity_id: [u8; 32],

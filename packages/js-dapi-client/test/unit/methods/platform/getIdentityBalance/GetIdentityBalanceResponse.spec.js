@@ -23,7 +23,7 @@ describe('GetIdentityBalanceResponse', () => {
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
-    balance = 1337;
+    balance = BigInt(1337);
 
     const { GetIdentityBalanceResponseV0 } = GetIdentityBalanceResponse;
     proto = new GetIdentityBalanceResponse();
@@ -101,8 +101,16 @@ describe('GetIdentityBalanceResponse', () => {
 
     getIdentityBalanceResponse = GetIdentityBalanceResponseClass.createFromProto(proto);
 
-    expect(getIdentityBalanceResponse.getBalance()).to.equal(0);
-    expect(getIdentityBalanceResponse.getMetadata()).to.deep.equal(metadataFixture);
+    expect(getIdentityBalanceResponse.getBalance()).to.equal(BigInt(0));
+
+    expect(getIdentityBalanceResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getIdentityBalanceResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentityBalanceResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentityBalanceResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getIdentityBalanceResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);

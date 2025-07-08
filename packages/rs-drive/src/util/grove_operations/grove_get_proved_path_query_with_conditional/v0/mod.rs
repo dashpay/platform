@@ -12,7 +12,7 @@ impl Drive {
     /// Pushes the cost to `drive_operations` and returns the return value.
     /// Verbose should be generally set to false unless one needs to prove
     /// subsets of a proof.
-    pub(crate) fn grove_get_proved_path_query_with_conditional_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_get_proved_path_query_with_conditional_v0<B: AsRef<[u8]>>(
         &self,
         root_path: SubtreePath<B>,
         key: &[u8],

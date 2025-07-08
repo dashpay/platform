@@ -25,6 +25,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<AddToPreviousBalanceOutcome, Error>` - The outcome if successful, or an error.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::identity::update) fn add_to_previous_balance(
         &self,
         identity_id: [u8; 32],

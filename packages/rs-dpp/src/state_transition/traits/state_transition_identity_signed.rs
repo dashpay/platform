@@ -17,6 +17,11 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 ))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::StateTransitionLike;
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::StateTransitionSigningOptions;
 
 #[cfg(any(
     feature = "state-transition-signing",
@@ -44,17 +49,21 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
     fn verify_public_key_level_and_purpose(
         &self,
         public_key: &IdentityPublicKey,
+        options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
-        if !self.purpose_requirement().contains(&public_key.purpose()) {
+        if !options.allow_signing_with_any_purpose
+            && !self.purpose_requirement().contains(&public_key.purpose())
+        {
             return Err(ProtocolError::WrongPublicKeyPurposeError(
                 WrongPublicKeyPurposeError::new(public_key.purpose(), self.purpose_requirement()),
             ));
         }
 
         // Otherwise, key security level should be less than MASTER but more or equal than required
-        if !self
-            .security_level_requirement(public_key.purpose())
-            .contains(&public_key.security_level())
+        if !options.allow_signing_with_any_security_level
+            && !self
+                .security_level_requirement(public_key.purpose())
+                .contains(&public_key.security_level())
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(

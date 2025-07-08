@@ -2,6 +2,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::identity::PartialIdentity;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -21,19 +23,29 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let amount = match self {
-            StateTransition::DataContractCreate(_) => {
+            StateTransition::DataContractCreate(data_contract_create_transition) => {
                 platform_version
                     .fee_version
                     .state_transition_min_fees
                     .contract_create
+                    .saturating_add(
+                        data_contract_create_transition
+                            .data_contract()
+                            .registration_cost(platform_version)?,
+                    )
             }
-            StateTransition::DataContractUpdate(_) => {
+            StateTransition::DataContractUpdate(data_contract_update_transition) => {
                 platform_version
                     .fee_version
                     .state_transition_min_fees
                     .contract_update
+                    .saturating_add(
+                        data_contract_update_transition
+                            .data_contract()
+                            .registration_cost(platform_version)?,
+                    )
             }
-            StateTransition::DocumentsBatch(_) => {
+            StateTransition::Batch(_) => {
                 platform_version
                     .fee_version
                     .state_transition_min_fees

@@ -10,7 +10,7 @@ use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;
 
-impl<'a> StateTransitionValueConvert<'a> for MasternodeVoteTransitionV0 {
+impl StateTransitionValueConvert<'_> for MasternodeVoteTransitionV0 {
     fn from_object(
         raw_object: Value,
         _platform_version: &PlatformVersion,

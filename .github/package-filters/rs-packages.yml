@@ -2,6 +2,10 @@ wallet-utils-contract: &wallet-utils-contract
   - .github/workflows/tests*
   - packages/wallet-utils-contract/**
 
+token-history-contract: &token-history-contract
+  - .github/workflows/tests*
+  - packages/token-history-contract/**
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -30,6 +34,7 @@ dpp: &dpp
   - *dpns-contract
   - *withdrawals-contract
   - *wallet-utils-contract
+  - *token-history-contract
   - *json-schema-compatibility-validator
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**

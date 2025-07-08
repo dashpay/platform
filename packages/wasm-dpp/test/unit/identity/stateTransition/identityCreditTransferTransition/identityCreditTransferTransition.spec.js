@@ -24,7 +24,7 @@ describe('IdentityCreditTransferTransition', () => {
       );
 
       expect(stateTransition.getAmount()).to.be.equal(
-        rawStateTransition.amount,
+        BigInt(rawStateTransition.amount),
       );
     });
   });

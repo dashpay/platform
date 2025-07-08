@@ -34,7 +34,7 @@ pub enum DataContractOperationType<'a> {
     // TODO: split into create and update
     /// Applies a contract without serialization.
     ApplyContract {
-        // this is Cow because we want allow the contract to be owned or not
+        // this is Cow because we want to allow the contract to be owned or not
         // ownership is interesting because you can easily create the contract
         // in sub functions
         // borrowing is interesting because you can create the contract and then

@@ -39,17 +39,13 @@ jobs:
         include:
           - runner: ubuntu-24.04
             platform: linux/amd64
-          - runner: ubuntu-24.04
+          - runner: ubuntu-24.04-arm
             platform: linux/arm64
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        if: ${{ matrix.platform == 'linux/arm64' }}
 
       - name: Build and push by digest
         uses: ./.github/actions/docker

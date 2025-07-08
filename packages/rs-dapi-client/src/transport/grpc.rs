@@ -2,51 +2,15 @@
 
 use std::time::Duration;
 
+use super::create_channel;
 use super::{CanRetry, TransportClient, TransportError, TransportRequest};
+use super::{CoreGrpcClient, PlatformGrpcClient};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
-use crate::{request_settings::AppliedRequestSettings, RequestSettings};
-use dapi_grpc::core::v0::core_client::CoreClient;
+use crate::{request_settings::AppliedRequestSettings, RequestSettings, Uri};
 use dapi_grpc::core::v0::{self as core_proto};
-use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
-use dapi_grpc::tonic::transport::{Certificate, ClientTlsConfig, Uri};
-use dapi_grpc::tonic::Streaming;
-use dapi_grpc::tonic::{transport::Channel, IntoRequest};
+use dapi_grpc::platform::v0::{self as platform_proto};
+use dapi_grpc::tonic::{IntoRequest, Streaming};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
-
-/// Platform Client using gRPC transport.
-pub type PlatformGrpcClient = PlatformClient<Channel>;
-/// Core Client using gRPC transport.
-pub type CoreGrpcClient = CoreClient<Channel>;
-
-fn create_channel(
-    uri: Uri,
-    settings: Option<&AppliedRequestSettings>,
-) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
-    let host = uri.host().expect("Failed to get host from URI").to_string();
-
-    let mut builder = Channel::builder(uri);
-    let mut tls_config = ClientTlsConfig::new()
-        .with_native_roots()
-        .with_webpki_roots()
-        .assume_http2(true);
-
-    if let Some(settings) = settings {
-        if let Some(timeout) = settings.connect_timeout {
-            builder = builder.connect_timeout(timeout);
-        }
-
-        if let Some(pem) = settings.ca_certificate.as_ref() {
-            let cert = Certificate::from_pem(pem);
-            tls_config = tls_config.ca_certificate(cert).domain_name(host);
-        };
-    }
-
-    builder = builder
-        .tls_config(tls_config)
-        .expect("Failed to set TLS config");
-
-    Ok(builder.connect_lazy())
-}
 
 impl TransportClient for PlatformGrpcClient {
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
@@ -347,6 +311,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetFinalizedEpochInfosRequest,
+    platform_proto::GetFinalizedEpochInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_finalized_epoch_infos
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetProtocolVersionUpgradeStateRequest,
     platform_proto::GetProtocolVersionUpgradeStateResponse,
     PlatformGrpcClient,
@@ -506,6 +478,17 @@ impl_transport_request_grpc!(
     subscribe_to_transactions_with_proofs
 );
 
+impl_transport_request_grpc!(
+    core_proto::MasternodeListRequest,
+    Streaming<core_proto::MasternodeListResponse>,
+    CoreGrpcClient,
+    RequestSettings {
+        timeout: Some(STREAMING_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    subscribe_to_masternode_list
+);
+
 // rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
 impl_transport_request_grpc!(
     platform_proto::GetStatusRequest,
@@ -513,4 +496,130 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_status
+);
+
+//   rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest) returns (GetIdentityByNonUniquePublicKeyHashResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityByNonUniquePublicKeyHashRequest,
+    platform_proto::GetIdentityByNonUniquePublicKeyHashResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_by_non_unique_public_key_hash
+);
+
+// rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityTokenBalancesRequest,
+    platform_proto::GetIdentityTokenBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_token_balances
+);
+
+// rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesTokenBalancesRequest,
+    platform_proto::GetIdentitiesTokenBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_token_balances
+);
+
+// rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityTokenInfosRequest,
+    platform_proto::GetIdentityTokenInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_token_infos
+);
+
+// rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesTokenInfosRequest,
+    platform_proto::GetIdentitiesTokenInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_token_infos
+);
+
+// rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenStatusesRequest,
+    platform_proto::GetTokenStatusesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_statuses
+);
+
+// rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenTotalSupplyRequest,
+    platform_proto::GetTokenTotalSupplyResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_total_supply
+);
+
+// rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupInfoRequest,
+    platform_proto::GetGroupInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_info
+);
+
+// rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupInfosRequest,
+    platform_proto::GetGroupInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_infos
+);
+
+// rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupActionsRequest,
+    platform_proto::GetGroupActionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_actions
+);
+
+// rpc getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupActionSignersRequest,
+    platform_proto::GetGroupActionSignersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_action_signers
+);
+
+// rpc getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenDirectPurchasePricesRequest,
+    platform_proto::GetTokenDirectPurchasePricesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_direct_purchase_prices
+);
+
+// rpc getTokenContractInfo(GetTokenContractInfoRequest) returns (GetTokenContractInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenContractInfoRequest,
+    platform_proto::GetTokenContractInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_contract_info
+);
+
+// rpc getTokenPerpetualDistributionLastClaimRequest(GetTokenPerpetualDistributionLastClaimRequest) returns (GetTokenPerpetualDistributionLastClaimResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenPerpetualDistributionLastClaimRequest,
+    platform_proto::GetTokenPerpetualDistributionLastClaimResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_perpetual_distribution_last_claim
 );

@@ -7,13 +7,15 @@ use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_votes_operations_v0(
         &self,
         vote_polls: &[(
@@ -36,7 +38,7 @@ impl Drive {
                         path.as_slice().into(),
                         vote.as_slice(),
                         BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         batch_operations,
@@ -51,7 +53,7 @@ impl Drive {
                         path.as_slice().into(),
                         vec![VOTING_STORAGE_TREE_KEY].as_slice(),
                         BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         batch_operations,

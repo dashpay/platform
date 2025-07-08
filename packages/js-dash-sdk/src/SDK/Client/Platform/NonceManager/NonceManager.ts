@@ -2,7 +2,7 @@ import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp';
 
 type NonceState = {
-  value: number,
+  value: bigint,
   lastFetchedAt: number,
 };
 
@@ -23,7 +23,7 @@ class NonceManager {
     this.identityContractNonce = new Map();
   }
 
-  public setIdentityNonce(identityId: Identifier, nonce: number) {
+  public setIdentityNonce(identityId: Identifier, nonce: bigint) {
     const identityIdStr = identityId.toString();
     const nonceState = this.identityNonce.get(identityIdStr);
 
@@ -37,7 +37,7 @@ class NonceManager {
     }
   }
 
-  public async getIdentityNonce(identityId: Identifier): Promise<number> {
+  public async getIdentityNonce(identityId: Identifier): Promise<bigint> {
     const identityIdStr = identityId.toString();
     let nonceState = this.identityNonce.get(identityIdStr);
 
@@ -71,13 +71,16 @@ class NonceManager {
     return nonceState.value;
   }
 
-  public async bumpIdentityNonce(identityId: Identifier): Promise<number> {
-    const nextIdentityNonce = await this.getIdentityNonce(identityId) + 1;
+  public async bumpIdentityNonce(identityId: Identifier): Promise<bigint> {
+    const identityNonce = await this.getIdentityNonce(identityId);
+    const nextIdentityNonce = identityNonce + BigInt(1);
+
     this.setIdentityNonce(identityId, nextIdentityNonce);
+
     return nextIdentityNonce;
   }
 
-  public setIdentityContractNonce(identityId: Identifier, contractId: Identifier, nonce: number) {
+  public setIdentityContractNonce(identityId: Identifier, contractId: Identifier, nonce: bigint) {
     const identityIdStr = identityId.toString();
     const contractIdStr = contractId.toString();
 
@@ -103,7 +106,7 @@ class NonceManager {
   public async getIdentityContractNonce(
     identityId: Identifier,
     contractId: Identifier,
-  ): Promise<number> {
+  ): Promise<bigint> {
     const identityIdStr = identityId.toString();
     const contractIdStr = contractId.toString();
 
@@ -151,9 +154,10 @@ class NonceManager {
   public async bumpIdentityContractNonce(
     identityId: Identifier,
     contractId: Identifier,
-  ): Promise<number> {
-    const nextIdentityContractNonce = await this
-      .getIdentityContractNonce(identityId, contractId) + 1;
+  ): Promise<bigint> {
+    const identityContractNonce = await this.getIdentityContractNonce(identityId, contractId);
+    // @ts-ignore
+    const nextIdentityContractNonce = identityContractNonce + BigInt(1);
     this.setIdentityContractNonce(identityId, contractId, nextIdentityContractNonce);
     return nextIdentityContractNonce;
   }

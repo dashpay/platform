@@ -2,9 +2,11 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
+use dpp::block::pool_credits::StorageAndProcessingPoolCredits;
+use std::collections::BTreeMap;
 
 use dpp::fee::Credits;
-
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
@@ -37,7 +39,7 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<u16, Error> {
+    ) -> Result<(StorageAndProcessingPoolCredits, BTreeMap<Identifier, u64>), Error> {
         match platform_version
             .drive_abci
             .methods

@@ -115,7 +115,7 @@ impl KnownCostItem {
         cached_fee_version: &CachedEpochIndexFeeVersions,
     ) -> Credits {
         let version = epoch.active_fee_version(cached_fee_version);
-        self.lookup_cost(&version)
+        self.lookup_cost(version)
     }
 }
 

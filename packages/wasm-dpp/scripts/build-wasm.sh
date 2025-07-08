@@ -49,7 +49,7 @@ fi
 
 if command -v wasm-opt &> /dev/null; then
   echo "Optimizing wasm using Binaryen"
-  wasm-opt -Oz "$OUTPUT_FILE" -o "$OUTPUT_FILE"
+  wasm-opt -tnh --flatten --rereloop -Oz --gufa -Oz --gufa -Oz  "$OUTPUT_FILE" -o "$OUTPUT_FILE"
 else
   echo "wasm-opt command not found. Skipping wasm optimization."
 fi

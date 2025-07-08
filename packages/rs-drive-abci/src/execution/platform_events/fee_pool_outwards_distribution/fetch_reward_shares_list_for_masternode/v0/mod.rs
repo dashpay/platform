@@ -28,7 +28,7 @@ impl<C> Platform<C> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.
     pub(super) fn fetch_reward_shares_list_for_masternode_v0(
         &self,
-        masternode_owner_id: &[u8],
+        masternode_owner_id: &[u8; 32],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
@@ -66,6 +66,7 @@ impl<C> Platform<C> {
             block_time_ms: None,
         };
 
+        // todo: deal with cost of this operation
         let query_documents_outcome = self.drive.query_documents(
             drive_query,
             None,

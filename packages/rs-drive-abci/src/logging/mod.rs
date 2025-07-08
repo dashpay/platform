@@ -106,7 +106,9 @@ mod tests {
             .with_config("file_v4", &logger_file_v4)
             .unwrap()
             .build();
-        loggers.install();
+
+        let dispatch = loggers.as_subscriber().expect("subscriber failed");
+        let _guard = tracing::dispatcher::set_default(&dispatch);
 
         const TEST_STRING_DEBUG: &str = "testing debug trace";
         const TEST_STRING_ERROR: &str = "testing error trace";

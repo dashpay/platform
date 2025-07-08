@@ -1,5 +1,7 @@
 //! Definitions of errors
+use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
@@ -20,6 +22,9 @@ pub enum Error {
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
+    /// Drive error
+    #[error("Drive error with associated proof: {0}")]
+    DriveProofError(drive::error::proof::ProofError, Vec<u8>, BlockInfo),
     /// DPP error
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),
@@ -55,7 +60,7 @@ pub enum Error {
     #[error("No epoch found on Platform; it should never happen")]
     EpochNotFound,
     /// SDK operation timeout reached error
-    #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
+    #[error("SDK operation timeout {} secs reached: {}", .0.as_secs(), .1)]
     TimeoutReached(Duration, String),
 
     /// Returned when an attempt is made to create an object that already exists in the system
@@ -77,6 +82,47 @@ pub enum Error {
     /// Remote node is stale; try another server
     #[error(transparent)]
     StaleNode(#[from] StaleNodeError),
+
+    /// Error returned when trying to broadcast a state transition
+    #[error(transparent)]
+    StateTransitionBroadcastError(#[from] StateTransitionBroadcastError),
+}
+
+/// State transition broadcast error
+#[derive(Debug, thiserror::Error)]
+#[error("state transition broadcast error: {message}")]
+pub struct StateTransitionBroadcastError {
+    /// Error code
+    pub code: u32,
+    /// Error message
+    pub message: String,
+    /// Consensus error caused the state transition broadcast error
+    pub cause: Option<ConsensusError>,
+}
+
+impl TryFrom<StateTransitionBroadcastErrorProto> for StateTransitionBroadcastError {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionBroadcastErrorProto) -> Result<Self, Self::Error> {
+        let cause = if !value.data.is_empty() {
+            let consensus_error =
+                ConsensusError::deserialize_from_bytes(&value.data).map_err(|e| {
+                    tracing::debug!("Failed to deserialize consensus error: {}", e);
+
+                    Error::Protocol(e)
+                })?;
+
+            Some(consensus_error)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            code: value.code,
+            message: value.message,
+            cause,
+        })
+    }
 }
 
 // TODO: Decompose DapiClientError to more specific errors like connection, node error instead of DAPI client error

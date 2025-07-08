@@ -40,17 +40,24 @@ pub fn setup_contract(
     drive: &Drive,
     path: &str,
     contract_id: Option<[u8; 32]>,
+    owner_id: Option<[u8; 32]>,
+    contract_modification: Option<impl FnOnce(&mut DataContract)>,
     transaction: TransactionArg,
+    use_platform_version: Option<&PlatformVersion>,
 ) -> DataContract {
-    let platform_version = PlatformVersion::latest();
-    let contract = json_document_to_contract_with_ids(
+    let platform_version = use_platform_version.unwrap_or(PlatformVersion::latest());
+    let mut contract = json_document_to_contract_with_ids(
         path,
         contract_id.map(Identifier::from),
-        None,
+        owner_id.map(Identifier::from),
         false, //no need to validate the data contracts in tests for drive
         platform_version,
     )
     .expect("expected to get json based contract");
+
+    if let Some(contract_modification) = contract_modification {
+        contract_modification(&mut contract);
+    }
 
     drive
         .apply_contract(

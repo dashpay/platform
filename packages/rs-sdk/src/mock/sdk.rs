@@ -198,7 +198,45 @@ impl MockDashPlatformSdk {
                 "GetTotalCreditsInPlatformRequest" => load_expectation::<
                     proto::GetTotalCreditsInPlatformRequest,
                 >(&mut dapi, filename)?,
+                "GetIdentityTokenBalancesRequest" => {
+                    load_expectation::<proto::GetIdentityTokenBalancesRequest>(&mut dapi, filename)?
+                }
+                "GetIdentitiesTokenBalancesRequest" => load_expectation::<
+                    proto::GetIdentitiesTokenBalancesRequest,
+                >(&mut dapi, filename)?,
+                "GetIdentityTokenInfosRequest" => {
+                    load_expectation::<proto::GetIdentityTokenInfosRequest>(&mut dapi, filename)?
+                }
+                "GetIdentitiesTokenInfosRequest" => {
+                    load_expectation::<proto::GetIdentitiesTokenInfosRequest>(&mut dapi, filename)?
+                }
+                "GetTokenStatusesRequest" => {
+                    load_expectation::<proto::GetTokenStatusesRequest>(&mut dapi, filename)?
+                }
+                "GetTokenTotalSupplyRequest" => {
+                    load_expectation::<proto::GetTokenTotalSupplyRequest>(&mut dapi, filename)?
+                }
+                "GetGroupInfoRequest" => {
+                    load_expectation::<proto::GetGroupInfoRequest>(&mut dapi, filename)?
+                }
+                "GetGroupInfosRequest" => {
+                    load_expectation::<proto::GetGroupInfosRequest>(&mut dapi, filename)?
+                }
+                "GetGroupActionsRequest" => {
+                    load_expectation::<proto::GetGroupActionsRequest>(&mut dapi, filename)?
+                }
+                "GetGroupActionSignersRequest" => {
+                    load_expectation::<proto::GetGroupActionSignersRequest>(&mut dapi, filename)?
+                }
                 "EvoNode" => load_expectation::<EvoNode>(&mut dapi, filename)?,
+                "GetTokenDirectPurchasePricesRequest" => load_expectation::<
+                    proto::GetTokenDirectPurchasePricesRequest,
+                >(&mut dapi, filename)?,
+                "GetTokenPerpetualDistributionLastClaimRequest" => {
+                    load_expectation::<proto::GetTokenPerpetualDistributionLastClaimRequest>(
+                        &mut dapi, filename,
+                    )?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}, missing match arm in load_expectations?",

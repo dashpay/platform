@@ -49,7 +49,7 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             let Some(transaction_info) = maybe_transaction_info else {
                 // Transaction hash bytes needs to be reversed to match actual transaction hash
-                let mut hash: [u8; 32] = *transaction_hash.as_raw_hash().as_byte_array();
+                let mut hash: [u8; 32] = transaction_hash.as_raw_hash().to_byte_array();
                 hash.reverse();
 
                 return Ok(ValidationResult::new_with_error(

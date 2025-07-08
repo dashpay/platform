@@ -23,7 +23,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -74,8 +74,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
                 flags_len: storage_flags
                     .map(|s| s.serialized_size())
                     .unwrap_or_default(),
@@ -111,7 +111,7 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type)?;
+                    .get_estimated_size_for_document_type(name, document_type, platform_version)?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
@@ -123,7 +123,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
-                        is_sum_tree: false,
+                        tree_type: TreeType::NormalTree,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -153,7 +153,7 @@ impl Drive {
                 document_top_field
                     .clone()
                     .add_path_info(index_path_info.clone()),
-                false,
+                TreeType::NormalTree,
                 storage_flags,
                 apply_type,
                 transaction,
@@ -187,7 +187,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(16), // very seldom would more than 16 people want the resource
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -200,7 +200,7 @@ impl Drive {
 
         self.batch_insert_empty_tree_if_not_exists(
             DriveKeyInfo::Key(owner_id.to_vec()).add_path_info(index_path_info.clone()),
-            false,
+            TreeType::NormalTree,
             storage_flags,
             apply_type,
             transaction,
@@ -212,7 +212,7 @@ impl Drive {
         let inserted_abstain = self.batch_insert_empty_tree_if_not_exists(
             DriveKeyInfo::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec())
                 .add_path_info(index_path_info.clone()),
-            false,
+            TreeType::NormalTree,
             storage_flags,
             apply_type,
             transaction,
@@ -224,7 +224,7 @@ impl Drive {
         let inserted_lock = self.batch_insert_empty_tree_if_not_exists(
             DriveKeyInfo::Key(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec())
                 .add_path_info(index_path_info.clone()),
-            false,
+            TreeType::NormalTree,
             storage_flags,
             apply_type,
             transaction,

@@ -183,7 +183,6 @@ mod tests {
     use crate::query::tests::{
         assert_invalid_identifier, setup_platform, store_data_contract, store_document,
     };
-    use assert_matches::assert_matches;
     use ciborium::value::Value as CborValue;
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -519,7 +518,7 @@ mod tests {
         );
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -557,7 +556,7 @@ mod tests {
             .expect("expected to verify proof");
 
         assert_eq!(documents.len(), 1);
-        assert_eq!(documents.get(0).expect("first"), &random_document);
+        assert_eq!(documents.first().expect("first"), &random_document);
     }
 
     #[test]
@@ -592,7 +591,7 @@ mod tests {
         }
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -677,7 +676,7 @@ mod tests {
             .to_buffer();
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -822,7 +821,7 @@ mod tests {
                         WhereClause {
                             field: "status".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -830,7 +829,7 @@ mod tests {
                         WhereClause {
                             field: "pooling".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -838,7 +837,7 @@ mod tests {
                         WhereClause {
                             field: "coreFeePerByte".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(1),
+                            value: Value::U32(1),
                         },
                     ),
                 ]),
@@ -986,7 +985,7 @@ mod tests {
                         WhereClause {
                             field: "status".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -994,7 +993,7 @@ mod tests {
                         WhereClause {
                             field: "pooling".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -1002,7 +1001,7 @@ mod tests {
                         WhereClause {
                             field: "coreFeePerByte".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(1),
+                            value: Value::U32(1),
                         },
                     ),
                 ]),
@@ -1140,11 +1139,11 @@ mod tests {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
-                        Value::I64(0),
-                        Value::I64(1),
-                        Value::I64(2),
-                        Value::I64(3),
-                        Value::I64(4),
+                        Value::U8(0),
+                        Value::U8(1),
+                        Value::U8(2),
+                        Value::U8(3),
+                        Value::U8(4),
                     ]),
                 }),
                 range_clause: None,

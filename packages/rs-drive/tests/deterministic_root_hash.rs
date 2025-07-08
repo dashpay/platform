@@ -19,9 +19,11 @@ mod tests {
 
     /// Tests that the root hash is being calculated correctly after inserting empty subtrees into
     /// the root tree and the DPNS contract.
-    fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
-        let platform_version = PlatformVersion::latest();
-
+    fn test_root_hash_with_batches(
+        drive: &Drive,
+        db_transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) {
         // [1644293142180] INFO (35 on bf3bb2a2796a): createTree
         //     path: []
         //     pathHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -297,20 +299,50 @@ mod tests {
             .unwrap()
             .expect("should return app hash");
 
-        let expected_app_hash = "1b80f4a9f00597b3f1ddca904b3cee67576868adcdd802c0a3f91e14209bb402";
+        // We expect a different app hash because data contract is not serialized the same way
+        let expected_app_hash = match platform_version.protocol_version {
+            0..=8 => "1b80f4a9f00597b3f1ddca904b3cee67576868adcdd802c0a3f91e14209bb402",
+            _ => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
+        };
 
-        assert_eq!(hex::encode(app_hash), expected_app_hash);
+        assert_eq!(
+            hex::encode(app_hash),
+            expected_app_hash,
+            "not matching after contract insertion for protocol version {}",
+            platform_version.protocol_version
+        );
     }
 
     /// Runs `test_root_hash_with_batches` 10 times.
     #[test]
-    fn test_deterministic_root_hash_with_batches() {
+    fn test_deterministic_root_hash_with_batches_first_platform_version() {
         let drive = setup_drive(None);
+
+        let platform_version = PlatformVersion::first();
 
         let db_transaction = drive.grove.start_transaction();
 
         for _ in 0..10 {
-            test_root_hash_with_batches(&drive, &db_transaction);
+            test_root_hash_with_batches(&drive, &db_transaction, platform_version);
+
+            drive
+                .grove
+                .rollback_transaction(&db_transaction)
+                .expect("transaction should be rolled back");
+        }
+    }
+
+    /// Runs `test_root_hash_with_batches` 10 times.
+    #[test]
+    fn test_root_hash_with_batches_for_version() {
+        let drive = setup_drive(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        for i in 1..=PlatformVersion::latest().protocol_version {
+            let platform_version = PlatformVersion::get(i).expect("expected platform version");
+
+            test_root_hash_with_batches(&drive, &db_transaction, platform_version);
 
             drive
                 .grove
