@@ -2,30 +2,22 @@
 //!
 //! This module provides WASM bindings for token operations like mint, burn, transfer, etc.
 
-use crate::sdk::{WasmSdk, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
+use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
-use dash_sdk::dpp::dashcore::{PrivateKey, Network};
-use dash_sdk::dpp::data_contract::TokenContractPosition;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use platform_value::{platform_value, Value};
-use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::{Identifier, BinaryData, string_encoding::Encoding};
 use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
-use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::tokens::calculate_token_id;
-use dash_sdk::dpp::ProtocolError;
 use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use dash_sdk::platform::{Fetch, FetchMany};
-use dash_sdk::Sdk;
+use dash_sdk::platform::Fetch;
 use simple_signer::SingleKeySigner;
 use serde_wasm_bindgen::to_value;
 use serde_json;
-use std::sync::Arc;
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -116,7 +108,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Create public key from the private key and key ID
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
             .map_err(|e| JsValue::from_str(&e))?;
         let private_key_bytes = signer.private_key().to_bytes();
         let public_key_bytes = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(
@@ -137,7 +129,7 @@ impl WasmSdk {
         });
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Calculate token ID
@@ -275,7 +267,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Create public key from the private key and key ID
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
             .map_err(|e| JsValue::from_str(&e))?;
         let private_key_bytes = signer.private_key().to_bytes();
         let public_key_bytes = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(
@@ -296,7 +288,7 @@ impl WasmSdk {
         });
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, sdk.network)
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Calculate token ID
@@ -344,7 +336,7 @@ impl WasmSdk {
                 to_value(&serde_json::json!({
                     "type": "VerifiedTokenActionWithDocument",
                     "documentId": doc.id().to_string(Encoding::Base58),
-                    "message": "Token mint operation recorded successfully"
+                    "message": "Token burn operation recorded successfully"
                 })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {

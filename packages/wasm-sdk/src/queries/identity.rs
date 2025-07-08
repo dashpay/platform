@@ -42,7 +42,7 @@ pub async fn get_identity_keys(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<JsValue, JsError> {
-    use dash_sdk::dapi_grpc::platform::v0::KeyRequestType;
+    
     // DapiRequestExecutor not needed anymore
     
     let id = Identifier::from_string(
@@ -209,7 +209,7 @@ struct IdentityBalanceResponse {
 #[wasm_bindgen]
 pub async fn get_identities_balances(sdk: &WasmSdk, identity_ids: Vec<String>) -> Result<JsValue, JsError> {
     use drive_proof_verifier::types::IdentityBalance;
-    use dash_sdk::platform::Fetch;
+    
     
     // Convert string IDs to Identifiers
     let identifiers: Vec<Identifier> = identity_ids
@@ -419,7 +419,7 @@ pub async fn get_identity_by_non_unique_public_key_hash(
     public_key_hash: &str,
     start_after: Option<String>,
 ) -> Result<JsValue, JsError> {
-    use dash_sdk::platform::FetchMany;
+    
     
     // Parse the hex-encoded public key hash
     let hash_bytes = hex::decode(public_key_hash)
@@ -511,7 +511,7 @@ pub async fn get_identity_token_balances(
         token_ids: token_identifiers.clone(),
     };
     
-    use dash_sdk::platform::dapi::RequestSettings;
+    
     
     // Use FetchMany trait to fetch token balances
     let balances: drive_proof_verifier::types::identity_token_balance::IdentityTokenBalances = TokenAmount::fetch_many(sdk.as_ref(), query)

@@ -2,6 +2,7 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
+use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -59,12 +60,38 @@ struct PathElement {
 
 #[wasm_bindgen]
 pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    // TODO: Get actual status from the platform
+    use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+    use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
+    use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+    
+    // Get the network from SDK
+    let network_str = match sdk.network {
+        dash_sdk::dpp::dashcore::Network::Dash => "mainnet",
+        dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
+        dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
+        dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
+        _ => "unknown",
+    }.to_string();
+    
+    // Try to fetch current epoch info to get block heights
+    let (block_height, core_height) = match ExtendedEpochInfo::fetch_current(sdk.as_ref()).await {
+        Ok(epoch_info) => {
+            // Extract heights from epoch info
+            let platform_height = Some(epoch_info.first_block_height());
+            let core_height = Some(epoch_info.first_core_block_height() as u64);
+            (platform_height, core_height)
+        }
+        Err(_) => {
+            // If we can't fetch epoch info, heights remain None
+            (None, None)
+        }
+    };
+    
     let status = PlatformStatus {
         version: sdk.version(),
-        network: "testnet".to_string(), // This should come from SDK config
-        block_height: None,
-        core_height: None,
+        network: network_str,
+        block_height,
+        core_height,
     };
     
     serde_wasm_bindgen::to_value(&status)
@@ -83,15 +110,52 @@ pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError>
     // The result is Option<CurrentQuorumsInfo>
     if let Some(quorum_info) = quorums_result {
         // Convert the SDK response to our structure
-        // For now, we'll use the quorum hashes to create basic info
+        // Match quorum hashes with validator sets to get detailed information
         let quorums: Vec<QuorumInfo> = quorum_info.quorum_hashes
             .into_iter()
-            .map(|quorum_hash| QuorumInfo {
-                quorum_hash: hex::encode(&quorum_hash),
-                quorum_type: "LLMQ_TYPE_UNKNOWN".to_string(), // Type info not available in this response
-                member_count: 0, // Not available
-                threshold: 0, // Not available
-                is_verified: false, // Not available
+            .map(|quorum_hash| {
+                // Try to find the corresponding validator set
+                let validator_set = quorum_info.validator_sets
+                    .iter()
+                    .find(|vs| {
+                        // Compare the quorum hash bytes directly
+                        
+                        let vs_hash_bytes: &[u8] = vs.quorum_hash().as_ref();
+                        vs_hash_bytes == &quorum_hash[..]
+                    });
+                
+                if let Some(vs) = validator_set {
+                    let member_count = vs.members().len() as u32;
+                    
+                    // Determine quorum type based on member count and quorum index
+                    // This is an approximation based on common quorum sizes
+                    // TODO: Get actual quorum type from the platform when available
+                    let (quorum_type, threshold) = match member_count {
+                        50..=70 => ("LLMQ_60_75".to_string(), (member_count * 75 / 100).max(1)),
+                        90..=110 => ("LLMQ_100_67".to_string(), (member_count * 67 / 100).max(1)),
+                        350..=450 => ("LLMQ_400_60".to_string(), (member_count * 60 / 100).max(1)),
+                        _ => ("LLMQ_TYPE_UNKNOWN".to_string(), (member_count * 2 / 3).max(1)),
+                    };
+                    
+                    QuorumInfo {
+                        quorum_hash: hex::encode(&quorum_hash),
+                        quorum_type,
+                        member_count,
+                        threshold,
+                        is_verified: true, // We have the validator set, so it's verified
+                    }
+                } else {
+                    // No validator set found for this quorum hash
+                    // TODO: This should not happen in normal circumstances. When the SDK
+                    // provides complete quorum information, this fallback can be removed.
+                    QuorumInfo {
+                        quorum_hash: hex::encode(&quorum_hash),
+                        quorum_type: "LLMQ_TYPE_UNKNOWN".to_string(),
+                        member_count: 0,
+                        threshold: 0,
+                        is_verified: false,
+                    }
+                }
             })
             .collect();
         
@@ -188,9 +252,9 @@ pub async fn wait_for_state_transition_result(
         Version, WaitForStateTransitionResultRequestV0,
     };
     use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
-    use dapi_grpc::platform::VersionedGrpcResponse;
+    
     use dash_sdk::RequestSettings;
-    use rs_dapi_client::{DapiRequestExecutor, ExecutionResponse};
+    use rs_dapi_client::DapiRequestExecutor;
     
     // Parse the hash from hex string to bytes
     let hash_bytes = hex::decode(state_transition_hash)

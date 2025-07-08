@@ -1,7 +1,7 @@
 use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 use dash_sdk::platform::Identifier;
 use dapi_grpc::platform::v0::{
     GetContestedResourcesRequest, GetContestedResourceVoteStateRequest,
@@ -15,7 +15,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_sdk::RequestSettings;
-use rs_dapi_client::{DapiRequestExecutor, ExecutionResponse};
+use rs_dapi_client::DapiRequestExecutor;
 
 
 

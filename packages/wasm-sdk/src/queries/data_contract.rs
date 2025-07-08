@@ -4,7 +4,6 @@ use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
 use dash_sdk::platform::query::LimitQuery;
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dash_sdk::dpp::version::PlatformVersion;
 use serde::{Serialize, Deserialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
@@ -60,7 +59,7 @@ pub async fn get_data_contract_history(
     
     // Convert to response format
     let mut versions = BTreeMap::new();
-    let platform_version = PlatformVersion::first();
+    let platform_version = sdk.as_ref().version();
     
     if let Some(history) = history_result {
         for (revision, contract) in history {
@@ -101,7 +100,7 @@ pub async fn get_data_contracts(sdk: &WasmSdk, ids: Vec<String>) -> Result<JsVal
     
     // Convert to response format
     let mut data_contracts = BTreeMap::new();
-    let platform_version = PlatformVersion::first();
+    let platform_version = sdk.as_ref().version();
     for (id, contract_opt) in contracts_result {
         let id_str = id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58);
         let contract_json = match contract_opt {

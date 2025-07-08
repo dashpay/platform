@@ -1,15 +1,12 @@
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::{BinaryData, Identifier, string_encoding::Encoding};
 use dash_sdk::dpp::prelude::UserFeeIncrease;
-use dash_sdk::dpp::ProtocolError;
 use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
-use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
 use simple_signer::SingleKeySigner;

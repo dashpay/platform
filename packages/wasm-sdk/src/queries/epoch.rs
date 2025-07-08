@@ -2,11 +2,10 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use dash_sdk::platform::{Fetch, FetchMany, LimitQuery};
+use dash_sdk::platform::{FetchMany, LimitQuery};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-use dash_sdk::dpp::block::epoch::EpochIndex;
 use dash_sdk::dpp::dashcore::hashes::Hash;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -92,17 +91,16 @@ pub async fn get_finalized_epoch_infos(
     
     let start = start_epoch.unwrap();
     let is_ascending = ascending.unwrap_or(true);
-    let limit = count.unwrap_or(10);
+    let limit = count.unwrap_or(100);
+    
+    // Ensure limit is at least 1 to avoid underflow
+    let limit = limit.max(1);
     
     // Calculate end epoch based on direction and limit
     let end_epoch = if is_ascending {
-        start + (limit - 1) as u16
+        start.saturating_add((limit - 1) as u16)
     } else {
-        if start >= (limit - 1) as u16 {
-            start - (limit - 1) as u16
-        } else {
-            0
-        }
+        start.saturating_sub((limit - 1) as u16)
     };
     
     let query = if is_ascending {
@@ -169,7 +167,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     epoch: u32,
     ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::{ProposerBlockCountById, ProposerBlockCounts};
+    
     use dash_sdk::dpp::dashcore::ProTxHash;
     use std::str::FromStr;
     

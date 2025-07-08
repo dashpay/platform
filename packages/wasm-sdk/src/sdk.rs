@@ -51,6 +51,11 @@ impl WasmSdk {
         self.0.version().protocol_version
     }
     
+    /// Get the network this SDK is configured for
+    pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
+        self.0.network
+    }
+    
     /// Test serialization of different object types
     #[wasm_bindgen(js_name = testSerialization)]
     pub fn test_serialization(&self, test_type: &str) -> Result<JsValue, JsValue> {
