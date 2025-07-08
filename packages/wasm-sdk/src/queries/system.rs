@@ -74,9 +74,9 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
 #[wasm_bindgen]
 pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchUnproved;
-    use drive_proof_verifier::types::{NoParamQuery, CurrentQuorumsInfo as CurrentQuorumsQuery};
+    use drive_proof_verifier::types::{NoParamQuery, CurrentQuorumsInfo as SdkCurrentQuorumsInfo};
     
-    let quorums_result = CurrentQuorumsQuery::fetch_unproved(sdk.as_ref(), NoParamQuery {})
+    let quorums_result = SdkCurrentQuorumsInfo::fetch_unproved(sdk.as_ref(), NoParamQuery {})
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch quorums info: {}", e)))?;
     

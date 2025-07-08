@@ -12,54 +12,10 @@ use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::method
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
+use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use js_sys;
-
-/// A simple signer for WASM that uses a single private key
-#[derive(Debug)]
-struct WasmSigner {
-    private_key: PrivateKey,
-}
-
-impl WasmSigner {
-    fn new(private_key_str: &str) -> Result<Self, JsValue> {
-        // Try hex first if it looks like hex, then WIF
-        let private_key = if private_key_str.len() == 64 && private_key_str.chars().all(|c| c.is_ascii_hexdigit()) {
-            // Looks like hex
-            let key_bytes = hex::decode(private_key_str)
-                .map_err(|e| JsValue::from_str(&format!("Invalid hex private key: {}", e)))?;
-            if key_bytes.len() != 32 {
-                return Err(JsValue::from_str("Private key must be 32 bytes"));
-            }
-            PrivateKey::from_slice(&key_bytes, dash_sdk::dpp::dashcore::Network::Testnet)
-                .map_err(|e| JsValue::from_str(&format!("Invalid private key bytes: {}", e)))?
-        } else {
-            // Try WIF
-            PrivateKey::from_wif(private_key_str)
-                .map_err(|e| JsValue::from_str(&format!("Invalid WIF private key: {}", e)))?
-        };
-        Ok(Self { private_key })
-    }
-}
-
-impl Signer for WasmSigner {
-    fn sign(
-        &self,
-        _identity_public_key: &IdentityPublicKey,
-        data: &[u8],
-    ) -> Result<BinaryData, ProtocolError> {
-        use dash_sdk::dpp::dashcore::signer;
-        let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
-        Ok(signature.to_vec().into())
-    }
-
-    fn can_sign_with(&self, _identity_public_key: &IdentityPublicKey) -> bool {
-        // For simplicity, we assume the signer can sign with any key
-        // In a real implementation, you'd check if the public key matches
-        true
-    }
-}
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -158,7 +114,8 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
         
         // Create signer
-        let signer = WasmSigner::new(&private_key_wif)?;
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the credit transfer transition
         let state_transition = IdentityCreditTransferTransition::try_from_identity(
@@ -298,7 +255,8 @@ impl WasmSdk {
         };
         
         // Create signer
-        let signer = WasmSigner::new(&private_key_wif)?;
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Import the withdraw trait
         use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
@@ -510,7 +468,8 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
         
         // Create signer
-        let signer = WasmSigner::new(&private_key_wif)?;
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the identity update transition
         use dash_sdk::dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
@@ -717,7 +676,8 @@ impl WasmSdk {
         let vote = Vote::ResourceVote(resource_vote);
         
         // Create signer
-        let signer = WasmSigner::new(&voting_key_wif)?;
+        let signer = SingleKeySigner::from_string(&voting_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Submit the vote using PutVote trait
         use dash_sdk::platform::transition::vote::PutVote;

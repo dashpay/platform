@@ -1,6 +1,6 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use dashcore_rpc::dashcore::signer;
+use dashcore::signer;
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::ed25519_dalek::Signer as BlsSigner;

@@ -1318,6 +1318,7 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "js-sys",
  "lru",
  "rs-dapi-client",
  "rustls-pemfile",
@@ -5032,6 +5033,7 @@ dependencies = [
  "bincode",
  "dashcore-rpc",
  "dpp",
+ "hex",
 ]
 
 [[package]]

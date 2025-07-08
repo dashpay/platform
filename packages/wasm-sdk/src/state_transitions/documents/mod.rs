@@ -26,6 +26,7 @@ use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
 use dash_sdk::dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use simple_signer::SingleKeySigner;
 use serde_wasm_bindgen::to_value;
 use serde_json;
 use wasm_bindgen::prelude::*;
@@ -33,42 +34,7 @@ use wasm_bindgen::JsValue;
 use web_sys;
 use js_sys;
 
-/// A simple signer for WASM that uses a single private key
-struct WasmSigner {
-    private_key: PrivateKey,
-}
-
-impl WasmSigner {
-    fn new(private_key_wif: &str) -> Result<Self, JsValue> {
-        let private_key = PrivateKey::from_wif(private_key_wif)
-            .map_err(|e| JsValue::from_str(&format!("Invalid WIF private key: {}", e)))?;
-        Ok(Self { private_key })
-    }
-}
-
-impl Signer for WasmSigner {
-    fn sign(
-        &self,
-        _identity_public_key: &IdentityPublicKey,
-        data: &[u8],
-    ) -> Result<BinaryData, ProtocolError> {
-        use dash_sdk::dpp::dashcore::signer;
-        let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
-        Ok(signature.to_vec().into())
-    }
-
-    fn can_sign_with(&self, _identity_public_key: &IdentityPublicKey) -> bool {
-        // For simplicity, we assume the signer can sign with any key
-        // In a real implementation, you'd check if the public key matches
-        true
-    }
-}
-
-impl std::fmt::Debug for WasmSigner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WasmSigner").finish()
-    }
-}
+// WasmSigner has been replaced with SingleKeySigner from simple-signer crate
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -173,7 +139,9 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Create public key from the private key
-        let private_key_bytes = WasmSigner::new(&private_key_wif)?.private_key.to_bytes();
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
+        let private_key_bytes = signer.private_key().to_bytes();
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
             .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
@@ -252,7 +220,8 @@ impl WasmSdk {
         let public_key = matching_key.1.clone();
         
         // Create signer
-        let signer = WasmSigner::new(&private_key_wif)?;
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the state transition
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
@@ -576,7 +545,9 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Create public key from the private key
-        let private_key_bytes = WasmSigner::new(&private_key_wif)?.private_key.to_bytes();
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
+        let private_key_bytes = signer.private_key().to_bytes();
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
             .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
@@ -612,7 +583,8 @@ impl WasmSdk {
         let public_key = matching_key.1.clone();
         
         // Create signer
-        let signer = WasmSigner::new(&private_key_wif)?;
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the state transition
         let state_transition = BatchTransition::new_document_replacement_transition_from_document(
@@ -887,7 +859,9 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Create public key from the private key
-        let private_key_bytes = WasmSigner::new(&private_key_wif)?.private_key.to_bytes();
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
+        let private_key_bytes = signer.private_key().to_bytes();
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
             .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
@@ -936,7 +910,8 @@ impl WasmSdk {
             identity_contract_nonce,
             UserFeeIncrease::default(),
             None, // token_payment_info
-            &WasmSigner::new(&private_key_wif)?,
+            &SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+                .map_err(|e| JsValue::from_str(&e))?,
             sdk.version(),
             None, // options
         )
@@ -1069,7 +1044,9 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Create public key from the private key
-        let private_key_bytes = WasmSigner::new(&private_key_wif)?.private_key.to_bytes();
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
+        let private_key_bytes = signer.private_key().to_bytes();
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
             .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
@@ -1102,7 +1079,8 @@ impl WasmSdk {
             identity_contract_nonce,
             UserFeeIncrease::default(),
             None, // token_payment_info
-            &WasmSigner::new(&private_key_wif)?,
+            &SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+                .map_err(|e| JsValue::from_str(&e))?,
             sdk.version(),
             None, // options
         )
@@ -1264,7 +1242,8 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity contract nonce: {}", e)))?;
         
         // Create signer
-        let signer = WasmSigner::new(&private_key_wif)?;
+        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+            .map_err(|e| JsValue::from_str(&e))?;
         
         // Create document purchase transition
         let transition = BatchTransition::new_document_purchase_transition_from_document(
@@ -1489,7 +1468,8 @@ impl WasmSdk {
             identity_contract_nonce,
             UserFeeIncrease::default(),
             None, // token_payment_info
-            &WasmSigner::new(&private_key_wif)?,
+            &SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+                .map_err(|e| JsValue::from_str(&e))?,
             sdk.version(),
             None, // options
         )
