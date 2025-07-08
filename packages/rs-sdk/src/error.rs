@@ -1,12 +1,12 @@
 //! Definitions of errors
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
+pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
-pub use drive_proof_verifier::error::ContextProviderError;
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;

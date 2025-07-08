@@ -16,9 +16,10 @@ use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
 };
+use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
+use drive_proof_verifier::FromProof;
 use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},

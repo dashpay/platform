@@ -7,11 +7,14 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
-use arc_swap::{ArcSwapAny, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
+use dash_context_provider::ContextProvider;
+#[cfg(feature = "mocks")]
+use dash_context_provider::MockContextProvider;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
@@ -20,9 +23,7 @@ use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
-#[cfg(feature = "mocks")]
-use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{ContextProvider, FromProof};
+use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -1116,7 +1117,7 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
-                    context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
+                    context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,

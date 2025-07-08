@@ -83,7 +83,7 @@ macro_rules! delegate_from_proof_variant {
                 response: O,
                 network: dpp::dashcore::Network,
                 version: &dpp::version::PlatformVersion,
-                provider: &'a dyn drive_proof_verifier::ContextProvider,
+                provider: &'a dyn dash_context_provider::ContextProvider,
             ) -> Result<(Option<Self>, ResponseMetadata, dapi_grpc::platform::v0::Proof), drive_proof_verifier::Error>
             where
                 Self: Sized + 'a,
