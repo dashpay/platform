@@ -64,18 +64,6 @@ pub async fn get_epochs_info(
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct FinalizedEpochInfo {
-    index: u16,
-    first_core_block_height: u32,
-    first_block_height: u64,
-    start_time: u64,
-    fee_multiplier: f64,
-    protocol_version: u32,
-}
-
-
 #[wasm_bindgen]
 pub async fn get_finalized_epoch_infos(
     sdk: &WasmSdk,
@@ -124,12 +112,12 @@ pub async fn get_finalized_epoch_infos(
         .map_err(|e| JsError::new(&format!("Failed to fetch finalized epochs info: {}", e)))?;
     
     // Convert to our response format and sort by epoch index
-    let mut epochs: Vec<FinalizedEpochInfo> = epochs_result
+    let mut epochs: Vec<EpochInfo> = epochs_result
         .into_iter()
         .filter_map(|(epoch_index, epoch_opt)| {
             epoch_opt.map(|epoch| {
                 use dash_sdk::dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
-                FinalizedEpochInfo {
+                EpochInfo {
                     index: epoch_index as u16,
                     first_core_block_height: epoch.first_core_block_height(),
                     first_block_height: epoch.first_block_height(),
