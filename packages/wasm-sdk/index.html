@@ -502,6 +502,7 @@
         <div class="result-actions">
           <button id="clearButton" onclick="clearResults()">Clear</button>
           <button id="copyButton" onclick="copyResults()">Copy</button>
+          <button id="clearCacheButton" onclick="clearCache()" title="Clear WASM cache and reload">Clear Cache</button>
         </div>
       </div>
       <div id="identityInfo" class="result-content empty">No data fetched yet. Select a query category and type to begin.</div>
@@ -510,7 +511,121 @@
 
   <div id="statusBanner" class="status-banner loading">Initializing WASM SDK...</div>
 
+  <script>
+    // Global functions for button actions
+    function clearResults() {
+      document.getElementById('identityInfo').textContent = '';
+      document.getElementById('identityInfo').classList.add('empty');
+      document.getElementById('identityInfo').classList.remove('error');
+      if (typeof currentResult !== 'undefined') {
+        currentResult = null;
+      }
+    }
+    
+    function copyResults() {
+      const content = document.getElementById('identityInfo').textContent;
+      navigator.clipboard.writeText(content).then(() => {
+        const button = document.getElementById('copyButton');
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        setTimeout(() => {
+          button.textContent = originalText;
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy:', err);
+      });
+    }
+    
+    async function clearCache() {
+      const button = document.getElementById('clearCacheButton');
+      const originalText = button.textContent;
+      button.textContent = 'Clearing...';
+      button.disabled = true;
+      
+      try {
+        // Clear service worker cache
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          // Use MessageChannel for response
+          const channel = new MessageChannel();
+          channel.port1.onmessage = (event) => {
+            console.log('Cache cleared:', event.data);
+          };
+          navigator.serviceWorker.controller.postMessage(
+            { action: 'clearCache' }, 
+            [channel.port2]
+          );
+        }
+        
+        // Clear browser caches
+        if ('caches' in window) {
+          const cacheNames = await caches.keys();
+          await Promise.all(
+            cacheNames.map(cacheName => caches.delete(cacheName))
+          );
+        }
+        
+        button.textContent = 'Cache Cleared!';
+        
+        // Reload after a short delay
+        setTimeout(() => {
+          window.location.reload(true);
+        }, 1000);
+        
+      } catch (error) {
+        console.error('Failed to clear cache:', error);
+        button.textContent = 'Failed';
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+        }, 2000);
+      }
+    }
+    
+    // Register service worker for caching
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker-simple.js')
+          .then(registration => {
+            console.log('ServiceWorker registration successful:', registration.scope);
+            
+            // Check for updates periodically
+            setInterval(() => {
+              registration.update();
+            }, 60 * 60 * 1000); // Check every hour
+            
+            // Listen for updates from service worker
+            navigator.serviceWorker.addEventListener('message', event => {
+              if (event.data.type === 'cache-updated') {
+                console.log('Cache updated:', event.data.oldCache, '->', event.data.newCache);
+                
+                // Show notification to user
+                const banner = document.getElementById('statusBanner');
+                if (banner && !banner.querySelector('button')) {
+                  banner.textContent = 'New version detected! Refresh to update.';
+                  banner.className = 'status-banner warning';
+                  
+                  // Add refresh button
+                  const refreshBtn = document.createElement('button');
+                  refreshBtn.textContent = 'Refresh Now';
+                  refreshBtn.style.marginLeft = '10px';
+                  refreshBtn.onclick = () => window.location.reload(true);
+                  banner.appendChild(refreshBtn);
+                }
+              }
+            });
+          })
+          .catch(err => {
+            console.log('ServiceWorker registration failed:', err);
+          });
+      });
+    }
+  </script>
+
   <script type="module">
+    // Add performance timing
+    const startTime = performance.now();
+    console.log('[Performance] Starting WASM module load...');
+    
     import init, { 
       WasmSdkBuilder, 
       identity_fetch, 
@@ -618,18 +733,11 @@
           },
           identityCreditWithdrawal: {
             label: "Identity Credit Withdrawal",
-            description: "Withdraw credits from identity to Core chain",
+            description: "Withdraw credits from identity to Dash address",
             inputs: [
+              { name: "toAddress", type: "text", label: "Dash Address", required: true },
               { name: "amount", type: "number", label: "Amount (credits)", required: true },
-              { name: "outputScript", type: "text", label: "Core Output Script (hex)", required: true },
-              { name: "coreFeePerByte", type: "number", label: "Core Fee Per Byte", required: true },
-              { name: "pooling", type: "select", label: "Pooling", required: true,
-                options: [
-                  { value: "never", label: "Never" },
-                  { value: "ifAvailable", label: "If Available" },
-                  { value: "preferPooling", label: "Prefer Pooling" }
-                ]
-              }
+              { name: "coreFeePerByte", type: "number", label: "Core Fee Per Byte (optional)", required: false }
             ]
           }
         }
@@ -674,8 +782,8 @@
               { name: "contractId", type: "text", label: "Data Contract ID", required: true },
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true },
-              { name: "revision", type: "number", label: "Revision", required: true },
-              { name: "data", type: "json", label: "New Document Data (JSON)", required: true }
+              { name: "loadDocument", type: "button", label: "Load Document", action: "loadExistingDocument" },
+              { name: "documentFields", type: "dynamic", label: "Document Fields" }
             ]
           },
           documentDelete: {
@@ -694,7 +802,7 @@
               { name: "contractId", type: "text", label: "Data Contract ID", required: true },
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true },
-              { name: "recipientOwnerId", type: "text", label: "Recipient Identity ID", required: true }
+              { name: "recipientId", type: "text", label: "Recipient Identity ID", required: true }
             ]
           },
           documentPurchase: {
@@ -707,14 +815,14 @@
               { name: "price", type: "number", label: "Price (credits)", required: true }
             ]
           },
-          documentUpdatePrice: {
-            label: "Document Update Price",
-            description: "Update document price",
+          documentSetPrice: {
+            label: "Document Set Price",
+            description: "Set or update document price (0 to remove price)",
             inputs: [
               { name: "contractId", type: "text", label: "Data Contract ID", required: true },
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true },
-              { name: "price", type: "number", label: "New Price (credits)", required: true }
+              { name: "price", type: "number", label: "Price (credits, 0 to remove)", required: true }
             ]
           }
         }
@@ -2452,6 +2560,120 @@ ${indentStr}]`;
           // Pass the result object directly to displayResult
           displayResult(result);
           updateStatus('Document created successfully', 'success');
+        } else if (transitionType === 'documentReplace') {
+          // Collect document fields from dynamic inputs
+          const documentData = collectDocumentFields();
+          
+          // Ensure we have the loaded revision
+          if (loadedDocumentRevision === null) {
+            throw new Error('No document loaded. Please click "Load Document" first.');
+          }
+          
+          // Handle document replace
+          result = await sdk.documentReplace(
+            values.contractId,
+            values.documentType,
+            values.documentId,
+            identityId,
+            JSON.stringify(documentData),
+            BigInt(loadedDocumentRevision),
+            privateKey,
+            0 // key_id - using 0 as default
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Document replaced successfully', 'success');
+          
+          // Reset loaded data
+          loadedDocumentData = null;
+          loadedDocumentRevision = null;
+        } else if (transitionType === 'documentDelete') {
+          // Handle document delete
+          result = await sdk.documentDelete(
+            values.contractId,
+            values.documentType,
+            values.documentId,
+            identityId,
+            privateKey,
+            0 // key_id - using 0 as default
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Document deleted successfully', 'success');
+        } else if (transitionType === 'documentTransfer') {
+          // Handle document transfer
+          result = await sdk.documentTransfer(
+            values.contractId,
+            values.documentType,
+            values.documentId,
+            identityId,
+            values.recipientId,
+            privateKey,
+            0 // key_id - using 0 as default
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Document transferred successfully', 'success');
+        } else if (transitionType === 'documentSetPrice') {
+          // Handle document set price
+          result = await sdk.documentSetPrice(
+            values.contractId,
+            values.documentType,
+            values.documentId,
+            identityId,
+            values.price || 0, // price in credits, 0 to remove price
+            privateKey,
+            0 // key_id - using 0 as default
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Document price set successfully', 'success');
+        } else if (transitionType === 'documentPurchase') {
+          // Handle document purchase
+          result = await sdk.documentPurchase(
+            values.contractId,
+            values.documentType,
+            values.documentId,
+            identityId,
+            values.price,
+            privateKey,
+            0 // key_id - using 0 as default
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Document purchased successfully', 'success');
+        } else if (transitionType === 'identityCreditTransfer') {
+          // Handle identity credit transfer
+          result = await sdk.identityCreditTransfer(
+            identityId, // sender is the authenticated identity
+            values.recipientId,
+            BigInt(values.amount),
+            privateKey,
+            null // key_id - will auto-select
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Credits transferred successfully', 'success');
+        } else if (transitionType === 'identityCreditWithdrawal') {
+          // Handle identity credit withdrawal
+          result = await sdk.identityCreditWithdrawal(
+            identityId,
+            values.toAddress,
+            BigInt(values.amount),
+            values.coreFeePerByte ? Number(values.coreFeePerByte) : null,
+            privateKey,
+            null // key_id - will auto-select
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Credits withdrawn successfully', 'success');
         } else {
           // For other transitions not yet implemented
           const transitionData = {
@@ -2655,6 +2877,67 @@ ${indentStr}]`;
 
     // Trusted mode is always on, no need for event listener
 
+    // Store loaded document data globally for document replace
+    let loadedDocumentData = null;
+    let loadedDocumentRevision = null;
+
+    // Load existing document for replacement
+    window.loadExistingDocument = async function() {
+      const contractIdInput = document.querySelector('input[name="contractId"]');
+      const documentTypeInput = document.querySelector('input[name="documentType"]');
+      const documentIdInput = document.querySelector('input[name="documentId"]');
+      
+      const contractId = contractIdInput?.value;
+      const documentType = documentTypeInput?.value;
+      const documentId = documentIdInput?.value;
+      
+      if (!contractId || !documentType || !documentId) {
+        updateStatus('Please fill in Contract ID, Document Type, and Document ID', 'error');
+        return;
+      }
+      
+      try {
+        updateStatus('Loading document and schema...', 'loading');
+        
+        // First fetch the document
+        const documentResult = await get_document(sdk, contractId, documentType, documentId);
+        
+        if (!documentResult) {
+          throw new Error('Document not found');
+        }
+        
+        // Store document data and revision
+        loadedDocumentData = documentResult.data || {};
+        loadedDocumentRevision = documentResult.revision || 0;
+        
+        console.log('Loaded document:', documentResult);
+        
+        // Now fetch the data contract to get schema
+        const dataContract = await data_contract_fetch(sdk, contractId);
+        const contractData = dataContract.toJSON();
+        
+        // Find the document type schema
+        const docType = contractData.documentSchemas?.[documentType];
+        if (!docType) {
+          throw new Error(`Document type '${documentType}' not found in contract`);
+        }
+        
+        // Show the document fields container
+        const fieldsContainer = document.getElementById('dynamic_documentFields');
+        if (fieldsContainer) {
+          fieldsContainer.parentElement.style.display = 'block';
+          
+          // Populate document fields with existing data
+          populateDocumentFields(docType, fieldsContainer, loadedDocumentData);
+        }
+        
+        updateStatus(`Document loaded successfully (revision: ${loadedDocumentRevision})`, 'success');
+      } catch (error) {
+        console.error('Error loading document:', error);
+        updateStatus(`Error loading document: ${error.message}`, 'error');
+      }
+    };
+
     // Fetch document schema and generate dynamic fields
     window.fetchDocumentSchema = async function() {
       const contractId = document.querySelector('input[name="contractId"]')?.value;
@@ -2699,10 +2982,17 @@ ${indentStr}]`;
       if (!container) return;
       
       // Clear existing fields
-      container.innerHTML = '';
-      
       // Show the container
       container.parentElement.style.display = 'block';
+      
+      // Use the shared function
+      populateDocumentFields(schema, container);
+    }
+    
+    // Shared function to populate document fields
+    function populateDocumentFields(schema, container, existingData = null) {
+      // Clear existing fields
+      container.innerHTML = '';
       
       // Add header
       const header = document.createElement('h4');
@@ -2729,6 +3019,25 @@ ${indentStr}]`;
         
         // Create appropriate input based on field type
         const input = createInputForField(fieldName, fieldSchema);
+        
+        // Populate with existing data if available
+        if (existingData && existingData[fieldName] !== undefined) {
+          const value = existingData[fieldName];
+          
+          if (input.type === 'checkbox') {
+            input.checked = value;
+          } else if (input.type === 'datetime-local' && typeof value === 'number') {
+            // Convert timestamp to datetime-local format
+            const date = new Date(value);
+            input.value = date.toISOString().slice(0, 16);
+          } else if (input.tagName === 'TEXTAREA' && (fieldSchema.type === 'array' || fieldSchema.type === 'object')) {
+            // Convert arrays/objects to JSON string
+            input.value = JSON.stringify(value, null, 2);
+          } else {
+            input.value = value;
+          }
+        }
+        
         fieldGroup.appendChild(input);
         
         // Add description if available
@@ -2895,7 +3204,11 @@ ${indentStr}]`;
     async function run() {
       try {
         updateStatus('Loading WASM module...', 'loading');
+        const initStart = performance.now();
         await init();
+        const initEnd = performance.now();
+        console.log(`[Performance] WASM init took ${(initEnd - initStart).toFixed(2)}ms`);
+        
         updateStatus('WASM module loaded, initializing SDK...', 'loading');
         
         // Load saved network preference or default to mainnet
