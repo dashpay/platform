@@ -480,8 +480,8 @@
             <input type="text" id="identityId" placeholder="Enter identity ID">
           </div>
           <div class="input-group">
-            <label for="privateKey">Private Key (WIF)</label>
-            <input type="password" id="privateKey" placeholder="Enter private key in WIF format">
+            <label for="privateKey">Private Key (WIF or hex)</label>
+            <input type="password" id="privateKey" placeholder="Enter private key (WIF or 32-byte hex)">
           </div>
         </div>
         
@@ -718,9 +718,10 @@
             label: "Identity Update",
             description: "Update identity keys (add or disable)",
             inputs: [
-              { name: "revision", type: "number", label: "Revision", required: true },
-              { name: "addPublicKeys", type: "keyArray", label: "Keys to Add", required: false },
-              { name: "disablePublicKeys", type: "array", label: "Key IDs to Disable", required: false }
+              { name: "addPublicKeys", type: "textarea", label: "Keys to Add (JSON array)", required: false, 
+                placeholder: '[{"keyType":"ECDSA_HASH160","purpose":"AUTHENTICATION","data":"base64_key_data"}]' },
+              { name: "disablePublicKeys", type: "text", label: "Key IDs to Disable (comma-separated)", required: false,
+                placeholder: "2,3,5" }
             ]
           },
           identityCreditTransfer: {
@@ -749,15 +750,29 @@
             label: "Data Contract Create",
             description: "Create a new data contract",
             inputs: [
-              { name: "dataContract", type: "json", label: "Data Contract JSON", required: true }
+              { name: "canBeDeleted", type: "checkbox", label: "Can Be Deleted", required: false },
+              { name: "readonly", type: "checkbox", label: "Read Only", required: false },
+              { name: "keepsHistory", type: "checkbox", label: "Keeps History", required: false },
+              { name: "documentsKeepHistoryContractDefault", type: "checkbox", label: "Documents Keep History (Default)", required: false },
+              { name: "documentsMutableContractDefault", type: "checkbox", label: "Documents Mutable (Default)", required: false, defaultValue: true },
+              { name: "documentsCanBeDeletedContractDefault", type: "checkbox", label: "Documents Can Be Deleted (Default)", required: false, defaultValue: true },
+              { name: "requiresIdentityEncryptionBoundedKey", type: "text", label: "Requires Identity Encryption Key (optional)", required: false },
+              { name: "requiresIdentityDecryptionBoundedKey", type: "text", label: "Requires Identity Decryption Key (optional)", required: false },
+              { name: "documentSchemas", type: "json", label: "Document Schemas JSON", required: true, placeholder: '{\n  "note": {\n    "type": "object",\n    "properties": {\n      "message": {\n        "type": "string",\n        "maxLength": 100,\n        "position": 0\n      }\n    },\n    "required": ["message"],\n    "additionalProperties": false\n  }\n}' },
+              { name: "groups", type: "json", label: "Groups (optional)", required: false, placeholder: '{}' },
+              { name: "tokens", type: "json", label: "Tokens (optional)", required: false, placeholder: '{}' },
+              { name: "keywords", type: "text", label: "Keywords (comma separated, optional)", required: false },
+              { name: "description", type: "text", label: "Description (optional)", required: false }
             ]
           },
           dataContractUpdate: {
             label: "Data Contract Update",
-            description: "Update an existing data contract",
+            description: "Add document types, groups, or tokens to an existing data contract",
             inputs: [
               { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
-              { name: "dataContract", type: "json", label: "Updated Data Contract JSON", required: true }
+              { name: "newDocumentSchemas", type: "json", label: "New Document Schemas to Add (optional)", required: false, placeholder: '{\n  "newType": {\n    "type": "object",\n    "properties": {\n      "field": {\n        "type": "string",\n        "maxLength": 100,\n        "position": 0\n      }\n    },\n    "required": ["field"],\n    "additionalProperties": false\n  }\n}' },
+              { name: "newGroups", type: "json", label: "New Groups to Add (optional)", required: false, placeholder: '{}' },
+              { name: "newTokens", type: "json", label: "New Tokens to Add (optional)", required: false, placeholder: '{}' }
             ]
           }
         }
@@ -895,18 +910,42 @@
       voting: {
         label: "Voting Transitions",
         transitions: {
-          masternodeVote: {
-            label: "Masternode Vote",
-            description: "Cast a vote as a masternode",
+          dpnsUsername: {
+            label: "DPNS Username",
+            description: "Cast a vote for a contested DPNS username (simplified)",
             inputs: [
-              { name: "proTxHash", type: "text", label: "ProTx Hash", required: true },
-              { name: "voteType", type: "select", label: "Vote Type", required: true,
+              { name: "contestedUsername", type: "text", label: "Contested Username", required: true,
+                placeholder: "Enter the contested username (e.g., 'myusername')" },
+              { name: "voteChoice", type: "select", label: "Vote Choice", required: true,
                 options: [
-                  { value: "dpnsName", label: "DPNS Name Vote" },
-                  { value: "contestedResource", label: "Contested Resource Vote" }
+                  { value: "abstain", label: "Abstain" },
+                  { value: "lock", label: "Lock (Give to no one)" },
+                  { value: "towardsIdentity", label: "Vote for Identity" }
                 ]
               },
-              { name: "voteData", type: "json", label: "Vote Data", required: true }
+              { name: "targetIdentity", type: "text", label: "Target Identity ID (if voting for identity)", required: false,
+                placeholder: "Identity ID to vote for",
+                dependsOn: { field: "voteChoice", value: "towardsIdentity" } }
+            ]
+          },
+          masternodeVote: {
+            label: "Contested Resource",
+            description: "Cast a vote for contested resources as a masternode",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true,
+                placeholder: "Contract ID containing the contested resource" },
+              { name: "fetchContestedResources", type: "button", label: "Get Contested Resources", action: "fetchContestedResources" },
+              { name: "contestedResourceDropdown", type: "dynamic", label: "Contested Resources" },
+              { name: "voteChoice", type: "select", label: "Vote Choice", required: true,
+                options: [
+                  { value: "abstain", label: "Abstain" },
+                  { value: "lock", label: "Lock (Give to no one)" },
+                  { value: "towardsIdentity", label: "Vote for Identity" }
+                ]
+              },
+              { name: "targetIdentity", type: "text", label: "Target Identity ID (if voting for identity)", required: false,
+                placeholder: "Identity ID to vote for",
+                dependsOn: { field: "voteChoice", value: "towardsIdentity" } }
             ]
           }
         }
@@ -1852,6 +1891,9 @@ ${indentStr}]`;
         checkbox.type = 'checkbox';
         checkbox.name = inputDef.name;
         checkbox.id = `input_${inputDef.name}`;
+        if (inputDef.defaultValue === true) {
+          checkbox.checked = true;
+        }
         
         const checkboxLabel = document.createElement('label');
         checkboxLabel.htmlFor = checkbox.id;
@@ -1931,7 +1973,7 @@ ${indentStr}]`;
       } else if (inputDef.type === 'json') {
         const textarea = document.createElement('textarea');
         textarea.name = inputDef.name;
-        textarea.placeholder = `Enter valid JSON for ${inputDef.label}`;
+        textarea.placeholder = inputDef.placeholder || `Enter valid JSON for ${inputDef.label}`;
         textarea.style.width = '100%';
         textarea.style.minHeight = '100px';
         textarea.style.padding = '8px';
@@ -2674,6 +2716,281 @@ ${indentStr}]`;
           // Pass the result object directly to displayResult
           displayResult(result);
           updateStatus('Credits withdrawn successfully', 'success');
+        } else if (transitionType === 'identityUpdate') {
+          // Handle identity update
+          
+          // Parse disable public keys
+          let disableKeys = null;
+          if (values.disablePublicKeys) {
+            disableKeys = values.disablePublicKeys.split(',')
+              .map(id => parseInt(id.trim()))
+              .filter(id => !isNaN(id));
+          }
+          
+          result = await sdk.identityUpdate(
+            identityId,
+            values.addPublicKeys || null, // JSON string
+            disableKeys,
+            privateKey
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Identity updated successfully', 'success');
+        } else if (transitionType === 'dpnsUsername') {
+          // Handle DPNS Username vote (simplified version of masternode vote)
+          
+          // Fixed DPNS contract ID
+          const dpnsContractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+          
+          // Build index values from username: ["dash", username]
+          const indexValues = ["dash", values.contestedUsername];
+          
+          // Prepare vote choice
+          let voteChoice = values.voteChoice;
+          if (voteChoice === 'towardsIdentity' && values.targetIdentity) {
+            voteChoice = `towardsIdentity:${values.targetIdentity}`;
+          } else if (voteChoice === 'towardsIdentity' && !values.targetIdentity) {
+            throw new Error('Target identity ID is required when voting for an identity');
+          }
+          
+          result = await sdk.masternodeVote(
+            identityId, // This is the masternode ProTxHash
+            dpnsContractId,
+            'domain', // DPNS document type
+            'parentNameAndLabel', // DPNS index name
+            JSON.stringify(indexValues),
+            voteChoice,
+            privateKey // This is the voting key
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('DPNS username vote submitted successfully', 'success');
+        } else if (transitionType === 'masternodeVote') {
+          // Handle masternode vote
+          
+          // Get the selected contested resource from the dropdown
+          const selectedResource = values.contestedResource;
+          if (!selectedResource) {
+            throw new Error('Please select a contested resource');
+          }
+          
+          // Parse the selected resource data
+          const resourceData = JSON.parse(selectedResource);
+          
+          // Get the index values from the separate input
+          const indexValuesInput = document.querySelector('textarea[name="indexValues"]');
+          let indexValues = [];
+          if (indexValuesInput && indexValuesInput.value) {
+            try {
+              indexValues = JSON.parse(indexValuesInput.value);
+            } catch (e) {
+              throw new Error('Invalid JSON in index values: ' + e.message);
+            }
+          }
+          
+          if (indexValues.length === 0) {
+            throw new Error('Please provide index values for the contested resource');
+          }
+          
+          // Prepare vote choice
+          let voteChoice = values.voteChoice;
+          if (voteChoice === 'towardsIdentity' && values.targetIdentity) {
+            voteChoice = `towardsIdentity:${values.targetIdentity}`;
+          } else if (voteChoice === 'towardsIdentity' && !values.targetIdentity) {
+            throw new Error('Target identity ID is required when voting for an identity');
+          }
+          
+          result = await sdk.masternodeVote(
+            identityId, // This is the masternode ProTxHash
+            resourceData.contractId,
+            resourceData.documentType,
+            resourceData.indexName,
+            JSON.stringify(indexValues),
+            voteChoice,
+            privateKey // This is the voting key
+          );
+          
+          // Pass the result object directly to displayResult
+          displayResult(result);
+          updateStatus('Vote submitted successfully', 'success');
+        } else if (transitionType === 'dataContractCreate') {
+          // Get document schemas JSON
+          const schemasTextarea = document.querySelector('textarea[name="documentSchemas"]');
+          if (!schemasTextarea || !schemasTextarea.value) {
+            throw new Error('Document Schemas JSON is required');
+          }
+          
+          let documentSchemas;
+          try {
+            documentSchemas = JSON.parse(schemasTextarea.value);
+          } catch (e) {
+            throw new Error(`Invalid JSON in Document Schemas field: ${e.message}`);
+          }
+          
+          // Get optional JSON fields
+          let groups = {};
+          let tokens = {};
+          
+          const groupsTextarea = document.querySelector('textarea[name="groups"]');
+          if (groupsTextarea && groupsTextarea.value) {
+            try {
+              groups = JSON.parse(groupsTextarea.value);
+            } catch (e) {
+              throw new Error(`Invalid JSON in Groups field: ${e.message}`);
+            }
+          }
+          
+          const tokensTextarea = document.querySelector('textarea[name="tokens"]');
+          if (tokensTextarea && tokensTextarea.value) {
+            try {
+              tokens = JSON.parse(tokensTextarea.value);
+            } catch (e) {
+              throw new Error(`Invalid JSON in Tokens field: ${e.message}`);
+            }
+          }
+          
+          // Get keywords
+          const keywords = values.keywords ? values.keywords.split(',').map(k => k.trim()).filter(k => k) : [];
+          
+          // Build the contract object
+          const contractData = {
+            "$format_version": "1",
+            "id": "11111111111111111111111111111111", // Will be replaced by SDK
+            "config": {
+              "$format_version": "1",
+              "canBeDeleted": values.canBeDeleted || false,
+              "readonly": values.readonly || false,
+              "keepsHistory": values.keepsHistory || false,
+              "documentsKeepHistoryContractDefault": values.documentsKeepHistoryContractDefault || false,
+              "documentsMutableContractDefault": values.documentsMutableContractDefault !== false, // Default true
+              "documentsCanBeDeletedContractDefault": values.documentsCanBeDeletedContractDefault !== false, // Default true
+              "requiresIdentityEncryptionBoundedKey": values.requiresIdentityEncryptionBoundedKey || null,
+              "requiresIdentityDecryptionBoundedKey": values.requiresIdentityDecryptionBoundedKey || null,
+              "sizedIntegerTypes": true
+            },
+            "version": 1,
+            "ownerId": identityId,
+            "schemaDefs": null,
+            "documentSchemas": documentSchemas,
+            "createdAt": null,
+            "updatedAt": null,
+            "createdAtBlockHeight": null,
+            "updatedAtBlockHeight": null,
+            "createdAtEpoch": null,
+            "updatedAtEpoch": null,
+            "groups": groups,
+            "tokens": tokens,
+            "keywords": keywords,
+            "description": values.description || null
+          };
+          
+          result = await sdk.contractCreate(
+            identityId,
+            JSON.stringify(contractData),
+            privateKey,
+            null  // Let SDK auto-detect the key
+          );
+          
+          displayResult(result);
+          updateStatus('Data contract created successfully', 'success');
+        } else if (transitionType === 'dataContractUpdate') {
+          // First fetch the existing contract
+          updateStatus(`Fetching contract ${values.dataContractId}...`, 'loading');
+          
+          let existingContract;
+          try {
+            const contractWasm = await data_contract_fetch(sdk, values.dataContractId);
+            // Convert to JSON to work with it - the method is toJSON not to_json
+            const contractJson = await contractWasm.toJSON();
+            existingContract = contractJson;
+          } catch (e) {
+            throw new Error(`Failed to fetch contract: ${e.message || e}`);
+          }
+          
+          // Parse new schemas, groups, and tokens if provided
+          let newSchemas = {};
+          let newGroups = {};
+          let newTokens = {};
+          
+          const newSchemasTextarea = document.querySelector('textarea[name="newDocumentSchemas"]');
+          if (newSchemasTextarea && newSchemasTextarea.value) {
+            try {
+              newSchemas = JSON.parse(newSchemasTextarea.value);
+            } catch (e) {
+              throw new Error(`Invalid JSON in New Document Schemas field: ${e.message}`);
+            }
+          }
+          
+          const newGroupsTextarea = document.querySelector('textarea[name="newGroups"]');
+          if (newGroupsTextarea && newGroupsTextarea.value) {
+            try {
+              newGroups = JSON.parse(newGroupsTextarea.value);
+            } catch (e) {
+              throw new Error(`Invalid JSON in New Groups field: ${e.message}`);
+            }
+          }
+          
+          const newTokensTextarea = document.querySelector('textarea[name="newTokens"]');
+          if (newTokensTextarea && newTokensTextarea.value) {
+            try {
+              newTokens = JSON.parse(newTokensTextarea.value);
+            } catch (e) {
+              throw new Error(`Invalid JSON in New Tokens field: ${e.message}`);
+            }
+          }
+          
+          // Check if anything is being added
+          if (Object.keys(newSchemas).length === 0 && 
+              Object.keys(newGroups).length === 0 && 
+              Object.keys(newTokens).length === 0) {
+            throw new Error('No changes specified. Please add at least one new document schema, group, or token.');
+          }
+          
+          // Merge new items with existing contract
+          const updatedContract = {
+            ...existingContract,
+            version: existingContract.version + 1,
+            ownerId: identityId,
+            documentSchemas: {
+              ...existingContract.documentSchemas,
+              ...newSchemas
+            },
+            groups: {
+              ...existingContract.groups,
+              ...newGroups
+            },
+            tokens: {
+              ...existingContract.tokens,
+              ...newTokens
+            }
+          };
+          
+          // Show what's being added
+          const additions = [];
+          if (Object.keys(newSchemas).length > 0) {
+            additions.push(`${Object.keys(newSchemas).length} document type(s)`);
+          }
+          if (Object.keys(newGroups).length > 0) {
+            additions.push(`${Object.keys(newGroups).length} group(s)`);
+          }
+          if (Object.keys(newTokens).length > 0) {
+            additions.push(`${Object.keys(newTokens).length} token(s)`);
+          }
+          
+          updateStatus(`Adding ${additions.join(', ')} to contract...`, 'loading');
+          
+          result = await sdk.contractUpdate(
+            values.dataContractId,
+            identityId,
+            JSON.stringify(updatedContract),
+            privateKey,
+            null  // Let SDK auto-detect the key
+          );
+          
+          displayResult(result);
+          updateStatus('Data contract updated successfully', 'success');
         } else {
           // For other transitions not yet implemented
           const transitionData = {
@@ -2839,6 +3156,46 @@ ${indentStr}]`;
         
         // Update button text based on operation type
         executeButton.textContent = operationType === 'transitions' ? 'Execute' : 'Execute Query';
+        
+        // Update authentication labels for masternode vote
+        if (operationType === 'transitions' && (queryType === 'masternodeVote' || queryType === 'dpnsUsername')) {
+          const identityIdLabel = document.querySelector('#authenticationInputs label[for="identityId"]');
+          const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
+          const identityIdInput = document.getElementById('identityId');
+          const privateKeyInput = document.getElementById('privateKey');
+          
+          if (identityIdLabel) {
+            identityIdLabel.textContent = 'ProTxHash (hex or Base58)';
+          }
+          if (privateKeyLabel) {
+            privateKeyLabel.textContent = 'Voting Private Key (WIF or hex)';
+          }
+          if (identityIdInput) {
+            identityIdInput.placeholder = 'Enter your masternode ProTxHash';
+          }
+          if (privateKeyInput) {
+            privateKeyInput.placeholder = 'Enter your voting private key (WIF or 32-byte hex)';
+          }
+        } else if (operationType === 'transitions') {
+          // Reset to default labels for other transitions
+          const identityIdLabel = document.querySelector('#authenticationInputs label[for="identityId"]');
+          const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
+          const identityIdInput = document.getElementById('identityId');
+          const privateKeyInput = document.getElementById('privateKey');
+          
+          if (identityIdLabel) {
+            identityIdLabel.textContent = 'Identity ID';
+          }
+          if (privateKeyLabel) {
+            privateKeyLabel.textContent = 'Private Key (WIF or hex)';
+          }
+          if (identityIdInput) {
+            identityIdInput.placeholder = 'Enter identity ID';
+          }
+          if (privateKeyInput) {
+            privateKeyInput.placeholder = 'Enter private key (WIF or 32-byte hex)';
+          }
+        }
       } else {
         queryInputs.style.display = 'none';
         executeButton.style.display = 'none';
@@ -2973,6 +3330,157 @@ ${indentStr}]`;
         
       } catch (error) {
         console.error('Error fetching schema:', error);
+        updateStatus(`Error: ${error.message || error}`, 'error');
+      }
+    };
+    
+    // Fetch contested resources from a contract
+    window.fetchContestedResources = async function() {
+      const contractId = document.querySelector('input[name="contractId"]')?.value;
+      
+      if (!contractId) {
+        updateStatus('Please enter a Data Contract ID', 'error');
+        return;
+      }
+      
+      try {
+        updateStatus('Fetching data contract and contested resources...', 'loading');
+        
+        // First fetch the data contract to identify contested document types
+        const contract = await data_contract_fetch(sdk, contractId);
+        if (!contract) {
+          updateStatus('Data contract not found', 'error');
+          return;
+        }
+        
+        const contractJson = contract.toJSON();
+        const documentSchemas = contractJson.documentSchemas || {};
+        
+        // Find document types with contested unique indexes
+        const contestedResources = [];
+        
+        for (const [documentType, schema] of Object.entries(documentSchemas)) {
+          const indexes = schema.indices || [];
+          
+          for (const index of indexes) {
+            // Check if this is a contested unique index
+            // contested can be either true or an object with contest rules
+            if (index.unique && index.contested) {
+              const indexName = index.name;
+              const indexProperties = index.properties || [];
+              
+              // Get contest description if available
+              let description = '';
+              if (typeof index.contested === 'object' && index.contested.description) {
+                description = ` - ${index.contested.description}`;
+              }
+              
+              contestedResources.push({
+                contractId: contractId,
+                documentType: documentType,
+                indexName: indexName,
+                indexProperties: indexProperties,
+                contestedRules: index.contested,
+                displayName: `${documentType} - ${indexName}${description}`
+              });
+            }
+          }
+        }
+        
+        // Populate the dropdown
+        const container = document.getElementById('dynamic_contestedResourceDropdown');
+        if (!container) {
+          console.error('Contested resource dropdown container not found');
+          return;
+        }
+        
+        container.parentElement.style.display = 'block';
+        container.innerHTML = '';
+        
+        if (contestedResources.length === 0) {
+          const noResourcesMsg = document.createElement('p');
+          noResourcesMsg.textContent = 'No contested resources found in this contract';
+          noResourcesMsg.style.color = '#666';
+          container.appendChild(noResourcesMsg);
+          updateStatus('No contested resources found', 'warning');
+          return;
+        }
+        
+        // Create dropdown
+        const selectGroup = document.createElement('div');
+        selectGroup.className = 'input-group';
+        
+        const label = document.createElement('label');
+        label.textContent = 'Select Contested Resource:';
+        label.style.display = 'block';
+        label.style.marginBottom = '5px';
+        selectGroup.appendChild(label);
+        
+        const select = document.createElement('select');
+        select.name = 'contestedResource';
+        select.style.width = '100%';
+        select.style.marginBottom = '10px';
+        
+        // Add placeholder option
+        const placeholderOption = document.createElement('option');
+        placeholderOption.value = '';
+        placeholderOption.textContent = '-- Select a contested resource --';
+        select.appendChild(placeholderOption);
+        
+        // Add contested resources
+        contestedResources.forEach(resource => {
+          const option = document.createElement('option');
+          option.value = JSON.stringify({
+            contractId: resource.contractId,
+            documentType: resource.documentType,
+            indexName: resource.indexName,
+            indexValues: [] // This will need to be filled by the user
+          });
+          option.textContent = resource.displayName;
+          select.appendChild(option);
+        });
+        
+        selectGroup.appendChild(select);
+        container.appendChild(selectGroup);
+        
+        // Add index values input when a resource is selected
+        select.addEventListener('change', (e) => {
+          const existingValuesInput = container.querySelector('.index-values-group');
+          if (existingValuesInput) {
+            existingValuesInput.remove();
+          }
+          
+          if (e.target.value) {
+            const resource = JSON.parse(e.target.value);
+            const valuesGroup = document.createElement('div');
+            valuesGroup.className = 'input-group index-values-group';
+            valuesGroup.style.marginTop = '10px';
+            
+            const valuesLabel = document.createElement('label');
+            valuesLabel.textContent = 'Index Values (JSON array):';
+            valuesLabel.style.display = 'block';
+            valuesLabel.style.marginBottom = '5px';
+            valuesGroup.appendChild(valuesLabel);
+            
+            const valuesInput = document.createElement('textarea');
+            valuesInput.name = 'indexValues';
+            valuesInput.placeholder = 'e.g., ["dash", "username"]';
+            valuesInput.rows = 2;
+            valuesInput.style.width = '100%';
+            valuesInput.dataset.json = 'true';
+            
+            // Store the index values without modifying the select value
+            valuesInput.dataset.resourceData = select.value;
+            
+            valuesGroup.appendChild(valuesInput);
+            container.appendChild(valuesGroup);
+          }
+        });
+        
+        updateStatus(`Found ${contestedResources.length} contested resource type(s)`, 'success');
+        
+      } catch (error) {
+        console.error('Error fetching contested resources:', error);
         updateStatus(`Error: ${error.message || error}`, 'error');
       }
     };
