@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 use dash_sdk::platform::Fetch;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use serde_json::Value as JsonValue;
 use drive::query::{WhereClause, WhereOperator, OrderClause};
@@ -367,4 +368,85 @@ pub async fn get_document(
         },
         None => Ok(JsValue::NULL),
     }
+}
+
+#[wasm_bindgen]
+pub async fn get_dpns_username(
+    sdk: &WasmSdk,
+    identity_id: &str,
+) -> Result<JsValue, JsError> {
+    use dash_sdk::platform::documents::document_query::DocumentQuery;
+    use dash_sdk::platform::FetchMany;
+    use drive_proof_verifier::types::Documents;
+    
+    // DPNS contract ID on testnet
+    const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+    const DPNS_DOCUMENT_TYPE: &str = "domain";
+    
+    // Parse identity ID
+    let identity_id_parsed = Identifier::from_string(
+        identity_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Parse DPNS contract ID
+    let contract_id = Identifier::from_string(
+        DPNS_CONTRACT_ID,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Create document query for DPNS domains owned by this identity
+    let mut query = DocumentQuery::new_with_data_contract_id(
+        sdk.as_ref(),
+        contract_id,
+        DPNS_DOCUMENT_TYPE,
+    )
+    .await
+    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    
+    // Query by records.identity using the identityId index
+    let where_clause = WhereClause {
+        field: "records.identity".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(identity_id_parsed.to_buffer()),
+    };
+    
+    query = query.with_where(where_clause);
+    query.limit = 1; // We only need the first result
+    
+    // Execute query
+    let documents_result: Documents = Document::fetch_many(sdk.as_ref(), query)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch DPNS documents: {}", e)))?;
+    
+    // Process the result
+    for (_, doc_opt) in documents_result {
+        if let Some(doc) = doc_opt {
+            // Extract the username from the document
+            let properties = doc.properties();
+            
+            let label = properties.get("label")
+                .and_then(|v| match v {
+                    Value::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .ok_or_else(|| JsError::new("DPNS document missing label field"))?;
+            
+            let parent_domain = properties.get("normalizedParentDomainName")
+                .and_then(|v| match v {
+                    Value::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .ok_or_else(|| JsError::new("DPNS document missing normalizedParentDomainName field"))?;
+            
+            // Construct the full username
+            let username = format!("{}.{}", label, parent_domain);
+            
+            // Return the username as a JSON string
+            return Ok(JsValue::from_str(&username));
+        }
+    }
+    
+    // No DPNS name found for this identity
+    Ok(JsValue::NULL)
 }

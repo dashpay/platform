@@ -827,6 +827,7 @@
       // Document queries
       get_documents,
       get_document,
+      get_dpns_username,
       // Protocol/Version queries
       get_protocol_version_upgrade_state,
       get_protocol_version_upgrade_vote_status,
@@ -1328,6 +1329,13 @@
               { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true }
+            ]
+          },
+          getDpnsUsername: {
+            label: "Get DPNS Username",
+            description: "Get DPNS username for an identity",
+            inputs: [
+              { name: "identityId", type: "text", label: "Identity ID", required: true }
             ]
           }
         }
@@ -2763,11 +2771,9 @@ ${indentStr}]`;
         return;
       }
 
-      const preloader = document.getElementById('preloader');
       const button = document.getElementById('executeQuery');
       const originalButtonText = button.textContent;
 
-      preloader.style.display = 'block';
       button.disabled = true;
       button.textContent = 'Executing...';
       updateStatus(`Executing ${queryDef.label}...`, 'loading');
@@ -2878,6 +2884,12 @@ ${indentStr}]`;
             values.documentId
           );
           // Result is already a JS object from serde_wasm_bindgen
+        } else if (queryType === 'getDpnsUsername') {
+          result = await get_dpns_username(
+            sdk,
+            values.identityId
+          );
+          // Result is the username string or null
         }
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
@@ -3141,7 +3153,6 @@ ${indentStr}]`;
         displayResult(`Error executing query: ${error.message || error}`, true);
         updateStatus(`Error: ${error.message || error}`, 'error');
       } finally {
-        preloader.style.display = 'none';
         button.disabled = false;
         button.textContent = originalButtonText;
       }
@@ -4357,27 +4368,64 @@ ${indentStr}]`;
         const preloader = document.getElementById('preloader');
         preloader.style.display = 'block';
         
-        // Simulate progress during WASM loading
-        updateProgress(10, 'Loading WASM module...');
+        // Start with initial progress
+        updateProgress(5, 'Downloading WASM module...');
         
         const initStart = performance.now();
         
-        // Create a progress simulation while loading
-        let progress = 10;
-        const progressInterval = setInterval(() => {
-          if (progress < 90) {
-            progress += Math.random() * 15;
-            progress = Math.min(progress, 90);
-            updateProgress(Math.floor(progress), 'Loading WASM module...');
-          }
-        }, 200);
-        
         try {
-          await init();
-          clearInterval(progressInterval);
-          updateProgress(95, 'WASM module loaded, initializing SDK...');
+          // First, fetch the WASM file with progress tracking
+          const wasmUrl = './pkg/wasm_sdk_bg.wasm';
+          const response = await fetch(wasmUrl);
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch WASM: ${response.status} ${response.statusText}`);
+          }
+          
+          const contentLength = response.headers.get('content-length');
+          let wasmBytes;
+          
+          if (contentLength) {
+            // We have content length, can show accurate progress
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+            
+            const reader = response.body.getReader();
+            const chunks = [];
+            
+            while (true) {
+              const { done, value } = await reader.read();
+              
+              if (done) break;
+              
+              chunks.push(value);
+              loaded += value.byteLength;
+              
+              const percentComplete = Math.round((loaded / total) * 85); // 0-85% for download
+              updateProgress(5 + percentComplete, `Downloading WASM module... ${(loaded / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB`);
+            }
+            
+            // Combine all chunks into a single array
+            const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+            wasmBytes = new Uint8Array(totalLength);
+            let position = 0;
+            for (const chunk of chunks) {
+              wasmBytes.set(chunk, position);
+              position += chunk.length;
+            }
+          } else {
+            // No content length, just download without accurate progress
+            updateProgress(50, 'Downloading WASM module...');
+            wasmBytes = new Uint8Array(await response.arrayBuffer());
+          }
+          
+          updateProgress(92, 'Compiling WASM module...');
+          
+          // Initialize with the downloaded bytes
+          await init(wasmBytes);
+          
+          updateProgress(98, 'WASM module loaded, initializing SDK...');
         } catch (error) {
-          clearInterval(progressInterval);
           throw error;
         }
         
