@@ -7,6 +7,8 @@ use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use serde_json::Value as JsonValue;
+use drive::query::{WhereClause, WhereOperator, OrderClause};
+use dash_sdk::dpp::platform_value::{Value, platform_value};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -78,6 +80,119 @@ impl DocumentResponse {
     }
 }
 
+/// Parse JSON where clause into WhereClause
+fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, JsError> {
+    let clause_array = json_clause.as_array()
+        .ok_or_else(|| JsError::new("where clause must be an array"))?;
+    
+    if clause_array.len() != 3 {
+        return Err(JsError::new("where clause must have exactly 3 elements: [field, operator, value]"));
+    }
+    
+    let field = clause_array[0].as_str()
+        .ok_or_else(|| JsError::new("where clause field must be a string"))?
+        .to_string();
+    
+    let operator_str = clause_array[1].as_str()
+        .ok_or_else(|| JsError::new("where clause operator must be a string"))?;
+    
+    let operator = match operator_str {
+        "==" | "=" => WhereOperator::Equal,
+        ">" => WhereOperator::GreaterThan,
+        ">=" => WhereOperator::GreaterThanOrEquals,
+        "<" => WhereOperator::LessThan,
+        "<=" => WhereOperator::LessThanOrEquals,
+        "Between" | "between" => WhereOperator::Between,
+        "BetweenExcludeBounds" => WhereOperator::BetweenExcludeBounds,
+        "BetweenExcludeLeft" => WhereOperator::BetweenExcludeLeft,
+        "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
+        "in" | "In" => WhereOperator::In,
+        "startsWith" | "StartsWith" => WhereOperator::StartsWith,
+        _ => return Err(JsError::new(&format!("Unknown operator: {}", operator_str))),
+    };
+    
+    // Convert JSON value to platform Value
+    let value = json_to_platform_value(&clause_array[2])?;
+    
+    Ok(WhereClause {
+        field,
+        operator,
+        value,
+    })
+}
+
+/// Parse JSON order by clause into OrderClause
+fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, JsError> {
+    let clause_array = json_clause.as_array()
+        .ok_or_else(|| JsError::new("order by clause must be an array"))?;
+    
+    if clause_array.len() != 2 {
+        return Err(JsError::new("order by clause must have exactly 2 elements: [field, direction]"));
+    }
+    
+    let field = clause_array[0].as_str()
+        .ok_or_else(|| JsError::new("order by field must be a string"))?
+        .to_string();
+    
+    let direction = clause_array[1].as_str()
+        .ok_or_else(|| JsError::new("order by direction must be a string"))?;
+    
+    let ascending = match direction {
+        "asc" => true,
+        "desc" => false,
+        _ => return Err(JsError::new("order by direction must be 'asc' or 'desc'")),
+    };
+    
+    Ok(OrderClause {
+        field,
+        ascending,
+    })
+}
+
+/// Convert JSON value to platform Value
+fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, JsError> {
+    match json_val {
+        JsonValue::Null => Ok(Value::Null),
+        JsonValue::Bool(b) => Ok(Value::Bool(*b)),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::I64(i))
+            } else if let Some(u) = n.as_u64() {
+                Ok(Value::U64(u))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::Float(f))
+            } else {
+                Err(JsError::new("Unsupported number type"))
+            }
+        },
+        JsonValue::String(s) => {
+            // Check if it's an identifier (base58 encoded)
+            if s.len() == 44 && s.chars().all(|c| c.is_alphanumeric()) {
+                // Try to parse as identifier
+                match Identifier::from_string(s, dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58) {
+                    Ok(id) => Ok(platform_value!(id)),
+                    Err(_) => Ok(Value::Text(s.clone())),
+                }
+            } else {
+                Ok(Value::Text(s.clone()))
+            }
+        },
+        JsonValue::Array(arr) => {
+            let values: Result<Vec<Value>, JsError> = arr.iter()
+                .map(json_to_platform_value)
+                .collect();
+            Ok(Value::Array(values?))
+        },
+        JsonValue::Object(obj) => {
+            let mut map = Vec::new();
+            for (key, val) in obj {
+                map.push((Value::Text(key.clone()), json_to_platform_value(val)?));
+            }
+            Ok(Value::Map(map))
+        },
+    }
+}
+
 
 #[wasm_bindgen]
 pub async fn get_documents(
@@ -135,13 +250,34 @@ pub async fn get_documents(
         ));
     }
     
-    // Note: where_clause and order_by parsing would require WhereClause and OrderClause
-    // which are not fully exposed in the SDK. For now, we ignore these parameters.
-    if where_clause.is_some() || order_by.is_some() {
-        // Log warning about unsupported features
-        web_sys::console::warn_1(&JsValue::from_str(
-            "Warning: where and orderBy clauses are not yet fully supported in the WASM SDK"
-        ));
+    // Parse and apply where clauses
+    if let Some(where_json) = where_clause {
+        let json_value: JsonValue = serde_json::from_str(&where_json)
+            .map_err(|e| JsError::new(&format!("Failed to parse where clause JSON: {}", e)))?;
+        
+        // Expect an array of where clauses
+        let where_array = json_value.as_array()
+            .ok_or_else(|| JsError::new("where clause must be an array of clauses"))?;
+        
+        for clause_json in where_array {
+            let where_clause = parse_where_clause(clause_json)?;
+            query = query.with_where(where_clause);
+        }
+    }
+    
+    // Parse and apply order by clauses
+    if let Some(order_json) = order_by {
+        let json_value: JsonValue = serde_json::from_str(&order_json)
+            .map_err(|e| JsError::new(&format!("Failed to parse order by JSON: {}", e)))?;
+        
+        // Expect an array of order clauses
+        let order_array = json_value.as_array()
+            .ok_or_else(|| JsError::new("order by must be an array of clauses"))?;
+        
+        for clause_json in order_array {
+            let order_clause = parse_order_clause(clause_json)?;
+            query = query.with_order_by(order_clause);
+        }
     }
     
     // Execute query

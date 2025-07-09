@@ -47,3 +47,36 @@ Run `./build.sh` to build the WASM module. Output goes to `pkg/` directory.
 1. **"time not implemented on this platform"** - Fixed by using `js_sys::Date::now()` in WASM builds
 2. **Import errors** - Token functions are methods on WasmSdk, not standalone functions
 3. **Network timeouts** - Usually means invalid parameters or identities, NOT network issues
+
+## Query Support
+
+The WASM SDK now fully supports where and orderBy clauses for document queries:
+
+### Where Clauses
+- Format: JSON array of clause arrays `[[field, operator, value], ...]`
+- Supported operators:
+  - `==` or `=` - Equal
+  - `>` - Greater than
+  - `>=` - Greater than or equals
+  - `<` - Less than
+  - `<=` - Less than or equals
+  - `in` or `In` - In array
+  - `startsWith` or `StartsWith` - String prefix match
+  - `Between`, `BetweenExcludeBounds`, `BetweenExcludeLeft`, `BetweenExcludeRight` - Range operators
+
+### Order By Clauses
+- Format: JSON array of clause arrays `[[field, direction], ...]`
+- Direction: `"asc"` or `"desc"`
+
+### Example
+```javascript
+const whereClause = JSON.stringify([
+    ["$ownerId", ">", "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"],
+    ["age", ">=", 18]
+]);
+
+const orderBy = JSON.stringify([
+    ["$createdAt", "desc"],
+    ["name", "asc"]
+]);
+```

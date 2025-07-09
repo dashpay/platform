@@ -17,11 +17,45 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.9);
       color: white;
-      padding: 20px;
-      border-radius: 5px;
+      padding: 30px;
+      border-radius: 8px;
       z-index: 1000;
+      min-width: 300px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .preloader-content {
+      text-align: center;
+    }
+
+    .preloader-text {
+      font-size: 16px;
+      margin-bottom: 15px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50, #45a049);
+      width: 0%;
+      transition: width 0.3s ease;
+      border-radius: 10px;
+    }
+
+    .progress-percent {
+      font-size: 14px;
+      font-weight: bold;
+      color: #4CAF50;
     }
 
     .app-container {
@@ -420,17 +454,161 @@
     }
 
     .operator-select {
-      width: 120px;
+      width: 80px;
+      background-color: white;
+      color: #333;
+      padding: 8px 35px 8px 10px;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 20px;
+    }
+    
+    .operator-select.has-value {
+      background-image: none;
+      padding-right: 10px;
+    }
+    
+    .operator-select option {
+      background-color: white;
+      color: #333;
+    }
+    
+    .operator-select option:checked {
+      background-color: #007bff;
+      color: white;
     }
 
     .where-value-input {
       flex: 1;
+      min-width: 200px;
+    }
+
+    /* New styles for improved where clause UI */
+    .index-property-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 0.85em;
+      margin-left: 5px;
+      font-weight: 500;
+    }
+
+    .index-property-first {
+      background-color: #4caf50;
+      color: white;
+    }
+
+    .index-property-second {
+      background-color: #2196f3;
+      color: white;
+    }
+
+    .index-property-third {
+      background-color: #ff9800;
+      color: white;
+    }
+
+    .compound-index-warning {
+      background-color: #fff3cd;
+      border: 1px solid #ffeaa7;
+      color: #856404;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 0.9em;
+    }
+
+    .query-preview {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 15px;
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+
+    .query-preview h5 {
+      margin-top: 0;
+      color: #333;
+    }
+
+    .operator-help {
+      font-size: 0.85em;
+      color: #666;
+      margin-left: 5px;
+      cursor: help;
+    }
+
+    .range-group {
+      border: 1px solid #e0e0e0;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      background-color: #f9f9f9;
+    }
+
+    .range-group-header {
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #1976d2;
+    }
+
+    .add-range-button {
+      padding: 4px 12px;
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 0.85em;
+      margin-left: 10px;
+    }
+
+    .add-range-button:hover {
+      background-color: #1565c0;
+    }
+
+    .between-info {
+      background-color: #e3f2fd;
+      padding: 8px;
+      border-radius: 3px;
+      margin-top: 8px;
+      font-size: 0.85em;
+      color: #1565c0;
+    }
+
+    .validation-error {
+      color: #d32f2f;
+      font-size: 0.85em;
+      margin-top: 5px;
+    }
+
+    .field-type-indicator {
+      font-size: 0.8em;
+      color: #666;
+      margin-left: 5px;
+      font-style: italic;
     }
   </style>
 </head>
 
 <body>
-  <div id="preloader">Loading...</div>
+  <div id="preloader">
+    <div class="preloader-content">
+      <div class="preloader-text">Loading WASM module...</div>
+      <div class="preloader-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-percent" id="progressPercent">0%</div>
+      </div>
+    </div>
+  </div>
   
   <div class="app-container">
     <div class="sidebar">
@@ -1511,7 +1689,11 @@
         // Note: The serialized format uses 'documentSchemas' while internal representation might use 'documentTypes'
         const docType = contractData.documentSchemas?.[documentType];
         if (!docType) {
-          throw new Error(`Document type '${documentType}' not found in contract`);
+          const availableTypes = Object.keys(contractData.documentSchemas || {});
+          const availableTypesStr = availableTypes.length > 0 
+            ? `Available document types: ${availableTypes.join(', ')}` 
+            : 'No document types found in contract';
+          throw new Error(`Document type '${documentType}' not found in contract. ${availableTypesStr}`);
         }
 
         // Extract indexes
@@ -1554,6 +1736,10 @@
       }
     };
 
+    // Track current index properties for validation
+    let currentIndexProperties = [];
+    let rangeFields = new Map(); // Track fields with range operators
+
     // Function to populate where and order by fields based on selected index
     function populateIndexFields(index, docType) {
       const whereContainer = document.getElementById('dynamic_whereFields');
@@ -1561,15 +1747,26 @@
       
       if (!whereContainer || !orderByContainer) return;
 
-      // Clear existing fields
+      // Clear existing fields and reset tracking
       whereContainer.innerHTML = '<h5>Where Conditions</h5>';
       orderByContainer.innerHTML = '<h5>Order By</h5>';
+      currentIndexProperties = [];
+      rangeFields.clear();
+
+      // Add compound index info
+      const indexInfo = document.createElement('div');
+      indexInfo.className = 'compound-index-warning';
+      indexInfo.innerHTML = '<strong>Compound Index Rules:</strong><br>' +
+        '• Range queries on non-first properties require equality on all preceding properties<br>' +
+        '• You can use up to 2 range clauses on the same field (they will be combined into a Between operator)<br>' +
+        '• Only one IN clause is allowed per query';
+      whereContainer.appendChild(indexInfo);
 
       // Extract properties from index
       const indexProperties = index.properties || [];
       
       // Create where fields for each indexed property
-      indexProperties.forEach(prop => {
+      indexProperties.forEach((prop, propIndex) => {
         // Properties are objects like {"records.identity": "asc"}
         let propName;
         let sortOrder;
@@ -1589,74 +1786,66 @@
         
         if (!propName) return;
         
-        // Where field
-        const whereGroup = document.createElement('div');
-        whereGroup.className = 'field-group where-field-group';
+        // Track property order
+        currentIndexProperties.push(propName);
         
-        const whereLabel = document.createElement('label');
-        whereLabel.textContent = `${propName}:`;
-        whereLabel.style.minWidth = '200px';
+        // Create range group container
+        const rangeGroup = document.createElement('div');
+        rangeGroup.className = 'range-group';
+        rangeGroup.dataset.fieldName = propName;
+        rangeGroup.dataset.fieldIndex = propIndex;
         
-        // Operator dropdown
-        const operatorSelect = document.createElement('select');
-        operatorSelect.name = `whereOp_${propName}`;
-        operatorSelect.className = 'operator-select';
+        // Range group header
+        const rangeHeader = document.createElement('div');
+        rangeHeader.className = 'range-group-header';
         
-        // Determine property type from schema if available
+        // Add position badge
+        const positionBadge = document.createElement('span');
+        positionBadge.className = `index-property-badge ${
+          propIndex === 0 ? 'index-property-first' : 
+          propIndex === 1 ? 'index-property-second' : 
+          'index-property-third'
+        }`;
+        positionBadge.textContent = `Position ${propIndex + 1}`;
+        
+        rangeHeader.innerHTML = `${propName} `;
+        rangeHeader.appendChild(positionBadge);
+        
+        // Determine property type from schema
         const propDef = docType.properties?.[propName] || docType.properties?.[propName.split('.')[0]];
-        const isStringType = propDef?.type === 'string' || propName.includes('label') || propName.includes('name');
-        const isNumericType = propDef?.type === 'number' || propDef?.type === 'integer';
-        const isArrayType = propDef?.type === 'array' || propDef?.byteArray;
+        const isSpecialField = propName.startsWith('$');
+        let fieldType = 'unknown';
         
-        // Add common operators
-        const operators = [
-          { value: '==', label: '==' },
-          { value: '!=', label: '!=' },
-        ];
-        
-        if (isStringType) {
-          operators.push(
-            { value: 'startsWith', label: 'starts with' },
-            { value: 'endsWith', label: 'ends with' },
-            { value: 'contains', label: 'contains' }
-          );
+        if (isSpecialField) {
+          if (propName === '$id' || propName === '$ownerId') {
+            fieldType = 'identifier';
+          } else if (propName === '$createdAt' || propName === '$updatedAt') {
+            fieldType = 'date';
+          } else if (propName === '$revision') {
+            fieldType = 'integer';
+          }
+        } else if (propDef) {
+          fieldType = propDef.type || 'unknown';
         }
         
-        if (isNumericType || isArrayType) {
-          operators.push(
-            { value: '>', label: '>' },
-            { value: '>=', label: '>=' },
-            { value: '<', label: '<' },
-            { value: '<=', label: '<=' }
-          );
-        }
+        const isStringType = fieldType === 'string';
+        const isNumericType = fieldType === 'number' || fieldType === 'integer' || fieldType === 'date';
+        const isDateType = fieldType === 'date';
+        const isIdentifierType = fieldType === 'identifier' || propDef?.byteArray;
         
-        if (isArrayType) {
-          operators.push(
-            { value: 'in', label: 'in' },
-            { value: 'contains', label: 'contains' },
-            { value: 'elementMatch', label: 'element match' }
-          );
-        }
+        // Add field type indicator
+        const typeIndicator = document.createElement('span');
+        typeIndicator.className = 'field-type-indicator';
+        typeIndicator.textContent = `(${fieldType})`;
+        rangeHeader.appendChild(typeIndicator);
         
-        operators.forEach(op => {
-          const option = document.createElement('option');
-          option.value = op.value;
-          option.textContent = op.label;
-          operatorSelect.appendChild(option);
-        });
+        rangeGroup.appendChild(rangeHeader);
         
-        // Value input
-        const whereInput = document.createElement('input');
-        whereInput.type = 'text';
-        whereInput.name = `where_${propName}`;
-        whereInput.placeholder = `Value`;
-        whereInput.className = 'where-value-input';
+        // Create first where clause
+        createWhereClause(rangeGroup, propName, propIndex, fieldType, isStringType, isNumericType, isIdentifierType, true);
         
-        whereGroup.appendChild(whereLabel);
-        whereGroup.appendChild(operatorSelect);
-        whereGroup.appendChild(whereInput);
-        whereContainer.appendChild(whereGroup);
+        // Show the range group
+        whereContainer.appendChild(rangeGroup);
 
         // Order by field (only if the property has a sort order)
         if (sortOrder) {
@@ -1690,9 +1879,412 @@
         }
       });
 
+      // Add query preview section
+      const queryPreview = document.createElement('div');
+      queryPreview.className = 'query-preview';
+      queryPreview.innerHTML = '<h5>Query Preview</h5><div id="queryPreviewContent">Fill in fields to see query preview</div>';
+      whereContainer.appendChild(queryPreview);
+
       // Show the containers
       whereContainer.parentElement.style.display = 'block';
       orderByContainer.parentElement.style.display = 'block';
+      
+      // Add change listeners for live preview
+      addQueryPreviewListeners();
+    }
+
+    // Helper function to create a where clause input group
+    function createWhereClause(container, propName, propIndex, fieldType, isStringType, isNumericType, isIdentifierType, isFirst) {
+      const whereGroup = document.createElement('div');
+      whereGroup.className = 'field-group where-field-group';
+      whereGroup.dataset.clauseNumber = isFirst ? '1' : '2';
+      
+      const whereLabel = document.createElement('label');
+      whereLabel.textContent = isFirst ? 'Where:' : 'And:';
+      whereLabel.style.minWidth = '60px';
+      
+      // Operator dropdown
+      const operatorSelect = document.createElement('select');
+      operatorSelect.name = isFirst ? `whereOp_${propName}` : `whereOp2_${propName}`;
+      operatorSelect.className = 'operator-select';
+      
+      // Add empty option
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '';
+      operatorSelect.appendChild(emptyOption);
+      
+      // Add valid Dash Platform operators
+      const operators = [
+        { value: '==', label: '==', types: ['all'] },
+        { value: '>', label: '>', types: ['all'] },
+        { value: '>=', label: '>=', types: ['all'] },
+        { value: '<', label: '<', types: ['all'] },
+        { value: '<=', label: '<=', types: ['all'] }
+      ];
+      
+      // startsWith for strings and binary/identifier types
+      if (isStringType || isIdentifierType) {
+        operators.push(
+          { value: 'startsWith', label: 'startsWith', types: ['string', 'identifier'] }
+        );
+      }
+      
+      // IN operator for all types
+      operators.push(
+        { value: 'in', label: 'in', types: ['all'] }
+      );
+      
+      operators.forEach(op => {
+        const option = document.createElement('option');
+        option.value = op.value;
+        option.textContent = op.label;
+        operatorSelect.appendChild(option);
+      });
+      
+      // Value input
+      const whereInput = document.createElement('input');
+      whereInput.type = 'text';
+      whereInput.name = isFirst ? `where_${propName}` : `where2_${propName}`;
+      whereInput.placeholder = `Enter value`;
+      whereInput.className = 'where-value-input';
+      
+      // Add operator change handler
+      operatorSelect.addEventListener('change', function() {
+        handleOperatorChange(propName, propIndex, this.value, isFirst);
+        
+        // Toggle has-value class
+        if (this.value) {
+          this.classList.add('has-value');
+        } else {
+          this.classList.remove('has-value');
+        }
+        
+        // Update placeholder based on operator
+        if (this.value === 'in') {
+          whereInput.placeholder = 'Enter values (comma-separated)';
+        } else if (this.value === 'startsWith') {
+          whereInput.placeholder = 'Enter prefix';
+        } else {
+          whereInput.placeholder = 'Enter value';
+        }
+      });
+      
+      whereGroup.appendChild(whereLabel);
+      whereGroup.appendChild(operatorSelect);
+      whereGroup.appendChild(whereInput);
+      
+      // Add second range button for first clause only
+      if (isFirst && isNumericType) {
+        const addRangeBtn = document.createElement('button');
+        addRangeBtn.className = 'add-range-button';
+        addRangeBtn.textContent = '+ Add Range';
+        addRangeBtn.style.display = 'none';
+        addRangeBtn.onclick = function() {
+          addSecondRangeClause(container, propName, propIndex, fieldType, isStringType, isNumericType, isIdentifierType);
+        };
+        whereGroup.appendChild(addRangeBtn);
+      }
+      
+      container.appendChild(whereGroup);
+    }
+
+    // Handle operator changes and validation
+    function handleOperatorChange(fieldName, fieldIndex, operator, isFirst) {
+      const rangeOperators = ['>', '>=', '<', '<=', 'startsWith'];
+      const isRangeOperator = rangeOperators.includes(operator);
+      
+      // Update range fields tracking
+      if (isRangeOperator) {
+        if (!rangeFields.has(fieldName)) {
+          rangeFields.set(fieldName, { count: 0, operators: [] });
+        }
+        const fieldRanges = rangeFields.get(fieldName);
+        fieldRanges.count = isFirst ? 1 : fieldRanges.count;
+        fieldRanges.operators[isFirst ? 0 : 1] = operator;
+        
+        // Show add range button if first range (but not for startsWith)
+        if (isFirst && fieldRanges.count === 1 && operator !== 'startsWith') {
+          const addBtn = document.querySelector(`[data-field-name="${fieldName}"] .add-range-button`);
+          if (addBtn) addBtn.style.display = 'inline-block';
+        }
+        
+        // Disable all fields after this one
+        disableFieldsAfterIndex(fieldIndex);
+      } else if (!isRangeOperator && rangeFields.has(fieldName)) {
+        // Remove from range tracking if not range operator
+        if (isFirst) {
+          rangeFields.delete(fieldName);
+          // Hide add range button
+          const addBtn = document.querySelector(`[data-field-name="${fieldName}"] .add-range-button`);
+          if (addBtn) addBtn.style.display = 'none';
+          // Remove second range clause if exists
+          const secondClause = document.querySelector(`[data-field-name="${fieldName}"] [data-clause-number="2"]`);
+          if (secondClause) secondClause.remove();
+        }
+        
+        // Check if we need to re-enable fields
+        checkAndUpdateFieldStates();
+      }
+      
+      // Validate compound index rules
+      validateCompoundIndexRules();
+      updateQueryPreview();
+    }
+
+    // Add second range clause
+    function addSecondRangeClause(container, propName, propIndex, fieldType, isStringType, isNumericType, isIdentifierType) {
+      // Check if second clause already exists
+      if (container.querySelector('[data-clause-number="2"]')) return;
+      
+      createWhereClause(container, propName, propIndex, fieldType, isStringType, isNumericType, isIdentifierType, false);
+      
+      // Update range count
+      if (rangeFields.has(propName)) {
+        rangeFields.get(propName).count = 2;
+      }
+      
+      // Hide add button
+      const addBtn = container.querySelector('.add-range-button');
+      if (addBtn) addBtn.style.display = 'none';
+      
+      // Add between operator info
+      const betweenInfo = document.createElement('div');
+      betweenInfo.className = 'between-info';
+      betweenInfo.innerHTML = '✓ These two range clauses will be combined into a Between operator';
+      container.appendChild(betweenInfo);
+      
+      // Add event listeners to the new inputs
+      const newInputs = container.querySelectorAll('[data-clause-number="2"] input, [data-clause-number="2"] select');
+      newInputs.forEach(input => {
+        input.addEventListener('input', updateQueryPreview);
+        input.addEventListener('change', updateQueryPreview);
+      });
+      
+      updateQueryPreview();
+    }
+
+    // Disable fields after a given index
+    function disableFieldsAfterIndex(index) {
+      currentIndexProperties.forEach((propName, propIndex) => {
+        if (propIndex > index) {
+          const fieldGroup = document.querySelector(`[data-field-name="${propName}"]`);
+          if (fieldGroup) {
+            fieldGroup.style.opacity = '0.5';
+            fieldGroup.style.pointerEvents = 'none';
+            
+            // Clear any values in these fields
+            const inputs = fieldGroup.querySelectorAll('input, select');
+            inputs.forEach(input => {
+              if (input.tagName === 'SELECT') {
+                input.value = '';
+                input.classList.remove('has-value');
+              } else {
+                input.value = '';
+              }
+            });
+            
+            // Add disabled message
+            let disabledMsg = fieldGroup.querySelector('.disabled-message');
+            if (!disabledMsg) {
+              disabledMsg = document.createElement('div');
+              disabledMsg.className = 'disabled-message';
+              disabledMsg.style.color = '#6c757d';
+              disabledMsg.style.fontSize = '0.9em';
+              disabledMsg.style.marginTop = '5px';
+              disabledMsg.innerHTML = 'ⓘ Cannot query on fields after a range query';
+              fieldGroup.appendChild(disabledMsg);
+            }
+          }
+        }
+      });
+    }
+    
+    // Enable all fields
+    function enableAllFields() {
+      currentIndexProperties.forEach(propName => {
+        const fieldGroup = document.querySelector(`[data-field-name="${propName}"]`);
+        if (fieldGroup) {
+          fieldGroup.style.opacity = '1';
+          fieldGroup.style.pointerEvents = 'auto';
+          
+          // Remove disabled message
+          const disabledMsg = fieldGroup.querySelector('.disabled-message');
+          if (disabledMsg) {
+            disabledMsg.remove();
+          }
+        }
+      });
+    }
+    
+    // Check and update field states based on current range queries
+    function checkAndUpdateFieldStates() {
+      // First, enable all fields
+      enableAllFields();
+      
+      // Find the earliest field with a range query
+      let earliestRangeIndex = -1;
+      rangeFields.forEach((info, fieldName) => {
+        const fieldIndex = currentIndexProperties.indexOf(fieldName);
+        if (fieldIndex !== -1 && (earliestRangeIndex === -1 || fieldIndex < earliestRangeIndex)) {
+          earliestRangeIndex = fieldIndex;
+        }
+      });
+      
+      // If we found a range field, disable all fields after it
+      if (earliestRangeIndex !== -1) {
+        disableFieldsAfterIndex(earliestRangeIndex);
+      }
+    }
+
+    // Validate compound index rules
+    function validateCompoundIndexRules() {
+      const errors = [];
+      
+      // Check each field with range operators
+      rangeFields.forEach((info, fieldName) => {
+        const fieldIndex = currentIndexProperties.indexOf(fieldName);
+        
+        // If range is not on first field, check preceding fields have equality
+        if (fieldIndex > 0) {
+          for (let i = 0; i < fieldIndex; i++) {
+            const precedingField = currentIndexProperties[i];
+            const equalityInput = document.querySelector(`[name="where_${precedingField}"]`);
+            const equalityOp = document.querySelector(`[name="whereOp_${precedingField}"]`);
+            
+            if (!equalityInput?.value || equalityOp?.value !== '==') {
+              errors.push(`Range query on "${fieldName}" requires equality constraint on "${precedingField}"`);
+            }
+          }
+        }
+      });
+      
+      // Check for multiple IN clauses
+      const inClauses = document.querySelectorAll('select[name^="whereOp_"]');
+      let inClauseCount = 0;
+      inClauses.forEach(select => {
+        if (select.value === 'in') inClauseCount++;
+      });
+      
+      if (inClauseCount > 1) {
+        errors.push('Only one IN clause is allowed per query');
+      }
+      
+      // Display errors
+      displayValidationErrors(errors);
+      
+      // Disable/enable execute button based on validation
+      const executeBtn = document.getElementById('executeQuery');
+      if (executeBtn) {
+        executeBtn.disabled = errors.length > 0;
+      }
+      
+      return errors.length === 0;
+    }
+
+    // Display validation errors
+    function displayValidationErrors(errors) {
+      // Remove existing error display
+      const existingErrors = document.querySelectorAll('.validation-error');
+      existingErrors.forEach(err => err.remove());
+      
+      if (errors.length > 0) {
+        const errorContainer = document.createElement('div');
+        errorContainer.className = 'validation-error';
+        errorContainer.innerHTML = '<strong>Validation Errors:</strong><br>' + errors.join('<br>');
+        
+        const whereContainer = document.getElementById('dynamic_whereFields');
+        if (whereContainer) {
+          whereContainer.insertBefore(errorContainer, whereContainer.querySelector('.query-preview'));
+        }
+      }
+    }
+
+    // Update query preview
+    function updateQueryPreview() {
+      const previewContent = document.getElementById('queryPreviewContent');
+      if (!previewContent) return;
+      
+      const whereClauses = [];
+      
+      // Collect all where clauses
+      currentIndexProperties.forEach(fieldName => {
+        const op1 = document.querySelector(`[name="whereOp_${fieldName}"]`)?.value;
+        const val1 = document.querySelector(`[name="where_${fieldName}"]`)?.value;
+        const op2 = document.querySelector(`[name="whereOp2_${fieldName}"]`)?.value;
+        const val2 = document.querySelector(`[name="where2_${fieldName}"]`)?.value;
+        
+        if (op1 && val1) {
+          if (rangeFields.has(fieldName) && op2 && val2) {
+            // Combine range clauses
+            const combined = combineRangeClauses(op1, val1, op2, val2);
+            whereClauses.push(`["${fieldName}", "${combined.operator}", ${combined.value}]`);
+          } else if (op1 === 'in') {
+            const values = val1.split(',').map(v => v.trim());
+            whereClauses.push(`["${fieldName}", "in", [${values.map(v => `"${v}"`).join(', ')}]]`);
+          } else {
+            whereClauses.push(`["${fieldName}", "${op1}", "${val1}"]`);
+          }
+        }
+      });
+      
+      // Collect order by
+      const orderBy = [];
+      currentIndexProperties.forEach(fieldName => {
+        const orderVal = document.querySelector(`[name="orderBy_${fieldName}"]`)?.value;
+        if (orderVal) {
+          orderBy.push(`["${fieldName}", "${orderVal}"]`);
+        }
+      });
+      
+      // Build preview
+      let preview = '{\n';
+      if (whereClauses.length > 0) {
+        preview += `  "where": [\n    ${whereClauses.join(',\n    ')}\n  ]`;
+      }
+      if (orderBy.length > 0) {
+        if (whereClauses.length > 0) preview += ',\n';
+        preview += `  "orderBy": [\n    ${orderBy.join(',\n    ')}\n  ]`;
+      }
+      
+      const limitInput = document.querySelector('[name="limit"]');
+      if (limitInput?.value) {
+        if (whereClauses.length > 0 || orderBy.length > 0) preview += ',\n';
+        preview += `  "limit": ${limitInput.value}`;
+      }
+      
+      preview += '\n}';
+      
+      previewContent.textContent = preview;
+    }
+
+    // Combine range clauses into Between operator
+    function combineRangeClauses(op1, val1, op2, val2) {
+      const ops = [op1, op2].sort();
+      const vals = [parseFloat(val1), parseFloat(val2)].sort((a, b) => a - b);
+      
+      let operator = 'Between';
+      if (ops.includes('>') && ops.includes('<')) {
+        operator = 'BetweenExcludeBounds';
+      } else if (ops.includes('>') && ops.includes('<=')) {
+        operator = 'BetweenExcludeLeft';
+      } else if (ops.includes('>=') && ops.includes('<')) {
+        operator = 'BetweenExcludeRight';
+      }
+      
+      return {
+        operator: operator,
+        value: `[${vals[0]}, ${vals[1]}]`
+      };
+    }
+
+    // Add listeners for live preview updates
+    function addQueryPreviewListeners() {
+      const inputs = document.querySelectorAll('#dynamic_whereFields input, #dynamic_whereFields select, #dynamic_orderByFields select');
+      inputs.forEach(input => {
+        input.addEventListener('input', updateQueryPreview);
+        input.addEventListener('change', updateQueryPreview);
+      });
     }
 
     // Function to clear index fields
@@ -1709,6 +2301,10 @@
         orderByContainer.innerHTML = '';
         orderByContainer.parentElement.style.display = 'none';
       }
+      
+      // Reset tracking variables
+      currentIndexProperties = [];
+      rangeFields.clear();
     }
 
     function displayResult(data, isError = false) {
@@ -2101,19 +2697,36 @@ ${indentStr}]`;
         }
       });
       
-      // Handle dynamic where fields
-      const whereInputs = dynamicInputs.querySelectorAll('input[name^="where_"]');
-      if (whereInputs.length > 0) {
+      // Handle dynamic where fields with improved support for multiple ranges
+      if (currentIndexProperties && currentIndexProperties.length > 0) {
         const whereClause = [];
-        whereInputs.forEach(input => {
-          if (input.value) {
-            const fieldName = input.name.replace('where_', '');
-            // Find the corresponding operator
-            const operatorSelect = dynamicInputs.querySelector(`select[name="whereOp_${fieldName}"]`);
-            const operator = operatorSelect?.value || '==';
-            whereClause.push([fieldName, operator, input.value]);
+        
+        currentIndexProperties.forEach(fieldName => {
+          const op1 = dynamicInputs.querySelector(`select[name="whereOp_${fieldName}"]`)?.value;
+          const val1 = dynamicInputs.querySelector(`input[name="where_${fieldName}"]`)?.value;
+          const op2 = dynamicInputs.querySelector(`select[name="whereOp2_${fieldName}"]`)?.value;
+          const val2 = dynamicInputs.querySelector(`input[name="where2_${fieldName}"]`)?.value;
+          
+          if (op1 && val1) {
+            // Check if we have two range operators that should be combined
+            if (rangeFields && rangeFields.has(fieldName) && op2 && val2) {
+              // Combine range clauses into Between operator
+              const combined = combineRangeClauses(op1, val1, op2, val2);
+              // Keep values as strings and let backend handle type conversion
+              const value = [val1, val2].sort();
+              whereClause.push([fieldName, combined.operator, value]);
+            } else if (op1 === 'in') {
+              // Handle IN operator - split comma-separated values
+              const values = val1.split(',').map(v => v.trim()).filter(v => v);
+              whereClause.push([fieldName, op1, values]);
+            } else {
+              // Single operator clause
+              // Keep value as string - the backend will handle type conversion
+              whereClause.push([fieldName, op1, val1]);
+            }
           }
         });
+        
         if (whereClause.length > 0) {
           values.where = whereClause;
         }
@@ -2236,6 +2849,16 @@ ${indentStr}]`;
         else if (queryType === 'getDocuments') {
           const startAfter = values.startOption === 'startAfter' ? values.startValue : undefined;
           const startAt = values.startOption === 'startAt' ? values.startValue : undefined;
+          
+          // Debug logging
+          console.log('Document Query:', {
+            dataContractId: values.dataContractId,
+            documentType: values.documentType,
+            where: values.where,
+            orderBy: values.orderBy,
+            limit: values.limit
+          });
+          
           result = await get_documents(
             sdk,
             values.dataContractId,
@@ -3276,7 +3899,11 @@ ${indentStr}]`;
         // Find the document type schema
         const docType = contractData.documentSchemas?.[documentType];
         if (!docType) {
-          throw new Error(`Document type '${documentType}' not found in contract`);
+          const availableTypes = Object.keys(contractData.documentSchemas || {});
+          const availableTypesStr = availableTypes.length > 0 
+            ? `Available document types: ${availableTypes.join(', ')}` 
+            : 'No document types found in contract';
+          throw new Error(`Document type '${documentType}' not found in contract. ${availableTypesStr}`);
         }
         
         // Show the document fields container
@@ -3320,7 +3947,11 @@ ${indentStr}]`;
         const documentSchema = contractJson.documentSchemas?.[documentType];
         
         if (!documentSchema) {
-          updateStatus(`Document type '${documentType}' not found in contract`, 'error');
+          const availableTypes = Object.keys(contractJson.documentSchemas || {});
+          const availableTypesStr = availableTypes.length > 0 
+            ? `Available document types: ${availableTypes.join(', ')}` 
+            : 'No document types found in contract';
+          updateStatus(`Document type '${documentType}' not found in contract. ${availableTypesStr}`, 'error');
           return;
         }
         
@@ -3708,12 +4339,48 @@ ${indentStr}]`;
       return fields;
     }
 
+    // Progress tracking for WASM loading
+    function updateProgress(percent, text) {
+      const progressFill = document.getElementById('progressFill');
+      const progressPercent = document.getElementById('progressPercent');
+      const preloaderText = document.querySelector('.preloader-text');
+      
+      if (progressFill) progressFill.style.width = percent + '%';
+      if (progressPercent) progressPercent.textContent = percent + '%';
+      if (preloaderText && text) preloaderText.textContent = text;
+    }
+
     // Initialize
     async function run() {
       try {
         updateStatus('Loading WASM module...', 'loading');
+        const preloader = document.getElementById('preloader');
+        preloader.style.display = 'block';
+        
+        // Simulate progress during WASM loading
+        updateProgress(10, 'Loading WASM module...');
+        
         const initStart = performance.now();
-        await init();
+        
+        // Create a progress simulation while loading
+        let progress = 10;
+        const progressInterval = setInterval(() => {
+          if (progress < 90) {
+            progress += Math.random() * 15;
+            progress = Math.min(progress, 90);
+            updateProgress(Math.floor(progress), 'Loading WASM module...');
+          }
+        }, 200);
+        
+        try {
+          await init();
+          clearInterval(progressInterval);
+          updateProgress(95, 'WASM module loaded, initializing SDK...');
+        } catch (error) {
+          clearInterval(progressInterval);
+          throw error;
+        }
+        
         const initEnd = performance.now();
         console.log(`[Performance] WASM init took ${(initEnd - initStart).toFixed(2)}ms`);
         
@@ -3734,9 +4401,20 @@ ${indentStr}]`;
         }
         
         await initializeSdk(savedNetwork);
+        
+        // Complete the progress
+        updateProgress(100, 'Ready!');
+        setTimeout(() => {
+          preloader.style.display = 'none';
+        }, 500);
+        
       } catch (error) {
         console.error('Failed to initialize WASM:', error);
         updateStatus(`Failed to load WASM module: ${error.message || error}`, 'error');
+        
+        // Hide preloader on error
+        const preloader = document.getElementById('preloader');
+        if (preloader) preloader.style.display = 'none';
       }
     }
 
