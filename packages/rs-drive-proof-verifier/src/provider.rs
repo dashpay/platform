@@ -4,7 +4,6 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
-#[cfg(feature = "mocks")]
 use hex::ToHex;
 use std::{io::ErrorKind, ops::Deref, sync::Arc};
 
@@ -109,6 +108,12 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
+        tracing::trace!(
+            "ContextProvider wrapper: get_quorum_public_key called for type: {}, hash: {}, height: {}",
+            quorum_type,
+            hex::encode(&quorum_hash),
+            core_chain_locked_height
+        );
         self.as_ref()
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
@@ -118,42 +123,15 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     }
 }
 
-impl<T: ContextProvider> ContextProvider for std::sync::Mutex<T>
-where
-    Self: Sync + Send,
-{
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        let lock = self.lock().expect("lock poisoned");
-        lock.get_data_contract(id, platform_version)
-    }
-
-    fn get_token_configuration(
-        &self,
-        token_id: &Identifier,
-    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-        let lock = self.lock().expect("lock poisoned");
-        lock.get_token_configuration(token_id)
-    }
-
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32], // quorum hash is 32 bytes
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        let lock = self.lock().expect("lock poisoned");
-        lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-    }
-
-    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        let lock = self.lock().expect("lock poisoned");
-        lock.get_platform_activation_height()
-    }
-}
+// IMPORTANT: Removed std::sync::Mutex implementation for ContextProvider to prevent deadlocks.
+// The SDK should not hold locks while calling into external ContextProvider implementations.
+// If synchronization is needed, use async-aware primitives like tokio::sync::Mutex or 
+// ensure locks are released before calling ContextProvider methods.
+//
+// Previous implementation could cause deadlocks when:
+// 1. SDK holds internal locks while calling context_provider.get_quorum_public_key()
+// 2. The context provider implementation needs to call back into the SDK
+// 3. Both try to acquire the same lock, causing a deadlock
 
 /// A trait that provides a function that can be used to look up a [DataContract] by its [Identifier].
 ///

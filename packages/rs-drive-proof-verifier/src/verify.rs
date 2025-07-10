@@ -1,5 +1,6 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bls_signatures;
+use hex;
 
 use crate::Error;
 use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
@@ -49,8 +50,15 @@ pub(crate) fn verify_tenderdash_proof(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
+    tracing::debug!(
+        "verify_tenderdash_proof: calling get_quorum_public_key with quorum_type: {}, quorum_hash: {}, height: {}",
+        quorum_type,
+        hex::encode(&quorum_hash),
+        core_locked_height
+    );
     let pubkey_bytes =
         provider.get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)?;
+    tracing::debug!("verify_tenderdash_proof: get_quorum_public_key returned successfully");
 
     let state_id = StateId {
         app_version: version,

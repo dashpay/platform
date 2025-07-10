@@ -294,9 +294,11 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
+        tracing::debug!("parse_proof_with_metadata_and_proof: getting context provider");
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+        tracing::debug!("parse_proof_with_metadata_and_proof: context provider retrieved");
 
         let (object, metadata, proof) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
@@ -364,24 +366,41 @@ impl Sdk {
             Err(_) => panic!("SystemTime before UNIX EPOCH!"),
         };
 
-        // we start by only using a read lock, as this speeds up the system
-        let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
-        let entry = identity_nonce_counter.entry(identity_id);
+        // Check cache and determine if we need to query platform
+        let (should_query_platform, _cached_nonce) = {
+            tracing::debug!("get_identity_nonce: acquiring cache lock for identity {}", identity_id);
+            let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
+            tracing::debug!("get_identity_nonce: cache lock acquired");
+            let entry = identity_nonce_counter.entry(identity_id);
 
-        let should_query_platform = match &entry {
-            Entry::Vacant(_) => true,
-            Entry::Occupied(e) => {
-                let (_, last_query_time) = e.get();
-                *last_query_time
-                    < current_time_s.saturating_sub(
-                        settings
-                            .identity_nonce_stale_time_s
-                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
-                    )
-            }
-        };
+            let result = match &entry {
+                Entry::Vacant(_) => {
+                    tracing::debug!("get_identity_nonce: no cached nonce found, will query platform");
+                    (true, None)
+                },
+                Entry::Occupied(e) => {
+                    let (nonce, last_query_time) = e.get();
+                    let is_stale = *last_query_time
+                        < current_time_s.saturating_sub(
+                            settings
+                                .identity_nonce_stale_time_s
+                                .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
+                        );
+                    tracing::debug!(
+                        "get_identity_nonce: cached nonce {} found, is_stale: {}", 
+                        nonce, is_stale
+                    );
+                    (is_stale, Some(*nonce))
+                }
+            };
+            tracing::debug!("get_identity_nonce: releasing cache lock");
+            result
+        }; // Lock released here
+        tracing::debug!("get_identity_nonce: cache lock released");
 
         if should_query_platform {
+            // Query platform without holding the lock
+            tracing::debug!("get_identity_nonce: querying platform for fresh nonce (lock is released)");
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
                 self,
                 identity_id,
@@ -390,6 +409,14 @@ impl Sdk {
             .await?
             .unwrap_or(IdentityNonceFetcher(0))
             .0;
+            tracing::debug!("get_identity_nonce: platform returned nonce {}", platform_nonce);
+            
+            // Re-acquire lock to update cache
+            tracing::debug!("get_identity_nonce: re-acquiring cache lock to update with fresh nonce");
+            let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
+            tracing::debug!("get_identity_nonce: cache lock re-acquired");
+            let entry = identity_nonce_counter.entry(identity_id);
+            
             match entry {
                 Entry::Vacant(e) => {
                     let insert_nonce = if bump_first {
@@ -418,6 +445,10 @@ impl Sdk {
                 }
             }
         } else {
+            // Use cached value and optionally bump it
+            let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
+            let entry = identity_nonce_counter.entry(identity_id);
+            
             match entry {
                 Entry::Vacant(_) => {
                     panic!("this can not happen, vacant entry not possible");
@@ -453,28 +484,46 @@ impl Sdk {
             Err(_) => panic!("SystemTime before UNIX EPOCH!"),
         };
 
-        // we start by only using a read lock, as this speeds up the system
-        let mut identity_contract_nonce_counter = self
-            .internal_cache
-            .identity_contract_nonce_counter
-            .lock()
-            .await;
-        let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
+        // Check cache and determine if we need to query platform
+        let (should_query_platform, _cached_nonce) = {
+            tracing::debug!("get_identity_contract_nonce: acquiring cache lock for identity {} contract {}", 
+                identity_id, contract_id);
+            let mut identity_contract_nonce_counter = self
+                .internal_cache
+                .identity_contract_nonce_counter
+                .lock()
+                .await;
+            tracing::debug!("get_identity_contract_nonce: cache lock acquired");
+            let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
 
-        let should_query_platform = match &entry {
-            Entry::Vacant(_) => true,
-            Entry::Occupied(e) => {
-                let (_, last_query_time) = e.get();
-                *last_query_time
-                    < current_time_s.saturating_sub(
-                        settings
-                            .identity_nonce_stale_time_s
-                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
-                    )
-            }
-        };
+            let result = match &entry {
+                Entry::Vacant(_) => {
+                    tracing::debug!("get_identity_contract_nonce: no cached nonce found, will query platform");
+                    (true, None)
+                },
+                Entry::Occupied(e) => {
+                    let (nonce, last_query_time) = e.get();
+                    let is_stale = *last_query_time
+                        < current_time_s.saturating_sub(
+                            settings
+                                .identity_nonce_stale_time_s
+                                .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
+                        );
+                    tracing::debug!(
+                        "get_identity_contract_nonce: cached nonce {} found, is_stale: {}", 
+                        nonce, is_stale
+                    );
+                    (is_stale, Some(*nonce))
+                }
+            };
+            tracing::debug!("get_identity_contract_nonce: releasing cache lock");
+            result
+        }; // Lock released here
+        tracing::debug!("get_identity_contract_nonce: cache lock released");
 
         if should_query_platform {
+            // Query platform without holding the lock
+            tracing::debug!("get_identity_contract_nonce: querying platform for fresh nonce (lock is released)");
             let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
                 self,
                 (identity_id, contract_id),
@@ -483,6 +532,18 @@ impl Sdk {
             .await?
             .unwrap_or(IdentityContractNonceFetcher(0))
             .0;
+            tracing::debug!("get_identity_contract_nonce: platform returned nonce {}", platform_nonce);
+            
+            // Re-acquire lock to update cache
+            tracing::debug!("get_identity_contract_nonce: re-acquiring cache lock to update with fresh nonce");
+            let mut identity_contract_nonce_counter = self
+                .internal_cache
+                .identity_contract_nonce_counter
+                .lock()
+                .await;
+            tracing::debug!("get_identity_contract_nonce: cache lock re-acquired");
+            let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
+            
             match entry {
                 Entry::Vacant(e) => {
                     let insert_nonce = if bump_first {
@@ -511,6 +572,14 @@ impl Sdk {
                 }
             }
         } else {
+            // Use cached value and optionally bump it
+            let mut identity_contract_nonce_counter = self
+                .internal_cache
+                .identity_contract_nonce_counter
+                .lock()
+                .await;
+            let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
+            
             match entry {
                 Entry::Vacant(_) => {
                     panic!("this can not happen, vacant entry not possible");

@@ -204,8 +204,16 @@ where
         let inner_fn = inner_fn.clone();
         async move {
             let settings = closure_settings.load_full().clone();
-            let mut func = inner_fn.lock().await;
-            let result = (*func)(*settings).await;
+            // Extract the future before executing it to release the lock
+            tracing::trace!("retry: acquiring lock on future factory function");
+            let fut = {
+                let mut func = inner_fn.lock().await;
+                tracing::trace!("retry: lock acquired, extracting future");
+                (*func)(*settings)
+            }; // Lock released here
+            tracing::trace!("retry: lock released, executing future");
+            
+            let result = fut.await;
 
             // Ban or unban the address based on the result
             update_address_ban_status(address_list, &result, &settings.finalize());
