@@ -5,6 +5,7 @@ use drive::dpp::identity::TimestampMillis;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::CoreBlockHeight;
+use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::query::TransactionArg;
@@ -56,7 +57,6 @@ impl<C> Platform<C> {
                 system_data_contracts.load_keyword_search(),
             ),
         ]);
-        //todo add Wallet Utils (maybe)
 
         for data_contract in system_data_contract_types.values() {
             self.register_system_data_contract_operations(
@@ -65,6 +65,15 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
         }
+
+        let wallet_utils_contract =
+            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
+
+        self.register_system_data_contract_operations(
+            &wallet_utils_contract,
+            &mut operations,
+            platform_version,
+        )?;
 
         let dpns_contract = system_data_contracts.load_dpns();
 
