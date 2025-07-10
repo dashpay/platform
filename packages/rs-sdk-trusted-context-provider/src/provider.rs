@@ -48,7 +48,7 @@ pub struct TrustedHttpContextProvider {
     fallback_provider: Option<Box<dyn ContextProvider>>,
 
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
-    known_contracts: HashMap<Identifier, Arc<DataContract>>,
+    known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
@@ -127,7 +127,7 @@ impl TrustedHttpContextProvider {
             last_current_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
-            known_contracts: HashMap::new(),
+            known_contracts: Arc::new(Mutex::new(HashMap::new())),
             refetch_if_not_found: true,
         })
     }
@@ -140,10 +140,12 @@ impl TrustedHttpContextProvider {
 
     /// Set known contracts that will be served immediately without fallback
     pub fn with_known_contracts(mut self, contracts: Vec<DataContract>) -> Self {
+        let mut known = self.known_contracts.lock().unwrap();
         for contract in contracts {
             let id = contract.id();
-            self.known_contracts.insert(id, Arc::new(contract));
+            known.insert(id, Arc::new(contract));
         }
+        drop(known);
         self
     }
 
@@ -151,6 +153,13 @@ impl TrustedHttpContextProvider {
     pub fn with_refetch_if_not_found(mut self, refetch: bool) -> Self {
         self.refetch_if_not_found = refetch;
         self
+    }
+
+    /// Add a data contract to the known contracts cache
+    pub fn add_known_contract(&self, contract: DataContract) {
+        let id = contract.id();
+        let mut known = self.known_contracts.lock().unwrap();
+        known.insert(id, Arc::new(contract));
     }
 
     /// Update the quorum caches by fetching current and previous quorums
@@ -471,9 +480,11 @@ impl ContextProvider for TrustedHttpContextProvider {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         // First check known contracts cache
-        if let Some(contract) = self.known_contracts.get(id) {
+        let known = self.known_contracts.lock().unwrap();
+        if let Some(contract) = known.get(id) {
             return Ok(Some(contract.clone()));
         }
+        drop(known);
 
         // If not found in known contracts, delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {

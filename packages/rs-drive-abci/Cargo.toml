@@ -30,7 +30,7 @@ hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
 dpp = { path = "../rs-dpp", default-features = false, features = ["abci"] }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall = { version = "0.13", optional = true }

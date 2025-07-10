@@ -1318,6 +1318,7 @@ dependencies = [
  "futures",
  "hex",
  "http",
+ "js-sys",
  "lru",
  "rs-dapi-client",
  "rustls-pemfile",
@@ -5030,8 +5031,9 @@ version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
- "dashcore-rpc",
+ "dashcore",
  "dpp",
+ "hex",
 ]
 
 [[package]]

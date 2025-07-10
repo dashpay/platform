@@ -1,5 +1,4 @@
 use crate::context_provider::WasmContext;
-use crate::dpp::{DataContractWasm, IdentityWasm};
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -20,8 +19,9 @@ use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsError;
+use wasm_bindgen::{JsError, JsValue};
 use web_sys::{console, js_sys};
+use serde_json;
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -42,6 +42,72 @@ impl AsRef<Sdk> for WasmSdk {
 impl From<Sdk> for WasmSdk {
     fn from(sdk: Sdk) -> Self {
         WasmSdk(sdk)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    pub fn version(&self) -> u32 {
+        self.0.version().protocol_version
+    }
+    
+    /// Get the network this SDK is configured for
+    pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
+        self.0.network
+    }
+    
+    /// Test serialization of different object types
+    #[wasm_bindgen(js_name = testSerialization)]
+    pub fn test_serialization(&self, test_type: &str) -> Result<JsValue, JsValue> {
+        use serde_wasm_bindgen::to_value;
+        
+        match test_type {
+            "simple" => {
+                let simple = serde_json::json!({
+                    "type": "simple",
+                    "value": "test"
+                });
+                to_value(&simple).map_err(|e| JsValue::from_str(&format!("Simple serialization failed: {}", e)))
+            }
+            "complex" => {
+                let complex = serde_json::json!({
+                    "type": "complex",
+                    "nested": {
+                        "id": "123",
+                        "number": 42,
+                        "array": [1, 2, 3],
+                        "null_value": null,
+                        "bool_value": true
+                    }
+                });
+                to_value(&complex).map_err(|e| JsValue::from_str(&format!("Complex serialization failed: {}", e)))
+            }
+            "document" => {
+                // Simulate the exact structure we're trying to return
+                let doc = serde_json::json!({
+                    "type": "DocumentCreated",
+                    "documentId": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
+                    "document": {
+                        "id": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
+                        "ownerId": "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+                        "dataContractId": "9nzpvjVSStUrhkEs3eNHw2JYpcNoLh1MjmqW45QiyjSa",
+                        "documentType": "post",
+                        "revision": 1,
+                        "createdAt": 1736300191752i64,
+                        "updatedAt": 1736300191752i64,
+                    }
+                });
+                to_value(&doc).map_err(|e| JsValue::from_str(&format!("Document serialization failed: {}", e)))
+            }
+            _ => Err(JsValue::from_str("Unknown test type"))
+        }
+    }
+}
+
+impl WasmSdk {
+    /// Clone the inner Sdk (not exposed to WASM)
+    pub(crate) fn inner_clone(&self) -> Sdk {
+        self.0.clone()
     }
 }
 
@@ -594,9 +660,9 @@ impl WasmSdkBuilder {
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
+pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
-static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
+pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen]
@@ -635,34 +701,7 @@ pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
     Ok(())
 }
 
-#[wasm_bindgen]
-pub async fn identity_fetch(sdk: &WasmSdk, base58_id: &str) -> Result<IdentityWasm, JsError> {
-    let id = Identifier::from_string(
-        base58_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )?;
-
-    Identity::fetch_by_identifier(sdk, id)
-        .await?
-        .ok_or_else(|| JsError::new("Identity not found"))
-        .map(Into::into)
-}
-
-#[wasm_bindgen]
-pub async fn data_contract_fetch(
-    sdk: &WasmSdk,
-    base58_id: &str,
-) -> Result<DataContractWasm, JsError> {
-    let id = Identifier::from_string(
-        base58_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )?;
-
-    DataContract::fetch_by_identifier(sdk, id)
-        .await?
-        .ok_or_else(|| JsError::new("Data contract not found"))
-        .map(Into::into)
-}
+// Query functions have been moved to src/queries/ modules
 
 #[wasm_bindgen]
 pub async fn identity_put(sdk: &WasmSdk) {
@@ -724,7 +763,7 @@ pub async fn docs_testing(sdk: &WasmSdk) {
         .expect("data contract not found");
 
     let dcs = dc
-        .serialize_to_bytes_with_platform_version(sdk.version())
+        .serialize_to_bytes_with_platform_version(sdk.0.version())
         .expect("serialize data contract");
 
     let query = DocumentQuery::new(dc.clone(), "asd").expect("create query");
@@ -737,7 +776,7 @@ pub async fn docs_testing(sdk: &WasmSdk) {
         .document_type_for_name("aaa")
         .expect("document type for name");
     let doc_serialized = doc
-        .serialize(document_type, &dc, sdk.version())
+        .serialize(document_type, &dc, sdk.0.version())
         .expect("serialize document");
 
     let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))

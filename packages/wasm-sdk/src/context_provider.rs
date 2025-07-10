@@ -125,4 +125,9 @@ impl WasmTrustedContext {
             ContextProviderError::Generic(format!("Failed to prefetch quorums: {}", e))
         })
     }
+
+    /// Add a data contract to the known contracts cache
+    pub fn add_known_contract(&self, contract: DataContract) {
+        self.inner.add_known_contract(contract);
+    }
 }

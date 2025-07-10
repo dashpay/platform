@@ -6,6 +6,12 @@ pub mod error;
 pub mod sdk;
 pub mod state_transitions;
 pub mod verify;
+pub mod queries;
+
+// Re-export commonly used items
+pub use sdk::{WasmSdk, WasmSdkBuilder};
+pub use queries::*;
+pub use state_transitions::*;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

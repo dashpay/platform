@@ -40,6 +40,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -205,6 +206,24 @@ enum SdkInstance {
     },
 }
 
+/// Helper function to get current timestamp in seconds
+/// Works in both native and WASM environments
+fn get_current_time_seconds() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // In WASM, we use JavaScript's Date.now() which returns milliseconds
+        // We need to convert to seconds
+        (js_sys::Date::now() / 1000.0) as u64
+    }
+}
+
 impl Sdk {
     /// Initialize Dash Platform  SDK in mock mode.
     ///
@@ -360,10 +379,7 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        };
+        let current_time_s = get_current_time_seconds();
 
         // we start by only using a read lock, as this speeds up the system
         let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
@@ -449,10 +465,7 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        };
+        let current_time_s = get_current_time_seconds();
 
         // we start by only using a read lock, as this speeds up the system
         let mut identity_contract_nonce_counter = self
