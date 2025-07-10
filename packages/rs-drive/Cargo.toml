@@ -72,7 +72,7 @@ dpp = { path = "../rs-dpp", features = [
   "random-identities",
   "random-public-keys",
   "fixtures-and-mocks",
-  "system_contracts",
+  "all-system_contracts",
   "factories",
   "data-contract-json-conversion",
 ], default-features = false }
@@ -122,4 +122,5 @@ verify = [
   "grovedb/verify",
   "grovedb-costs",
   "dpp/state-transitions",
+  "dpp/data-contracts"
 ]

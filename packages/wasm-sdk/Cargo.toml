@@ -11,7 +11,7 @@ default = []
 mocks = ["dash-sdk/mocks"]
 
 # All system contracts
-system-data-contracts = ["dash-sdk/system-data-contracts"]
+all-system-contracts = ["dash-sdk/all-system-contracts"]
 
 # Individual contract features
 withdrawals-contract = ["dash-sdk/withdrawals-contract"]

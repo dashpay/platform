@@ -82,7 +82,7 @@ bls-signatures = ["dashcore/bls"]
 ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
   "json-object",
-  "system_contracts",
+  "all-system_contracts",
   "state-transitions",
   "extended-document",
   "bls-signatures",
@@ -137,7 +137,7 @@ dash-sdk-features = [
 all_features_without_client = [
   "json-object",
   "platform-value",
-  "system_contracts",
+  "all-system_contracts",
   "state-transitions",
   "extended-document",
   "cbor",
@@ -271,18 +271,17 @@ core-types-serialization = ["core-types"]
 core-types-serde-conversion = ["core-types"]
 state-transitions = []
 # All system data contracts
-system_contracts = ["factories", "data-contracts", "data-contracts/all-contracts", "platform-value-json"]
+all-system_contracts = ["data-contracts", "data-contracts/all-contracts", "dpns-contract", "dashpay-contract", "withdrawals-contract", "masternode-rewards-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
 
 # Individual data contract features
-dpns-contract = ["data-contracts", "data-contracts/dpns", "platform-value-json"]
-dashpay-contract = ["data-contracts", "data-contracts/dashpay", "platform-value-json"]
-withdrawals-contract = ["data-contracts", "data-contracts/withdrawals", "platform-value-json"]
-masternode-rewards-contract = ["data-contracts", "data-contracts/masternode-rewards", "platform-value-json"]
-feature-flags-contract = ["data-contracts", "data-contracts/feature-flags", "platform-value-json"]
-wallet-utils-contract = ["data-contracts", "data-contracts/wallet-utils", "platform-value-json"]
-token-history-contract = ["data-contracts", "data-contracts/token-history", "platform-value-json"]
-keywords-contract = ["data-contracts", "data-contracts/keyword-search", "platform-value-json"]
-fixtures-and-mocks = ["system_contracts", "platform-value/json"]
+dpns-contract = ["data-contracts", "data-contracts/dpns"]
+dashpay-contract = ["data-contracts", "data-contracts/dashpay"]
+withdrawals-contract = ["data-contracts", "data-contracts/withdrawals"]
+masternode-rewards-contract = ["data-contracts", "data-contracts/masternode-rewards"]
+wallet-utils-contract = ["data-contracts", "data-contracts/wallet-utils"]
+token-history-contract = ["data-contracts", "data-contracts/token-history"]
+keywords-contract = ["data-contracts", "data-contracts/keyword-search"]
+fixtures-and-mocks = ["all-system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]
 random-documents = []

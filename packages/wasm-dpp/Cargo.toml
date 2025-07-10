@@ -43,7 +43,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "extended-document",
     "document-value-conversion",
     "document-json-conversion",
-    "system_contracts",
+    "data-contracts",
 ] }
 itertools = { version = "0.13" }
 log = { version = "0.4.6" }
