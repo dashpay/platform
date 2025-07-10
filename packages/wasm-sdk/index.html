@@ -60,7 +60,7 @@
 
     .app-container {
       display: flex;
-      height: 100vh;
+      height: calc(100vh - 50px); /* Account for status banner height */
       overflow: hidden;
     }
 
@@ -280,12 +280,17 @@
       bottom: 0;
       left: 0;
       right: 0;
-      padding: 10px 20px;
+      height: 50px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       text-align: center;
       font-weight: 500;
       font-size: 14px;
       z-index: 999;
       transition: all 0.3s ease;
+      box-sizing: border-box;
     }
 
     .status-banner.success {
@@ -638,6 +643,7 @@
             <option value="identity">Identity Queries</option>
             <option value="dataContract">Data Contract Queries</option>
             <option value="document">Document Queries</option>
+            <option value="dpns">DPNS Queries</option>
             <option value="voting">Voting & Contested Resources</option>
             <option value="protocol">Protocol & Version</option>
             <option value="epoch">Epoch & Block</option>
@@ -828,6 +834,7 @@
       get_documents,
       get_document,
       get_dpns_username,
+      get_dpns_usernames,
       // Protocol/Version queries
       get_protocol_version_upgrade_state,
       get_protocol_version_upgrade_vote_status,
@@ -1344,12 +1351,18 @@
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true }
             ]
-          },
+          }
+        }
+      },
+      dpns: {
+        label: "DPNS Queries",
+        queries: {
           getDpnsUsername: {
-            label: "Get DPNS Username",
-            description: "Get DPNS username for an identity",
+            label: "Get DPNS Usernames",
+            description: "Get DPNS usernames for an identity",
             inputs: [
-              { name: "identityId", type: "text", label: "Identity ID", required: true }
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "limit", type: "number", label: "Limit", required: false, placeholder: "Default: 10" }
             ]
           },
           dpnsCheckAvailability: {
@@ -2962,11 +2975,12 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDpnsUsername') {
-          result = await get_dpns_username(
+          result = await get_dpns_usernames(
             sdk,
-            values.identityId
+            values.identityId,
+            values.limit || 10  // Default to 10 if not specified
           );
-          // Result is the username string or null
+          // Result is an array of usernames
         } else if (queryType === 'dpnsCheckAvailability') {
           // Handle DPNS availability check
           const isValid = dpns_is_valid_username(values.label);
@@ -3291,8 +3305,6 @@ ${indentStr}]`;
       button.disabled = true;
       button.textContent = 'Processing...';
       
-      const preloader = document.getElementById('preloader');
-      preloader.style.display = 'block';
       updateStatus(`Executing ${transitionType} state transition...`, 'loading');
       
       try {
@@ -3863,7 +3875,6 @@ ${indentStr}]`;
         displayResult(`Error executing state transition: ${error.message || error}`, true);
         updateStatus(`Error: ${error.message || error}`, 'error');
       } finally {
-        preloader.style.display = 'none';
         button.disabled = false;
         button.textContent = originalButtonText;
       }

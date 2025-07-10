@@ -371,9 +371,10 @@ pub async fn get_document(
 }
 
 #[wasm_bindgen]
-pub async fn get_dpns_username(
+pub async fn get_dpns_usernames(
     sdk: &WasmSdk,
     identity_id: &str,
+    limit: Option<u32>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use dash_sdk::platform::FetchMany;
@@ -412,41 +413,56 @@ pub async fn get_dpns_username(
     };
     
     query = query.with_where(where_clause);
-    query.limit = 1; // We only need the first result
+    
+    // Set limit from parameter or default to 10
+    query.limit = limit.unwrap_or(10);
     
     // Execute query
     let documents_result: Documents = Document::fetch_many(sdk.as_ref(), query)
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch DPNS documents: {}", e)))?;
     
-    // Process the result
+    // Collect all usernames
+    let mut usernames: Vec<String> = Vec::new();
+    
+    // Process all results
     for (_, doc_opt) in documents_result {
         if let Some(doc) = doc_opt {
             // Extract the username from the document
             let properties = doc.properties();
             
-            let label = properties.get("label")
-                .and_then(|v| match v {
-                    Value::Text(s) => Some(s.clone()),
-                    _ => None,
-                })
-                .ok_or_else(|| JsError::new("DPNS document missing label field"))?;
-            
-            let parent_domain = properties.get("normalizedParentDomainName")
-                .and_then(|v| match v {
-                    Value::Text(s) => Some(s.clone()),
-                    _ => None,
-                })
-                .ok_or_else(|| JsError::new("DPNS document missing normalizedParentDomainName field"))?;
-            
-            // Construct the full username
-            let username = format!("{}.{}", label, parent_domain);
-            
-            // Return the username as a JSON string
-            return Ok(JsValue::from_str(&username));
+            if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
+                properties.get("label"),
+                properties.get("normalizedParentDomainName")
+            ) {
+                // Construct the full username
+                let username = format!("{}.{}", label, parent_domain);
+                usernames.push(username);
+            }
         }
     }
     
-    // No DPNS name found for this identity
+    // Return usernames as a JSON array
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    usernames.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize usernames: {}", e)))
+}
+
+// Keep the old function for backward compatibility but have it call the new one
+#[wasm_bindgen]
+pub async fn get_dpns_username(
+    sdk: &WasmSdk,
+    identity_id: &str,
+) -> Result<JsValue, JsError> {
+    // Call the new function with limit 1
+    let result = get_dpns_usernames(sdk, identity_id, Some(1)).await?;
+    
+    // Extract the first username from the array
+    if let Some(array) = result.dyn_ref::<js_sys::Array>() {
+        if array.length() > 0 {
+            return Ok(array.get(0));
+        }
+    }
+    
     Ok(JsValue::NULL)
 }

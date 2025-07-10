@@ -23,8 +23,18 @@ futures = "0.3"
 url = "2.5"
 
 [features]
-# All system contracts (default behavior)
-all-system-contracts = ["dpp/all-system_contracts"]
+default = []
+
+# All system contracts (includes all individual contracts)
+all-system-contracts = [
+    "dpp/all-system_contracts",
+    "withdrawals-contract",
+    "dpns-contract",
+    "dashpay-contract",
+    "wallet-utils-contract",
+    "token-history-contract",
+    "keywords-contract"
+]
 
 # Individual contract features - these enable specific contracts in DPP
 withdrawals-contract = ["dpp/withdrawals-contract"]

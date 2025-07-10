@@ -10,7 +10,6 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 type QuorumHash = [u8; 32];
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
-use dpp::version::PlatformVersion;
 #[cfg(any(
     feature = "dpns-contract",
     feature = "dashpay-contract",
@@ -21,6 +20,7 @@ use dpp::version::PlatformVersion;
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use dpp::version::PlatformVersion;
 
 use lru::LruCache;
 use reqwest::Client;
@@ -512,42 +512,84 @@ impl ContextProvider for TrustedHttpContextProvider {
             if *id == SystemDataContract::DPNS.id() {
                 return load_system_data_contract(SystemDataContract::DPNS, platform_version)
                     .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load DPNS contract: {}", e)));
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load DPNS contract: {}",
+                            e
+                        ))
+                    });
             }
 
             #[cfg(any(feature = "dashpay-contract", feature = "all-system-contracts"))]
             if *id == SystemDataContract::Dashpay.id() {
                 return load_system_data_contract(SystemDataContract::Dashpay, platform_version)
                     .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load Dashpay contract: {}", e)));
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load Dashpay contract: {}",
+                            e
+                        ))
+                    });
             }
 
             #[cfg(any(feature = "withdrawals-contract", feature = "all-system-contracts"))]
             if *id == SystemDataContract::Withdrawals.id() {
-                return load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load Withdrawals contract: {}", e)));
+                return load_system_data_contract(
+                    SystemDataContract::Withdrawals,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load Withdrawals contract: {}",
+                        e
+                    ))
+                });
             }
 
             #[cfg(any(feature = "wallet-utils-contract", feature = "all-system-contracts"))]
             if *id == SystemDataContract::WalletUtils.id() {
-                return load_system_data_contract(SystemDataContract::WalletUtils, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load WalletUtils contract: {}", e)));
+                return load_system_data_contract(
+                    SystemDataContract::WalletUtils,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load WalletUtils contract: {}",
+                        e
+                    ))
+                });
             }
 
             #[cfg(any(feature = "token-history-contract", feature = "all-system-contracts"))]
             if *id == SystemDataContract::TokenHistory.id() {
-                return load_system_data_contract(SystemDataContract::TokenHistory, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load TokenHistory contract: {}", e)));
+                return load_system_data_contract(
+                    SystemDataContract::TokenHistory,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load TokenHistory contract: {}",
+                        e
+                    ))
+                });
             }
 
             #[cfg(any(feature = "keywords-contract", feature = "all-system-contracts"))]
             if *id == SystemDataContract::KeywordSearch.id() {
-                return load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load KeywordSearch contract: {}", e)));
+                return load_system_data_contract(
+                    SystemDataContract::KeywordSearch,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load KeywordSearch contract: {}",
+                        e
+                    ))
+                });
             }
         }
 
