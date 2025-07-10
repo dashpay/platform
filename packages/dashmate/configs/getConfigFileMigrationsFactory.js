@@ -1096,6 +1096,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.0.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Add ZMQ configuration if it doesn't exist
+            if (!options.core.zmq) {
+              options.core.zmq = base.get('core.zmq');
+            }
+          });
+        return configFile;
+      },
     };
   }
 
