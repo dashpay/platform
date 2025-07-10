@@ -17,6 +17,7 @@ pub mod transition;
 pub mod types;
 
 pub mod documents;
+pub mod dpns_usernames;
 pub mod group_actions;
 pub mod tokens;
 
