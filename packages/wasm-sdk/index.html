@@ -3529,16 +3529,43 @@ ${indentStr}]`;
           
           console.log(`Using key ID ${keyId} for DPNS registration`);
           
+          // Show initial status
+          updateStatus('Submitting DPNS preorder document...', 'info');
+          
+          // Add a small delay to let the status message show
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
           result = await dpns_register_name(
             sdk,
             values.label,
             identityId,       // Use the identity ID from authentication
             keyId,            // Use the determined key ID
-            actualPrivateKey  // Use the actual private key (without :keyId suffix)
+            actualPrivateKey, // Use the actual private key (without :keyId suffix)
+            // Callback for preorder success
+            (preorderInfo) => {
+              console.log('Preorder successful:', preorderInfo);
+              updateStatus('Preorder successful! Now submitting domain document...', 'info');
+              
+              // Show preorder info in a temporary notification
+              const preorderMsg = `Preorder Document ID: ${preorderInfo.documentId}`;
+              const notification = document.createElement('div');
+              notification.className = 'preorder-notification';
+              notification.style.cssText = 'background: #4CAF50; color: white; padding: 10px; margin: 10px 0; border-radius: 4px;';
+              notification.textContent = preorderMsg;
+              
+              const resultsSection = document.getElementById('results');
+              if (resultsSection) {
+                resultsSection.insertBefore(notification, resultsSection.firstChild);
+                // Remove notification after 5 seconds
+                setTimeout(() => notification.remove(), 5000);
+              }
+            }
           );
           
+          // Since our callback is called at the end, let's update the message
+          // to reflect that both documents were submitted
           displayResult(JSON.stringify(result, null, 2));
-          updateStatus('DPNS name registered successfully', 'success');
+          updateStatus('DPNS name registered successfully! Both preorder and domain documents submitted.', 'success');
         } else if (transitionType === 'documentPurchase') {
           // Handle document purchase
           result = await sdk.documentPurchase(

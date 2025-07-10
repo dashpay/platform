@@ -171,7 +171,7 @@ impl Sdk {
             use dpp::system_data_contracts::SystemDataContract;
             SystemDataContract::DPNS.id()
         };
-        
+
         #[cfg(not(feature = "dpns-contract"))]
         let dpns_contract_id = {
             const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
@@ -183,13 +183,13 @@ impl Sdk {
         };
 
         // First check if the contract is available in the context provider
-        let context_provider = self.context_provider()
+        let context_provider = self
+            .context_provider()
             .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
-        
-        let dpns_contract = match context_provider.get_data_contract(
-            &dpns_contract_id,
-            self.version(),
-        )? {
+
+        let dpns_contract = match context_provider
+            .get_data_contract(&dpns_contract_id, self.version())?
+        {
             Some(contract) => contract,
             None => {
                 // If not in context, fetch from platform
@@ -366,7 +366,7 @@ impl Sdk {
             use dpp::system_data_contracts::SystemDataContract;
             SystemDataContract::DPNS.id()
         };
-        
+
         #[cfg(not(feature = "dpns-contract"))]
         let dpns_contract_id = {
             const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
@@ -378,13 +378,13 @@ impl Sdk {
         };
 
         // First check if the contract is available in the context provider
-        let context_provider = self.context_provider()
+        let context_provider = self
+            .context_provider()
             .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
-        
-        let dpns_contract = match context_provider.get_data_contract(
-            &dpns_contract_id,
-            self.version(),
-        )? {
+
+        let dpns_contract = match context_provider
+            .get_data_contract(&dpns_contract_id, self.version())?
+        {
             Some(contract) => contract,
             None => {
                 // If not in context, fetch from platform
@@ -444,7 +444,7 @@ impl Sdk {
             use dpp::system_data_contracts::SystemDataContract;
             SystemDataContract::DPNS.id()
         };
-        
+
         #[cfg(not(feature = "dpns-contract"))]
         let dpns_contract_id = {
             const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
@@ -456,13 +456,13 @@ impl Sdk {
         };
 
         // First check if the contract is available in the context provider
-        let context_provider = self.context_provider()
+        let context_provider = self
+            .context_provider()
             .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
-        
-        let dpns_contract = match context_provider.get_data_contract(
-            &dpns_contract_id,
-            self.version(),
-        )? {
+
+        let dpns_contract = match context_provider
+            .get_data_contract(&dpns_contract_id, self.version())?
+        {
             Some(contract) => contract,
             None => {
                 // If not in context, fetch from platform
@@ -488,12 +488,12 @@ impl Sdk {
             // No dot found, use the whole name as the label
             name
         };
-        
+
         // Validate the label before proceeding
         if label.is_empty() {
             return Ok(None);
         }
-        
+
         let normalized_label = convert_to_homograph_safe_chars(label);
 
         // Query for domain with this label

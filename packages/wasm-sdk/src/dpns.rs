@@ -4,10 +4,11 @@ use crate::sdk::WasmSdk;
 use serde::{Serialize, Deserialize};
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username, is_valid_username, RegisterDpnsNameInput};
 use dash_sdk::platform::{Fetch, Identity};
-use dash_sdk::dpp::document::DocumentV0Getters;
+use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::prelude::Identifier;
 use simple_signer::SingleKeySigner;
+use std::sync::Mutex;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +44,7 @@ pub async fn dpns_register_name(
     identity_id: &str,
     public_key_id: u32,
     private_key_wif: &str,
+    preorder_callback: Option<js_sys::Function>,
 ) -> Result<JsValue, JsError> {
     // Parse identity ID
     let identity_id_parsed = Identifier::from_string(
@@ -66,12 +68,50 @@ pub async fn dpns_register_name(
         .ok_or_else(|| JsError::new(&format!("Public key with ID {} not found", public_key_id)))?
         .clone();
     
-    // Create registration input
+    // Store the JS callback in a thread-local variable that we can access from the closure
+    thread_local! {
+        static PREORDER_CALLBACK: std::cell::RefCell<Option<js_sys::Function>> = std::cell::RefCell::new(None);
+    }
+    
+    // Set the callback if provided
+    if let Some(ref js_callback) = preorder_callback {
+        PREORDER_CALLBACK.with(|cb| {
+            *cb.borrow_mut() = Some(js_callback.clone());
+        });
+    }
+    
+    // Create a Rust callback that will call the JavaScript callback
+    let callback_box = if preorder_callback.is_some() {
+        Some(Box::new(move |doc: &Document| {
+            PREORDER_CALLBACK.with(|cb| {
+                if let Some(js_callback) = cb.borrow().as_ref() {
+                    let preorder_info = serde_json::json!({
+                        "documentId": doc.id().to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                        "ownerId": doc.owner_id().to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                        "revision": doc.revision().unwrap_or(0),
+                        "createdAt": doc.created_at(),
+                        "createdAtBlockHeight": doc.created_at_block_height(),
+                        "createdAtCoreBlockHeight": doc.created_at_core_block_height(),
+                        "message": "Preorder document submitted successfully",
+                    });
+                    
+                    if let Ok(js_value) = serde_wasm_bindgen::to_value(&preorder_info) {
+                        let _ = js_callback.call1(&JsValue::NULL, &js_value);
+                    }
+                }
+            });
+        }) as Box<dyn FnOnce(&Document) + Send>)
+    } else {
+        None
+    };
+    
+    // Create registration input with the callback
     let input = RegisterDpnsNameInput {
         label: label.to_string(),
         identity,
         identity_public_key,
         signer,
+        preorder_callback: callback_box,
     };
     
     // Register the name
@@ -79,6 +119,11 @@ pub async fn dpns_register_name(
         .register_dpns_name(input)
         .await
         .map_err(|e| JsError::new(&format!("Failed to register DPNS name: {}", e)))?;
+    
+    // Clear the thread-local callback
+    PREORDER_CALLBACK.with(|cb| {
+        *cb.borrow_mut() = None;
+    });
     
     // Convert result to JS-friendly format
     let js_result = RegisterDpnsNameResult {
