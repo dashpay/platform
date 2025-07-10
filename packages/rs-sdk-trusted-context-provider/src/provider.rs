@@ -139,7 +139,7 @@ impl TrustedHttpContextProvider {
     }
 
     /// Set known contracts that will be served immediately without fallback
-    pub fn with_known_contracts(mut self, contracts: Vec<DataContract>) -> Self {
+    pub fn with_known_contracts(self, contracts: Vec<DataContract>) -> Self {
         let mut known = self.known_contracts.lock().unwrap();
         for contract in contracts {
             let id = contract.id();

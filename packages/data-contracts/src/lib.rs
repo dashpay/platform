@@ -53,61 +53,73 @@ pub struct DataContractSource {
 }
 
 impl SystemDataContract {
-    pub fn id(&self) -> Result<Identifier, Error> {
+    pub fn id(&self) -> Identifier {
         let bytes = match self {
             #[cfg(feature = "withdrawals")]
             SystemDataContract::Withdrawals => withdrawals_contract::ID_BYTES,
             #[cfg(not(feature = "withdrawals"))]
-            SystemDataContract::Withdrawals => {
-                return Err(Error::ContractNotIncluded("withdrawals"))
-            }
+            SystemDataContract::Withdrawals => [
+                54, 98, 187, 97, 225, 127, 174, 62, 162, 148, 207, 96, 49, 151, 251, 10, 171, 109,
+                81, 24, 11, 216, 182, 16, 76, 73, 68, 166, 47, 226, 217, 127,
+            ],
 
             #[cfg(feature = "masternode-rewards")]
             SystemDataContract::MasternodeRewards => masternode_reward_shares_contract::ID_BYTES,
             #[cfg(not(feature = "masternode-rewards"))]
-            SystemDataContract::MasternodeRewards => {
-                return Err(Error::ContractNotIncluded("masternode-rewards"))
-            }
+            SystemDataContract::MasternodeRewards => [
+                12, 172, 226, 5, 36, 102, 147, 167, 200, 21, 101, 35, 98, 13, 170, 147, 125, 47,
+                34, 71, 147, 68, 99, 238, 176, 31, 247, 33, 149, 144, 149, 140,
+            ],
 
             #[cfg(feature = "feature-flags")]
             SystemDataContract::FeatureFlags => feature_flags_contract::ID_BYTES,
             #[cfg(not(feature = "feature-flags"))]
-            SystemDataContract::FeatureFlags => {
-                return Err(Error::ContractNotIncluded("feature-flags"))
-            }
+            SystemDataContract::FeatureFlags => [
+                245, 172, 216, 200, 193, 110, 185, 172, 40, 110, 7, 132, 190, 86, 127, 80, 9, 244,
+                86, 26, 243, 212, 255, 2, 91, 7, 90, 243, 68, 55, 152, 34,
+            ],
 
             #[cfg(feature = "dpns")]
             SystemDataContract::DPNS => dpns_contract::ID_BYTES,
             #[cfg(not(feature = "dpns"))]
-            SystemDataContract::DPNS => return Err(Error::ContractNotIncluded("dpns")),
+            SystemDataContract::DPNS => [
+                230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126, 10, 29,
+                113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85,
+            ],
 
             #[cfg(feature = "dashpay")]
             SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
             #[cfg(not(feature = "dashpay"))]
-            SystemDataContract::Dashpay => return Err(Error::ContractNotIncluded("dashpay")),
+            SystemDataContract::Dashpay => [
+                162, 161, 180, 172, 111, 239, 34, 234, 42, 26, 104, 232, 18, 54, 68, 179, 87, 135,
+                95, 107, 65, 44, 24, 16, 146, 129, 193, 70, 231, 178, 113, 188,
+            ],
 
             #[cfg(feature = "wallet-utils")]
             SystemDataContract::WalletUtils => wallet_utils_contract::ID_BYTES,
             #[cfg(not(feature = "wallet-utils"))]
-            SystemDataContract::WalletUtils => {
-                return Err(Error::ContractNotIncluded("wallet-utils"))
-            }
+            SystemDataContract::WalletUtils => [
+                92, 20, 14, 101, 92, 2, 101, 187, 194, 168, 8, 113, 109, 225, 132, 121, 133, 19,
+                89, 24, 173, 81, 205, 253, 11, 118, 102, 75, 169, 91, 163, 124,
+            ],
 
             #[cfg(feature = "token-history")]
             SystemDataContract::TokenHistory => token_history_contract::ID_BYTES,
             #[cfg(not(feature = "token-history"))]
-            SystemDataContract::TokenHistory => {
-                return Err(Error::ContractNotIncluded("token-history"))
-            }
+            SystemDataContract::TokenHistory => [
+                45, 67, 89, 21, 34, 216, 145, 78, 156, 243, 17, 58, 202, 190, 13, 92, 61, 40, 122,
+                201, 84, 99, 187, 110, 233, 128, 63, 48, 172, 29, 210, 108,
+            ],
 
             #[cfg(feature = "keyword-search")]
             SystemDataContract::KeywordSearch => keyword_search_contract::ID_BYTES,
             #[cfg(not(feature = "keyword-search"))]
-            SystemDataContract::KeywordSearch => {
-                return Err(Error::ContractNotIncluded("keyword-search"))
-            }
+            SystemDataContract::KeywordSearch => [
+                92, 20, 14, 101, 92, 2, 101, 187, 194, 168, 8, 113, 109, 225, 132, 121, 133, 19,
+                89, 24, 173, 81, 205, 253, 11, 118, 102, 75, 169, 91, 163, 124,
+            ],
         };
-        Ok(Identifier::new(bytes))
+        Identifier::new(bytes)
     }
     /// Returns [DataContractSource]
     pub fn source(self, platform_version: &PlatformVersion) -> Result<DataContractSource, Error> {

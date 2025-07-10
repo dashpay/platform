@@ -1308,7 +1308,6 @@ dependencies = [
  "dapi-grpc-macros",
  "dash-context-provider",
  "dashcore-rpc",
- "data-contracts",
  "derive_more 1.0.0",
  "dotenvy",
  "dpp",

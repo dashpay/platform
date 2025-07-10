@@ -232,7 +232,11 @@ impl Config {
     }
 
     fn default_data_contract_id() -> Identifier {
-        data_contracts::dpns_contract::ID_BYTES.into()
+        [
+            230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126, 10, 29,
+            113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85,
+        ]
+        .into()
     }
 
     fn default_document_type_name() -> String {
