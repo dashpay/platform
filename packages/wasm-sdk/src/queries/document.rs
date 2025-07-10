@@ -1,6 +1,6 @@
 use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
+use wasm_bindgen::{JsError, JsValue, JsCast};
 use serde::{Serialize, Deserialize};
 use dash_sdk::platform::Fetch;
 use dash_sdk::dpp::prelude::Identifier;

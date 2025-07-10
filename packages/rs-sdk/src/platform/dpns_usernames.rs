@@ -1,6 +1,7 @@
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::{Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
+use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -12,6 +13,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// Convert a string to homograph-safe characters by replacing 'o', 'i', and 'l'
 /// with '0', '1', and '1' respectively to prevent homograph attacks
@@ -63,8 +65,8 @@ pub fn is_valid_username(label: &str) -> bool {
     }
 
     // Check middle characters (can be alphanumeric or hyphen)
-    for i in 1..chars.len() - 1 {
-        if !chars[i].is_ascii_alphanumeric() && chars[i] != '-' {
+    for &ch in &chars[1..chars.len() - 1] {
+        if !ch.is_ascii_alphanumeric() && ch != '-' {
             return false;
         }
     }
@@ -111,9 +113,7 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
     use dpp::dashcore::hashes::{sha256d, Hash};
     // sha256d already does double SHA256
     let hash = sha256d::Hash::hash(&data);
-    let mut result = [0u8; 32];
-    result.copy_from_slice(hash.as_byte_array());
-    result
+    hash.to_byte_array()
 }
 
 /// Input for registering a DPNS name
@@ -126,6 +126,8 @@ pub struct RegisterDpnsNameInput<S: Signer> {
     pub identity_public_key: IdentityPublicKey,
     /// The signer for the identity
     pub signer: S,
+    /// Optional callback to be called with the preorder document result
+    pub preorder_callback: Option<Box<dyn FnOnce(&Document) + Send>>,
 }
 
 /// Result of a DPNS name registration
@@ -163,17 +165,40 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<RegisterDpnsNameResult, Error> {
-        // Fetch the DPNS contract
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        let dpns_contract_id = Identifier::from_string(
-            DPNS_CONTRACT_ID,
-            dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
+        // Get DPNS contract ID from system contract if available
+        #[cfg(feature = "dpns-contract")]
+        let dpns_contract_id = {
+            use dpp::system_data_contracts::SystemDataContract;
+            SystemDataContract::DPNS.id()
+        };
+        
+        #[cfg(not(feature = "dpns-contract"))]
+        let dpns_contract_id = {
+            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+            Identifier::from_string(
+                DPNS_CONTRACT_ID,
+                dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
+        };
 
-        let dpns_contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-            .await?
-            .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+        // First check if the contract is available in the context provider
+        let context_provider = self.context_provider()
+            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
+        
+        let dpns_contract = match context_provider.get_data_contract(
+            &dpns_contract_id,
+            self.version(),
+        )? {
+            Some(contract) => contract,
+            None => {
+                // If not in context, fetch from platform
+                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
+                    .await?
+                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+                Arc::new(contract)
+            }
+        };
 
         // Get document types
         let preorder_document_type =
@@ -284,7 +309,7 @@ impl Sdk {
         });
 
         // Submit preorder document first
-        preorder_document
+        let platform_preorder_document = preorder_document
             .put_to_platform_and_wait_for_response(
                 self,
                 preorder_document_type.to_owned_document_type(),
@@ -296,8 +321,13 @@ impl Sdk {
             )
             .await?;
 
+        // Call the preorder callback if provided
+        if let Some(callback) = input.preorder_callback {
+            callback(&platform_preorder_document);
+        }
+
         // Submit domain document after preorder
-        domain_document
+        let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
                 self,
                 domain_document_type.to_owned_document_type(),
@@ -310,8 +340,8 @@ impl Sdk {
             .await?;
 
         Ok(RegisterDpnsNameResult {
-            preorder_document,
-            domain_document,
+            preorder_document: platform_preorder_document,
+            domain_document: platform_domain_document,
             full_domain_name: format!("{}.dash", normalized_label),
         })
     }
@@ -330,16 +360,40 @@ impl Sdk {
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        let dpns_contract_id = Identifier::from_string(
-            DPNS_CONTRACT_ID,
-            dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
+        // Get DPNS contract ID from system contract if available
+        #[cfg(feature = "dpns-contract")]
+        let dpns_contract_id = {
+            use dpp::system_data_contracts::SystemDataContract;
+            SystemDataContract::DPNS.id()
+        };
+        
+        #[cfg(not(feature = "dpns-contract"))]
+        let dpns_contract_id = {
+            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+            Identifier::from_string(
+                DPNS_CONTRACT_ID,
+                dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
+        };
 
-        let dpns_contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-            .await?
-            .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+        // First check if the contract is available in the context provider
+        let context_provider = self.context_provider()
+            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
+        
+        let dpns_contract = match context_provider.get_data_contract(
+            &dpns_contract_id,
+            self.version(),
+        )? {
+            Some(contract) => contract,
+            None => {
+                // If not in context, fetch from platform
+                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
+                    .await?
+                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+                Arc::new(contract)
+            }
+        };
 
         let normalized_label = convert_to_homograph_safe_chars(label);
 
@@ -384,19 +438,62 @@ impl Sdk {
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        let dpns_contract_id = Identifier::from_string(
-            DPNS_CONTRACT_ID,
-            dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
+        // Get DPNS contract ID from system contract if available
+        #[cfg(feature = "dpns-contract")]
+        let dpns_contract_id = {
+            use dpp::system_data_contracts::SystemDataContract;
+            SystemDataContract::DPNS.id()
+        };
+        
+        #[cfg(not(feature = "dpns-contract"))]
+        let dpns_contract_id = {
+            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+            Identifier::from_string(
+                DPNS_CONTRACT_ID,
+                dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
+        };
 
-        let dpns_contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-            .await?
-            .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+        // First check if the contract is available in the context provider
+        let context_provider = self.context_provider()
+            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
+        
+        let dpns_contract = match context_provider.get_data_contract(
+            &dpns_contract_id,
+            self.version(),
+        )? {
+            Some(contract) => contract,
+            None => {
+                // If not in context, fetch from platform
+                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
+                    .await?
+                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+                Arc::new(contract)
+            }
+        };
 
         // Extract label from full name if needed
-        let label = name.trim_end_matches(".dash");
+        // Handle both "alice" and "alice.dash" formats
+        let label = if let Some(dot_pos) = name.rfind('.') {
+            let (label_part, suffix) = name.split_at(dot_pos);
+            // Only strip the suffix if it's exactly ".dash"
+            if suffix == ".dash" {
+                label_part
+            } else {
+                // If it's not ".dash", treat the whole thing as the label
+                name
+            }
+        } else {
+            // No dot found, use the whole name as the label
+            name
+        };
+        
+        // Validate the label before proceeding
+        if label.is_empty() {
+            return Ok(None);
+        }
+        
         let normalized_label = convert_to_homograph_safe_chars(label);
 
         // Query for domain with this label
