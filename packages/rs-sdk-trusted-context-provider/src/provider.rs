@@ -11,6 +11,16 @@ type QuorumHash = [u8; 32];
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::version::PlatformVersion;
+#[cfg(any(
+    feature = "dpns-contract",
+    feature = "dashpay-contract",
+    feature = "withdrawals-contract",
+    feature = "wallet-utils-contract",
+    feature = "token-history-contract",
+    feature = "keywords-contract",
+    feature = "all-system-contracts"
+))]
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
 use lru::LruCache;
 use reqwest::Client;
@@ -486,7 +496,62 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
         drop(known);
 
-        // If not found in known contracts, delegate to fallback provider if available
+        // Check if this is a system data contract and the corresponding feature is enabled
+        #[cfg(any(
+            feature = "dpns-contract",
+            feature = "dashpay-contract",
+            feature = "withdrawals-contract",
+            feature = "wallet-utils-contract",
+            feature = "token-history-contract",
+            feature = "keywords-contract",
+            feature = "all-system-contracts"
+        ))]
+        {
+            // Check each system contract if its feature is enabled
+            #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::DPNS.id() {
+                return load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load DPNS contract: {}", e)));
+            }
+
+            #[cfg(any(feature = "dashpay-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::Dashpay.id() {
+                return load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load Dashpay contract: {}", e)));
+            }
+
+            #[cfg(any(feature = "withdrawals-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::Withdrawals.id() {
+                return load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load Withdrawals contract: {}", e)));
+            }
+
+            #[cfg(any(feature = "wallet-utils-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::WalletUtils.id() {
+                return load_system_data_contract(SystemDataContract::WalletUtils, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load WalletUtils contract: {}", e)));
+            }
+
+            #[cfg(any(feature = "token-history-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::TokenHistory.id() {
+                return load_system_data_contract(SystemDataContract::TokenHistory, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load TokenHistory contract: {}", e)));
+            }
+
+            #[cfg(any(feature = "keywords-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::KeywordSearch.id() {
+                return load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| ContextProviderError::Generic(format!("Failed to load KeywordSearch contract: {}", e)));
+            }
+        }
+
+        // If not found in known contracts or system contracts, delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
             provider.get_data_contract(id, platform_version)
         } else {

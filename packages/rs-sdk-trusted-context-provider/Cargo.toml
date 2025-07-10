@@ -22,6 +22,18 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = ["bls-
 futures = "0.3"
 url = "2.5"
 
+[features]
+# All system contracts (default behavior)
+all-system-contracts = ["dpp/all-system_contracts"]
+
+# Individual contract features - these enable specific contracts in DPP
+withdrawals-contract = ["dpp/withdrawals-contract"]
+dpns-contract = ["dpp/dpns-contract"]
+dashpay-contract = ["dpp/dashpay-contract"]
+wallet-utils-contract = ["dpp/wallet-utils-contract"]
+token-history-contract = ["dpp/token-history-contract"]
+keywords-contract = ["dpp/keywords-contract"]
+
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 tokio-test = "0.4.4"
