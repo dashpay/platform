@@ -68,7 +68,8 @@
     "packages/wasm-dpp",
     "packages/withdrawals-contract",
     "packages/token-history-contract",
-    "packages/keyword-search-contract"
+    "packages/keyword-search-contract",
+    "packages/wasm-drive-verify"
   ],
   "resolutions": {
     "pbkdf2": "^3.1.3",

@@ -7,11 +7,14 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
-use arc_swap::{ArcSwapAny, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
+use dash_context_provider::ContextProvider;
+#[cfg(feature = "mocks")]
+use dash_context_provider::MockContextProvider;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
@@ -20,9 +23,7 @@ use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
-#[cfg(feature = "mocks")]
-use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{ContextProvider, FromProof};
+use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -39,6 +40,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -204,6 +206,24 @@ enum SdkInstance {
     },
 }
 
+/// Helper function to get current timestamp in seconds
+/// Works in both native and WASM environments
+fn get_current_time_seconds() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // In WASM, we use JavaScript's Date.now() which returns milliseconds
+        // We need to convert to seconds
+        (js_sys::Date::now() / 1000.0) as u64
+    }
+}
+
 impl Sdk {
     /// Initialize Dash Platform  SDK in mock mode.
     ///
@@ -359,10 +379,7 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        };
+        let current_time_s = get_current_time_seconds();
 
         // we start by only using a read lock, as this speeds up the system
         let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
@@ -448,10 +465,7 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        };
+        let current_time_s = get_current_time_seconds();
 
         // we start by only using a read lock, as this speeds up the system
         let mut identity_contract_nonce_counter = self
@@ -1116,7 +1130,7 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
-                    context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
+                    context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,

@@ -387,10 +387,14 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
+    packages/rs-context-provider \
+    packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
+    packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/check-features \
+    packages/dash-platform-balance-checker \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -469,10 +473,14 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
+    packages/rs-context-provider \
+    packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
+    packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/check-features \
+    packages/dash-platform-balance-checker \
     /platform/
 
 RUN mkdir /artifacts

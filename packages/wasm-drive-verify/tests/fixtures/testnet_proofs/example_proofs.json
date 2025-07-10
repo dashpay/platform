@@ -1,0 +1,52 @@
+{
+  "timestamp": "2024-01-20T10:00:00Z",
+  "network": "testnet",
+  "platformVersion": 1,
+  "description": "Example proof structure for integration tests",
+  "proofs": {
+    "identityById": {
+      "description": "Proof for verifying a full identity by its ID",
+      "identityId": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+      "proof": "AQAAAAEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "isProofSubset": false,
+      "expectedResult": {
+        "hasRootHash": true,
+        "hasIdentity": true
+      }
+    },
+    "identityBalance": {
+      "description": "Proof for verifying identity balance",
+      "identityId": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+      "proof": "AQAAAAEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "isProofSubset": false,
+      "expectedResult": {
+        "hasRootHash": true,
+        "hasBalance": true
+      }
+    },
+    "dpnsDocuments": {
+      "description": "Proof for DPNS domain documents query",
+      "contractId": "7133734967411265855288437346261134676850487612170005227449438774554101671041",
+      "documentType": "domain",
+      "proof": "AQAAAAEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "query": {
+        "limit": 10
+      },
+      "expectedResult": {
+        "hasRootHash": true,
+        "hasDocuments": true,
+        "minDocuments": 0
+      }
+    },
+    "dataContract": {
+      "description": "Proof for DPNS data contract",
+      "contractId": "7133734967411265855288437346261134676850487612170005227449438774554101671041",
+      "proof": "AQAAAAEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "isProofSubset": false,
+      "expectedResult": {
+        "hasRootHash": true,
+        "hasContract": true
+      }
+    }
+  }
+}

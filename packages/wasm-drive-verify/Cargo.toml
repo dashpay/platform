@@ -1,0 +1,82 @@
+[package]
+name = "wasm-drive-verify"
+version = "1.8.0"
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+rust-version = "1.74"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "state-transitions",
+    "system_contracts",
+    "data-contract-serde-conversion",
+    "data-contract-json-conversion",
+    "identity-serde-conversion",
+    "document-serde-conversion",
+    "document-json-conversion",
+    "state-transition-serde-conversion",
+    "vote-serde-conversion",
+    "platform-value-json"
+] }
+
+wasm-bindgen = { version = "0.2.89" }
+serde = { version = "1.0.193", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+serde-wasm-bindgen = { version = "0.6.0" }
+js-sys = { version = "0.3.64" }
+web-sys = { version = "0.3.64", features = ["console", "Window", "Performance"] }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+ciborium = { version = "0.2.1" }
+base64 = { version = "0.22.0" }
+bs58 = { version = "0.5.1" }
+indexmap = { version = "2.0.0" }
+nohash-hasher = { version = "0.2.0" }
+bincode = { version = "2.0.0-rc.3" }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.39"
+criterion = { version = "0.5", default-features = false, features = [] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "state-transitions",
+    "random-public-keys",
+    "random-identities",
+    "random-documents",
+    "system_contracts",
+    "data-contract-serde-conversion",
+    "data-contract-json-conversion",
+    "identity-serde-conversion",
+    "document-serde-conversion",
+    "document-json-conversion",
+    "state-transition-serde-conversion",
+    "vote-serde-conversion",
+    "platform-value-json"
+] }
+js-sys = "0.3.64"
+web-sys = "0.3.64"
+hex = "0.4.3"
+base64 = "0.22.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+
+[features]
+default = ["console_error_panic_hook", "full"]
+full = ["identity", "document", "contract", "tokens", "governance", "transitions"]
+identity = []
+document = []
+contract = []
+tokens = []
+governance = []
+transitions = []
+debug_logs = []
+
+[[bench]]
+name = "simple_benchmarks"
+harness = false
+required-features = ["full"]
+

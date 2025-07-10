@@ -86,6 +86,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/wasm-dpp"\
     },\
     {\
+      "name": "wasm-drive-verify",\
+      "reference": "workspace:packages/wasm-drive-verify"\
+    },\
+    {\
       "name": "@dashevo/withdrawals-contract",\
       "reference": "workspace:packages/withdrawals-contract"\
     }\
@@ -112,7 +116,8 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
     ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
     ["dash", ["workspace:packages/js-dash-sdk"]],\
-    ["dashmate", ["workspace:packages/dashmate"]]\
+    ["dashmate", ["workspace:packages/dashmate"]],\
+    ["wasm-drive-verify", ["workspace:packages/wasm-drive-verify"]]\
   ],\
   "fallbackPool": [\
   ],\
@@ -19951,6 +19956,15 @@ const RAW_RUNTIME_STATE =
           ["walk-up-path", "npm:1.0.0"]\
         ],\
         "linkType": "HARD"\
+      }]\
+    ]],\
+    ["wasm-drive-verify", [\
+      ["workspace:packages/wasm-drive-verify", {\
+        "packageLocation": "./packages/wasm-drive-verify/",\
+        "packageDependencies": [\
+          ["wasm-drive-verify", "workspace:packages/wasm-drive-verify"]\
+        ],\
+        "linkType": "SOFT"\
       }]\
     ]],\
     ["wasm-x11-hash", [\
