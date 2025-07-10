@@ -49,7 +49,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "2.0.12" }
-data-contracts = { path = "../data-contracts", optional = true }
+data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
@@ -286,7 +286,18 @@ core-types = ["bls-signatures"]
 core-types-serialization = ["core-types"]
 core-types-serde-conversion = ["core-types"]
 state-transitions = []
-system_contracts = ["factories", "data-contracts", "platform-value-json"]
+# All system data contracts
+system_contracts = ["factories", "data-contracts", "data-contracts/all-contracts", "platform-value-json"]
+
+# Individual data contract features
+dpns-contract = ["data-contracts", "data-contracts/dpns", "platform-value-json"]
+dashpay-contract = ["data-contracts", "data-contracts/dashpay", "platform-value-json"]
+withdrawals-contract = ["data-contracts", "data-contracts/withdrawals", "platform-value-json"]
+masternode-rewards-contract = ["data-contracts", "data-contracts/masternode-rewards", "platform-value-json"]
+feature-flags-contract = ["data-contracts", "data-contracts/feature-flags", "platform-value-json"]
+wallet-utils-contract = ["data-contracts", "data-contracts/wallet-utils", "platform-value-json"]
+token-history-contract = ["data-contracts", "data-contracts/token-history", "platform-value-json"]
+keywords-contract = ["data-contracts", "data-contracts/keyword-search", "platform-value-json"]
 fixtures-and-mocks = ["system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]

@@ -14,8 +14,11 @@ pub enum Error {
     },
     #[error("schema deserialize error: {0}")]
     InvalidSchemaJson(#[from] serde_json::Error),
+    #[error("contract '{0}' not included in build (enable feature '{0}')")]
+    ContractNotIncluded(&'static str),
 }
 
+#[cfg(feature = "withdrawals")]
 impl From<withdrawals_contract::Error> for Error {
     fn from(e: withdrawals_contract::Error) -> Self {
         match e {
@@ -33,6 +36,7 @@ impl From<withdrawals_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "dashpay")]
 impl From<dashpay_contract::Error> for Error {
     fn from(e: dashpay_contract::Error) -> Self {
         match e {
@@ -50,6 +54,7 @@ impl From<dashpay_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "dpns")]
 impl From<dpns_contract::Error> for Error {
     fn from(e: dpns_contract::Error) -> Self {
         match e {
@@ -67,6 +72,7 @@ impl From<dpns_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "masternode-rewards")]
 impl From<masternode_reward_shares_contract::Error> for Error {
     fn from(e: masternode_reward_shares_contract::Error) -> Self {
         match e {
@@ -86,6 +92,7 @@ impl From<masternode_reward_shares_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "feature-flags")]
 impl From<feature_flags_contract::Error> for Error {
     fn from(e: feature_flags_contract::Error) -> Self {
         match e {
@@ -103,6 +110,7 @@ impl From<feature_flags_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "wallet-utils")]
 impl From<wallet_utils_contract::Error> for Error {
     fn from(e: wallet_utils_contract::Error) -> Self {
         match e {
@@ -120,6 +128,7 @@ impl From<wallet_utils_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "token-history")]
 impl From<token_history_contract::Error> for Error {
     fn from(e: token_history_contract::Error) -> Self {
         match e {
@@ -137,6 +146,7 @@ impl From<token_history_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "keyword-search")]
 impl From<keyword_search_contract::Error> for Error {
     fn from(e: keyword_search_contract::Error) -> Self {
         match e {

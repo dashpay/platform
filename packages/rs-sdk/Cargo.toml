@@ -116,7 +116,18 @@ generate-test-vectors = ["network-testing"]
 
 # Have the system data contracts inside the dpp crate
 
-system-data-contracts = ["dpp/data-contracts"]
+# All system contracts (default behavior)
+system-data-contracts = ["dpp/system_contracts"]
+
+# Individual contract features - these enable specific contracts in DPP
+withdrawals-contract = ["dpp/withdrawals-contract"]
+masternode-rewards-contract = ["dpp/masternode-rewards-contract"]
+feature-flags-contract = ["dpp/feature-flags-contract"]
+dpns-contract = ["dpp/dpns-contract"]
+dashpay-contract = ["dpp/dashpay-contract"]
+wallet-utils-contract = ["dpp/wallet-utils-contract"]
+token-history-contract = ["dpp/token-history-contract"]
+keywords-contract = ["dpp/keywords-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
 

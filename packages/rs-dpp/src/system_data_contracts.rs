@@ -22,17 +22,50 @@ impl ConfigurationForSystemContract for SystemDataContract {
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
         match self {
-            SystemDataContract::Withdrawals
-            | SystemDataContract::MasternodeRewards
-            | SystemDataContract::FeatureFlags
-            | SystemDataContract::DPNS
-            | SystemDataContract::Dashpay
-            | SystemDataContract::WalletUtils => {
+            #[cfg(any(feature = "withdrawals-contract", feature = "system_contracts"))]
+            SystemDataContract::Withdrawals => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;
                 config.set_sized_integer_types_enabled(false);
                 Ok(config)
             }
-            SystemDataContract::TokenHistory | SystemDataContract::KeywordSearch => {
+            #[cfg(any(feature = "masternode-rewards-contract", feature = "system_contracts"))]
+            SystemDataContract::MasternodeRewards => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            #[cfg(any(feature = "feature-flags-contract", feature = "system_contracts"))]
+            SystemDataContract::FeatureFlags => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            #[cfg(any(feature = "dpns-contract", feature = "system_contracts"))]
+            SystemDataContract::DPNS => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            #[cfg(any(feature = "dashpay-contract", feature = "system_contracts"))]
+            SystemDataContract::Dashpay => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            #[cfg(any(feature = "wallet-utils-contract", feature = "system_contracts"))]
+            SystemDataContract::WalletUtils => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            #[cfg(any(feature = "token-history-contract", feature = "system_contracts"))]
+            SystemDataContract::TokenHistory => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            #[cfg(any(feature = "keywords-contract", feature = "system_contracts"))]
+            SystemDataContract::KeywordSearch => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)

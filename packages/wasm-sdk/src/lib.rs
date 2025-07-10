@@ -2,6 +2,7 @@ use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
 pub mod context_provider;
 pub mod dpp;
+pub mod dpns;
 pub mod error;
 pub mod sdk;
 pub mod state_transitions;
@@ -12,6 +13,7 @@ pub mod queries;
 pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use queries::*;
 pub use state_transitions::*;
+pub use dpns::*;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

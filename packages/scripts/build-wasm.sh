@@ -107,12 +107,24 @@ if [ "$USE_WASM_PACK" = true ]; then
     export CARGO_PROFILE_RELEASE_LTO=false
     export RUSTFLAGS="-C lto=off"
     
-    wasm-pack build --target "$TARGET_TYPE" --release --no-opt
+    # Add features if specified
+    FEATURES_ARG=""
+    if [ -n "${CARGO_BUILD_FEATURES:-}" ]; then
+        FEATURES_ARG="--features $CARGO_BUILD_FEATURES"
+    fi
+    
+    wasm-pack build --target "$TARGET_TYPE" --release --no-opt $FEATURES_ARG
 else
     # Build using cargo directly
     echo "Building with cargo..."
     
-    cargo build --target wasm32-unknown-unknown --release \
+    # Add features if specified
+    FEATURES_ARG=""
+    if [ -n "${CARGO_BUILD_FEATURES:-}" ]; then
+        FEATURES_ARG="--features $CARGO_BUILD_FEATURES"
+    fi
+    
+    cargo build --target wasm32-unknown-unknown --release $FEATURES_ARG \
         --config 'profile.release.panic="abort"' \
         --config 'profile.release.strip=true' \
         --config 'profile.release.debug=false' \

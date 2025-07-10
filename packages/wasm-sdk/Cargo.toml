@@ -9,7 +9,20 @@ crate-type = ["cdylib"]
 default = []
 
 mocks = ["dash-sdk/mocks"]
+
+# All system contracts
 system-data-contracts = ["dash-sdk/system-data-contracts"]
+
+# Individual contract features
+withdrawals-contract = ["dash-sdk/withdrawals-contract"]
+masternode-rewards-contract = ["dash-sdk/masternode-rewards-contract"]
+feature-flags-contract = ["dash-sdk/feature-flags-contract"]
+dpns-contract = ["dash-sdk/dpns-contract"]
+dashpay-contract = ["dash-sdk/dashpay-contract"]
+wallet-utils-contract = ["dash-sdk/wallet-utils-contract"]
+token-history-contract = ["dash-sdk/token-history-contract"]
+keywords-contract = ["dash-sdk/keywords-contract"]
+
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]

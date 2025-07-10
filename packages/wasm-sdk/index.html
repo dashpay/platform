@@ -658,7 +658,7 @@
             <input type="text" id="identityId" placeholder="Enter identity ID">
           </div>
           <div class="input-group">
-            <label for="privateKey">Private Key (WIF or hex)</label>
+            <label for="privateKey">Private Key (WIF or hex, optionally with :keyId)</label>
             <input type="password" id="privateKey" placeholder="Enter private key (WIF or 32-byte hex)">
           </div>
         </div>
@@ -863,7 +863,14 @@
       get_group_info,
       get_group_infos,
       get_group_actions,
-      get_group_action_signers
+      get_group_action_signers,
+      // DPNS functions
+      dpns_convert_to_homograph_safe,
+      dpns_is_valid_username,
+      dpns_is_contested_username,
+      dpns_register_name,
+      dpns_is_name_available,
+      dpns_resolve_name
     } from './pkg/wasm_sdk.js';
     
     // Import all placeholder query functions
@@ -1017,6 +1024,13 @@
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true },
               { name: "price", type: "number", label: "Price (credits, 0 to remove)", required: true }
+            ]
+          },
+          dpnsRegister: {
+            label: "DPNS Register Name",
+            description: "Register a new DPNS username",
+            inputs: [
+              { name: "label", type: "text", label: "Username", required: true, placeholder: "Enter username (e.g., alice)", validateOnType: true }
             ]
           }
         }
@@ -1336,6 +1350,20 @@
             description: "Get DPNS username for an identity",
             inputs: [
               { name: "identityId", type: "text", label: "Identity ID", required: true }
+            ]
+          },
+          dpnsCheckAvailability: {
+            label: "DPNS Check Availability",
+            description: "Check if a DPNS username is available",
+            inputs: [
+              { name: "label", type: "text", label: "Username to Check", required: true, placeholder: "Enter username (e.g., alice)" }
+            ]
+          },
+          dpnsResolve: {
+            label: "DPNS Resolve Name",
+            description: "Resolve a DPNS name to an identity ID",
+            inputs: [
+              { name: "name", type: "text", label: "DPNS Name", required: true, placeholder: "Enter name (e.g., alice or alice.dash)" }
             ]
           }
         }
@@ -2487,8 +2515,57 @@ ${indentStr}]`;
         const input = document.createElement('input');
         input.type = inputDef.type;
         input.name = inputDef.name;
-        input.placeholder = inputDef.label;
+        input.placeholder = inputDef.placeholder || inputDef.label;
+        if (inputDef.defaultValue !== undefined) {
+          input.value = inputDef.defaultValue;
+        }
         inputGroup.appendChild(input);
+        
+        // Add validation message container for DPNS username
+        if (inputDef.validateOnType) {
+          const validationMessage = document.createElement('div');
+          validationMessage.className = 'validation-message';
+          validationMessage.style.fontSize = '0.9em';
+          validationMessage.style.marginTop = '5px';
+          inputGroup.appendChild(validationMessage);
+          
+          // Add real-time validation
+          input.addEventListener('input', (e) => {
+            const value = e.target.value;
+            
+            if (!value) {
+              validationMessage.textContent = '';
+              validationMessage.className = 'validation-message';
+              return;
+            }
+            
+            // Check if it's a valid username
+            const isValid = dpns_is_valid_username(value);
+            
+            if (!isValid) {
+              validationMessage.textContent = '❌ Invalid username format. Must be 3-63 chars, start/end with letter/number, only letters/numbers/hyphens.';
+              validationMessage.className = 'validation-message error';
+              validationMessage.style.color = '#dc3545';
+            } else {
+              // Check if it's contested
+              const isContested = dpns_is_contested_username(value);
+              const homographSafe = dpns_convert_to_homograph_safe(value);
+              const isHomographDifferent = value !== homographSafe;
+              
+              let message = '✅ Valid username';
+              if (isContested) {
+                message += ' (contested - requires masternode voting)';
+              }
+              if (isHomographDifferent) {
+                message += `. Will be stored as "${homographSafe}"`;
+              }
+              
+              validationMessage.textContent = message;
+              validationMessage.className = 'validation-message success';
+              validationMessage.style.color = isContested ? '#ff9800' : '#28a745';
+            }
+          });
+        }
       } else if (inputDef.type === 'checkbox') {
         const checkboxContainer = document.createElement('div');
         const checkbox = document.createElement('input');
@@ -2890,6 +2967,56 @@ ${indentStr}]`;
             values.identityId
           );
           // Result is the username string or null
+        } else if (queryType === 'dpnsCheckAvailability') {
+          // Handle DPNS availability check
+          const isValid = dpns_is_valid_username(values.label);
+          
+          if (!isValid) {
+            result = {
+              label: values.label,
+              valid: false,
+              message: "❌ Invalid username format",
+              requirements: [
+                "Must be 3-63 characters long",
+                "Must start and end with a letter or number",
+                "Can only contain letters, numbers, and hyphens",
+                "Cannot have consecutive hyphens"
+              ]
+            };
+          } else {
+            const isAvailable = await dpns_is_name_available(
+              sdk,
+              values.label
+            );
+            
+            const homographSafe = dpns_convert_to_homograph_safe(values.label);
+            const isHomographDifferent = values.label !== homographSafe;
+            const isContested = dpns_is_contested_username(values.label);
+            
+            result = {
+              label: values.label,
+              valid: true,
+              homographSafeLabel: homographSafe,
+              available: isAvailable,
+              contested: isContested,
+              message: isAvailable ? `"${values.label}" is available!` : `"${values.label}" is already taken.`,
+              note: isHomographDifferent ? `Note: Your username will be stored as "${homographSafe}" to prevent homograph attacks` : undefined,
+              contestedNote: isContested && isAvailable ? 
+                "⚠️ This is a contested username (3-19 chars, only a-z/0/1/-). It requires masternode voting to register." : undefined
+            };
+          }
+        } else if (queryType === 'dpnsResolve') {
+          // Handle DPNS name resolution
+          const resolvedIdentityId = await dpns_resolve_name(
+            sdk,
+            values.name
+          );
+          
+          result = {
+            name: values.name,
+            identityId: resolvedIdentityId,
+            message: resolvedIdentityId ? `Resolved to identity: ${resolvedIdentityId}` : `Name "${values.name}" not found`
+          };
         }
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
@@ -3308,6 +3435,98 @@ ${indentStr}]`;
           // Pass the result object directly to displayResult
           displayResult(result);
           updateStatus('Document price set successfully', 'success');
+        } else if (transitionType === 'dpnsRegister') {
+          // Handle DPNS registration
+          // First validate the username
+          const isValid = dpns_is_valid_username(values.label);
+          
+          if (!isValid) {
+            displayResult(JSON.stringify({
+              label: values.label,
+              valid: false,
+              message: "❌ Invalid username format",
+              requirements: [
+                "Must be 3-63 characters long",
+                "Must start and end with a letter or number",
+                "Can only contain letters, numbers, and hyphens",
+                "Cannot have consecutive hyphens"
+              ]
+            }, null, 2));
+            updateStatus('Invalid username format', 'error');
+            return;
+          }
+          
+          // Check if name is available
+          const isAvailable = await dpns_is_name_available(sdk, values.label);
+          if (!isAvailable) {
+            displayResult(JSON.stringify({
+              label: values.label,
+              available: false,
+              message: `❌ Username "${values.label}" is already taken`
+            }, null, 2));
+            updateStatus('Username already taken', 'error');
+            return;
+          }
+          
+          // Fetch identity to get the key ID
+          const identity = await identity_fetch(sdk, identityId);
+          const identityJSON = identity.toJSON();
+          
+          console.log('Identity public keys:', identityJSON.publicKeys);
+          
+          // We need to derive the public key from the private key to find the matching key ID
+          // For now, we'll prompt the user to specify the key ID since we can't easily derive
+          // the public key from WIF in JavaScript without additional crypto libraries
+          
+          // Check if the private key has a key ID suffix (format: privateKey:keyId)
+          let keyId = null;
+          let actualPrivateKey = privateKey;
+          
+          if (privateKey.includes(':')) {
+            const parts = privateKey.split(':');
+            actualPrivateKey = parts[0];
+            keyId = parseInt(parts[1]);
+            
+            // Verify the key exists and has the right security level
+            const publicKey = identityJSON.publicKeys.find(key => key.id === keyId);
+            if (!publicKey) {
+              throw new Error(`Key ID ${keyId} not found in identity`);
+            }
+            if (publicKey.disabledAt) {
+              throw new Error(`Key ID ${keyId} is disabled`);
+            }
+            // Check security level - MASTER=0, CRITICAL=1, HIGH=2
+            console.log(`Key ${keyId} has security level: ${publicKey.securityLevel}`);
+            if (publicKey.securityLevel === 0) {
+              throw new Error(`Key ID ${keyId} has MASTER security level. DPNS requires CRITICAL (1) or HIGH (2) security level.`);
+            }
+          } else {
+            // If no key ID provided, try to find the first suitable key
+            const suitableKey = identityJSON.publicKeys.find(key => 
+              !key.disabledAt && key.securityLevel !== 0  // Not MASTER
+            );
+            
+            if (suitableKey) {
+              keyId = suitableKey.id;
+              const levelName = suitableKey.securityLevel === 1 ? 'CRITICAL' : 'HIGH';
+              console.log(`No key ID specified. Using key ${keyId} with ${levelName} security level. For explicit control, use format: privateKey:keyId`);
+            } else {
+              throw new Error('No suitable keys found. DPNS requires CRITICAL or HIGH security level. Specify key ID using format: privateKey:keyId');
+            }
+          }
+          
+          console.log(`Using key ID ${keyId} for DPNS registration`);
+          
+          result = await dpns_register_name(
+            sdk,
+            values.label,
+            identityId,       // Use the identity ID from authentication
+            keyId,            // Use the determined key ID
+            actualPrivateKey  // Use the actual private key (without :keyId suffix)
+          );
+          
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatus('DPNS name registered successfully', 'success');
         } else if (transitionType === 'documentPurchase') {
           // Handle document purchase
           result = await sdk.documentPurchase(

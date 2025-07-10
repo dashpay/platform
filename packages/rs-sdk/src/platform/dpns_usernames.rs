@@ -1,19 +1,19 @@
 use crate::platform::transition::put_document::PutDocument;
-use crate::platform::{Document, FetchMany, Fetch};
+use crate::platform::{Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
+use dpp::dashcore::secp256k1::rand::rngs::StdRng;
+use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{DocumentV0, DocumentV0Getters};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
-use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use std::collections::BTreeMap;
 
-/// Convert a string to homograph-safe characters by replacing 'o', 'i', and 'l' 
+/// Convert a string to homograph-safe characters by replacing 'o', 'i', and 'l'
 /// with '0', '1', and '1' respectively to prevent homograph attacks
 pub fn convert_to_homograph_safe_chars(input: &str) -> String {
     input
@@ -25,6 +25,85 @@ pub fn convert_to_homograph_safe_chars(input: &str) -> String {
             _ => c.to_ascii_lowercase(),
         })
         .collect()
+}
+
+/// Check if a username is valid according to DPNS rules
+///
+/// A username is valid if:
+/// - It's between 3 and 63 characters long
+/// - It starts and ends with alphanumeric characters (a-zA-Z0-9)
+/// - It contains only alphanumeric characters and hyphens
+/// - It doesn't have consecutive hyphens (enforced by the pattern)
+///
+/// Pattern: ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$
+///
+/// # Arguments
+///
+/// * `label` - The username label to check (e.g., "alice")
+///
+/// # Returns
+///
+/// Returns `true` if the username is valid, `false` otherwise
+pub fn is_valid_username(label: &str) -> bool {
+    // Check length
+    if label.len() < 3 || label.len() > 63 {
+        return false;
+    }
+
+    let chars: Vec<char> = label.chars().collect();
+
+    // Check first character (must be alphanumeric)
+    if !chars[0].is_ascii_alphanumeric() {
+        return false;
+    }
+
+    // Check last character (must be alphanumeric)
+    if !chars[chars.len() - 1].is_ascii_alphanumeric() {
+        return false;
+    }
+
+    // Check middle characters (can be alphanumeric or hyphen)
+    for i in 1..chars.len() - 1 {
+        if !chars[i].is_ascii_alphanumeric() && chars[i] != '-' {
+            return false;
+        }
+    }
+
+    // Additional check: no consecutive hyphens (good practice)
+    for i in 0..chars.len() - 1 {
+        if chars[i] == '-' && chars[i + 1] == '-' {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Check if a username is contested (requires masternode voting)
+///
+/// A username is contested if its normalized label:
+/// - Is between 3 and 19 characters long (inclusive)
+/// - Contains only lowercase letters a-z, digits 0-1, and hyphens
+///
+/// # Arguments
+///
+/// * `label` - The username label to check (e.g., "alice")
+///
+/// # Returns
+///
+/// Returns `true` if the username would be contested, `false` otherwise
+pub fn is_contested_username(label: &str) -> bool {
+    let normalized = convert_to_homograph_safe_chars(label);
+
+    // Check length
+    if normalized.len() < 3 || normalized.len() > 19 {
+        return false;
+    }
+
+    // Check if all characters match the pattern [a-z01-]
+    normalized
+        .chars()
+        .all(|c| matches!(c, 'a'..='z' | '0' | '1' | '-'))
 }
 
 /// Hash a buffer twice using SHA256 (double SHA256)
@@ -62,7 +141,7 @@ pub struct RegisterDpnsNameResult {
 
 impl Sdk {
     /// Register a DPNS username in a single operation
-    /// 
+    ///
     /// This method handles both the preorder and domain registration steps automatically.
     /// It generates the necessary entropy, creates both documents, and submits them in order.
     ///
@@ -86,21 +165,30 @@ impl Sdk {
     ) -> Result<RegisterDpnsNameResult, Error> {
         // Fetch the DPNS contract
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        let dpns_contract_id = Identifier::from_string(DPNS_CONTRACT_ID, dpp::platform_value::string_encoding::Encoding::Base58)
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
-        
+        let dpns_contract_id = Identifier::from_string(
+            DPNS_CONTRACT_ID,
+            dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+        .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
+
         let dpns_contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
             .await?
             .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
 
         // Get document types
-        let preorder_document_type = dpns_contract
-            .document_type_for_name("preorder")
-            .map_err(|_| Error::DapiClientError("DPNS preorder document type not found".to_string()))?;
-        
-        let domain_document_type = dpns_contract
-            .document_type_for_name("domain")
-            .map_err(|_| Error::DapiClientError("DPNS domain document type not found".to_string()))?;
+        let preorder_document_type =
+            dpns_contract
+                .document_type_for_name("preorder")
+                .map_err(|_| {
+                    Error::DapiClientError("DPNS preorder document type not found".to_string())
+                })?;
+
+        let domain_document_type =
+            dpns_contract
+                .document_type_for_name("domain")
+                .map_err(|_| {
+                    Error::DapiClientError("DPNS domain document type not found".to_string())
+                })?;
 
         // Generate entropy and salt
         let mut rng = StdRng::from_entropy();
@@ -154,10 +242,19 @@ impl Sdk {
             id: domain_id,
             owner_id: identity_id,
             properties: BTreeMap::from([
-                ("parentDomainName".to_string(), Value::Text("dash".to_string())),
-                ("normalizedParentDomainName".to_string(), Value::Text("dash".to_string())),
+                (
+                    "parentDomainName".to_string(),
+                    Value::Text("dash".to_string()),
+                ),
+                (
+                    "normalizedParentDomainName".to_string(),
+                    Value::Text("dash".to_string()),
+                ),
                 ("label".to_string(), Value::Text(input.label.clone())),
-                ("normalizedLabel".to_string(), Value::Text(normalized_label.clone())),
+                (
+                    "normalizedLabel".to_string(),
+                    Value::Text(normalized_label.clone()),
+                ),
                 ("preorderSalt".to_string(), Value::Bytes32(salt)),
                 (
                     "records".to_string(),
@@ -232,17 +329,20 @@ impl Sdk {
         use crate::platform::documents::document_query::DocumentQuery;
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
-        
+
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        let dpns_contract_id = Identifier::from_string(DPNS_CONTRACT_ID, dpp::platform_value::string_encoding::Encoding::Base58)
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
-        
+        let dpns_contract_id = Identifier::from_string(
+            DPNS_CONTRACT_ID,
+            dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+        .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
+
         let dpns_contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
             .await?
             .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
 
         let normalized_label = convert_to_homograph_safe_chars(label);
-        
+
         // Query for existing domain with this label
         let query = DocumentQuery {
             data_contract: dpns_contract.into(),
@@ -265,7 +365,7 @@ impl Sdk {
         };
 
         let documents = Document::fetch_many(self, query).await?;
-        
+
         // If no documents found, the name is available
         Ok(documents.is_empty())
     }
@@ -283,11 +383,14 @@ impl Sdk {
         use crate::platform::documents::document_query::DocumentQuery;
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
-        
+
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        let dpns_contract_id = Identifier::from_string(DPNS_CONTRACT_ID, dpp::platform_value::string_encoding::Encoding::Base58)
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
-        
+        let dpns_contract_id = Identifier::from_string(
+            DPNS_CONTRACT_ID,
+            dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+        .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?;
+
         let dpns_contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
             .await?
             .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
@@ -295,7 +398,7 @@ impl Sdk {
         // Extract label from full name if needed
         let label = name.trim_end_matches(".dash");
         let normalized_label = convert_to_homograph_safe_chars(label);
-        
+
         // Query for domain with this label
         let query = DocumentQuery {
             data_contract: dpns_contract.into(),
@@ -318,21 +421,22 @@ impl Sdk {
         };
 
         let documents = Document::fetch_many(self, query).await?;
-        
+
         if let Some((_, Some(doc))) = documents.into_iter().next() {
             // Extract the identity from records.identity
             if let Some(Value::Map(records)) = doc.properties().get("records") {
                 for (key, value) in records {
                     if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
                         if k == "identity" {
-                            return Ok(Some(Identifier::from_bytes(id_bytes)
-                                .map_err(|e| Error::DapiClientError(format!("Invalid identifier: {}", e)))?));
+                            return Ok(Some(Identifier::from_bytes(id_bytes).map_err(|e| {
+                                Error::DapiClientError(format!("Invalid identifier: {}", e))
+                            })?));
                         }
                     }
                 }
             }
         }
-        
+
         Ok(None)
     }
 }
@@ -347,5 +451,90 @@ mod tests {
         assert_eq!(convert_to_homograph_safe_chars("bob"), "b0b");
         assert_eq!(convert_to_homograph_safe_chars("COOL"), "c001");
         assert_eq!(convert_to_homograph_safe_chars("test123"), "test123");
+    }
+
+    #[test]
+    fn test_is_valid_username() {
+        // Valid usernames
+        assert!(is_valid_username("abc"));
+        assert!(is_valid_username("alice"));
+        assert!(is_valid_username("Alice123"));
+        assert!(is_valid_username("dash-p2p"));
+        assert!(is_valid_username("test-name-123"));
+        assert!(is_valid_username("a-b-c"));
+        assert!(is_valid_username("user2024"));
+        assert!(is_valid_username("CryptoKing"));
+        assert!(is_valid_username("web3-developer"));
+        assert!(is_valid_username("a".repeat(63).as_str())); // Max length
+
+        // Invalid - too short
+        assert!(!is_valid_username("ab"));
+        assert!(!is_valid_username("a"));
+        assert!(!is_valid_username(""));
+
+        // Invalid - too long
+        assert!(!is_valid_username("a".repeat(64).as_str()));
+
+        // Invalid - starts with hyphen
+        assert!(!is_valid_username("-alice"));
+        assert!(!is_valid_username("-test"));
+
+        // Invalid - ends with hyphen
+        assert!(!is_valid_username("alice-"));
+        assert!(!is_valid_username("test-"));
+
+        // Invalid - starts and ends with hyphen
+        assert!(!is_valid_username("-alice-"));
+
+        // Invalid - contains invalid characters
+        assert!(!is_valid_username("alice_bob")); // underscore
+        assert!(!is_valid_username("alice.bob")); // dot
+        assert!(!is_valid_username("alice@dash")); // at sign
+        assert!(!is_valid_username("alice!")); // exclamation
+        assert!(!is_valid_username("alice bob")); // space
+        assert!(!is_valid_username("alice#1")); // hash
+        assert!(!is_valid_username("alice$")); // dollar
+        assert!(!is_valid_username("alice%20")); // percent
+
+        // Invalid - consecutive hyphens
+        assert!(!is_valid_username("alice--bob"));
+        assert!(!is_valid_username("test---name"));
+    }
+
+    #[test]
+    fn test_is_contested_username() {
+        // Contested usernames (3-19 chars, only [a-z01-])
+        assert!(is_contested_username("abc"));
+        assert!(is_contested_username("alice")); // becomes "a11ce"
+        assert!(is_contested_username("b0b"));
+        assert!(is_contested_username("cool")); // becomes "c001"
+        assert!(is_contested_username("a-b-c"));
+        assert!(is_contested_username("hello")); // becomes "he110"
+        assert!(is_contested_username("world")); // becomes "w0r1d"
+        assert!(is_contested_username("dash"));
+        assert!(is_contested_username("a11ce")); // already normalized
+        assert!(is_contested_username("dash-dao")); // becomes "dash-da0"
+
+        // Not contested - too short
+        assert!(!is_contested_username("ab"));
+        assert!(!is_contested_username("io")); // becomes "10" which is 2 chars
+        assert!(!is_contested_username("a"));
+
+        // Not contested - too long (20+ chars)
+        assert!(!is_contested_username("twenty-characters-ab")); // 20 chars
+        assert!(!is_contested_username(
+            "this-is-a-very-long-username-that-exceeds-limit"
+        ));
+
+        // Not contested - contains invalid characters after normalization
+        assert!(!is_contested_username("alice2")); // contains '2'
+        assert!(!is_contested_username("alice_bob")); // contains '_'
+        assert!(!is_contested_username("alice.bob")); // contains '.'
+        assert!(!is_contested_username("alice@dash")); // contains '@'
+        assert!(!is_contested_username("alice!")); // contains '!'
+        assert!(!is_contested_username("test123")); // contains '2' and '3'
+        assert!(!is_contested_username("dash-p2p")); // contains 'p' and '2'
+        assert!(!is_contested_username("user5")); // contains '5'
+        assert!(!is_contested_username("name_with_underscore")); // contains '_'
     }
 }

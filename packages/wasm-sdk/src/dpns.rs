@@ -1,0 +1,132 @@
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
+use crate::sdk::WasmSdk;
+use serde::{Serialize, Deserialize};
+use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username, is_valid_username, RegisterDpnsNameInput};
+use dash_sdk::platform::{Fetch, Identity};
+use dash_sdk::dpp::document::DocumentV0Getters;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::prelude::Identifier;
+use simple_signer::SingleKeySigner;
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterDpnsNameResult {
+    pub preorder_document_id: String,
+    pub domain_document_id: String,
+    pub full_domain_name: String,
+}
+
+/// Convert a string to homograph-safe characters
+#[wasm_bindgen]
+pub fn dpns_convert_to_homograph_safe(input: &str) -> String {
+    convert_to_homograph_safe_chars(input)
+}
+
+/// Check if a username is valid according to DPNS rules
+#[wasm_bindgen]
+pub fn dpns_is_valid_username(label: &str) -> bool {
+    is_valid_username(label)
+}
+
+/// Check if a username is contested (requires masternode voting)
+#[wasm_bindgen]
+pub fn dpns_is_contested_username(label: &str) -> bool {
+    is_contested_username(label)
+}
+
+/// Register a DPNS username
+#[wasm_bindgen]
+pub async fn dpns_register_name(
+    sdk: &WasmSdk,
+    label: &str,
+    identity_id: &str,
+    public_key_id: u32,
+    private_key_wif: &str,
+) -> Result<JsValue, JsError> {
+    // Parse identity ID
+    let identity_id_parsed = Identifier::from_string(
+        identity_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    ).map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
+    
+    // Fetch the identity
+    let identity = Identity::fetch(sdk.as_ref(), identity_id_parsed)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch identity: {}", e)))?
+        .ok_or_else(|| JsError::new("Identity not found"))?;
+    
+    // Create signer
+    let signer = SingleKeySigner::new(private_key_wif)
+        .map_err(|e| JsError::new(&format!("Invalid private key WIF: {}", e)))?;
+    
+    // Get the specific identity public key
+    let identity_public_key = identity
+        .get_public_key_by_id(public_key_id.into())
+        .ok_or_else(|| JsError::new(&format!("Public key with ID {} not found", public_key_id)))?
+        .clone();
+    
+    // Create registration input
+    let input = RegisterDpnsNameInput {
+        label: label.to_string(),
+        identity,
+        identity_public_key,
+        signer,
+    };
+    
+    // Register the name
+    let result = sdk.as_ref()
+        .register_dpns_name(input)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to register DPNS name: {}", e)))?;
+    
+    // Convert result to JS-friendly format
+    let js_result = RegisterDpnsNameResult {
+        preorder_document_id: result.preorder_document.id().to_string(
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58
+        ),
+        domain_document_id: result.domain_document.id().to_string(
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58
+        ),
+        full_domain_name: result.full_domain_name,
+    };
+    
+    // Serialize to JsValue
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    js_result.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize result: {}", e)))
+}
+
+/// Check if a DPNS name is available
+#[wasm_bindgen]
+pub async fn dpns_is_name_available(
+    sdk: &WasmSdk,
+    label: &str,
+) -> Result<bool, JsError> {
+    sdk.as_ref()
+        .is_dpns_name_available(label)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to check name availability: {}", e)))
+}
+
+/// Resolve a DPNS name to an identity ID
+#[wasm_bindgen]
+pub async fn dpns_resolve_name(
+    sdk: &WasmSdk,
+    name: &str,
+) -> Result<JsValue, JsError> {
+    let result = sdk.as_ref()
+        .resolve_dpns_name(name)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to resolve DPNS name: {}", e)))?;
+    
+    match result {
+        Some(identity_id) => {
+            let id_string = identity_id.to_string(
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58
+            );
+            Ok(JsValue::from_str(&id_string))
+        },
+        None => Ok(JsValue::NULL),
+    }
+}
