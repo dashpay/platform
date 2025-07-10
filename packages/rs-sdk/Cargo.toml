@@ -120,8 +120,6 @@ system-data-contracts = ["dpp/system_contracts"]
 
 # Individual contract features - these enable specific contracts in DPP
 withdrawals-contract = ["dpp/withdrawals-contract"]
-masternode-rewards-contract = ["dpp/masternode-rewards-contract"]
-feature-flags-contract = ["dpp/feature-flags-contract"]
 dpns-contract = ["dpp/dpns-contract"]
 dashpay-contract = ["dpp/dashpay-contract"]
 wallet-utils-contract = ["dpp/wallet-utils-contract"]

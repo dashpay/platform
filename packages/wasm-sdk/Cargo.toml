@@ -15,8 +15,6 @@ system-data-contracts = ["dash-sdk/system-data-contracts"]
 
 # Individual contract features
 withdrawals-contract = ["dash-sdk/withdrawals-contract"]
-masternode-rewards-contract = ["dash-sdk/masternode-rewards-contract"]
-feature-flags-contract = ["dash-sdk/feature-flags-contract"]
 dpns-contract = ["dash-sdk/dpns-contract"]
 dashpay-contract = ["dash-sdk/dashpay-contract"]
 wallet-utils-contract = ["dash-sdk/wallet-utils-contract"]

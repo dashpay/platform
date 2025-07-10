@@ -126,27 +126,11 @@ all_features = [
 ]
 
 dash-sdk-features = [
-  #  "json-object",
-  #  "platform-value",
-  #  "system_contracts",
-  # "validation", # TODO: This one is big
   "identity-hashing",
   "data-contract-json-conversion",
-  #  "identity-serialization",
-  #  "vote-serialization",
-  #  "document-value-conversion",
-  #  "data-contract-value-conversion",
   "identity-value-conversion",
-  #  "core-types",
-  #  "core-types-serialization",
-  #  "core-types-serde-conversion",
-  #  "state-transition-serde-conversion",
   "state-transition-value-conversion",
-  #  "state-transition-json-conversion",
-  #  "state-transition-validation",
   "state-transition-signing",
-  #  "state-transitions",
-  #  "fee-distribution",
   "client",
   "platform-value-cbor",
 ]
