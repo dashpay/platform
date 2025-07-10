@@ -103,7 +103,7 @@ server = [
   "moka",
   "dpp/validation",
   "dpp/platform-value-json",
-  "dpp/system_contracts",
+  "dpp/all-system_contracts",
   "dpp/state-transitions",
   "fee-distribution",
   "grovedb/minimal",

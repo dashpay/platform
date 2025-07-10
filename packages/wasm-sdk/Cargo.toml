@@ -6,7 +6,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["dpns-contract", "dashpay-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
 
 mocks = ["dash-sdk/mocks"]
 
