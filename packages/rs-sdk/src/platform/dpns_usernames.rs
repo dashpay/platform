@@ -142,6 +142,49 @@ pub struct RegisterDpnsNameResult {
 }
 
 impl Sdk {
+    /// Helper method to get the DPNS contract ID
+    fn get_dpns_contract_id(&self) -> Result<Identifier, Error> {
+        // Get DPNS contract ID from system contract if available
+        #[cfg(feature = "dpns-contract")]
+        let dpns_contract_id = {
+            use dpp::system_data_contracts::SystemDataContract;
+            SystemDataContract::DPNS.id()
+        };
+
+        #[cfg(not(feature = "dpns-contract"))]
+        let dpns_contract_id = {
+            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+            Identifier::from_string(
+                DPNS_CONTRACT_ID,
+                dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
+        };
+
+        Ok(dpns_contract_id)
+    }
+
+    /// Helper method to fetch the DPNS contract, checking context provider first
+    async fn fetch_dpns_contract(&self) -> Result<Arc<dpp::data_contract::DataContract>, Error> {
+        let dpns_contract_id = self.get_dpns_contract_id()?;
+
+        // First check if the contract is available in the context provider
+        let context_provider = self
+            .context_provider()
+            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
+
+        match context_provider.get_data_contract(&dpns_contract_id, self.version())? {
+            Some(contract) => Ok(contract),
+            None => {
+                // If not in context, fetch from platform
+                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
+                    .await?
+                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+                Ok(Arc::new(contract))
+            }
+        }
+    }
+
     /// Register a DPNS username in a single operation
     ///
     /// This method handles both the preorder and domain registration steps automatically.
@@ -165,40 +208,7 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<RegisterDpnsNameResult, Error> {
-        // Get DPNS contract ID from system contract if available
-        #[cfg(feature = "dpns-contract")]
-        let dpns_contract_id = {
-            use dpp::system_data_contracts::SystemDataContract;
-            SystemDataContract::DPNS.id()
-        };
-
-        #[cfg(not(feature = "dpns-contract"))]
-        let dpns_contract_id = {
-            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-            Identifier::from_string(
-                DPNS_CONTRACT_ID,
-                dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
-        };
-
-        // First check if the contract is available in the context provider
-        let context_provider = self
-            .context_provider()
-            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
-
-        let dpns_contract = match context_provider
-            .get_data_contract(&dpns_contract_id, self.version())?
-        {
-            Some(contract) => contract,
-            None => {
-                // If not in context, fetch from platform
-                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-                    .await?
-                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
-                Arc::new(contract)
-            }
-        };
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Get document types
         let preorder_document_type =
@@ -360,40 +370,7 @@ impl Sdk {
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        // Get DPNS contract ID from system contract if available
-        #[cfg(feature = "dpns-contract")]
-        let dpns_contract_id = {
-            use dpp::system_data_contracts::SystemDataContract;
-            SystemDataContract::DPNS.id()
-        };
-
-        #[cfg(not(feature = "dpns-contract"))]
-        let dpns_contract_id = {
-            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-            Identifier::from_string(
-                DPNS_CONTRACT_ID,
-                dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
-        };
-
-        // First check if the contract is available in the context provider
-        let context_provider = self
-            .context_provider()
-            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
-
-        let dpns_contract = match context_provider
-            .get_data_contract(&dpns_contract_id, self.version())?
-        {
-            Some(contract) => contract,
-            None => {
-                // If not in context, fetch from platform
-                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-                    .await?
-                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
-                Arc::new(contract)
-            }
-        };
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         let normalized_label = convert_to_homograph_safe_chars(label);
 
@@ -438,40 +415,7 @@ impl Sdk {
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        // Get DPNS contract ID from system contract if available
-        #[cfg(feature = "dpns-contract")]
-        let dpns_contract_id = {
-            use dpp::system_data_contracts::SystemDataContract;
-            SystemDataContract::DPNS.id()
-        };
-
-        #[cfg(not(feature = "dpns-contract"))]
-        let dpns_contract_id = {
-            const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-            Identifier::from_string(
-                DPNS_CONTRACT_ID,
-                dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
-        };
-
-        // First check if the contract is available in the context provider
-        let context_provider = self
-            .context_provider()
-            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
-
-        let dpns_contract = match context_provider
-            .get_data_contract(&dpns_contract_id, self.version())?
-        {
-            Some(contract) => contract,
-            None => {
-                // If not in context, fetch from platform
-                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-                    .await?
-                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
-                Arc::new(contract)
-            }
-        };
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Extract label from full name if needed
         // Handle both "alice" and "alice.dash" formats

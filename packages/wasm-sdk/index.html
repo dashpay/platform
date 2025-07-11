@@ -104,6 +104,67 @@
       color: white;
     }
 
+    .proof-toggle {
+      padding: 15px 20px;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .proof-toggle label {
+      font-weight: 500;
+      color: #333;
+      margin: 0;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: #4CAF50;
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(26px);
+    }
+
+
     .query-container {
       padding: 20px;
       flex: 1;
@@ -228,6 +289,41 @@
       flex-direction: column;
       overflow: hidden;
     }
+    
+    .result-split-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .result-data-section,
+    .result-proof-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .result-proof-section {
+      border-bottom: none;
+      background-color: #f8f9fa;
+    }
+    
+    .section-header {
+      padding: 10px 20px;
+      background-color: #e3f2fd;
+      border-bottom: 1px solid #ccc;
+      font-weight: 600;
+      color: #1976d2;
+      font-size: 14px;
+    }
+    
+    .result-proof-section .section-header {
+      background-color: #f3e5f5;
+      color: #7b1fa2;
+    }
 
     .result-header {
       padding: 20px;
@@ -351,6 +447,45 @@
     }
     
     .credits-value:hover::after {
+      opacity: 1;
+    }
+    
+    .nonce-value {
+      color: #9c27b0;
+      cursor: help;
+      position: relative;
+    }
+    
+    .nonce-value:hover {
+      background-color: #f3e5f5;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+    
+    /* Enhanced tooltip for nonce with better formatting */
+    .nonce-value::after {
+      content: attr(title);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #333;
+      color: white;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      white-space: pre;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      margin-bottom: 5px;
+      z-index: 1000;
+      max-width: 500px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+    
+    .nonce-value:hover::after {
       opacity: 1;
     }
     
@@ -676,6 +811,16 @@
           <div id="dynamicInputs"></div>
         </div>
         
+        <div class="proof-toggle" style="display: none; margin: 15px 0;" id="proofToggleContainer">
+          <label style="display: flex; align-items: center; margin: 0;">
+            <span class="toggle-switch">
+              <input type="checkbox" id="proofToggle">
+              <span class="toggle-slider"></span>
+            </span>
+            <span style="margin-left: 60px; font-weight: 500; color: #333;">With Proof Info</span>
+          </label>
+        </div>
+        
         <button id="executeQuery" class="execute-button" style="display: none;">Execute Query</button>
       </div>
     </div>
@@ -689,7 +834,9 @@
           <button id="clearCacheButton" onclick="clearCache()" title="Clear WASM cache and reload">Clear Cache</button>
         </div>
       </div>
-      <div id="identityInfo" class="result-content empty">No data fetched yet. Select a query category and type to begin.</div>
+      <div id="resultSplitContainer" class="result-split-container">
+        <div id="identityInfo" class="result-content empty">No data fetched yet. Select a query category and type to begin.</div>
+      </div>
     </div>
   </div>
 
@@ -812,14 +959,19 @@
     
     import init, { 
       WasmSdkBuilder, 
-      identity_fetch, 
-      data_contract_fetch, 
+      identity_fetch,
+      identity_fetch_unproved,
+      identity_fetch_with_proof_info,
+      data_contract_fetch,
+      data_contract_fetch_with_proof_info,
       prefetch_trusted_quorums_mainnet, 
       prefetch_trusted_quorums_testnet,
       // Identity queries
       get_identity_keys,
       get_identity_nonce,
+      get_identity_nonce_with_proof_info,
       get_identity_contract_nonce,
+      get_identity_contract_nonce_with_proof_info,
       get_identity_balance,
       get_identities_balances,
       get_identity_balance_and_revision,
@@ -832,34 +984,47 @@
       get_data_contracts,
       // Document queries
       get_documents,
+      get_documents_with_proof_info,
       get_document,
+      get_document_with_proof_info,
       get_dpns_username,
       get_dpns_usernames,
+      get_dpns_username_by_name,
+      get_dpns_username_by_name_with_proof_info,
       // Protocol/Version queries
       get_protocol_version_upgrade_state,
+      get_protocol_version_upgrade_state_with_proof_info,
       get_protocol_version_upgrade_vote_status,
       // Epoch/Block queries
       get_epochs_info,
+      get_epochs_info_with_proof_info,
       get_finalized_epoch_infos,
       get_current_epoch,
+      get_current_epoch_with_proof_info,
       get_evonodes_proposed_epoch_blocks_by_ids,
       get_evonodes_proposed_epoch_blocks_by_range,
       // System/Utility queries
       get_status,
       get_total_credits_in_platform,
+      get_total_credits_in_platform_with_proof_info,
       get_current_quorums_info,
       get_prefunded_specialized_balance,
+      get_prefunded_specialized_balance_with_proof_info,
       get_path_elements,
+      get_path_elements_with_proof_info,
       wait_for_state_transition_result,
       // Token queries
       get_identities_token_balances,
+      get_identities_token_balances_with_proof_info,
       get_identity_token_infos,
       get_identities_token_infos,
       get_token_statuses,
+      get_token_statuses_with_proof_info,
       get_token_direct_purchase_prices,
       get_token_contract_info,
       get_token_perpetual_distribution_last_claim,
       get_token_total_supply,
+      get_token_total_supply_with_proof_info,
       // Voting/Contested Resource queries
       get_contested_resources,
       get_contested_resource_vote_state,
@@ -868,7 +1033,9 @@
       get_vote_polls_by_end_date,
       // Group queries
       get_group_info,
+      get_group_info_with_proof_info,
       get_group_infos,
+      get_group_infos_with_proof_info,
       get_group_actions,
       get_group_action_signers,
       // DPNS functions
@@ -1237,7 +1404,7 @@
             ]
           },
           getIdentityByPublicKeyHash: {
-            label: "Get Identity by Public Key Hash",
+            label: "Get Identity by Unique Public Key Hash",
             description: "Find an identity by its unique public key hash",
             inputs: [
               { name: "publicKeyHash", type: "text", label: "Public Key Hash", required: true }
@@ -1245,7 +1412,7 @@
           },
           getIdentityByNonUniquePublicKeyHash: {
             label: "Get Identity by Non-Unique Public Key Hash",
-            description: "Find identities by non-unique public key hash",
+            description: "Find identities by non-unique public key hash (for ECDSA_HASH160, BIP13_SCRIPT_HASH, or EDDSA_25519_HASH160 key types - supports pagination)",
             inputs: [
               { name: "publicKeyHash", type: "text", label: "Public Key Hash", required: true },
               { name: "startAfter", type: "text", label: "Start After (Identity ID)", required: false }
@@ -1269,22 +1436,18 @@
           },
           getIdentityTokenInfos: {
             label: "Get Identity Token Info",
-            description: "Get token information for an identity",
+            description: "Get token information (frozen status) for an identity's tokens",
             inputs: [
               { name: "identityId", type: "text", label: "Identity ID", required: true },
-              { name: "tokenIds", type: "array", label: "Token IDs (optional)", required: false },
-              { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false },
-              { name: "limit", type: "number", label: "Limit", required: false },
-              { name: "offset", type: "number", label: "Offset", required: false }
+              { name: "tokenIds", type: "array", label: "Token IDs", required: true }
             ]
           },
           getIdentitiesTokenInfos: {
             label: "Get Identities Token Info",
-            description: "Get token information for multiple identities",
+            description: "Get token information (frozen status) for multiple identities with a specific token",
             inputs: [
               { name: "identityIds", type: "array", label: "Identity IDs", required: true },
-              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
-              { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false }
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
             ]
           }
         }
@@ -2357,13 +2520,15 @@
     }
 
     function displayResult(data, isError = false) {
-      const resultContent = document.getElementById('identityInfo');
+      const splitContainer = document.getElementById('resultSplitContainer');
+      const proofToggle = document.getElementById('proofToggle');
+      const isProofMode = proofToggle && proofToggle.checked;
+      
       if (isError) {
-        resultContent.className = 'result-content error-result';
-        resultContent.textContent = data;
+        // For errors, show in single view
+        splitContainer.innerHTML = `<div id="identityInfo" class="result-content error-result">${data}</div>`;
         currentResult = null;
       } else {
-        resultContent.className = 'result-content';
         // Parse JSON string if necessary
         let dataToFormat = data;
         if (typeof data === 'string') {
@@ -2374,8 +2539,52 @@
             dataToFormat = data;
           }
         }
-        // Use custom formatter for better display with credit tooltips
-        resultContent.innerHTML = formatResultWithCredits(dataToFormat);
+        
+        // Check if this is a proof response (has data, metadata, and proof fields)
+        const isProofResponse = dataToFormat && 
+          typeof dataToFormat === 'object' && 
+          'data' in dataToFormat && 
+          'metadata' in dataToFormat && 
+          'proof' in dataToFormat;
+        
+        if (isProofMode && isProofResponse) {
+          // Split view for proof mode
+          splitContainer.innerHTML = `
+            <div class="result-data-section">
+              <div class="section-header">Data</div>
+              <div id="identityInfo" class="result-content"></div>
+            </div>
+            <div class="result-proof-section">
+              <div class="section-header">Proof & Metadata</div>
+              <div id="proofInfo" class="result-content"></div>
+            </div>
+          `;
+          
+          // Display data in top section
+          const dataContent = document.getElementById('identityInfo');
+          dataContent.innerHTML = formatResultWithCredits(dataToFormat.data);
+          
+          // Display proof and metadata in bottom section
+          const proofContent = document.getElementById('proofInfo');
+          const proofDisplay = {
+            metadata: dataToFormat.metadata,
+            proof: {
+              grovedbProof: dataToFormat.proof.grovedbProof,
+              quorumHash: dataToFormat.proof.quorumHash,
+              signature: dataToFormat.proof.signature,
+              round: dataToFormat.proof.round,
+              blockIdHash: dataToFormat.proof.blockIdHash,
+              quorumType: dataToFormat.proof.quorumType
+            }
+          };
+          proofContent.innerHTML = formatResultWithCredits(proofDisplay);
+        } else {
+          // Single view for non-proof mode or non-proof responses
+          splitContainer.innerHTML = `<div id="identityInfo" class="result-content"></div>`;
+          const resultContent = document.getElementById('identityInfo');
+          resultContent.innerHTML = formatResultWithCredits(dataToFormat);
+        }
+        
         currentResult = data;
       }
     }
@@ -2390,13 +2599,110 @@
         return `<span class="credits-value" title="${dashFormatted} DASH">${credits}</span>`;
       }
       
+      function formatNonceValue(nonce, key) {
+        // Parse the nonce as a BigInt to handle large numbers
+        const nonceBigInt = BigInt(nonce);
+        
+        // Determine if this is an identity contract nonce based on the field name
+        const isContractNonce = key && key.toLowerCase().includes('contract');
+        
+        let nonceTooltip;
+        
+        if (isContractNonce) {
+          // Identity Contract Nonce: First 24 bits are revision bitset, lower 40 bits are the nonce value
+          const IDENTITY_NONCE_VALUE_FILTER = 0xFFFFFFFFFFn; // 40 bits
+          const MISSING_IDENTITY_REVISIONS_FILTER = 0xFFFFFF0000000000n; // Upper 24 bits
+          
+          // Extract components
+          const nonceValue = nonceBigInt & IDENTITY_NONCE_VALUE_FILTER; // Lower 40 bits
+          const missingRevisionsBitset = (nonceBigInt & MISSING_IDENTITY_REVISIONS_FILTER) >> 40n; // Upper 24 bits
+          
+          // Convert to binary representation
+          const binaryStr = nonceBigInt.toString(2).padStart(64, '0');
+          const revisionBitsetBits = binaryStr.slice(0, 24);
+          const nonceValueBits = binaryStr.slice(24, 64);
+          
+          // Find missing nonces based on the bitset
+          const missingNonces = [];
+          for (let i = 0; i < 24; i++) {
+            if ((missingRevisionsBitset >> BigInt(i)) & 1n) {
+              const missingNonce = nonceValue - BigInt(i + 1);
+              missingNonces.push(missingNonce);
+            }
+          }
+          
+          nonceTooltip = `Identity Contract Nonce: ${nonce} (0x${nonceBigInt.toString(16).padStart(16, '0')})
+
+Binary: ${binaryStr}
+
+Bit Structure (Identity Contract Nonce):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bits 63-40 (Missing Revisions): ${revisionBitsetBits} = ${missingRevisionsBitset}
+Bits 39-0  (Nonce Value):       ${nonceValueBits} = ${nonceValue}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Decoded Values:
+• Nonce Value: ${nonceValue} (current sequence number)
+• Missing Revisions Bitset: ${missingRevisionsBitset} (tracks up to 24 missing nonces)
+${missingNonces.length > 0 ? `• Missing Nonces: ${missingNonces.map(n => n.toString()).join(', ')}` : '• No missing nonces detected'}
+
+Used for: Document operations and data contract updates`;
+        } else {
+          // Identity Nonce: Same structure as contract nonce but used for different operations
+          const IDENTITY_NONCE_VALUE_FILTER = 0xFFFFFFFFFFn; // 40 bits
+          const MISSING_IDENTITY_REVISIONS_FILTER = 0xFFFFFF0000000000n; // Upper 24 bits
+          
+          // Extract components
+          const nonceValue = nonceBigInt & IDENTITY_NONCE_VALUE_FILTER; // Lower 40 bits
+          const missingRevisionsBitset = (nonceBigInt & MISSING_IDENTITY_REVISIONS_FILTER) >> 40n; // Upper 24 bits
+          
+          // Convert to binary representation
+          const binaryStr = nonceBigInt.toString(2).padStart(64, '0');
+          const revisionBitsetBits = binaryStr.slice(0, 24);
+          const nonceValueBits = binaryStr.slice(24, 64);
+          
+          // Find missing nonces based on the bitset
+          const missingNonces = [];
+          for (let i = 0; i < 24; i++) {
+            if ((missingRevisionsBitset >> BigInt(i)) & 1n) {
+              const missingNonce = nonceValue - BigInt(i + 1);
+              missingNonces.push(missingNonce);
+            }
+          }
+          
+          nonceTooltip = `Identity Nonce: ${nonce} (0x${nonceBigInt.toString(16).padStart(16, '0')})
+
+Binary: ${binaryStr}
+
+Bit Structure (Identity Nonce):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bits 63-40 (Missing Revisions): ${revisionBitsetBits} = ${missingRevisionsBitset}
+Bits 39-0  (Nonce Value):       ${nonceValueBits} = ${nonceValue}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Decoded Values:
+• Nonce Value: ${nonceValue} (current sequence number)
+• Missing Revisions Bitset: ${missingRevisionsBitset} (tracks up to 24 missing nonces)
+${missingNonces.length > 0 ? `• Missing Nonces: ${missingNonces.map(n => n.toString()).join(', ')}` : '• No missing nonces detected'}
+
+Used for: Identity state transitions that use balance or create data contracts`;
+        }
+        
+        return `<span class="nonce-value" title="${nonceTooltip}" style="cursor: help; border-bottom: 1px dotted #666; font-family: monospace;">${nonce}</span>`;
+      }
+      
       function processValue(value, key, indent = 0) {
         // Check if this is a credits field
         const creditsFields = ['balance', 'totalCreditsInPlatform', 'credits', 'amount', 'totalCredits'];
         const isCreditsField = creditsFields.some(field => key.toLowerCase().includes(field.toLowerCase()));
         
+        // Check if this is a nonce field
+        const isNonceField = key.toLowerCase() === 'nonce';
+        
         if (typeof value === 'string' && isCreditsField && /^\d+$/.test(value)) {
           return formatCreditsValue(value);
+        } else if (typeof value === 'string' && isNonceField) {
+          return formatNonceValue(value, key);
         } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           return formatObject(value, indent);
         } else if (Array.isArray(value)) {
@@ -2493,6 +2799,11 @@ ${indentStr}]`;
           sdk = newSdk;
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
+          
+          // Proof support is now available for identity queries
+          // When the proof toggle is ON (checked), queries return raw JSON without proof verification
+          // When the proof toggle is OFF (unchecked), queries return verified data with proofs
+          // Note: Most SDK queries don't yet support unproved mode, only identity_fetch_unproved is implemented
         }
       } catch (error) {
         if (currentRequestToken === initRequestCounter) {
@@ -2872,10 +3183,22 @@ ${indentStr}]`;
         const values = getInputValues();
         let result;
         
+        // Check if proof toggle is enabled
+        const proofToggle = document.getElementById('proofToggle');
+        const useProofs = proofToggle && proofToggle.checked;
+        
         // Identity queries
-        if (queryType === 'getIdentity' && values.id) {
-          result = await identity_fetch(sdk, values.id);
-          result = result.toJSON();
+        if (queryType === 'getIdentity') {
+          if (!values.id) {
+            throw new Error('Identity ID is required for getIdentity query');
+          }
+          if (useProofs) {
+            result = await identity_fetch_with_proof_info(sdk, values.id);
+            // Result is already a JS object with proof data
+          } else {
+            result = await identity_fetch(sdk, values.id);
+            result = result.toJSON();
+          }
         } else if (queryType === 'getIdentityKeys') {
           const keyIds = values.keyRequestType === 'specific' ? values.specificKeyIds : undefined;
           result = await get_identity_keys(
@@ -2898,9 +3221,17 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityNonce') {
-          result = await get_identity_nonce(sdk, values.identityId);
+          if (useProofs) {
+            result = await get_identity_nonce_with_proof_info(sdk, values.identityId);
+          } else {
+            result = await get_identity_nonce(sdk, values.identityId);
+          }
         } else if (queryType === 'getIdentityContractNonce') {
-          result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
+          if (useProofs) {
+            result = await get_identity_contract_nonce_with_proof_info(sdk, values.identityId, values.contractId);
+          } else {
+            result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
+          }
         } else if (queryType === 'getIdentityBalance') {
           result = await get_identity_balance(sdk, values.id);
           // Result is already an object with balance field
@@ -2926,8 +3257,13 @@ ${indentStr}]`;
         }
         // Data contract queries
         else if (queryType === 'getDataContract' && values.id) {
-          result = await data_contract_fetch(sdk, values.id);
-          result = result.toJSON();
+          if (useProofs) {
+            result = await data_contract_fetch_with_proof_info(sdk, values.id);
+            // Result is already a JS object with proof data
+          } else {
+            result = await data_contract_fetch(sdk, values.id);
+            result = result.toJSON();
+          }
         } else if (queryType === 'getDataContractHistory') {
           result = await get_data_contract_history(
             sdk,
@@ -2936,10 +3272,10 @@ ${indentStr}]`;
             values.offset,
             values.startAtMs
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDataContracts') {
           result = await get_data_contracts(sdk, values.ids);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Document queries
         else if (queryType === 'getDocuments') {
@@ -2955,24 +3291,46 @@ ${indentStr}]`;
             limit: values.limit
           });
           
-          result = await get_documents(
-            sdk,
-            values.dataContractId,
-            values.documentType,
-            values.where ? JSON.stringify(values.where) : undefined,
-            values.orderBy ? JSON.stringify(values.orderBy) : undefined,
-            values.limit,
-            startAfter,
-            startAt
-          );
+          if (useProofs) {
+            result = await get_documents_with_proof_info(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.where ? JSON.stringify(values.where) : undefined,
+              values.orderBy ? JSON.stringify(values.orderBy) : undefined,
+              values.limit,
+              startAfter,
+              startAt
+            );
+          } else {
+            result = await get_documents(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.where ? JSON.stringify(values.where) : undefined,
+              values.orderBy ? JSON.stringify(values.orderBy) : undefined,
+              values.limit,
+              startAfter,
+              startAt
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDocument') {
-          result = await get_document(
-            sdk,
-            values.dataContractId,
-            values.documentType,
-            values.documentId
-          );
+          if (useProofs) {
+            result = await get_document_with_proof_info(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.documentId
+            );
+          } else {
+            result = await get_document(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.documentId
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDpnsUsername') {
           result = await get_dpns_usernames(
@@ -3046,15 +3404,28 @@ ${indentStr}]`;
         }
         // Epoch/Block queries
         else if (queryType === 'getEpochsInfo') {
-          result = await get_epochs_info(
-            sdk,
-            values.startEpoch,
-            values.count,
-            values.ascending
-          );
+          if (useProofs) {
+            result = await get_epochs_info_with_proof_info(
+              sdk,
+              values.startEpoch,
+              values.count,
+              values.ascending
+            );
+          } else {
+            result = await get_epochs_info(
+              sdk,
+              values.startEpoch,
+              values.count,
+              values.ascending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getCurrentEpoch') {
-          result = await get_current_epoch(sdk);
+          if (useProofs) {
+            result = await get_current_epoch_with_proof_info(sdk);
+          } else {
+            result = await get_current_epoch(sdk);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getFinalizedEpochInfos') {
           result = await get_finalized_epoch_infos(
@@ -3086,7 +3457,11 @@ ${indentStr}]`;
           result = await get_status(sdk);
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTotalCreditsInPlatform') {
-          result = await get_total_credits_in_platform(sdk);
+          if (useProofs) {
+            result = await get_total_credits_in_platform_with_proof_info(sdk);
+          } else {
+            result = await get_total_credits_in_platform(sdk);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'waitForStateTransitionResult') {
           if (!values.stateTransitionHash) {
@@ -3112,7 +3487,11 @@ ${indentStr}]`;
         }
         // Token queries
         else if (queryType === 'getIdentitiesTokenBalances') {
-          result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
+          if (useProofs) {
+            result = await get_identities_token_balances_with_proof_info(sdk, values.identityIds, values.tokenId);
+          } else {
+            result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityTokenInfos') {
           result = await get_identity_token_infos(
@@ -3131,7 +3510,11 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenStatuses') {
-          result = await get_token_statuses(sdk, values.tokenIds);
+          if (useProofs) {
+            result = await get_token_statuses_with_proof_info(sdk, values.tokenIds);
+          } else {
+            result = await get_token_statuses(sdk, values.tokenIds);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenDirectPurchasePrices') {
           result = await get_token_direct_purchase_prices(sdk, values.tokenIds);
@@ -3147,7 +3530,11 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenTotalSupply') {
-          result = await get_token_total_supply(sdk, values.tokenId);
+          if (useProofs) {
+            result = await get_token_total_supply_with_proof_info(sdk, values.tokenId);
+          } else {
+            result = await get_token_total_supply(sdk, values.tokenId);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         }
         // Voting/Contested Resource queries
@@ -3941,6 +4328,7 @@ ${indentStr}]`;
       document.getElementById('queryType').innerHTML = '<option value="">Select Type</option>';
       document.getElementById('queryType').style.display = 'none';
       document.getElementById('queryInputs').style.display = 'none';
+      document.getElementById('proofToggleContainer').style.display = 'none';
       document.getElementById('executeQuery').style.display = 'none';
       document.getElementById('queryDescription').style.display = 'none';
     });
@@ -3959,6 +4347,7 @@ ${indentStr}]`;
       
       // Hide inputs and button
       queryInputs.style.display = 'none';
+      document.getElementById('proofToggleContainer').style.display = 'none';
       executeButton.style.display = 'none';
       queryDescription.style.display = 'none';
       
@@ -4045,6 +4434,14 @@ ${indentStr}]`;
         queryInputs.style.display = 'block';
         executeButton.style.display = 'block';
         
+        // Show proof toggle for queries only
+        const proofToggleContainer = document.getElementById('proofToggleContainer');
+        if (operationType === 'queries') {
+          proofToggleContainer.style.display = 'block';
+        } else {
+          proofToggleContainer.style.display = 'none';
+        }
+        
         // Update button text based on operation type
         executeButton.textContent = operationType === 'transitions' ? 'Execute' : 'Execute Query';
         
@@ -4089,6 +4486,7 @@ ${indentStr}]`;
         }
       } else {
         queryInputs.style.display = 'none';
+        document.getElementById('proofToggleContainer').style.display = 'none';
         executeButton.style.display = 'none';
         queryDescription.style.display = 'none';
       }
