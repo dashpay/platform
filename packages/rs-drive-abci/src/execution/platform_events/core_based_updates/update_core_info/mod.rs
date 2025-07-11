@@ -25,7 +25,7 @@ where
     /// * block_platform_state - A mutable reference to the current platform state in the block
     ///   execution context to be updated.
     /// * core_block_height - The current block height in the Dash Core.
-    /// * is_init_chain - A boolean indicating if the chain is being initialized.
+    /// * start_from_scratch - A boolean indicating if we should start from scratch (eg. the chain is being initialized).
     /// * block_info - A reference to the block information.
     /// * transaction - The current groveDB transaction.
     ///
@@ -39,7 +39,7 @@ where
         platform_state: Option<&PlatformState>,
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
-        is_init_chain: bool,
+        start_from_scratch: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -54,7 +54,7 @@ where
                 platform_state,
                 block_platform_state,
                 core_block_height,
-                is_init_chain,
+                start_from_scratch,
                 block_info,
                 transaction,
                 platform_version,
