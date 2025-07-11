@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "2.0.1"
+version = "2.0.2"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
