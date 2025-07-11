@@ -116,6 +116,9 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
     hash.to_byte_array()
 }
 
+/// Callback type for preorder document
+pub type PreorderCallback = Box<dyn FnOnce(&Document) + Send>;
+
 /// Input for registering a DPNS name
 pub struct RegisterDpnsNameInput<S: Signer> {
     /// The label for the domain (e.g., "alice" for "alice.dash")
@@ -127,7 +130,7 @@ pub struct RegisterDpnsNameInput<S: Signer> {
     /// The signer for the identity
     pub signer: S,
     /// Optional callback to be called with the preorder document result
-    pub preorder_callback: Option<Box<dyn FnOnce(&Document) + Send>>,
+    pub preorder_callback: Option<PreorderCallback>,
 }
 
 /// Result of a DPNS name registration
@@ -376,7 +379,7 @@ impl Sdk {
 
         // Query for existing domain with this label
         let query = DocumentQuery {
-            data_contract: dpns_contract.into(),
+            data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
                 WhereClause {
@@ -442,7 +445,7 @@ impl Sdk {
 
         // Query for domain with this label
         let query = DocumentQuery {
-            data_contract: dpns_contract.into(),
+            data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
                 WhereClause {
