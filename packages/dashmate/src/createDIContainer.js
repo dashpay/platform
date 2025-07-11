@@ -78,7 +78,8 @@ import configureCoreTaskFactory from './listr/tasks/setup/local/configureCoreTas
 import configureTenderdashTaskFactory from './listr/tasks/setup/local/configureTenderdashTaskFactory.js';
 import obtainSelfSignedCertificateTaskFactory from './listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory.js';
 import waitForNodeToBeReadyTaskFactory from './listr/tasks/platform/waitForNodeToBeReadyTaskFactory.js';
-import enableCoreQuorumsTaskFactory from './listr/tasks/setup/local/enableCoreQuorumsTaskFactory.js';
+import enableMultiCoreQuorumsTaskFactory from './listr/tasks/setup/local/enableMultiCoreQuorumsTaskFactory.js';
+import enableSingleCoreQuorumTaskFactory from './listr/tasks/setup/local/enableSingleCoreQuorumTaskFactory.js';
 import startGroupNodesTaskFactory from './listr/tasks/startGroupNodesTaskFactory.js';
 import buildServicesTaskFactory from './listr/tasks/buildServicesTaskFactory.js';
 import reindexNodeTaskFactory from './listr/tasks/reindexNodeTaskFactory.js';
@@ -300,7 +301,8 @@ export default async function createDIContainer(options = {}) {
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
-    enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    enableMultiCoreQuorumsTask: asFunction(enableMultiCoreQuorumsTaskFactory).singleton(),
+    enableSingleCoreQuorumTask: asFunction(enableSingleCoreQuorumTaskFactory).singleton(),
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     cleanupZeroSSLCertificatesTask: asFunction(cleanupZeroSSLCertificatesTaskFactory).singleton(),

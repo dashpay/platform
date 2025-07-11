@@ -53,8 +53,8 @@ export default function setupLocalPresetTaskFactory(
                 return 'Must be an integer';
               }
 
-              if (+state < 3) {
-                return 'You must set not less than 3';
+              if (+state < 1) {
+                return 'You must set not less than 1';
               }
 
               return true;
@@ -144,6 +144,23 @@ export default function setupLocalPresetTaskFactory(
                 }
 
                 config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
+
+                // We use single node quorums by default
+                // Set multi node quorums if we have more than 1 node
+                if (ctx.nodeCount > 1) {
+                  config.set('platform.drive.abci.validatorSet.quorum.activeSigners', 2);
+
+                  config.set('platform.drive.abci.chainLock.quorum.activeSigners', 2);
+
+                  config.set('platform.drive.abci.instantLock.quorum.activeSigners', 2);
+
+                  // Bring default behavior for validator set quorum back
+                  const validatorParams = config.get('platform.drive.tenderdash.genesis.consensus_params.validator', true);
+
+                  delete validatorParams.threshold;
+
+                  config.set('platform.drive.tenderdash.genesis.consensus_params.validator', validatorParams);
+                }
 
                 if (config.getName() === 'local_seed') {
                   config.set('core.miner.interval', ctx.minerInterval);

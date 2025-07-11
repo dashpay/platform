@@ -109,7 +109,7 @@ DAPIClient.EVENTS = EVENTS;
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [seeds]
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddressesWhiteList]
  * @property {string|Network} [network=mainnet]
- * @property {number} [timeout=2000]
+ * @property {number} [timeout=10000]
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]
  * @property {boolean} [throwDeadlineExceeded]
@@ -118,6 +118,7 @@ DAPIClient.EVENTS = EVENTS;
  * @property {string} [loggerOptions.level]
  * @property {BlockHeadersProvider} [blockHeadersProvider]
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
+ * @property {Object} [llmqParamsOverride]
  */
 
 module.exports = DAPIClient;

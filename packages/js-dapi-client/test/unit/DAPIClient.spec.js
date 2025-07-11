@@ -116,7 +116,8 @@ describe('DAPIClient', () => {
         },
       });
 
-      expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
+      expect(dapiClient.dapiAddressProvider).to.be.an
+        .instanceOf(SimplifiedMasternodeListDAPIAddressProvider);
       expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
         BlockHeadersProvider,
       );

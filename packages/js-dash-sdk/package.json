@@ -41,7 +41,7 @@
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-client": "workspace:*",
     "@dashevo/dapi-grpc": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.22.0",
+    "@dashevo/dashcore-lib": "~0.25.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",

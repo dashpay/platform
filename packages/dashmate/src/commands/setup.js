@@ -60,8 +60,8 @@ export default class SetupCommand extends BaseCommand {
     dockerCompose,
     defaultConfigs,
   ) {
-    if (nodeCount !== null && (nodeCount < 3)) {
-      throw new Error('node-count flag should be not less than 3');
+    if (nodeCount !== null && (nodeCount < 1)) {
+      throw new Error('node-count flag should be not less than 1');
     }
 
     const tasks = new Listr(

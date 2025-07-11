@@ -71,6 +71,14 @@ node-key-file = "config/node_key.json"
 # so the app can decide if we should keep the connection or not
 filter-peers = false
 
+# Timeout for the initial sync process, before switching to consensus.
+# If zero or empty, the default value is used.
+#
+# Default: 60s
+{{? it.network == "local" }}
+sync-timeout = "1s"
+{{?}}
+
 #######################################################
 ###       ABCI App Connection Options               ###
 #######################################################
@@ -414,6 +422,7 @@ ttl-num-blocks = {{=it.platform.drive.tenderdash.mempool.ttlNumBlocks}}
 # the network to take and serve state machine snapshots. State sync is not attempted if the node
 # has any local state (LastBlockHeight > 0). The node will have a truncated block history,
 # starting from the height of the snapshot.
+# TODO: must be disabled for single node setup
 enable = false
 
 # State sync uses light client verification to verify state. This can be done either through the

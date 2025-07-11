@@ -1105,6 +1105,24 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.1.0': (configFile) => {
+        configFile.configs.local.platform.drive.abci.validatorSet.quorum.activeSigners = 1;
+        configFile.configs.local.platform.drive.abci.chainLock.quorum.activeSigners = 1;
+        configFile.configs.local.platform.drive.abci.instantLock.quorum.activeSigners = 1;
+        configFile.configs.local.platform.drive.tenderdash.genesis.consensus_params
+          .validator.threshold = 100;
+        configFile.configs.local.platform.gateway.listeners.dapiAndDrive.http2
+          .maxConcurrentStreams = 30;
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.log.debug.exclude.push('libevent', 'leveldb');
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
+          });
+        return configFile;
+      },
     };
   }
 

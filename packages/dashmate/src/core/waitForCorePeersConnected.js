@@ -16,7 +16,7 @@ export default async function waitForCorePeersConnected(rpcClient) {
     hasPeers = peers && peers.length > 0;
 
     if (!hasPeers) {
-      await wait(10000);
+      await wait(1000);
     }
   } while (!hasPeers);
 }

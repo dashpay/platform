@@ -39,6 +39,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
           listeners: {
             dapiAndDrive: {
               port: 2443,
+              http2: {
+                maxConcurrentStreams: 30,
+              },
             },
           },
           rateLimiter: {
@@ -63,6 +66,13 @@ export default function getLocalConfigFactory(getBaseConfig) {
             metrics: {
               port: 46660,
             },
+            genesis: {
+              consensus_params: {
+                validator: {
+                  threshold: 100,
+                },
+              },
+            },
           },
           abci: {
             epochTime: 1200,
@@ -70,7 +80,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
               quorum: {
                 llmqType: 106,
                 dkgInterval: 24,
-                activeSigners: 2,
+                activeSigners: 1,
                 rotation: false,
               },
             },
@@ -78,7 +88,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
               quorum: {
                 llmqType: 100,
                 dkgInterval: 24,
-                activeSigners: 2,
+                activeSigners: 1,
                 rotation: false,
               },
             },
@@ -86,7 +96,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
               quorum: {
                 llmqType: 104,
                 dkgInterval: 24,
-                activeSigners: 2,
+                activeSigners: 1,
                 rotation: false,
               },
             },
