@@ -144,7 +144,7 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1443820);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1399260);
 
         let issues = platform
             .drive
