@@ -27,6 +27,7 @@ use crate::platform_types::signature_verification_quorum_set::SignatureVerificat
 use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -61,6 +62,21 @@ impl PlatformSerializable for PlatformState {
             ))
             .into()
         })
+    }
+}
+
+impl PlatformState {
+    /// Generate state in a form that is saved for snapshot recovery purposes
+    pub fn to_snapshot_state(
+        &self,
+        current_block_info: ExtendedBlockInfo,
+        proposed_core_chain_locked_height: u32,
+    ) -> Result<ReducedPlatformStateForSaving, Error> {
+        match self {
+            PlatformState::V0(v0) => {
+                v0.to_snapshot_state(current_block_info, proposed_core_chain_locked_height)
+            }
+        }
     }
 }
 

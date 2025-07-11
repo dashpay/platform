@@ -305,11 +305,18 @@ export default function getBaseConfigFactory() {
               txProcessingTimeLimit: null,
             },
             epochTime: 788400,
+            stateSync: {
+              snapshots: {
+                enabled: true,
+                frequency: 5,
+                maxLimit: 100,
+              },
+            },
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1',
+              image: 'dashpay/tenderdash:feat-statesync-improvements',
             },
             p2p: {
               host: '0.0.0.0',
@@ -412,6 +419,14 @@ export default function getBaseConfigFactory() {
               },
             },
             moniker: null,
+            stateSync: {
+              enabled: true,
+              retries: 3,
+              chunkRequestTimeout: '15s',
+              fetchersCount: 4,
+              maxConcurrentListSnapshots: 100,
+              maxConcurrentSnapshotChunk: 100,
+            },
           },
         },
         sourcePath: null,

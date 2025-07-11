@@ -6,8 +6,10 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciLastBlockInfoStorageMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
+    DriveAbciReducedPlatformStateStorageMethodVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciTokensProcessingMethodVersions,
     DriveAbciVotingMethodVersions,
 };
@@ -17,7 +19,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMeth
     engine: DriveAbciEngineMethodVersions {
         init_chain: 0,
         check_tx: 0,
-        run_block_proposal: 0,
+        run_block_proposal: 1,
         finalize_block_proposal: 0,
         consensus_params_update: 1,
     },
@@ -123,5 +125,13 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMeth
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,
         store_platform_state: 0,
+    },
+    platform_reduced_state_storage: DriveAbciReducedPlatformStateStorageMethodVersions {
+        fetch_reduced_platform_state: 0,
+        store_reduced_platform_state: 0,
+    },
+    last_block_info_storage: DriveAbciLastBlockInfoStorageMethodVersions {
+        fetch_last_block_info: 0,
+        store_last_block_info: 0,
     },
 };

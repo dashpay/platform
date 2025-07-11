@@ -15,6 +15,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -152,6 +153,16 @@ Your software version: {}, latest supported protocol version: {}."#,
             .run_block_proposal
         {
             0 => self.run_block_proposal_v0(
+                block_proposal,
+                known_from_us,
+                epoch_info,
+                transaction,
+                platform_state,
+                block_platform_state,
+                block_platform_version,
+                timer,
+            ),
+            1 => self.run_block_proposal_v1(
                 block_proposal,
                 known_from_us,
                 epoch_info,

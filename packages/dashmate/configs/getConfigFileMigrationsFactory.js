@@ -1105,8 +1105,33 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.stateSync = {
+              enabled: true,
+              retries: 3,
+              chunkRequestTimeout: '15s',
+              fetchersCount: 4,
+              maxConcurrentListSnapshots: 100,
+              maxConcurrentSnapshotChunk: 100,
+            };
+
+            options.platform.drive.abci.stateSync = {
+              snapshots: {
+                enabled: true,
+                frequency: 5,
+                maxLimit: 100,
+              },
+            };
+          });
+
+        configFile.configs.local.platform.drive.abci.stateSync.snapshots.enabled = false;
+        configFile.configs.local.platform.drive.tenderdash.stateSync.enabled = false;
+
+        return configFile;
+      },
     };
   }
 
-  return getConfigFileMigrations;
 }

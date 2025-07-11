@@ -31,3 +31,6 @@ pub mod validator_set;
 pub mod verify_chain_lock_result;
 /// Withdrawal types
 pub mod withdrawal;
+
+/// Snapshots
+pub mod snapshot;

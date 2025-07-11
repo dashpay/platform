@@ -5,7 +5,7 @@ pub(in crate::execution) mod block_processing_end_events;
 /// Events happening what starting to process a block
 pub(in crate::execution) mod block_start;
 /// Update from core such as a masternode list update or quorums being updated
-pub(in crate::execution) mod core_based_updates;
+pub(crate) mod core_based_updates;
 /// Verify the chain lock
 pub(in crate::execution) mod core_chain_lock;
 /// Instant lock methods
