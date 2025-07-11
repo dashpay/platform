@@ -163,23 +163,13 @@ struct ProposerBlockCount {
 #[wasm_bindgen]
 pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     sdk: &WasmSdk,
-    epoch: u32,
+    epoch: u16,
     ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-        use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProposerBlockCountById;
     
     // Silence unused variables since this function is not yet implemented
     let _ = (sdk, ids);
-    
-    // Check if epoch fits in u16 before casting
-    if epoch > u16::MAX as u32 {
-        return Err(JsError::new(&format!(
-            "Epoch value {} is invalid: must be less than or equal to {}",
-            epoch,
-            u16::MAX
-        )));
-    }
     
     // TODO: Use the SDK's FetchMany trait to get proposer block counts
     // This would automatically handle proof verification when sdk.prove() is true
@@ -187,7 +177,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     /*
     let proposer_block_counts = ProposerBlockCountById::fetch_many(
         sdk.as_ref(),
-        (Some(epoch as u16), pro_tx_hashes),
+        (Some(epoch), pro_tx_hashes),
     )
     .await
     .map_err(|e| JsError::new(&format!("Failed to fetch evonode proposed blocks by ids: {}", e)))?;
@@ -218,7 +208,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
 #[wasm_bindgen]
 pub async fn get_evonodes_proposed_epoch_blocks_by_range(
     sdk: &WasmSdk,
-    epoch: u32,
+    epoch: u16,
     limit: Option<u32>,
     start_after: Option<String>,
     order_ascending: Option<bool>,
@@ -239,18 +229,9 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
         None
     };
     
-    // Check if epoch fits in u16 before casting
-    if epoch > u16::MAX as u32 {
-        return Err(JsError::new(&format!(
-            "Epoch value {} is invalid: must be less than or equal to {}",
-            epoch,
-            u16::MAX
-        )));
-    }
-    
     let counts_result = ProposerBlockCounts::fetch_proposed_blocks_by_range(
         sdk.as_ref(),
-        Some(epoch as u16),
+        Some(epoch),
         limit,
         start_info,
     )
@@ -306,7 +287,6 @@ pub async fn get_epochs_info_with_proof_info(
     ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::types::epoch::EpochQuery;
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
     
     let query = LimitQuery {
         query: EpochQuery {
@@ -341,8 +321,6 @@ pub async fn get_epochs_info_with_proof_info(
 
 #[wasm_bindgen]
 pub async fn get_current_epoch_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
-    
     let (epoch, metadata, proof) = ExtendedEpochInfo::fetch_current_with_metadata_and_proof(sdk.as_ref())
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch current epoch with proof: {}", e)))?;

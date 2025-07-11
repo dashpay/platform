@@ -2,6 +2,8 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
+use serde::ser::Serialize as _;
+use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
 use dash_sdk::platform::{Fetch, FetchMany, Identifier};
 use dash_sdk::dpp::data_contract::group::Group;
 use dash_sdk::dpp::data_contract::GroupContractPosition;
@@ -629,7 +631,6 @@ pub async fn get_group_infos_with_proof_info(
 }
 
 // Additional proof info versions for remaining group queries
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
 
 #[wasm_bindgen]
 pub async fn get_group_members_with_proof_info(
@@ -656,13 +657,6 @@ pub async fn get_group_members_with_proof_info(
     let (group_result, metadata, proof) = Group::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch group with proof: {}", e)))?;
-    
-    #[derive(Serialize, Deserialize, Debug)]
-    #[serde(rename_all = "camelCase")]
-    struct GroupMember {
-        member_id: String,
-        power: u32,
-    }
     
     let data = match group_result {
         Some(group) => {

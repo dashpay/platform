@@ -376,7 +376,7 @@ pub async fn get_documents_with_proof_info(
         
         for clause_json in clauses {
             let where_clause = parse_where_clause(&clause_json)?;
-            query.where_clauses.push(where_clause);
+            query = query.with_where(where_clause);
         }
     }
     
