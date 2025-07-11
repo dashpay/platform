@@ -554,7 +554,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
             }
 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
@@ -758,7 +758,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.core.devnet.llmq = base.get('core.devnet.llmq');
 
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
             }
           });
         return configFile;
@@ -784,7 +784,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
             }
 
             // Update tenderdash image
@@ -1093,6 +1093,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             options.platform.drive.abci.docker.image = 'dashpay/drive:2';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
+          });
+        return configFile;
+      },
+      '2.0.2-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis.consensus_params'));
+            }
           });
         return configFile;
       },
