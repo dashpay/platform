@@ -48,7 +48,7 @@ pub mod serialization;
     feature = "message-signature-verification"
 ))]
 pub mod signing;
-#[cfg(feature = "data-contracts")]
+#[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
 
 pub mod tokens;
