@@ -110,9 +110,15 @@ if [ "$USE_WASM_PACK" = true ]; then
     # Add features if specified
     FEATURES_ARG=""
     if [ -n "${CARGO_BUILD_FEATURES:-}" ]; then
+        echo "CARGO_BUILD_FEATURES is set to: '$CARGO_BUILD_FEATURES'"
         FEATURES_ARG="--features $CARGO_BUILD_FEATURES"
+    else
+        echo "CARGO_BUILD_FEATURES is not set, using default features"
+        # Explicitly pass default features to ensure they're used
+        FEATURES_ARG="--features default"
     fi
     
+    echo "Running: wasm-pack build --target $TARGET_TYPE --release --no-opt $FEATURES_ARG"
     wasm-pack build --target "$TARGET_TYPE" --release --no-opt $FEATURES_ARG
 else
     # Build using cargo directly
