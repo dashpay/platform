@@ -1,3 +1,31 @@
+## [2.1.0-dev.1](https://github.com/dashpay/platform/compare/v2.0.0...v2.1.0-dev.1) (2025-07-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update keyword search contract ID and owner ID bytes (#2693)
+
+### Bug Fixes
+
+* **dashmate:** consensus params in dashmate different than on testnet ([#2682](https://github.com/dashpay/platform/issues/2682))
+* **platform:** update keyword search contract ID and owner ID bytes ([#2693](https://github.com/dashpay/platform/issues/2693))
+
+
+### Miscellaneous Chores
+
+* release version 2.0.1 ([#2695](https://github.com/dashpay/platform/issues/2695))
+
+### [2.0.1](https://github.com/dashpay/platform/compare/v2.0.0...v2.0.1) (2025-07-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update keyword search contract ID and owner ID bytes (#2693)
+
+### Bug Fixes
+
+* **platform:** update keyword search contract ID and owner ID bytes ([#2693](https://github.com/dashpay/platform/issues/2693))
+
 ## [2.0.0](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0) (2025-06-26)
 
 
