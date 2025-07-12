@@ -1838,6 +1838,7 @@ __metadata:
     add-stream: "npm:^1.0.0"
     conventional-changelog: "npm:^3.1.24"
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
+    dompurify: "npm:^3.2.6"
     node-gyp: "npm:^10.0.1"
     semver: "npm:^7.5.3"
     tempfile: "npm:^3.0.0"
@@ -3531,6 +3532,13 @@ __metadata:
   version: 1.0.0
   resolution: "@types/treeify@npm:1.0.0"
   checksum: 7d313ba9dee8f704baaf72c75857c0dde7f9804c35e57929601f18c496b4db476ad621129d423757f05de9211086088ae01ecdbbffeaf760598722a8e7911fae
+  languageName: node
+  linkType: hard
+
+"@types/trusted-types@npm:^2.0.7":
+  version: 2.0.7
+  resolution: "@types/trusted-types@npm:2.0.7"
+  checksum: 8e4202766a65877efcf5d5a41b7dd458480b36195e580a3b1085ad21e948bc417d55d6f8af1fd2a7ad008015d4117d5fdfe432731157da3c68678487174e4ba3
   languageName: node
   linkType: hard
 
@@ -7092,6 +7100,18 @@ __metadata:
     extend: "npm:^3.0.0"
     void-elements: "npm:^2.0.0"
   checksum: 85dd74d1a51d6412af3f13a2738c548ee861ab700705abc64e86cb035fba3692fc080563b43fd980dc35fbd7f2697787a12bf24474f140a543cdb116a50531b2
+  languageName: node
+  linkType: hard
+
+"dompurify@npm:^3.2.6":
+  version: 3.2.6
+  resolution: "dompurify@npm:3.2.6"
+  dependencies:
+    "@types/trusted-types": "npm:^2.0.7"
+  dependenciesMeta:
+    "@types/trusted-types":
+      optional: true
+  checksum: b91631ed0e4d17fae950ef53613cc009ed7e73adc43ac94a41dd52f35483f7538d13caebdafa7626e0da145fc8184e7ac7935f14f25b7e841b32fda777e40447
   languageName: node
   linkType: hard
 
