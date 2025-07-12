@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <html>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" 
+        integrity="sha384-JEyTNhjM6R1ElGoJns4U2Ln4ofPcqzSsynQkmEc/KGy6336qAZl70tDLufbkla+3" 
+        crossorigin="anonymous"></script>
 
 <head>
   <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
@@ -60,7 +63,7 @@
 
     .app-container {
       display: flex;
-      height: 100vh;
+      height: calc(100vh - 50px); /* Account for status banner height */
       overflow: hidden;
     }
 
@@ -103,6 +106,67 @@
       background-color: #4caf50;
       color: white;
     }
+
+    .proof-toggle {
+      padding: 15px 20px;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .proof-toggle label {
+      font-weight: 500;
+      color: #333;
+      margin: 0;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: #4CAF50;
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(26px);
+    }
+
 
     .query-container {
       padding: 20px;
@@ -228,6 +292,41 @@
       flex-direction: column;
       overflow: hidden;
     }
+    
+    .result-split-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .result-data-section,
+    .result-proof-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .result-proof-section {
+      border-bottom: none;
+      background-color: #f8f9fa;
+    }
+    
+    .section-header {
+      padding: 10px 20px;
+      background-color: #e3f2fd;
+      border-bottom: 1px solid #ccc;
+      font-weight: 600;
+      color: #1976d2;
+      font-size: 14px;
+    }
+    
+    .result-proof-section .section-header {
+      background-color: #f3e5f5;
+      color: #7b1fa2;
+    }
 
     .result-header {
       padding: 20px;
@@ -280,12 +379,17 @@
       bottom: 0;
       left: 0;
       right: 0;
-      padding: 10px 20px;
+      height: 50px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       text-align: center;
       font-weight: 500;
       font-size: 14px;
       z-index: 999;
       transition: all 0.3s ease;
+      box-sizing: border-box;
     }
 
     .status-banner.success {
@@ -346,6 +450,45 @@
     }
     
     .credits-value:hover::after {
+      opacity: 1;
+    }
+    
+    .nonce-value {
+      color: #9c27b0;
+      cursor: help;
+      position: relative;
+    }
+    
+    .nonce-value:hover {
+      background-color: #f3e5f5;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+    
+    /* Enhanced tooltip for nonce with better formatting */
+    .nonce-value::after {
+      content: attr(title);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #333;
+      color: white;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      white-space: pre;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      margin-bottom: 5px;
+      z-index: 1000;
+      max-width: 500px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+    
+    .nonce-value:hover::after {
       opacity: 1;
     }
     
@@ -638,6 +781,7 @@
             <option value="identity">Identity Queries</option>
             <option value="dataContract">Data Contract Queries</option>
             <option value="document">Document Queries</option>
+            <option value="dpns">DPNS Queries</option>
             <option value="voting">Voting & Contested Resources</option>
             <option value="protocol">Protocol & Version</option>
             <option value="epoch">Epoch & Block</option>
@@ -658,7 +802,7 @@
             <input type="text" id="identityId" placeholder="Enter identity ID">
           </div>
           <div class="input-group">
-            <label for="privateKey">Private Key (WIF or hex)</label>
+            <label for="privateKey">Private Key (WIF or hex, optionally with :keyId)</label>
             <input type="password" id="privateKey" placeholder="Enter private key (WIF or 32-byte hex)">
           </div>
         </div>
@@ -668,6 +812,16 @@
         <div id="queryInputs" class="query-inputs" style="display: none;">
           <h4 id="queryTitle">Query Parameters</h4>
           <div id="dynamicInputs"></div>
+        </div>
+        
+        <div class="proof-toggle" style="display: none; margin: 15px 0;" id="proofToggleContainer">
+          <label style="display: flex; align-items: center; margin: 0;">
+            <span class="toggle-switch">
+              <input type="checkbox" id="proofToggle">
+              <span class="toggle-slider"></span>
+            </span>
+            <span style="margin-left: 60px; font-weight: 500; color: #333;">With Proof Info</span>
+          </label>
         </div>
         
         <button id="executeQuery" class="execute-button" style="display: none;">Execute Query</button>
@@ -683,7 +837,9 @@
           <button id="clearCacheButton" onclick="clearCache()" title="Clear WASM cache and reload">Clear Cache</button>
         </div>
       </div>
-      <div id="identityInfo" class="result-content empty">No data fetched yet. Select a query category and type to begin.</div>
+      <div id="resultSplitContainer" class="result-split-container">
+        <div id="identityInfo" class="result-content empty">No data fetched yet. Select a query category and type to begin.</div>
+      </div>
     </div>
   </div>
 
@@ -806,14 +962,19 @@
     
     import init, { 
       WasmSdkBuilder, 
-      identity_fetch, 
-      data_contract_fetch, 
+      identity_fetch,
+      identity_fetch_unproved,
+      identity_fetch_with_proof_info,
+      data_contract_fetch,
+      data_contract_fetch_with_proof_info,
       prefetch_trusted_quorums_mainnet, 
       prefetch_trusted_quorums_testnet,
       // Identity queries
       get_identity_keys,
       get_identity_nonce,
+      get_identity_nonce_with_proof_info,
       get_identity_contract_nonce,
+      get_identity_contract_nonce_with_proof_info,
       get_identity_balance,
       get_identities_balances,
       get_identity_balance_and_revision,
@@ -826,33 +987,47 @@
       get_data_contracts,
       // Document queries
       get_documents,
+      get_documents_with_proof_info,
       get_document,
+      get_document_with_proof_info,
       get_dpns_username,
+      get_dpns_usernames,
+      get_dpns_username_by_name,
+      get_dpns_username_by_name_with_proof_info,
       // Protocol/Version queries
       get_protocol_version_upgrade_state,
+      get_protocol_version_upgrade_state_with_proof_info,
       get_protocol_version_upgrade_vote_status,
       // Epoch/Block queries
       get_epochs_info,
+      get_epochs_info_with_proof_info,
       get_finalized_epoch_infos,
       get_current_epoch,
+      get_current_epoch_with_proof_info,
       get_evonodes_proposed_epoch_blocks_by_ids,
       get_evonodes_proposed_epoch_blocks_by_range,
       // System/Utility queries
       get_status,
       get_total_credits_in_platform,
+      get_total_credits_in_platform_with_proof_info,
       get_current_quorums_info,
       get_prefunded_specialized_balance,
+      get_prefunded_specialized_balance_with_proof_info,
       get_path_elements,
+      get_path_elements_with_proof_info,
       wait_for_state_transition_result,
       // Token queries
       get_identities_token_balances,
+      get_identities_token_balances_with_proof_info,
       get_identity_token_infos,
       get_identities_token_infos,
       get_token_statuses,
+      get_token_statuses_with_proof_info,
       get_token_direct_purchase_prices,
       get_token_contract_info,
       get_token_perpetual_distribution_last_claim,
       get_token_total_supply,
+      get_token_total_supply_with_proof_info,
       // Voting/Contested Resource queries
       get_contested_resources,
       get_contested_resource_vote_state,
@@ -861,9 +1036,18 @@
       get_vote_polls_by_end_date,
       // Group queries
       get_group_info,
+      get_group_info_with_proof_info,
       get_group_infos,
+      get_group_infos_with_proof_info,
       get_group_actions,
-      get_group_action_signers
+      get_group_action_signers,
+      // DPNS functions
+      dpns_convert_to_homograph_safe,
+      dpns_is_valid_username,
+      dpns_is_contested_username,
+      dpns_register_name,
+      dpns_is_name_available,
+      dpns_resolve_name
     } from './pkg/wasm_sdk.js';
     
     // Import all placeholder query functions
@@ -1017,6 +1201,13 @@
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true },
               { name: "price", type: "number", label: "Price (credits, 0 to remove)", required: true }
+            ]
+          },
+          dpnsRegister: {
+            label: "DPNS Register Name",
+            description: "Register a new DPNS username",
+            inputs: [
+              { name: "label", type: "text", label: "Username", required: true, placeholder: "Enter username (e.g., alice)", validateOnType: true }
             ]
           }
         }
@@ -1216,7 +1407,7 @@
             ]
           },
           getIdentityByPublicKeyHash: {
-            label: "Get Identity by Public Key Hash",
+            label: "Get Identity by Unique Public Key Hash",
             description: "Find an identity by its unique public key hash",
             inputs: [
               { name: "publicKeyHash", type: "text", label: "Public Key Hash", required: true }
@@ -1224,7 +1415,7 @@
           },
           getIdentityByNonUniquePublicKeyHash: {
             label: "Get Identity by Non-Unique Public Key Hash",
-            description: "Find identities by non-unique public key hash",
+            description: "Find identities by non-unique public key hash (for ECDSA_HASH160, BIP13_SCRIPT_HASH, or EDDSA_25519_HASH160 key types - supports pagination)",
             inputs: [
               { name: "publicKeyHash", type: "text", label: "Public Key Hash", required: true },
               { name: "startAfter", type: "text", label: "Start After (Identity ID)", required: false }
@@ -1248,22 +1439,18 @@
           },
           getIdentityTokenInfos: {
             label: "Get Identity Token Info",
-            description: "Get token information for an identity",
+            description: "Get token information (frozen status) for an identity's tokens",
             inputs: [
               { name: "identityId", type: "text", label: "Identity ID", required: true },
-              { name: "tokenIds", type: "array", label: "Token IDs (optional)", required: false },
-              { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false },
-              { name: "limit", type: "number", label: "Limit", required: false },
-              { name: "offset", type: "number", label: "Offset", required: false }
+              { name: "tokenIds", type: "array", label: "Token IDs", required: true }
             ]
           },
           getIdentitiesTokenInfos: {
             label: "Get Identities Token Info",
-            description: "Get token information for multiple identities",
+            description: "Get token information (frozen status) for multiple identities with a specific token",
             inputs: [
               { name: "identityIds", type: "array", label: "Identity IDs", required: true },
-              { name: "tokenId", type: "text", label: "Token Contract Position", required: true },
-              { name: "withPurchaseInfo", type: "checkbox", label: "Include Purchase Info", required: false }
+              { name: "tokenId", type: "text", label: "Token ID", required: true }
             ]
           }
         }
@@ -1330,12 +1517,32 @@
               { name: "documentType", type: "text", label: "Document Type", required: true },
               { name: "documentId", type: "text", label: "Document ID", required: true }
             ]
-          },
+          }
+        }
+      },
+      dpns: {
+        label: "DPNS Queries",
+        queries: {
           getDpnsUsername: {
-            label: "Get DPNS Username",
-            description: "Get DPNS username for an identity",
+            label: "Get DPNS Usernames",
+            description: "Get DPNS usernames for an identity",
             inputs: [
-              { name: "identityId", type: "text", label: "Identity ID", required: true }
+              { name: "identityId", type: "text", label: "Identity ID", required: true },
+              { name: "limit", type: "number", label: "Limit", required: false, placeholder: "Default: 10" }
+            ]
+          },
+          dpnsCheckAvailability: {
+            label: "DPNS Check Availability",
+            description: "Check if a DPNS username is available",
+            inputs: [
+              { name: "label", type: "text", label: "Username to Check", required: true, placeholder: "Enter username (e.g., alice)" }
+            ]
+          },
+          dpnsResolve: {
+            label: "DPNS Resolve Name",
+            description: "Resolve a DPNS name to an identity ID",
+            inputs: [
+              { name: "name", type: "text", label: "DPNS Name", required: true, placeholder: "Enter name (e.g., alice or alice.dash)" }
             ]
           }
         }
@@ -2316,13 +2523,16 @@
     }
 
     function displayResult(data, isError = false) {
-      const resultContent = document.getElementById('identityInfo');
+      const splitContainer = document.getElementById('resultSplitContainer');
+      const proofToggle = document.getElementById('proofToggle');
+      const isProofMode = proofToggle && proofToggle.checked;
+      
       if (isError) {
-        resultContent.className = 'result-content error-result';
-        resultContent.textContent = data;
+        // For errors, show in single view
+        const safeData = DOMPurify.sanitize(data);
+        splitContainer.innerHTML = `<div id="identityInfo" class="result-content error-result">${safeData}</div>`;
         currentResult = null;
       } else {
-        resultContent.className = 'result-content';
         // Parse JSON string if necessary
         let dataToFormat = data;
         if (typeof data === 'string') {
@@ -2333,10 +2543,60 @@
             dataToFormat = data;
           }
         }
-        // Use custom formatter for better display with credit tooltips
-        resultContent.innerHTML = formatResultWithCredits(dataToFormat);
+        
+        // Check if this is a proof response (has data, metadata, and proof fields)
+        const isProofResponse = dataToFormat && 
+          typeof dataToFormat === 'object' && 
+          'data' in dataToFormat && 
+          'metadata' in dataToFormat && 
+          'proof' in dataToFormat;
+        
+        if (isProofMode && isProofResponse) {
+          // Split view for proof mode
+          splitContainer.innerHTML = `
+            <div class="result-data-section">
+              <div class="section-header">Data</div>
+              <div id="identityInfo" class="result-content"></div>
+            </div>
+            <div class="result-proof-section">
+              <div class="section-header">Proof & Metadata</div>
+              <div id="proofInfo" class="result-content"></div>
+            </div>
+          `;
+          
+          // Display data in top section
+          const dataContent = document.getElementById('identityInfo');
+          dataContent.innerHTML = DOMPurify.sanitize(formatResultWithCredits(dataToFormat.data));
+          
+          // Display proof and metadata in bottom section
+          const proofContent = document.getElementById('proofInfo');
+          const proofDisplay = {
+            metadata: dataToFormat.metadata,
+            proof: {
+              grovedbProof: dataToFormat.proof.grovedbProof,
+              quorumHash: dataToFormat.proof.quorumHash,
+              signature: dataToFormat.proof.signature,
+              round: dataToFormat.proof.round,
+              blockIdHash: dataToFormat.proof.blockIdHash,
+              quorumType: dataToFormat.proof.quorumType
+            }
+          };
+          proofContent.innerHTML = DOMPurify.sanitize(formatResultWithCredits(proofDisplay));
+        } else {
+          // Single view for non-proof mode or non-proof responses
+          splitContainer.innerHTML = `<div id="identityInfo" class="result-content"></div>`;
+          const resultContent = document.getElementById('identityInfo');
+          resultContent.innerHTML = DOMPurify.sanitize(formatResultWithCredits(dataToFormat));
+        }
+        
         currentResult = data;
       }
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
     
     function formatResultWithCredits(data) {
@@ -2344,9 +2604,122 @@
       
       function formatCreditsValue(credits) {
         const creditsNum = BigInt(credits);
-        const dashValue = Number(creditsNum) / CREDITS_PER_DASH;
-        const dashFormatted = dashValue.toFixed(8).replace(/\.?0+$/, '');
-        return `<span class="credits-value" title="${dashFormatted} DASH">${credits}</span>`;
+        const CREDITS_PER_DASH_BIGINT = BigInt(CREDITS_PER_DASH);
+        
+        // Perform division using BigInt to get whole DASH
+        const wholeDash = creditsNum / CREDITS_PER_DASH_BIGINT;
+        // Get remainder for fractional part
+        const remainder = creditsNum % CREDITS_PER_DASH_BIGINT;
+        
+        // Convert remainder to 8 decimal places
+        // Multiply by 100000000 (8 decimal places) and divide by CREDITS_PER_DASH
+        const fractionalPart = (remainder * BigInt(100000000)) / CREDITS_PER_DASH_BIGINT;
+        
+        // Construct the decimal string
+        let dashFormatted;
+        if (fractionalPart === BigInt(0)) {
+          dashFormatted = wholeDash.toString();
+        } else {
+          // Pad fractional part to 8 digits
+          const fractionalStr = fractionalPart.toString().padStart(8, '0');
+          // Remove trailing zeros
+          const trimmedFractional = fractionalStr.replace(/0+$/, '');
+          dashFormatted = `${wholeDash}.${trimmedFractional}`;
+        }
+        
+        return `<span class="credits-value" title="${escapeHtml(dashFormatted)} DASH">${escapeHtml(credits)}</span>`;
+      }
+      
+      function formatNonceValue(nonce, key) {
+        // Parse the nonce as a BigInt to handle large numbers
+        const nonceBigInt = BigInt(nonce);
+        
+        // Determine if this is an identity contract nonce based on the field name
+        const isContractNonce = key && key.toLowerCase().includes('contract');
+        
+        let nonceTooltip;
+        
+        if (isContractNonce) {
+          // Identity Contract Nonce: First 24 bits are revision bitset, lower 40 bits are the nonce value
+          const IDENTITY_NONCE_VALUE_FILTER = 0xFFFFFFFFFFn; // 40 bits
+          const MISSING_IDENTITY_REVISIONS_FILTER = 0xFFFFFF0000000000n; // Upper 24 bits
+          
+          // Extract components
+          const nonceValue = nonceBigInt & IDENTITY_NONCE_VALUE_FILTER; // Lower 40 bits
+          const missingRevisionsBitset = (nonceBigInt & MISSING_IDENTITY_REVISIONS_FILTER) >> 40n; // Upper 24 bits
+          
+          // Convert to binary representation
+          const binaryStr = nonceBigInt.toString(2).padStart(64, '0');
+          const revisionBitsetBits = binaryStr.slice(0, 24);
+          const nonceValueBits = binaryStr.slice(24, 64);
+          
+          // Find missing nonces based on the bitset
+          const missingNonces = [];
+          for (let i = 0; i < 24; i++) {
+            if ((missingRevisionsBitset >> BigInt(i)) & 1n) {
+              const missingNonce = nonceValue - BigInt(i + 1);
+              missingNonces.push(missingNonce);
+            }
+          }
+          
+          nonceTooltip = `Identity Contract Nonce: ${nonce} (0x${nonceBigInt.toString(16).padStart(16, '0')})
+
+Binary: ${binaryStr}
+
+Bit Structure (Identity Contract Nonce):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bits 63-40 (Missing Revisions): ${revisionBitsetBits} = ${missingRevisionsBitset}
+Bits 39-0  (Nonce Value):       ${nonceValueBits} = ${nonceValue}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Decoded Values:
+• Nonce Value: ${nonceValue} (current sequence number)
+• Missing Revisions Bitset: ${missingRevisionsBitset} (tracks up to 24 missing nonces)
+${missingNonces.length > 0 ? `• Missing Nonces: ${missingNonces.map(n => n.toString()).join(', ')}` : '• No missing nonces detected'}
+
+Used for: Document operations and data contract updates`;
+        } else {
+          // Identity Nonce: Same structure as contract nonce but used for different operations
+          const IDENTITY_NONCE_VALUE_FILTER = 0xFFFFFFFFFFn; // 40 bits
+          const MISSING_IDENTITY_REVISIONS_FILTER = 0xFFFFFF0000000000n; // Upper 24 bits
+          
+          // Extract components
+          const nonceValue = nonceBigInt & IDENTITY_NONCE_VALUE_FILTER; // Lower 40 bits
+          const missingRevisionsBitset = (nonceBigInt & MISSING_IDENTITY_REVISIONS_FILTER) >> 40n; // Upper 24 bits
+          
+          // Convert to binary representation
+          const binaryStr = nonceBigInt.toString(2).padStart(64, '0');
+          const revisionBitsetBits = binaryStr.slice(0, 24);
+          const nonceValueBits = binaryStr.slice(24, 64);
+          
+          // Find missing nonces based on the bitset
+          const missingNonces = [];
+          for (let i = 0; i < 24; i++) {
+            if ((missingRevisionsBitset >> BigInt(i)) & 1n) {
+              const missingNonce = nonceValue - BigInt(i + 1);
+              missingNonces.push(missingNonce);
+            }
+          }
+          
+          nonceTooltip = `Identity Nonce: ${nonce} (0x${nonceBigInt.toString(16).padStart(16, '0')})
+
+Binary: ${binaryStr}
+
+Bit Structure (Identity Nonce):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bits 63-40 (Missing Revisions): ${revisionBitsetBits} = ${missingRevisionsBitset}
+Bits 39-0  (Nonce Value):       ${nonceValueBits} = ${nonceValue}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Decoded Values:
+• Nonce Value: ${nonceValue} (current sequence number)
+• Missing Revisions Bitset: ${missingRevisionsBitset} (tracks up to 24 missing nonces)
+${missingNonces.length > 0 ? `• Missing Nonces: ${missingNonces.map(n => n.toString()).join(', ')}` : '• No missing nonces detected'}
+
+Used for: Identity state transitions that use balance or create data contracts`;
+        }
+        
+        return `<span class="nonce-value" title="${escapeHtml(nonceTooltip)}" style="cursor: help; border-bottom: 1px dotted #666; font-family: monospace;">${escapeHtml(nonce.toString())}</span>`;
       }
       
       function processValue(value, key, indent = 0) {
@@ -2354,8 +2727,13 @@
         const creditsFields = ['balance', 'totalCreditsInPlatform', 'credits', 'amount', 'totalCredits'];
         const isCreditsField = creditsFields.some(field => key.toLowerCase().includes(field.toLowerCase()));
         
+        // Check if this is a nonce field
+        const isNonceField = key.toLowerCase() === 'nonce';
+        
         if (typeof value === 'string' && isCreditsField && /^\d+$/.test(value)) {
           return formatCreditsValue(value);
+        } else if (typeof value === 'string' && isNonceField) {
+          return formatNonceValue(value, key);
         } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           return formatObject(value, indent);
         } else if (Array.isArray(value)) {
@@ -2370,7 +2748,8 @@
         const innerIndentStr = '  '.repeat(indent + 1);
         const entries = Object.entries(obj).map(([key, value]) => {
           const formattedValue = processValue(value, key, indent + 1);
-          return `${innerIndentStr}<span class="json-key">"${escapeHtml(key)}"</span>: ${formattedValue}`;
+          const escapedKey = escapeHtml(key);
+          return `${innerIndentStr}<span class="json-key">"${escapedKey}"</span>: ${formattedValue}`;
         });
         return `{
 ${entries.join(',\n')}
@@ -2391,12 +2770,6 @@ ${indentStr}}`;
         return `[
 ${items.join(',\n')}
 ${indentStr}]`;
-      }
-      
-      function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
       }
       
       return `<pre>${processValue(data, '')}</pre>`;
@@ -2452,6 +2825,11 @@ ${indentStr}]`;
           sdk = newSdk;
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
+          
+          // Proof support is available for all queries - internally all queries use proof verification
+          // When the proof toggle is ON (checked), queries return verified data WITH proof information displayed
+          // When the proof toggle is OFF (unchecked), queries return verified data WITHOUT proof information displayed
+          // Note: Both modes use proof verification internally; the toggle only controls whether proof details are shown
         }
       } catch (error) {
         if (currentRequestToken === initRequestCounter) {
@@ -2487,8 +2865,57 @@ ${indentStr}]`;
         const input = document.createElement('input');
         input.type = inputDef.type;
         input.name = inputDef.name;
-        input.placeholder = inputDef.label;
+        input.placeholder = inputDef.placeholder || inputDef.label;
+        if (inputDef.defaultValue !== undefined) {
+          input.value = inputDef.defaultValue;
+        }
         inputGroup.appendChild(input);
+        
+        // Add validation message container for DPNS username
+        if (inputDef.validateOnType) {
+          const validationMessage = document.createElement('div');
+          validationMessage.className = 'validation-message';
+          validationMessage.style.fontSize = '0.9em';
+          validationMessage.style.marginTop = '5px';
+          inputGroup.appendChild(validationMessage);
+          
+          // Add real-time validation
+          input.addEventListener('input', (e) => {
+            const value = e.target.value;
+            
+            if (!value) {
+              validationMessage.textContent = '';
+              validationMessage.className = 'validation-message';
+              return;
+            }
+            
+            // Check if it's a valid username
+            const isValid = dpns_is_valid_username(value);
+            
+            if (!isValid) {
+              validationMessage.textContent = '❌ Invalid username format. Must be 3-63 chars, start/end with letter/number, only letters/numbers/hyphens.';
+              validationMessage.className = 'validation-message error';
+              validationMessage.style.color = '#dc3545';
+            } else {
+              // Check if it's contested
+              const isContested = dpns_is_contested_username(value);
+              const homographSafe = dpns_convert_to_homograph_safe(value);
+              const isHomographDifferent = value !== homographSafe;
+              
+              let message = '✅ Valid username';
+              if (isContested) {
+                message += ' (contested - requires masternode voting)';
+              }
+              if (isHomographDifferent) {
+                message += `. Will be stored as "${homographSafe}"`;
+              }
+              
+              validationMessage.textContent = message;
+              validationMessage.className = 'validation-message success';
+              validationMessage.style.color = isContested ? '#ff9800' : '#28a745';
+            }
+          });
+        }
       } else if (inputDef.type === 'checkbox') {
         const checkboxContainer = document.createElement('div');
         const checkbox = document.createElement('input');
@@ -2782,10 +3209,22 @@ ${indentStr}]`;
         const values = getInputValues();
         let result;
         
+        // Check if proof toggle is enabled
+        const proofToggle = document.getElementById('proofToggle');
+        const useProofs = proofToggle && proofToggle.checked;
+        
         // Identity queries
-        if (queryType === 'getIdentity' && values.id) {
-          result = await identity_fetch(sdk, values.id);
-          result = result.toJSON();
+        if (queryType === 'getIdentity') {
+          if (!values.id) {
+            throw new Error('Identity ID is required for getIdentity query');
+          }
+          if (useProofs) {
+            result = await identity_fetch_with_proof_info(sdk, values.id);
+            // Result is already a JS object with proof data
+          } else {
+            result = await identity_fetch(sdk, values.id);
+            result = result.toJSON();
+          }
         } else if (queryType === 'getIdentityKeys') {
           const keyIds = values.keyRequestType === 'specific' ? values.specificKeyIds : undefined;
           result = await get_identity_keys(
@@ -2808,9 +3247,17 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityNonce') {
-          result = await get_identity_nonce(sdk, values.identityId);
+          if (useProofs) {
+            result = await get_identity_nonce_with_proof_info(sdk, values.identityId);
+          } else {
+            result = await get_identity_nonce(sdk, values.identityId);
+          }
         } else if (queryType === 'getIdentityContractNonce') {
-          result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
+          if (useProofs) {
+            result = await get_identity_contract_nonce_with_proof_info(sdk, values.identityId, values.contractId);
+          } else {
+            result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
+          }
         } else if (queryType === 'getIdentityBalance') {
           result = await get_identity_balance(sdk, values.id);
           // Result is already an object with balance field
@@ -2836,8 +3283,13 @@ ${indentStr}]`;
         }
         // Data contract queries
         else if (queryType === 'getDataContract' && values.id) {
-          result = await data_contract_fetch(sdk, values.id);
-          result = result.toJSON();
+          if (useProofs) {
+            result = await data_contract_fetch_with_proof_info(sdk, values.id);
+            // Result is already a JS object with proof data
+          } else {
+            result = await data_contract_fetch(sdk, values.id);
+            result = result.toJSON();
+          }
         } else if (queryType === 'getDataContractHistory') {
           result = await get_data_contract_history(
             sdk,
@@ -2846,10 +3298,10 @@ ${indentStr}]`;
             values.offset,
             values.startAtMs
           );
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDataContracts') {
           result = await get_data_contracts(sdk, values.ids);
-          result = JSON.parse(result);
+          // Result is already a JS object from serde_wasm_bindgen
         }
         // Document queries
         else if (queryType === 'getDocuments') {
@@ -2865,31 +3317,104 @@ ${indentStr}]`;
             limit: values.limit
           });
           
-          result = await get_documents(
-            sdk,
-            values.dataContractId,
-            values.documentType,
-            values.where ? JSON.stringify(values.where) : undefined,
-            values.orderBy ? JSON.stringify(values.orderBy) : undefined,
-            values.limit,
-            startAfter,
-            startAt
-          );
+          if (useProofs) {
+            result = await get_documents_with_proof_info(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.where ? JSON.stringify(values.where) : undefined,
+              values.orderBy ? JSON.stringify(values.orderBy) : undefined,
+              values.limit,
+              startAfter,
+              startAt
+            );
+          } else {
+            result = await get_documents(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.where ? JSON.stringify(values.where) : undefined,
+              values.orderBy ? JSON.stringify(values.orderBy) : undefined,
+              values.limit,
+              startAfter,
+              startAt
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDocument') {
-          result = await get_document(
-            sdk,
-            values.dataContractId,
-            values.documentType,
-            values.documentId
-          );
+          if (useProofs) {
+            result = await get_document_with_proof_info(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.documentId
+            );
+          } else {
+            result = await get_document(
+              sdk,
+              values.dataContractId,
+              values.documentType,
+              values.documentId
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDpnsUsername') {
-          result = await get_dpns_username(
+          result = await get_dpns_usernames(
             sdk,
-            values.identityId
+            values.identityId,
+            values.limit || 10  // Default to 10 if not specified
           );
-          // Result is the username string or null
+          // Result is an array of usernames
+        } else if (queryType === 'dpnsCheckAvailability') {
+          // Handle DPNS availability check
+          const isValid = dpns_is_valid_username(values.label);
+          
+          if (!isValid) {
+            result = {
+              label: values.label,
+              valid: false,
+              message: "❌ Invalid username format",
+              requirements: [
+                "Must be 3-63 characters long",
+                "Must start and end with a letter or number",
+                "Can only contain letters, numbers, and hyphens",
+                "Cannot have consecutive hyphens"
+              ]
+            };
+          } else {
+            const isAvailable = await dpns_is_name_available(
+              sdk,
+              values.label
+            );
+            
+            const homographSafe = dpns_convert_to_homograph_safe(values.label);
+            const isHomographDifferent = values.label !== homographSafe;
+            const isContested = dpns_is_contested_username(values.label);
+            
+            result = {
+              label: values.label,
+              valid: true,
+              homographSafeLabel: homographSafe,
+              available: isAvailable,
+              contested: isContested,
+              message: isAvailable ? `"${values.label}" is available!` : `"${values.label}" is already taken.`,
+              note: isHomographDifferent ? `Note: Your username will be stored as "${homographSafe}" to prevent homograph attacks` : undefined,
+              contestedNote: isContested && isAvailable ? 
+                "⚠️ This is a contested username (3-19 chars, only a-z/0/1/-). It requires masternode voting to register." : undefined
+            };
+          }
+        } else if (queryType === 'dpnsResolve') {
+          // Handle DPNS name resolution
+          const resolvedIdentityId = await dpns_resolve_name(
+            sdk,
+            values.name
+          );
+          
+          result = {
+            name: values.name,
+            identityId: resolvedIdentityId,
+            message: resolvedIdentityId ? `Resolved to identity: ${resolvedIdentityId}` : `Name "${values.name}" not found`
+          };
         }
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
@@ -2905,15 +3430,28 @@ ${indentStr}]`;
         }
         // Epoch/Block queries
         else if (queryType === 'getEpochsInfo') {
-          result = await get_epochs_info(
-            sdk,
-            values.startEpoch,
-            values.count,
-            values.ascending
-          );
+          if (useProofs) {
+            result = await get_epochs_info_with_proof_info(
+              sdk,
+              values.startEpoch,
+              values.count,
+              values.ascending
+            );
+          } else {
+            result = await get_epochs_info(
+              sdk,
+              values.startEpoch,
+              values.count,
+              values.ascending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getCurrentEpoch') {
-          result = await get_current_epoch(sdk);
+          if (useProofs) {
+            result = await get_current_epoch_with_proof_info(sdk);
+          } else {
+            result = await get_current_epoch(sdk);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getFinalizedEpochInfos') {
           result = await get_finalized_epoch_infos(
@@ -2945,7 +3483,11 @@ ${indentStr}]`;
           result = await get_status(sdk);
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTotalCreditsInPlatform') {
-          result = await get_total_credits_in_platform(sdk);
+          if (useProofs) {
+            result = await get_total_credits_in_platform_with_proof_info(sdk);
+          } else {
+            result = await get_total_credits_in_platform(sdk);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'waitForStateTransitionResult') {
           if (!values.stateTransitionHash) {
@@ -2971,7 +3513,11 @@ ${indentStr}]`;
         }
         // Token queries
         else if (queryType === 'getIdentitiesTokenBalances') {
-          result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
+          if (useProofs) {
+            result = await get_identities_token_balances_with_proof_info(sdk, values.identityIds, values.tokenId);
+          } else {
+            result = await get_identities_token_balances(sdk, values.identityIds, values.tokenId);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityTokenInfos') {
           result = await get_identity_token_infos(
@@ -2990,7 +3536,11 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenStatuses') {
-          result = await get_token_statuses(sdk, values.tokenIds);
+          if (useProofs) {
+            result = await get_token_statuses_with_proof_info(sdk, values.tokenIds);
+          } else {
+            result = await get_token_statuses(sdk, values.tokenIds);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenDirectPurchasePrices') {
           result = await get_token_direct_purchase_prices(sdk, values.tokenIds);
@@ -3006,7 +3556,11 @@ ${indentStr}]`;
           );
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenTotalSupply') {
-          result = await get_token_total_supply(sdk, values.tokenId);
+          if (useProofs) {
+            result = await get_token_total_supply_with_proof_info(sdk, values.tokenId);
+          } else {
+            result = await get_token_total_supply(sdk, values.tokenId);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         }
         // Voting/Contested Resource queries
@@ -3164,8 +3718,6 @@ ${indentStr}]`;
       button.disabled = true;
       button.textContent = 'Processing...';
       
-      const preloader = document.getElementById('preloader');
-      preloader.style.display = 'block';
       updateStatus(`Executing ${transitionType} state transition...`, 'loading');
       
       try {
@@ -3308,6 +3860,125 @@ ${indentStr}]`;
           // Pass the result object directly to displayResult
           displayResult(result);
           updateStatus('Document price set successfully', 'success');
+        } else if (transitionType === 'dpnsRegister') {
+          // Handle DPNS registration
+          // First validate the username
+          const isValid = dpns_is_valid_username(values.label);
+          
+          if (!isValid) {
+            displayResult(JSON.stringify({
+              label: values.label,
+              valid: false,
+              message: "❌ Invalid username format",
+              requirements: [
+                "Must be 3-63 characters long",
+                "Must start and end with a letter or number",
+                "Can only contain letters, numbers, and hyphens",
+                "Cannot have consecutive hyphens"
+              ]
+            }, null, 2));
+            updateStatus('Invalid username format', 'error');
+            return;
+          }
+          
+          // Check if name is available
+          const isAvailable = await dpns_is_name_available(sdk, values.label);
+          if (!isAvailable) {
+            displayResult(JSON.stringify({
+              label: values.label,
+              available: false,
+              message: `❌ Username "${values.label}" is already taken`
+            }, null, 2));
+            updateStatus('Username already taken', 'error');
+            return;
+          }
+          
+          // Fetch identity to get the key ID
+          const identity = await identity_fetch(sdk, identityId);
+          const identityJSON = identity.toJSON();
+          
+          console.log('Identity public keys:', identityJSON.publicKeys);
+          
+          // We need to derive the public key from the private key to find the matching key ID
+          // For now, we'll prompt the user to specify the key ID since we can't easily derive
+          // the public key from WIF in JavaScript without additional crypto libraries
+          
+          // Check if the private key has a key ID suffix (format: privateKey:keyId)
+          let keyId = null;
+          let actualPrivateKey = privateKey;
+          
+          if (privateKey.includes(':')) {
+            const parts = privateKey.split(':');
+            actualPrivateKey = parts[0];
+            keyId = parseInt(parts[1]);
+            
+            // Verify the key exists and has the right security level
+            const publicKey = identityJSON.publicKeys.find(key => key.id === keyId);
+            if (!publicKey) {
+              throw new Error(`Key ID ${keyId} not found in identity`);
+            }
+            if (publicKey.disabledAt) {
+              throw new Error(`Key ID ${keyId} is disabled`);
+            }
+            // Check security level - MASTER=0, CRITICAL=1, HIGH=2
+            console.log(`Key ${keyId} has security level: ${publicKey.securityLevel}`);
+            if (publicKey.securityLevel === 0) {
+              throw new Error(`Key ID ${keyId} has MASTER security level. DPNS requires CRITICAL (1) or HIGH (2) security level.`);
+            }
+          } else {
+            // If no key ID provided, try to find the first suitable key
+            const suitableKey = identityJSON.publicKeys.find(key => 
+              !key.disabledAt && key.securityLevel !== 0  // Not MASTER
+            );
+            
+            if (suitableKey) {
+              keyId = suitableKey.id;
+              const levelName = suitableKey.securityLevel === 1 ? 'CRITICAL' : 'HIGH';
+              console.log(`No key ID specified. Using key ${keyId} with ${levelName} security level. For explicit control, use format: privateKey:keyId`);
+            } else {
+              throw new Error('No suitable keys found. DPNS requires CRITICAL or HIGH security level. Specify key ID using format: privateKey:keyId');
+            }
+          }
+          
+          console.log(`Using key ID ${keyId} for DPNS registration`);
+          
+          // Show initial status
+          updateStatus('Submitting DPNS preorder document...', 'info');
+          
+          // Add a small delay to let the status message show
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          result = await dpns_register_name(
+            sdk,
+            values.label,
+            identityId,       // Use the identity ID from authentication
+            keyId,            // Use the determined key ID
+            actualPrivateKey, // Use the actual private key (without :keyId suffix)
+            // Callback for preorder success
+            (preorderInfo) => {
+              console.log('Preorder successful:', preorderInfo);
+              updateStatus('Preorder successful! Now submitting domain document...', 'info');
+              
+              // Show preorder info in a temporary notification
+              const preorderMsg = `Preorder Document ID: ${preorderInfo.documentId}`;
+              const notification = document.createElement('div');
+              notification.className = 'preorder-notification';
+              notification.style.cssText = 'background: #4CAF50; color: white; padding: 10px; margin: 10px 0; border-radius: 4px;';
+              notification.textContent = preorderMsg;
+              
+              const resultsSection = document.getElementById('results');
+              if (resultsSection) {
+                resultsSection.insertBefore(notification, resultsSection.firstChild);
+                // Remove notification after 5 seconds
+                setTimeout(() => notification.remove(), 5000);
+              }
+            }
+          );
+          
+          // Since our callback is called at the end, let's update the message
+          // to reflect that both documents were submitted
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatus('DPNS name registered successfully! Both preorder and domain documents submitted.', 'success');
         } else if (transitionType === 'documentPurchase') {
           // Handle document purchase
           result = await sdk.documentPurchase(
@@ -3644,7 +4315,6 @@ ${indentStr}]`;
         displayResult(`Error executing state transition: ${error.message || error}`, true);
         updateStatus(`Error: ${error.message || error}`, 'error');
       } finally {
-        preloader.style.display = 'none';
         button.disabled = false;
         button.textContent = originalButtonText;
       }
@@ -3684,6 +4354,7 @@ ${indentStr}]`;
       document.getElementById('queryType').innerHTML = '<option value="">Select Type</option>';
       document.getElementById('queryType').style.display = 'none';
       document.getElementById('queryInputs').style.display = 'none';
+      document.getElementById('proofToggleContainer').style.display = 'none';
       document.getElementById('executeQuery').style.display = 'none';
       document.getElementById('queryDescription').style.display = 'none';
     });
@@ -3702,6 +4373,7 @@ ${indentStr}]`;
       
       // Hide inputs and button
       queryInputs.style.display = 'none';
+      document.getElementById('proofToggleContainer').style.display = 'none';
       executeButton.style.display = 'none';
       queryDescription.style.display = 'none';
       
@@ -3788,6 +4460,14 @@ ${indentStr}]`;
         queryInputs.style.display = 'block';
         executeButton.style.display = 'block';
         
+        // Show proof toggle for queries only
+        const proofToggleContainer = document.getElementById('proofToggleContainer');
+        if (operationType === 'queries') {
+          proofToggleContainer.style.display = 'block';
+        } else {
+          proofToggleContainer.style.display = 'none';
+        }
+        
         // Update button text based on operation type
         executeButton.textContent = operationType === 'transitions' ? 'Execute' : 'Execute Query';
         
@@ -3832,6 +4512,7 @@ ${indentStr}]`;
         }
       } else {
         queryInputs.style.display = 'none';
+        document.getElementById('proofToggleContainer').style.display = 'none';
         executeButton.style.display = 'none';
         queryDescription.style.display = 'none';
       }

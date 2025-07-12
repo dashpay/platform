@@ -130,6 +130,7 @@ const RAW_RUNTIME_STATE =
           ["add-stream", "npm:1.0.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
+          ["dompurify", "npm:3.2.6"],\
           ["node-gyp", "npm:10.0.1"],\
           ["semver", "npm:7.5.3"],\
           ["tempfile", "npm:3.0.0"],\
@@ -2804,6 +2805,7 @@ const RAW_RUNTIME_STATE =
           ["add-stream", "npm:1.0.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
+          ["dompurify", "npm:3.2.6"],\
           ["node-gyp", "npm:10.0.1"],\
           ["semver", "npm:7.5.3"],\
           ["tempfile", "npm:3.0.0"],\
@@ -4812,6 +4814,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@types-treeify-npm-1.0.0-b5e04e9cd3-7d313ba9de.zip/node_modules/@types/treeify/",\
         "packageDependencies": [\
           ["@types/treeify", "npm:1.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@types/trusted-types", [\
+      ["npm:2.0.7", {\
+        "packageLocation": "./.yarn/cache/@types-trusted-types-npm-2.0.7-a07fc44f59-8e4202766a.zip/node_modules/@types/trusted-types/",\
+        "packageDependencies": [\
+          ["@types/trusted-types", "npm:2.0.7"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -9284,6 +9295,16 @@ const RAW_RUNTIME_STATE =
           ["ent", "npm:2.2.0"],\
           ["extend", "npm:3.0.2"],\
           ["void-elements", "npm:2.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["dompurify", [\
+      ["npm:3.2.6", {\
+        "packageLocation": "./.yarn/cache/dompurify-npm-3.2.6-8d2a7542b7-b91631ed0e.zip/node_modules/dompurify/",\
+        "packageDependencies": [\
+          ["dompurify", "npm:3.2.6"],\
+          ["@types/trusted-types", "npm:2.0.7"]\
         ],\
         "linkType": "HARD"\
       }]\

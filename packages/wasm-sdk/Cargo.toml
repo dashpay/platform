@@ -6,10 +6,21 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["dpns-contract", "dashpay-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
 
 mocks = ["dash-sdk/mocks"]
-system-data-contracts = ["dash-sdk/system-data-contracts"]
+
+# All system contracts
+all-system-contracts = ["dash-sdk/all-system-contracts", "rs-sdk-trusted-context-provider/all-system-contracts"]
+
+# Individual contract features
+withdrawals-contract = ["dash-sdk/withdrawals-contract", "rs-sdk-trusted-context-provider/withdrawals-contract"]
+dpns-contract = ["dash-sdk/dpns-contract", "rs-sdk-trusted-context-provider/dpns-contract"]
+dashpay-contract = ["dash-sdk/dashpay-contract", "rs-sdk-trusted-context-provider/dashpay-contract"]
+wallet-utils-contract = ["dash-sdk/wallet-utils-contract", "rs-sdk-trusted-context-provider/wallet-utils-contract"]
+token-history-contract = ["dash-sdk/token-history-contract", "rs-sdk-trusted-context-provider/token-history-contract"]
+keywords-contract = ["dash-sdk/keywords-contract", "rs-sdk-trusted-context-provider/keywords-contract"]
+
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]

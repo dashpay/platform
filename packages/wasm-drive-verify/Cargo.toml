@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions",
-    "system_contracts",
+    "data-contracts",
     "data-contract-serde-conversion",
     "data-contract-json-conversion",
     "identity-serde-conversion",
@@ -46,7 +46,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "random-public-keys",
     "random-identities",
     "random-documents",
-    "system_contracts",
+    "all-system_contracts",
     "data-contract-serde-conversion",
     "data-contract-json-conversion",
     "identity-serde-conversion",
