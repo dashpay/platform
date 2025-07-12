@@ -33,6 +33,7 @@ Core exposes P2P and RPC ports for communication with other services. It also pr
 |----------------------|--------------|---------------|---------------------|----------------------|------------------|
 | **Core**             | P2P          | 9999          | `core.p2p.port`     | 0.0.0.0 (all)        | `core.p2p.host`  |
 |                      | RPC          | 9998          | `core.rpc.port`     | 127.0.0.1 (local)    | `core.rpc.host`  |
+|                      | ZMQ          | 29998         | `core.zmq.port`     | 127.0.0.1 (local)    | `core.zmq.host`  |
 | **Insight API/UI**   | HTTP         | 3001          | `core.insight.port` | 127.0.0.1 (local)    | (fixed)           |
 
 To interact with Core RPC use `dashmate core cli` command.

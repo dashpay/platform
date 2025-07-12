@@ -105,6 +105,10 @@ export default function getBaseConfigFactory() {
           },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
+        zmq: {
+          host: '127.0.0.1',
+          port: 29998,
+        },
         spork: {
           address: null,
           privateKey: null,

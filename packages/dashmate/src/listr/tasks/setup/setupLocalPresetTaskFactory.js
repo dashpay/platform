@@ -2,8 +2,8 @@ import { Listr } from 'listr2';
 import {
   PRESET_LOCAL,
 } from '../../../constants.js';
-import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
 import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
 import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
@@ -124,6 +124,7 @@ export default function setupLocalPresetTaskFactory(
                 config.set('group', 'local');
                 config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
+                config.set('core.zmq.port', config.get('core.zmq.port') + (i * 100));
 
                 Object.values(config.get('core.rpc.users')).forEach((options) => {
                   // eslint-disable-next-line no-param-reassign
