@@ -46,10 +46,10 @@ pub enum DataContractInfo<'a> {
     OwnedDataContract(DataContract),
 }
 
-impl DataContractInfo<'_> {
+impl <'a> DataContractInfo<'a> {
     #[cfg(feature = "server")]
     /// Resolve the data contract info into an object that contains the data contract
-    pub(crate) fn resolve<'a>(
+    pub(crate) fn resolve(
         self,
         drive: &Drive,
         block_info: &BlockInfo,
