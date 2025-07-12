@@ -2803,10 +2803,10 @@ ${indentStr}]`;
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
           
-          // Proof support is now available for identity queries
-          // When the proof toggle is ON (checked), queries return raw JSON without proof verification
-          // When the proof toggle is OFF (unchecked), queries return verified data with proofs
-          // Note: Most SDK queries don't yet support unproved mode, only identity_fetch_unproved is implemented
+          // Proof support is available for all queries - internally all queries use proof verification
+          // When the proof toggle is ON (checked), queries return verified data WITH proof information displayed
+          // When the proof toggle is OFF (unchecked), queries return verified data WITHOUT proof information displayed
+          // Note: Both modes use proof verification internally; the toggle only controls whether proof details are shown
         }
       } catch (error) {
         if (currentRequestToken === initRequestCounter) {
