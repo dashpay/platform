@@ -595,11 +595,35 @@
       "maxItems": 20,
       "uniqueItems": true
     },
+    "description": {
+      "type": "string",
+      "maxLength": 1000
+    },
     "additionalProperties": {
       "type": "boolean",
       "const": false
+    },
+    "required": {
+      "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/required"
+    },
+    "$comment": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "minProperties": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "dependentRequired": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray"
+      }
     }
   },
+  "additionalProperties": false,
   "required": [
     "$schema",
     "type",
