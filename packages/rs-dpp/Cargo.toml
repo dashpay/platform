@@ -270,7 +270,7 @@ core-types = ["bls-signatures"]
 core-types-serialization = ["core-types"]
 core-types-serde-conversion = ["core-types"]
 state-transitions = []
-system_contracts = ["data-contracts", "factories"]
+system_contracts = ["data-contracts", "factories", "platform-value-json"]
 # All system data contracts
 all-system_contracts = ["system_contracts", "data-contracts/all-contracts", "dpns-contract", "dashpay-contract", "withdrawals-contract", "masternode-rewards-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
 
