@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 
 <head>
   <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
@@ -2526,7 +2527,8 @@
       
       if (isError) {
         // For errors, show in single view
-        splitContainer.innerHTML = `<div id="identityInfo" class="result-content error-result">${data}</div>`;
+        const safeData = DOMPurify.sanitize(data);
+        splitContainer.innerHTML = `<div id="identityInfo" class="result-content error-result">${safeData}</div>`;
         currentResult = null;
       } else {
         // Parse JSON string if necessary
