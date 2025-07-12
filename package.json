@@ -105,6 +105,7 @@
     "brace-expansion": "^2.0.2"
   },
   "dependencies": {
-    "node-gyp": "^10.0.1"
+    "node-gyp": "^10.0.1",
+    "dompurify": "^3.2.6"
   }
 }

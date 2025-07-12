@@ -122,5 +122,7 @@ verify = [
   "grovedb/verify",
   "grovedb-costs",
   "dpp/state-transitions",
-  "dpp/data-contracts"
+  "dpp/system_contracts",
+  "dpp/token-history-contract",
+  "dpp/withdrawals-contract"
 ]
