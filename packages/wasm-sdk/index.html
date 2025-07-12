@@ -2564,7 +2564,7 @@
           
           // Display data in top section
           const dataContent = document.getElementById('identityInfo');
-          dataContent.innerHTML = formatResultWithCredits(dataToFormat.data);
+          dataContent.innerHTML = DOMPurify.sanitize(formatResultWithCredits(dataToFormat.data));
           
           // Display proof and metadata in bottom section
           const proofContent = document.getElementById('proofInfo');
@@ -2579,12 +2579,12 @@
               quorumType: dataToFormat.proof.quorumType
             }
           };
-          proofContent.innerHTML = formatResultWithCredits(proofDisplay);
+          proofContent.innerHTML = DOMPurify.sanitize(formatResultWithCredits(proofDisplay));
         } else {
           // Single view for non-proof mode or non-proof responses
           splitContainer.innerHTML = `<div id="identityInfo" class="result-content"></div>`;
           const resultContent = document.getElementById('identityInfo');
-          resultContent.innerHTML = formatResultWithCredits(dataToFormat);
+          resultContent.innerHTML = DOMPurify.sanitize(formatResultWithCredits(dataToFormat));
         }
         
         currentResult = data;

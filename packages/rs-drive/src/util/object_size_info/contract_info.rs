@@ -49,7 +49,7 @@ pub enum DataContractInfo<'a> {
 impl DataContractInfo<'_> {
     #[cfg(feature = "server")]
     /// Resolve the data contract info into an object that contains the data contract
-    pub(crate) fn resolve(
+    pub(crate) fn resolve<'a>(
         self,
         drive: &Drive,
         block_info: &BlockInfo,
