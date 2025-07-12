@@ -2602,8 +2602,29 @@
       
       function formatCreditsValue(credits) {
         const creditsNum = BigInt(credits);
-        const dashValue = Number(creditsNum) / CREDITS_PER_DASH;
-        const dashFormatted = dashValue.toFixed(8).replace(/\.?0+$/, '');
+        const CREDITS_PER_DASH_BIGINT = BigInt(CREDITS_PER_DASH);
+        
+        // Perform division using BigInt to get whole DASH
+        const wholeDash = creditsNum / CREDITS_PER_DASH_BIGINT;
+        // Get remainder for fractional part
+        const remainder = creditsNum % CREDITS_PER_DASH_BIGINT;
+        
+        // Convert remainder to 8 decimal places
+        // Multiply by 100000000 (8 decimal places) and divide by CREDITS_PER_DASH
+        const fractionalPart = (remainder * BigInt(100000000)) / CREDITS_PER_DASH_BIGINT;
+        
+        // Construct the decimal string
+        let dashFormatted;
+        if (fractionalPart === BigInt(0)) {
+          dashFormatted = wholeDash.toString();
+        } else {
+          // Pad fractional part to 8 digits
+          const fractionalStr = fractionalPart.toString().padStart(8, '0');
+          // Remove trailing zeros
+          const trimmedFractional = fractionalStr.replace(/0+$/, '');
+          dashFormatted = `${wholeDash}.${trimmedFractional}`;
+        }
+        
         return `<span class="credits-value" title="${escapeHtml(dashFormatted)} DASH">${escapeHtml(credits)}</span>`;
       }
       
