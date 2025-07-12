@@ -2,6 +2,7 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
+use serde::ser::Serialize as _;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -200,7 +201,9 @@ pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsE
         total_credits_in_platform: credits_value.to_string(),
     };
     
-    serde_wasm_bindgen::to_value(&response)
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -229,7 +232,9 @@ pub async fn get_prefunded_specialized_balance(
             balance: balance.0, // PrefundedSpecializedBalance is a newtype wrapper around u64
         };
         
-        serde_wasm_bindgen::to_value(&response)
+        // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
             .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     } else {
         // Return zero balance if not found
@@ -238,7 +243,9 @@ pub async fn get_prefunded_specialized_balance(
             balance: 0,
         };
         
-        serde_wasm_bindgen::to_value(&response)
+        // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
             .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     }
 }
@@ -353,5 +360,131 @@ pub async fn get_path_elements(
         .collect();
     
     serde_wasm_bindgen::to_value(&elements)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+}
+
+// Proof versions for system queries
+
+#[wasm_bindgen]
+pub async fn get_total_credits_in_platform_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+    use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::{TotalCreditsInPlatform as TotalCreditsQuery, NoParamQuery};
+    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    
+    let (total_credits_result, metadata, proof) = TotalCreditsQuery::fetch_with_metadata_and_proof(sdk.as_ref(), NoParamQuery {}, None)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch total credits with proof: {}", e)))?;
+    
+    let data = if let Some(credits) = total_credits_result {
+        Some(TotalCreditsResponse {
+            total_credits_in_platform: credits.0.to_string(),
+        })
+    } else {
+        None
+    };
+    
+    let response = ProofMetadataResponse {
+        data,
+        metadata: metadata.into(),
+        proof: proof.into(),
+    };
+    
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+}
+
+#[wasm_bindgen]
+pub async fn get_prefunded_specialized_balance_with_proof_info(
+    sdk: &WasmSdk,
+    identity_id: &str,
+) -> Result<JsValue, JsError> {
+    use dash_sdk::platform::{Identifier, Fetch};
+    use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
+    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    
+    // Parse identity ID
+    let identity_identifier = Identifier::from_string(
+        identity_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Fetch prefunded specialized balance with proof
+    let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(sdk.as_ref(), identity_identifier, None)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch prefunded specialized balance with proof: {}", e)))?;
+    
+    let data = PrefundedSpecializedBalance {
+        identity_id: identity_id.to_string(),
+        balance: balance_result.map(|b| b.0).unwrap_or(0),
+    };
+    
+    let response = ProofMetadataResponse {
+        data,
+        metadata: metadata.into(),
+        proof: proof.into(),
+    };
+    
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+}
+
+#[wasm_bindgen]
+pub async fn get_path_elements_with_proof_info(
+    sdk: &WasmSdk,
+    keys: Vec<String>,
+) -> Result<JsValue, JsError> {
+    use dash_sdk::platform::FetchMany;
+    use drive_proof_verifier::types::{KeysInPath, Elements};
+    use dash_sdk::drive::grovedb::Element;
+    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    
+    // Convert string keys to byte vectors
+    let key_bytes: Vec<Vec<u8>> = keys.iter()
+        .map(|k| k.as_bytes().to_vec())
+        .collect();
+    
+    // Create the query
+    let query = KeysInPath {
+        path: vec![], // Root path
+        keys: key_bytes,
+    };
+    
+    // Fetch path elements with proof
+    let (path_elements_result, metadata, proof) = Element::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch path elements with proof: {}", e)))?;
+    
+    // Convert the result to our response format
+    let elements: Vec<PathElement> = keys.into_iter()
+        .map(|key| {
+            let value = path_elements_result.get(key.as_bytes())
+                .and_then(|element_opt| element_opt.as_ref())
+                .and_then(|element| {
+                    element.as_item_bytes().ok().map(|bytes| {
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    })
+                });
+            
+            PathElement {
+                path: vec![key],
+                value,
+            }
+        })
+        .collect();
+    
+    let response = ProofMetadataResponse {
+        data: elements,
+        metadata: metadata.into(),
+        proof: proof.into(),
+    };
+    
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }

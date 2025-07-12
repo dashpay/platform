@@ -18,10 +18,10 @@ pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.withdrawals {
-        0 => Ok(None),
+        1 => Ok(None),
         version => Err(Error::UnknownVersionMismatch {
             method: "masternode_reward_shares_contract::load_definitions".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![1],
             received: version,
         }),
     }

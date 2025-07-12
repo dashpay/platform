@@ -654,6 +654,11 @@ impl WasmSdkBuilder {
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
+    
+    // TODO: Add with_proofs method when it's available in the SDK builder
+    // pub fn with_proofs(self, enable_proofs: bool) -> Self {
+    //     WasmSdkBuilder(self.0.with_proofs(enable_proofs))
+    // }
 }
 
 // Store shared trusted contexts

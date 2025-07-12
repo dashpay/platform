@@ -1,5 +1,5 @@
 pub mod daily_withdrawal_limit;
-#[cfg(feature = "system_contracts")]
+#[cfg(all(feature = "withdrawals-contract", feature = "system_contracts"))]
 mod document_try_into_asset_unlock_base_transaction_info;
 
 use bincode::{Decode, Encode};

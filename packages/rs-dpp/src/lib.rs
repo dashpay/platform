@@ -116,7 +116,7 @@ pub use bincode;
 pub use dashcore::blsful as bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
 pub use dashcore::ed25519_dalek;
-#[cfg(feature = "system_contracts")]
+#[cfg(feature = "data-contracts")]
 pub use data_contracts;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;

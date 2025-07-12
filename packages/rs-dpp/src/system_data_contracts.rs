@@ -22,17 +22,42 @@ impl ConfigurationForSystemContract for SystemDataContract {
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
         match self {
-            SystemDataContract::Withdrawals
-            | SystemDataContract::MasternodeRewards
-            | SystemDataContract::FeatureFlags
-            | SystemDataContract::DPNS
-            | SystemDataContract::Dashpay
-            | SystemDataContract::WalletUtils => {
+            SystemDataContract::Withdrawals => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;
                 config.set_sized_integer_types_enabled(false);
                 Ok(config)
             }
-            SystemDataContract::TokenHistory | SystemDataContract::KeywordSearch => {
+            SystemDataContract::MasternodeRewards => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::FeatureFlags => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::DPNS => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::Dashpay => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::WalletUtils => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::TokenHistory => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            SystemDataContract::KeywordSearch => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)

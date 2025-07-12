@@ -72,7 +72,7 @@ dpp = { path = "../rs-dpp", features = [
   "random-identities",
   "random-public-keys",
   "fixtures-and-mocks",
-  "system_contracts",
+  "all-system_contracts",
   "factories",
   "data-contract-json-conversion",
 ], default-features = false }
@@ -103,7 +103,7 @@ server = [
   "moka",
   "dpp/validation",
   "dpp/platform-value-json",
-  "dpp/system_contracts",
+  "dpp/all-system_contracts",
   "dpp/state-transitions",
   "fee-distribution",
   "grovedb/minimal",
@@ -123,4 +123,6 @@ verify = [
   "grovedb-costs",
   "dpp/state-transitions",
   "dpp/system_contracts",
+  "dpp/token-history-contract",
+  "dpp/withdrawals-contract"
 ]
