@@ -2526,7 +2526,9 @@
       
       if (isError) {
         // For errors, show in single view
-        splitContainer.innerHTML = `<div id="identityInfo" class="result-content error-result">${data}</div>`;
+        splitContainer.innerHTML = '<div id="identityInfo" class="result-content error-result"></div>';
+        const errorDiv = document.getElementById('identityInfo');
+        errorDiv.textContent = data;
         currentResult = null;
       } else {
         // Parse JSON string if necessary
@@ -2589,6 +2591,12 @@
       }
     }
     
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
     function formatResultWithCredits(data) {
       const CREDITS_PER_DASH = 100000000000; // 100 billion credits = 1 Dash
       
@@ -2596,7 +2604,7 @@
         const creditsNum = BigInt(credits);
         const dashValue = Number(creditsNum) / CREDITS_PER_DASH;
         const dashFormatted = dashValue.toFixed(8).replace(/\.?0+$/, '');
-        return `<span class="credits-value" title="${dashFormatted} DASH">${credits}</span>`;
+        return `<span class="credits-value" title="${escapeHtml(dashFormatted)} DASH">${escapeHtml(credits)}</span>`;
       }
       
       function formatNonceValue(nonce, key) {
@@ -2688,7 +2696,7 @@ ${missingNonces.length > 0 ? `• Missing Nonces: ${missingNonces.map(n => n.toS
 Used for: Identity state transitions that use balance or create data contracts`;
         }
         
-        return `<span class="nonce-value" title="${nonceTooltip}" style="cursor: help; border-bottom: 1px dotted #666; font-family: monospace;">${nonce}</span>`;
+        return `<span class="nonce-value" title="${escapeHtml(nonceTooltip)}" style="cursor: help; border-bottom: 1px dotted #666; font-family: monospace;">${escapeHtml(nonce.toString())}</span>`;
       }
       
       function processValue(value, key, indent = 0) {
@@ -2717,7 +2725,8 @@ Used for: Identity state transitions that use balance or create data contracts`;
         const innerIndentStr = '  '.repeat(indent + 1);
         const entries = Object.entries(obj).map(([key, value]) => {
           const formattedValue = processValue(value, key, indent + 1);
-          return `${innerIndentStr}<span class="json-key">"${escapeHtml(key)}"</span>: ${formattedValue}`;
+          const escapedKey = escapeHtml(key);
+          return `${innerIndentStr}<span class="json-key">"${escapedKey}"</span>: ${formattedValue}`;
         });
         return `{
 ${entries.join(',\n')}
@@ -2738,12 +2747,6 @@ ${indentStr}}`;
         return `[
 ${items.join(',\n')}
 ${indentStr}]`;
-      }
-      
-      function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
       }
       
       return `<pre>${processValue(data, '')}</pre>`;
