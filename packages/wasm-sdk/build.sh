@@ -16,6 +16,5 @@ if [ "${CARGO_BUILD_PROFILE:-}" = "dev" ] || [ "${CI:-}" != "true" ]; then
     OPT_LEVEL="minimal"
 fi
 
-# Call unified build script with only the contracts we need
-export CARGO_BUILD_FEATURES="dpns-contract,dashpay-contract,wallet-utils-contract,keywords-contract"
+# Call unified build script with default features (no need to specify)
 exec "$SCRIPT_DIR/../scripts/build-wasm.sh" --package wasm-sdk --opt-level "$OPT_LEVEL"
