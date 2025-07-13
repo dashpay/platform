@@ -48,6 +48,7 @@ pub enum DashSDKNetwork {
 
 /// SDK configuration
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct DashSDKConfig {
     /// Network to connect to
     pub network: DashSDKNetwork,

@@ -4,11 +4,11 @@
 //! enabling cross-platform applications to interact with Dash Platform through C interfaces.
 
 mod contested_resource;
+mod context_callbacks;
 mod context_provider;
 #[cfg(test)]
 mod context_provider_stubs;
-#[cfg(target_os = "ios")]
-mod core_stubs;
+// core_stubs module removed - no longer needed with callback approach
 mod data_contract;
 mod document;
 mod error;
@@ -28,6 +28,7 @@ mod voting;
 mod test_utils;
 
 pub use contested_resource::*;
+pub use context_callbacks::*;
 pub use context_provider::*;
 pub use data_contract::*;
 pub use document::*;
@@ -51,6 +52,9 @@ use std::panic;
 pub extern "C" fn dash_sdk_init() {
     // NOTE: Panic handler setup removed to avoid conflicts with dash-unified-ffi
     // The unified library sets its own panic handler in dash_unified_init()
+    
+    // Initialize context callbacks storage
+    context_callbacks::init_global_callbacks();
     
     // Initialize any other subsystems if needed
 }

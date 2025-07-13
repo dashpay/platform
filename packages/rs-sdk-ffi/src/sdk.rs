@@ -208,28 +208,35 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
         let provider_wrapper = &*(config.context_provider as *const ContextProviderWrapper);
         builder = builder.with_context_provider(provider_wrapper.provider());
     } else if !config.core_sdk_handle.is_null() {
-        // Create context provider from Core SDK handle
-        use crate::context_provider::dash_sdk_context_provider_from_core;
-        
-        let context_provider_handle = dash_sdk_context_provider_from_core(
-            config.core_sdk_handle,
-            std::ptr::null(),
-            std::ptr::null(),
-            std::ptr::null(),
-        );
-        
-        if context_provider_handle.is_null() {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                "Failed to create context provider from Core SDK handle".to_string(),
-            ));
+        // Try to create context provider from global callbacks
+        if let Some(callback_provider) = crate::context_callbacks::CallbackContextProvider::from_global() {
+            builder = builder.with_context_provider(callback_provider);
+        } else {
+            // Fallback to deprecated method (which will also check for global callbacks)
+            use crate::context_provider::dash_sdk_context_provider_from_core;
+            
+            let context_provider_handle = dash_sdk_context_provider_from_core(
+                config.core_sdk_handle,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            
+            if context_provider_handle.is_null() {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    "Failed to create context provider. Make sure to call dash_sdk_register_context_callbacks first.".to_string(),
+                ));
+            }
+            
+            let provider_wrapper = &*(context_provider_handle as *const ContextProviderWrapper);
+            builder = builder.with_context_provider(provider_wrapper.provider());
         }
-        
-        let provider_wrapper = &*(context_provider_handle as *const ContextProviderWrapper);
-        builder = builder.with_context_provider(provider_wrapper.provider());
-        
-        // Note: We're borrowing the provider, so we need to ensure the handle stays alive
-        // In a real implementation, we'd need to manage the lifetime properly
+    } else {
+        // No context provider specified - try to use global callbacks if available
+        if let Some(callback_provider) = crate::context_callbacks::CallbackContextProvider::from_global() {
+            builder = builder.with_context_provider(callback_provider);
+        }
     }
 
     // Build SDK
@@ -251,6 +258,81 @@ pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
     if !handle.is_null() {
         let _ = Box::from_raw(handle as *mut SDKWrapper);
     }
+}
+
+/// Register global context provider callbacks
+///
+/// This must be called before creating an SDK instance that needs Core SDK functionality.
+/// The callbacks will be used by all SDK instances created after registration.
+///
+/// # Safety
+/// - `callbacks` must contain valid function pointers that remain valid for the lifetime of the SDK
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_register_context_callbacks(
+    callbacks: *const crate::context_callbacks::ContextProviderCallbacks,
+) -> i32 {
+    if callbacks.is_null() {
+        return -1;
+    }
+
+    let callbacks = &*callbacks;
+    match crate::context_callbacks::set_global_callbacks(crate::context_callbacks::ContextProviderCallbacks {
+        core_handle: callbacks.core_handle,
+        get_platform_activation_height: callbacks.get_platform_activation_height,
+        get_quorum_public_key: callbacks.get_quorum_public_key,
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+/// Create a new SDK instance with explicit context callbacks
+///
+/// This is an alternative to registering global callbacks. The callbacks are used only for this SDK instance.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure
+/// - `callbacks` must contain valid function pointers that remain valid for the lifetime of the SDK
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
+    config: *const DashSDKConfig,
+    callbacks: *const crate::context_callbacks::ContextProviderCallbacks,
+) -> DashSDKResult {
+    if config.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Config is null".to_string(),
+        ));
+    }
+
+    if callbacks.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Callbacks is null".to_string(),
+        ));
+    }
+
+    // Create extended config with callback-based context provider
+    let callbacks = &*callbacks;
+    let context_provider = crate::context_callbacks::CallbackContextProvider::new(
+        crate::context_callbacks::ContextProviderCallbacks {
+            core_handle: callbacks.core_handle,
+            get_platform_activation_height: callbacks.get_platform_activation_height,
+            get_quorum_public_key: callbacks.get_quorum_public_key,
+        }
+    );
+    
+    let wrapper = Box::new(ContextProviderWrapper::new(context_provider));
+    let context_provider_handle = Box::into_raw(wrapper) as *mut ContextProviderHandle;
+    
+    let extended_config = DashSDKConfigExtended {
+        base_config: *config,
+        context_provider: context_provider_handle,
+        core_sdk_handle: std::ptr::null_mut(),
+    };
+    
+    // Use the extended creation function
+    dash_sdk_create_extended(&extended_config)
 }
 
 /// Get the current network the SDK is connected to
