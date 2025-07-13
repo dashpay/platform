@@ -4,6 +4,11 @@
 //! enabling cross-platform applications to interact with Dash Platform through C interfaces.
 
 mod contested_resource;
+mod context_provider;
+#[cfg(test)]
+mod context_provider_stubs;
+#[cfg(target_os = "ios")]
+mod core_stubs;
 mod data_contract;
 mod document;
 mod error;
@@ -23,6 +28,7 @@ mod voting;
 mod test_utils;
 
 pub use contested_resource::*;
+pub use context_provider::*;
 pub use data_contract::*;
 pub use document::*;
 pub use error::*;
@@ -43,25 +49,9 @@ use std::panic;
 /// This should be called once at app startup before using any other functions.
 #[no_mangle]
 pub extern "C" fn dash_sdk_init() {
-    // Set up panic hook to prevent unwinding across FFI boundary
-    panic::set_hook(Box::new(|panic_info| {
-        let msg = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            s
-        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
-            s.as_str()
-        } else {
-            "Unknown panic"
-        };
-
-        let location = if let Some(location) = panic_info.location() {
-            format!(" at {}:{}", location.file(), location.line())
-        } else {
-            String::new()
-        };
-
-        eprintln!("Dash SDK FFI panic: {}{}", msg, location);
-    }));
-
+    // NOTE: Panic handler setup removed to avoid conflicts with dash-unified-ffi
+    // The unified library sets its own panic handler in dash_unified_init()
+    
     // Initialize any other subsystems if needed
 }
 

@@ -11,6 +11,18 @@ use std::str::FromStr;
 
 use crate::types::{DashSDKConfig, DashSDKNetwork, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
+
+/// Extended SDK configuration with context provider support
+#[repr(C)]
+pub struct DashSDKConfigExtended {
+    /// Base SDK configuration
+    pub base_config: DashSDKConfig,
+    /// Optional context provider handle
+    pub context_provider: *mut ContextProviderHandle,
+    /// Optional Core SDK handle for automatic context provider creation
+    pub core_sdk_handle: *mut CoreSDKHandle,
+}
 
 /// Internal SDK wrapper
 pub(crate) struct SDKWrapper {
@@ -58,7 +70,11 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
     };
 
     // Create runtime
-    let runtime = match Runtime::new() {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .thread_name("dash-sdk-worker")
+        .worker_threads(1)  // Reduce threads for mobile
+        .enable_all()
+        .build() {
         Ok(rt) => rt,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
@@ -101,6 +117,120 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
             SdkBuilder::new(address_list).with_network(network)
         }
     };
+
+    // Build SDK
+    let sdk_result = builder.build().map_err(FFIError::from);
+
+    match sdk_result {
+        Ok(sdk) => {
+            let wrapper = Box::new(SDKWrapper::new(sdk, runtime));
+            let handle = Box::into_raw(wrapper) as *mut SDKHandle;
+            DashSDKResult::success(handle as *mut std::os::raw::c_void)
+        }
+        Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+/// Create a new SDK instance with extended configuration including context provider
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_extended(
+    config: *const DashSDKConfigExtended,
+) -> DashSDKResult {
+    if config.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Config is null".to_string(),
+        ));
+    }
+
+    let config = &*config;
+    let base_config = &config.base_config;
+
+    // Parse configuration
+    let network = match base_config.network {
+        DashSDKNetwork::Mainnet => Network::Dash,
+        DashSDKNetwork::Testnet => Network::Testnet,
+        DashSDKNetwork::Devnet => Network::Devnet,
+        DashSDKNetwork::Local => Network::Regtest,
+    };
+
+    // Create runtime
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .thread_name("dash-sdk-worker")
+        .worker_threads(1)  // Reduce threads for mobile
+        .enable_all()
+        .build() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                format!("Failed to create runtime: {}", e),
+            ));
+        }
+    };
+
+    // Parse DAPI addresses
+    let mut builder = if base_config.dapi_addresses.is_null() {
+        // Use mock SDK if no addresses provided
+        SdkBuilder::new_mock().with_network(network)
+    } else {
+        let addresses_str = match unsafe { CStr::from_ptr(base_config.dapi_addresses) }.to_str() {
+            Ok(s) => s,
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("Invalid DAPI addresses string: {}", e),
+                ))
+            }
+        };
+
+        if addresses_str.is_empty() {
+            // Use mock SDK if addresses string is empty
+            SdkBuilder::new_mock().with_network(network)
+        } else {
+            // Parse the address list
+            let address_list = match AddressList::from_str(addresses_str) {
+                Ok(list) => list,
+                Err(e) => {
+                    return DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("Failed to parse DAPI addresses: {}", e),
+                    ))
+                }
+            };
+
+            SdkBuilder::new(address_list).with_network(network)
+        }
+    };
+
+    // Check if context provider is provided
+    if !config.context_provider.is_null() {
+        let provider_wrapper = &*(config.context_provider as *const ContextProviderWrapper);
+        builder = builder.with_context_provider(provider_wrapper.provider());
+    } else if !config.core_sdk_handle.is_null() {
+        // Create context provider from Core SDK handle
+        use crate::context_provider::dash_sdk_context_provider_from_core;
+        
+        let context_provider_handle = dash_sdk_context_provider_from_core(
+            config.core_sdk_handle,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+        );
+        
+        if context_provider_handle.is_null() {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                "Failed to create context provider from Core SDK handle".to_string(),
+            ));
+        }
+        
+        let provider_wrapper = &*(context_provider_handle as *const ContextProviderWrapper);
+        builder = builder.with_context_provider(provider_wrapper.provider());
+        
+        // Note: We're borrowing the provider, so we need to ensure the handle stays alive
+        // In a real implementation, we'd need to manage the lifetime properly
+    }
 
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
