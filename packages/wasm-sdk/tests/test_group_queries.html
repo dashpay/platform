@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Group Queries</title>
+</head>
+<body>
+    <h1>Group Query Tests</h1>
+    <div id="results"></div>
+    
+    <script type="module">
+        import init, { WasmSdk, get_group_info, get_group_members, get_identity_groups, get_groups_data_contracts } from './pkg/wasm_sdk.js';
+        
+        async function runTests() {
+            const results = document.getElementById('results');
+            
+            try {
+                // Initialize WASM
+                await init();
+                
+                // Create SDK instance with testnet configuration
+                const sdk = new WasmSdk("testnet", null);
+                
+                results.innerHTML += '<h2>Testing Group Queries</h2>';
+                
+                // Test 1: get_group_info
+                results.innerHTML += '<h3>Test 1: get_group_info</h3>';
+                try {
+                    // You'll need a real data contract ID and group position for this to work
+                    const groupInfo = await get_group_info(sdk, "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec", 0);
+                    results.innerHTML += `<pre>Group Info: ${JSON.stringify(groupInfo, null, 2)}</pre>`;
+                } catch (e) {
+                    results.innerHTML += `<p style="color: red;">Error: ${e.message}</p>`;
+                }
+                
+                // Test 2: get_group_members
+                results.innerHTML += '<h3>Test 2: get_group_members</h3>';
+                try {
+                    const members = await get_group_members(sdk, "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec", 0, null, null, 10);
+                    results.innerHTML += `<pre>Group Members: ${JSON.stringify(members, null, 2)}</pre>`;
+                } catch (e) {
+                    results.innerHTML += `<p style="color: red;">Error: ${e.message}</p>`;
+                }
+                
+                // Test 3: get_identity_groups
+                results.innerHTML += '<h3>Test 3: get_identity_groups</h3>';
+                try {
+                    const identityGroups = await get_identity_groups(
+                        sdk, 
+                        "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF", 
+                        ["GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"], 
+                        null, 
+                        null
+                    );
+                    results.innerHTML += `<pre>Identity Groups: ${JSON.stringify(identityGroups, null, 2)}</pre>`;
+                } catch (e) {
+                    results.innerHTML += `<p style="color: red;">Error: ${e.message}</p>`;
+                }
+                
+                // Test 4: get_groups_data_contracts
+                results.innerHTML += '<h3>Test 4: get_groups_data_contracts</h3>';
+                try {
+                    const groupsDataContracts = await get_groups_data_contracts(
+                        sdk, 
+                        ["GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"]
+                    );
+                    results.innerHTML += `<pre>Groups Data Contracts: ${JSON.stringify(groupsDataContracts, null, 2)}</pre>`;
+                } catch (e) {
+                    results.innerHTML += `<p style="color: red;">Error: ${e.message}</p>`;
+                }
+                
+            } catch (e) {
+                results.innerHTML += `<p style="color: red;">Failed to initialize: ${e.message}</p>`;
+            }
+        }
+        
+        runTests();
+    </script>
+</body>
+</html>

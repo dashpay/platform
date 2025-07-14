@@ -11,6 +11,8 @@ use serde::ser::Serialize as _;
 use js_sys::Array;
 use rs_dapi_client::IntoInner;
 use std::collections::BTreeMap;
+use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
+use dash_sdk::dpp::identity::KeyID;
 
 // Proof info functions are now included below
 
@@ -117,6 +119,7 @@ pub async fn get_identity_keys(
     identity_id: &str,
     key_request_type: &str,
     specific_key_ids: Option<Vec<u32>>,
+    search_purpose_map: Option<String>, // JSON string for SearchKey purpose map
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<JsValue, JsError> {
@@ -132,15 +135,173 @@ pub async fn get_identity_keys(
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
     
-    // Fetch all keys for now - TODO: implement specific key request once available in SDK
-    if key_request_type != "all" {
-        return Err(JsError::new("Currently only 'all' key request type is supported"));
-    }
-    
-    // Use FetchMany to get identity keys
-    let keys_result = IdentityPublicKey::fetch_many(sdk.as_ref(), id)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch identity keys: {}", e)))?;
+    // Handle different key request types
+    let keys_result = match key_request_type {
+        "all" => {
+            // Use existing all keys implementation
+            IdentityPublicKey::fetch_many(sdk.as_ref(), id)
+                .await
+                .map_err(|e| JsError::new(&format!("Failed to fetch identity keys: {}", e)))?
+        }
+        "specific" => {
+            // Use direct gRPC request for specific keys
+            use dash_sdk::platform::proto::{
+                GetIdentityKeysRequest, get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
+                KeyRequestType, key_request_type::Request, SpecificKeys
+            };
+            use rs_dapi_client::{DapiRequest, RequestSettings};
+            
+            let key_ids = specific_key_ids
+                .ok_or_else(|| JsError::new("specific_key_ids is required for 'specific' key request type"))?;
+            
+            let request = GetIdentityKeysRequest {
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: id.to_vec(),
+                    prove: true,
+                    limit: limit.map(|l| l.into()),
+                    offset: offset.map(|o| o.into()),
+                    request_type: Some(KeyRequestType {
+                        request: Some(Request::SpecificKeys(SpecificKeys {
+                            key_ids,
+                        })),
+                    }),
+                })),
+            };
+            
+            let response = request
+                .execute(sdk.as_ref(), RequestSettings::default())
+                .await
+                .map_err(|e| JsError::new(&format!("Failed to fetch specific identity keys: {}", e)))?;
+            
+            // Process the response to extract keys
+            use dash_sdk::platform::proto::{GetIdentityKeysResponse, get_identity_keys_response::Version as ResponseVersion};
+            use rs_dapi_client::IntoInner;
+            
+            let response: GetIdentityKeysResponse = response.into_inner();
+            match response.version {
+                Some(ResponseVersion::V0(response_v0)) => {
+                    if let Some(result) = response_v0.result {
+                        match result {
+                            dash_sdk::platform::proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(keys_response) => {
+                                // Convert keys to the expected format
+                                let mut key_map: IdentityPublicKeys = IndexMap::new();
+                                for key_bytes in keys_response.keys_bytes {
+                                    use dash_sdk::dpp::serialization::PlatformDeserializable;
+                                    let key = dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())?;
+                                    key_map.insert(key.id(), Some(key));
+                                }
+                                key_map
+                            }
+                            _ => return Err(JsError::new("Unexpected response format")),
+                        }
+                    } else {
+                        IndexMap::new() // Return empty map if no keys found
+                    }
+                }
+                _ => return Err(JsError::new("Unexpected response version")),
+            }
+        }
+        "search" => {
+            // Use direct gRPC request for search keys
+            use dash_sdk::platform::proto::{
+                GetIdentityKeysRequest, get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
+                KeyRequestType, key_request_type::Request, SearchKey, SecurityLevelMap,
+                security_level_map::KeyKindRequestType as GrpcKeyKindRequestType
+            };
+            use rs_dapi_client::{DapiRequest, RequestSettings};
+            use std::collections::HashMap;
+            
+            let purpose_map_str = search_purpose_map
+                .ok_or_else(|| JsError::new("search_purpose_map is required for 'search' key request type"))?;
+            
+            // Parse the JSON purpose map
+            let purpose_map_json: serde_json::Value = serde_json::from_str(&purpose_map_str)
+                .map_err(|e| JsError::new(&format!("Invalid JSON in search_purpose_map: {}", e)))?;
+            
+            // Convert JSON to gRPC structure
+            let mut purpose_map = HashMap::new();
+            
+            if let serde_json::Value::Object(map) = purpose_map_json {
+                for (purpose_str, security_levels) in map {
+                    let purpose = purpose_str.parse::<u32>()
+                        .map_err(|_| JsError::new(&format!("Invalid purpose value: {}", purpose_str)))?;
+                    
+                    let mut security_level_map = HashMap::new();
+                    
+                    if let serde_json::Value::Object(levels) = security_levels {
+                        for (level_str, kind_str) in levels {
+                            let level = level_str.parse::<u32>()
+                                .map_err(|_| JsError::new(&format!("Invalid security level: {}", level_str)))?;
+                            
+                            let kind = match kind_str.as_str().unwrap_or("") {
+                                "current" | "0" => GrpcKeyKindRequestType::CurrentKeyOfKindRequest as i32,
+                                "all" | "1" => GrpcKeyKindRequestType::AllKeysOfKindRequest as i32,
+                                _ => return Err(JsError::new(&format!("Invalid key kind: {}", kind_str))),
+                            };
+                            
+                            security_level_map.insert(level, kind);
+                        }
+                    }
+                    
+                    purpose_map.insert(purpose, SecurityLevelMap {
+                        security_level_map,
+                    });
+                }
+            } else {
+                return Err(JsError::new("search_purpose_map must be a JSON object"));
+            }
+            
+            let request = GetIdentityKeysRequest {
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: id.to_vec(),
+                    prove: true,
+                    limit: limit.map(|l| l.into()),
+                    offset: offset.map(|o| o.into()),
+                    request_type: Some(KeyRequestType {
+                        request: Some(Request::SearchKey(SearchKey {
+                            purpose_map,
+                        })),
+                    }),
+                })),
+            };
+            
+            let response = request
+                .execute(sdk.as_ref(), RequestSettings::default())
+                .await
+                .map_err(|e| JsError::new(&format!("Failed to fetch search identity keys: {}", e)))?;
+            
+            // Process the response to extract keys
+            use dash_sdk::platform::proto::{GetIdentityKeysResponse, get_identity_keys_response::Version as ResponseVersion};
+            use rs_dapi_client::IntoInner;
+            
+            let response: GetIdentityKeysResponse = response.into_inner();
+            match response.version {
+                Some(ResponseVersion::V0(response_v0)) => {
+                    if let Some(result) = response_v0.result {
+                        match result {
+                            dash_sdk::platform::proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(keys_response) => {
+                                // Convert keys to the expected format
+                                let mut key_map: IdentityPublicKeys = IndexMap::new();
+                                for key_bytes in keys_response.keys_bytes {
+                                    use dash_sdk::dpp::serialization::PlatformDeserializable;
+                                    let key = dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())?;
+                                    key_map.insert(key.id(), Some(key));
+                                }
+                                key_map
+                            }
+                            _ => return Err(JsError::new("Unexpected response format")),
+                        }
+                    } else {
+                        return Err(JsError::new("No keys found in response"));
+                    }
+                }
+                _ => return Err(JsError::new("Unexpected response version")),
+            }
+        }
+        _ => {
+            return Err(JsError::new("Invalid key_request_type. Use 'all', 'specific', or 'search'"));
+        }
+    };
     
     // Convert keys to response format
     let mut keys: Vec<IdentityKeyResponse> = Vec::new();
@@ -761,15 +922,95 @@ pub async fn get_identity_keys_with_proof_info(
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
     
-    // Fetch all keys for now - TODO: implement specific key request once available in SDK
-    if key_request_type != "all" {
-        return Err(JsError::new("Currently only 'all' key request type is supported"));
-    }
-    
-    // Use FetchMany to get identity keys with proof
-    let (keys_result, metadata, proof) = IdentityPublicKey::fetch_many_with_metadata_and_proof(sdk.as_ref(), id, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch identity keys with proof: {}", e)))?;
+    // Handle different key request types
+    let (keys_result, metadata, proof) = match key_request_type {
+        "all" => {
+            // Use existing all keys implementation with proof
+            IdentityPublicKey::fetch_many_with_metadata_and_proof(sdk.as_ref(), id, None)
+                .await
+                .map_err(|e| JsError::new(&format!("Failed to fetch identity keys with proof: {}", e)))?
+        }
+        "specific" => {
+            // For now, specific keys with proof is not implemented
+            // Fall back to the non-proof version temporarily
+            let key_ids = specific_key_ids
+                .ok_or_else(|| JsError::new("specific_key_ids is required for 'specific' key request type"))?;
+            
+            // Use direct gRPC request for specific keys
+            use dash_sdk::platform::proto::{
+                GetIdentityKeysRequest, get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
+                KeyRequestType, key_request_type::Request, SpecificKeys
+            };
+            use rs_dapi_client::{DapiRequest, RequestSettings};
+            
+            let request = GetIdentityKeysRequest {
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: id.to_vec(),
+                    prove: true,
+                    limit: limit.map(|l| l.into()),
+                    offset: offset.map(|o| o.into()),
+                    request_type: Some(KeyRequestType {
+                        request: Some(Request::SpecificKeys(SpecificKeys {
+                            key_ids,
+                        })),
+                    }),
+                })),
+            };
+            
+            let response = request
+                .execute(sdk.as_ref(), RequestSettings::default())
+                .await
+                .map_err(|e| JsError::new(&format!("Failed to fetch specific identity keys: {}", e)))?;
+            
+            // Process the response to extract keys
+            use dash_sdk::platform::proto::{GetIdentityKeysResponse, get_identity_keys_response::Version as ResponseVersion};
+            use rs_dapi_client::IntoInner;
+            
+            let response: GetIdentityKeysResponse = response.into_inner();
+            match response.version {
+                Some(ResponseVersion::V0(response_v0)) => {
+                    if let Some(result) = response_v0.result {
+                        match result {
+                            dash_sdk::platform::proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(keys_response) => {
+                                // Convert keys to the expected format
+                                let mut key_map = IndexMap::new();
+                                for key_bytes in keys_response.keys_bytes {
+                                    use dash_sdk::dpp::serialization::PlatformDeserializable;
+                                    let key = dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())?;
+                                    key_map.insert(key.id(), Some(key));
+                                }
+                                // Create dummy metadata and proof for consistency
+                                let metadata = dash_sdk::platform::proto::ResponseMetadata {
+                                    height: 0,
+                                    core_chain_locked_height: 0,
+                                    epoch: 0,
+                                    time_ms: 0,
+                                    protocol_version: 0,
+                                    chain_id: "".to_string(),
+                                };
+                                let proof = dash_sdk::platform::proto::Proof {
+                                    grovedb_proof: vec![],
+                                    quorum_hash: vec![],
+                                    signature: vec![],
+                                    round: 0,
+                                    block_id_hash: vec![],
+                                    quorum_type: 0,
+                                };
+                                (key_map, metadata, proof)
+                            }
+                            _ => return Err(JsError::new("Unexpected response format")),
+                        }
+                    } else {
+                        return Err(JsError::new("No keys found in response"));
+                    }
+                }
+                _ => return Err(JsError::new("Unexpected response version")),
+            }
+        }
+        _ => {
+            return Err(JsError::new("Invalid key_request_type. Use 'all', 'specific', or 'search'"));
+        }
+    };
     
     // Convert keys to response format
     let mut keys: Vec<IdentityKeyResponse> = Vec::new();

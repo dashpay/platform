@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation
+
+**IMPORTANT**: For comprehensive API reference and usage examples, see:
+- **[AI_REFERENCE.md](AI_REFERENCE.md)** - Complete API reference with all queries and state transitions
+- **[docs.html](docs.html)** - User-friendly documentation
+- **[index.html](index.html)** - Live interactive demo
+
+When implementing WASM SDK functionality, always refer to AI_REFERENCE.md first for accurate method signatures and examples.
+
 ## Important Notes
 
 ### Network Connectivity
@@ -41,6 +50,13 @@ Run `./build.sh` to build the WASM module. Output goes to `pkg/` directory.
 3. Select network (testnet/mainnet)
 4. Choose operation type (queries/state transitions)
 5. Fill in parameters and execute
+
+## Documentation Maintenance
+
+When adding new queries or state transitions:
+1. Update the definitions in `index.html`
+2. Run `python3 generate_docs.py` to regenerate documentation
+3. The CI will fail if documentation is out of sync
 
 ## Common Issues
 
