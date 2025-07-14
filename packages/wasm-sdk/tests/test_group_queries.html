@@ -8,7 +8,7 @@
     <div id="results"></div>
     
     <script type="module">
-        import init, { WasmSdk, get_group_info, get_group_members, get_identity_groups, get_groups_data_contracts } from './pkg/wasm_sdk.js';
+        import init, { WasmSdkBuilder, get_group_info, get_group_members, get_identity_groups, get_groups_data_contracts } from '../pkg/wasm_sdk.js';
         
         async function runTests() {
             const results = document.getElementById('results');
@@ -17,8 +17,10 @@
                 // Initialize WASM
                 await init();
                 
-                // Create SDK instance with testnet configuration
-                const sdk = new WasmSdk("testnet", null);
+                // Create SDK instance with testnet configuration using WasmSdkBuilder
+                const builder = new WasmSdkBuilder();
+                builder.set_testnet_mode();
+                const sdk = await builder.build();
                 
                 results.innerHTML += '<h2>Testing Group Queries</h2>';
                 

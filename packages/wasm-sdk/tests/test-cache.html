@@ -34,13 +34,29 @@
             if ('serviceWorker' in navigator) {
                 const registration = await navigator.serviceWorker.getRegistration();
                 if (registration) {
-                    statusDiv.innerHTML = `
-                        Service Worker: <span class="cached">Registered</span><br>
-                        Scope: ${registration.scope}<br>
-                        Active: ${registration.active ? 'Yes' : 'No'}<br>
-                        Installing: ${registration.installing ? 'Yes' : 'No'}<br>
-                        Waiting: ${registration.waiting ? 'Yes' : 'No'}
-                    `;
+                    // Clear existing content
+                    statusDiv.textContent = '';
+                    
+                    // Create status elements safely
+                    const swStatus = document.createElement('div');
+                    swStatus.innerHTML = 'Service Worker: <span class="cached">Registered</span>';
+                    statusDiv.appendChild(swStatus);
+                    
+                    const scope = document.createElement('div');
+                    scope.textContent = `Scope: ${registration.scope}`;
+                    statusDiv.appendChild(scope);
+                    
+                    const active = document.createElement('div');
+                    active.textContent = `Active: ${registration.active ? 'Yes' : 'No'}`;
+                    statusDiv.appendChild(active);
+                    
+                    const installing = document.createElement('div');
+                    installing.textContent = `Installing: ${registration.installing ? 'Yes' : 'No'}`;
+                    statusDiv.appendChild(installing);
+                    
+                    const waiting = document.createElement('div');
+                    waiting.textContent = `Waiting: ${registration.waiting ? 'Yes' : 'No'}`;
+                    statusDiv.appendChild(waiting);
                 } else {
                     statusDiv.innerHTML = '<span class="error">No service worker registered</span>';
                 }
@@ -91,7 +107,9 @@
             
             try {
                 const start = performance.now();
-                const response = await fetch('/pkg/wasm_sdk_bg.wasm');
+                // Use relative path to support different serving contexts
+                const wasmPath = new URL('../pkg/wasm_sdk_bg.wasm', import.meta.url).href;
+                const response = await fetch(wasmPath);
                 const end = performance.now();
                 
                 resultsDiv.innerHTML += `

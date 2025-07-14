@@ -70,8 +70,8 @@
             const privateKeyWif = document.getElementById('privateKey').value;
             
             try {
-                // Use bitcore-lib-dash to handle the key
-                const dashcore = require('bitcore-lib-dash');
+                // Use bitcore-lib-dash from global scope (loaded via CDN)
+                const dashcore = window.bitcoreLibDash;
                 
                 // Create private key from WIF
                 const privateKey = new dashcore.PrivateKey(privateKeyWif);

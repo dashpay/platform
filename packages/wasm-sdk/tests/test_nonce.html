@@ -9,7 +9,7 @@
     <pre id="output"></pre>
     
     <script type="module">
-        import init, { WasmSdkBuilder, get_identity_balance, get_identity_nonce } from './pkg/wasm_sdk.js';
+        import init, { WasmSdkBuilder, get_identity_balance, get_identity_nonce } from '../pkg/wasm_sdk.js';
         
         const output = document.getElementById('output');
         
@@ -17,7 +17,7 @@
             await init();
             
             const builder = WasmSdkBuilder.testnet();
-            const sdk = builder.with_cache(false).build();
+            const sdk = await builder.with_cache(false).build();
             
             const identity_id = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk";
             

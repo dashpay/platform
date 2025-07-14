@@ -44,7 +44,7 @@ Parameters:
 
 Example:
 ```javascript
-const identity = await sdk.get_identity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");
+const identity = await sdk.getIdentity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");
 ```
 
 **Get Identity Keys** - `getIdentityKeys`
@@ -109,7 +109,7 @@ Parameters:
 
 Example:
 ```javascript
-const balance = await sdk.get_identity_balance(identityId);
+const balance = await sdk.getIdentityBalance(identityId);
 ```
 
 **Get Identities Balances** - `getIdentitiesBalances`
@@ -267,7 +267,7 @@ Parameters:
 
 Example:
 ```javascript
-const docs = await sdk.get_documents(
+const docs = await sdk.getDocuments(
     contractId,
     "note",
     JSON.stringify([["$ownerId", "==", identityId]]),
@@ -1072,7 +1072,7 @@ const result = await sdk.masternodeVote(identityHex, /* params */, privateKeyHex
 ### Error Handling
 ```javascript
 try {
-    const result = await sdk.get_identity(identityId);
+    const result = await sdk.getIdentity(identityId);
     console.log(result);
 } catch (error) {
     console.error("Query failed:", error);
@@ -1085,7 +1085,7 @@ try {
 const sdk = await WasmSdk.new(transport, true);
 
 // Query with proof verification
-const identityWithProof = await sdk.get_identity(identityId);
+const identityWithProof = await sdk.getIdentity(identityId);
 ```
 
 ### Document Queries with Where/OrderBy
@@ -1101,7 +1101,7 @@ const orderBy = JSON.stringify([
     ["$createdAt", "desc"]
 ]);
 
-const docs = await sdk.get_documents(
+const docs = await sdk.getDocuments(
     contractId,
     documentType,
     whereClause,
@@ -1114,7 +1114,7 @@ const docs = await sdk.get_documents(
 ```javascript
 // Get multiple identities
 const identityIds = ["id1", "id2", "id3"];
-const balances = await sdk.get_identities_balances(identityIds);
+const balances = await sdk.getIdentitiesBalances(identityIds);
 ```
 
 ## Important Notes

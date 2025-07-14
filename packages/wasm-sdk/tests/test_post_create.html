@@ -89,7 +89,7 @@
     <div id="result"></div>
 
     <script type="module">
-        import init, { WasmSdkBuilder } from './pkg/wasm_sdk.js';
+        import init, { WasmSdkBuilder } from '../pkg/wasm_sdk.js';
         
         let sdk = null;
         
@@ -97,14 +97,14 @@
             await init();
             const builder = new WasmSdkBuilder();
             builder.set_testnet_mode();
-            sdk = builder.build();
+            sdk = await builder.build();
             window.sdk = sdk;
             console.log('SDK initialized');
         }
         
         window.createPost = async function() {
             const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = 'Creating post...';
+            resultDiv.textContent = 'Creating post...';
             resultDiv.className = '';
             
             try {
@@ -148,12 +148,12 @@
                     privateKey
                 );
                 
-                resultDiv.innerHTML = 'Success!\n' + JSON.stringify(result, null, 2);
+                resultDiv.textContent = 'Success!\n' + JSON.stringify(result, null, 2);
                 resultDiv.className = 'success';
                 
             } catch (error) {
                 console.error('Error:', error);
-                resultDiv.innerHTML = 'Error: ' + (error.message || error);
+                resultDiv.textContent = 'Error: ' + (error.message || error);
                 resultDiv.className = 'error';
             }
         };

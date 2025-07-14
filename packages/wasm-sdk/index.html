@@ -1392,6 +1392,9 @@
               },
               { name: "specificKeyIds", type: "array", label: "Key IDs (for Specific Keys)", required: false, 
                 dependsOn: { field: "keyRequestType", value: "specific" } },
+              { name: "searchPurposeMap", type: "text", label: "Search Purpose Map (JSON)", required: false,
+                placeholder: '{"0": {"0": "current"}, "1": {"0": "all"}}',
+                dependsOn: { field: "keyRequestType", value: "search" } },
               { name: "limit", type: "number", label: "Limit", required: false },
               { name: "offset", type: "number", label: "Offset", required: false }
             ]
@@ -3272,6 +3275,15 @@ ${indentStr}]`;
         } else if (queryType === 'getIdentityKeys') {
           const keyIds = values.keyRequestType === 'specific' ? values.specificKeyIds : undefined;
           const searchPurposeMap = values.keyRequestType === 'search' ? values.searchPurposeMap : undefined;
+          
+          // Validate required parameters based on key request type
+          if (values.keyRequestType === 'search' && !searchPurposeMap) {
+            throw new Error('Search Purpose Map is required when using search key request type');
+          }
+          if (values.keyRequestType === 'specific' && (!keyIds || keyIds.length === 0)) {
+            throw new Error('Key IDs are required when using specific key request type');
+          }
+          
           result = await get_identity_keys(
             sdk,
             values.identityId,

@@ -331,6 +331,163 @@ def extract_inputs(inputs_str):
     
     return inputs
 
+def generate_sidebar_entries(definitions, type_prefix, section_class=""):
+    """Generate sidebar entries for queries or transitions"""
+    html = ""
+    for cat_key, category in definitions.items():
+        html += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
+        items = category.get('queries' if type_prefix == 'query' else 'transitions', {})
+        for item_key in items:
+            item = items[item_key]
+            html += f'            <li style="margin-left: 20px;"><a href="#{type_prefix}-{item_key}">{item.get("label", item_key)}</a></li>\n'
+    return html
+
+def generate_operation_docs(definitions, type_name, type_prefix):
+    """Generate documentation for operations (queries or transitions)"""
+    html = ""
+    for cat_key, category in definitions.items():
+        html += f'''\n    <div class="category">
+        <h3>{category.get('label', cat_key)}</h3>
+'''
+        
+        items_key = 'queries' if type_prefix == 'query' else 'transitions'
+        items = category.get(items_key, {})
+        for item_key, item in items.items():
+            html += generate_operation_entry(item_key, item, type_prefix)
+        
+        html += '    </div>'
+    return html
+
+def generate_operation_entry(operation_key, operation, type_prefix):
+    """Generate documentation for a single operation"""
+    html = f'''        <div class="operation">
+            <h4 id="{type_prefix}-{operation_key}">{operation.get('label', operation_key)}</h4>
+            <p class="description">{operation.get('description', 'No description available')}</p>
+            
+            <div class="parameters">
+                <h5>Parameters:</h5>
+'''
+    
+    inputs = operation.get('inputs', [])
+    if not inputs:
+        html += '                <p class="param-optional">No parameters required</p>'
+    else:
+        for param in inputs:
+            html += generate_parameter_entry(param)
+    
+    html += '''            </div>
+            
+            <div class="example-container">
+                <h5>Example</h5>
+'''
+    
+    if type_prefix == 'query':
+        example_code = generate_example_code(operation_key, inputs)
+        html += f'                <div class="example-code" id="code-{operation_key}">{example_code}</div>\n'
+        
+        # Special handling for certain operations
+        if operation_key == 'waitForStateTransitionResult':
+            html += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
+        else:
+            html += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
+            if operation_key in ['getPathElements', 'getDataContractHistory', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
+                html += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
+        
+        # Add special examples and info
+        if operation_key == 'getIdentityKeys':
+            html += '''\n                <div class="example-container">
+                    <h5>Example 2 - Get Specific Keys</h5>
+                    <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
+<button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
+                    <div class="example-result" id="result-getIdentityKeys2"></div>
+                </div>'''
+        elif operation_key == 'getPathElements':
+            html += generate_path_elements_info()
+        
+        html += f'\n                <div class="example-result" id="result-{operation_key}"></div>'
+    else:
+        # State transitions don't have run buttons
+        html += f'                <div class="example-code">{generate_transition_example(operation_key)}</div>'
+    
+    html += '''            </div>
+        </div>
+'''
+    return html
+
+def generate_parameter_entry(param):
+    """Generate documentation for a single parameter"""
+    required_text = '<span class="param-required">(required)</span>' if param.get('required', False) else '<span class="param-optional">(optional)</span>'
+    html = f'''                <div class="parameter">
+                    <span class="param-name">{param.get('label', param.get('name', 'Unknown'))}</span>
+                    <span class="param-type">{param.get('type', 'text')}</span>
+                    {required_text}
+'''
+    if param.get('placeholder'):
+        html += f'                    <br><small>Example: {html.escape(param.get("placeholder"))}</small>\n'
+    elif param.get('name') == 'limit' and not param.get('required', False):
+        html += '                    <br><small>Default: 100 (maximum items returned if not specified)</small>\n'
+    if param.get('options'):
+        html += '                    <br><small>Options: '
+        opts = [f'{opt.get("label", opt.get("value"))}' for opt in param.get('options', [])]
+        html += ', '.join(opts)
+        html += '</small>\n'
+    html += '                </div>\n'
+    return html
+
+def generate_transition_example(trans_key):
+    """Generate example code for state transitions"""
+    if trans_key == 'documentCreate':
+        return '''const result = await sdk.document_create(
+    identityHex,
+    contractId,
+    "note",
+    JSON.stringify({ message: "Hello!" }),
+    privateKeyHex
+);'''
+    elif trans_key == 'tokenTransfer':
+        return '''const result = await sdk.token_transfer(
+    identityHex,
+    contractId,
+    tokenId,
+    1000000, // amount
+    recipientId,
+    privateKeyHex
+);'''
+    else:
+        return f'const result = await sdk.{trans_key}(identityHex, /* params */, privateKeyHex);'
+
+def generate_path_elements_info():
+    """Generate path elements documentation"""
+    return '''\n                <div class="path-info">
+                    <h6>Common Path Values:</h6>
+                    <table class="path-table">
+                        <tr><th>Path Value</th><th>Description</th></tr>
+                        <tr><td><code>64</code></td><td>Data Contract Documents</td></tr>
+                        <tr><td><code>32</code></td><td>Identities</td></tr>
+                        <tr><td><code>24</code></td><td>Unique Public Key Hashes to Identities</td></tr>
+                        <tr><td><code>8</code></td><td>Non-Unique Public Key Hashes to Identities</td></tr>
+                        <tr><td><code>16</code></td><td>Tokens</td></tr>
+                        <tr><td><code>48</code></td><td>Pools</td></tr>
+                        <tr><td><code>40</code></td><td>Prefunded Specialized Balances</td></tr>
+                        <tr><td><code>72</code></td><td>Spent Asset Lock Transactions</td></tr>
+                        <tr><td><code>80</code></td><td>Withdrawal Transactions</td></tr>
+                        <tr><td><code>88</code></td><td>Group Actions</td></tr>
+                        <tr><td><code>96</code></td><td>Balances</td></tr>
+                        <tr><td><code>104</code></td><td>Misc</td></tr>
+                        <tr><td><code>112</code></td><td>Votes</td></tr>
+                        <tr><td><code>120</code></td><td>Versions</td></tr>
+                    </table>
+                    <h6>Example Paths:</h6>
+                    <ul>
+                        <li><code>[32, identity_id]</code> - Access identity data</li>
+                        <li><code>[96, identity_id]</code> - Access identity balance</li>
+                        <li><code>[16, contract_id, token_id]</code> - Access token info</li>
+                        <li><code>[64, contract_id, 1, document_type]</code> - Access documents by type</li>
+                        <li><code>[88, contract_id, group_position]</code> - Access group actions</li>
+                        <li><code>[112]</code> - Access votes tree</li>
+                    </ul>
+                </div>'''
+
 def generate_user_docs_html(query_defs, transition_defs):
     """Generate user-friendly HTML documentation"""
     
@@ -1185,12 +1342,7 @@ def generate_user_docs_html(query_defs, transition_defs):
 '''
     
     # Generate sidebar links for queries
-    for cat_key, category in query_defs.items():
-        html_content += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
-        queries = category.get('queries', {})
-        for query_key in queries.keys():
-            query = queries[query_key]
-            html_content += f'            <li style="margin-left: 20px;"><a href="#query-{query_key}">{query.get("label", query_key)}</a></li>\n'
+    html_content += generate_sidebar_entries(query_defs, 'query')
     
     html_content += '''        </ul>
         
@@ -1199,12 +1351,7 @@ def generate_user_docs_html(query_defs, transition_defs):
 '''
     
     # Generate sidebar links for transitions
-    for cat_key, category in transition_defs.items():
-        html_content += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
-        transitions = category.get('transitions', {})
-        for trans_key in transitions.keys():
-            trans = transitions[trans_key]
-            html_content += f'            <li style="margin-left: 20px;"><a href="#transition-{trans_key}">{trans.get("label", trans_key)}</a></li>\n'
+    html_content += generate_sidebar_entries(transition_defs, 'transition')
     
     html_content += '''        </ul>
     </div>
@@ -1247,162 +1394,11 @@ def generate_user_docs_html(query_defs, transition_defs):
 '''
     
     # Add query documentation
-    for cat_key, category in query_defs.items():
-        html_content += f'''
-    <div class="category">
-        <h3>{category.get('label', cat_key)}</h3>
-'''
-        
-        queries = category.get('queries', {})
-        for query_key, query in queries.items():
-            html_content += f'''
-        <div class="operation">
-            <h4 id="query-{query_key}">{query.get('label', query_key)}</h4>
-            <p class="description">{query.get('description', 'No description available')}</p>
-            
-            <div class="parameters">
-                <h5>Parameters:</h5>
-'''
-            
-            inputs = query.get('inputs', [])
-            if not inputs:
-                html_content += '<p class="param-optional">No parameters required</p>'
-            else:
-                for param in inputs:
-                    required_text = '<span class="param-required">(required)</span>' if param.get('required', False) else '<span class="param-optional">(optional)</span>'
-                    html_content += f'''
-                <div class="parameter">
-                    <span class="param-name">{param.get('label', param.get('name', 'Unknown'))}</span>
-                    <span class="param-type">{param.get('type', 'text')}</span>
-                    {required_text}
-'''
-                    if param.get('placeholder'):
-                        html_content += f'<br><small>Example: {html.escape(param.get("placeholder"))}</small>'
-                    elif param.get('name') == 'limit' and not param.get('required', False):
-                        html_content += f'<br><small>Default: 100 (maximum items returned if not specified)</small>'
-                    if param.get('options'):
-                        html_content += '<br><small>Options: '
-                        opts = [f'{opt.get("label", opt.get("value"))}' for opt in param.get('options', [])]
-                        html_content += ', '.join(opts)
-                        html_content += '</small>'
-                    html_content += '</div>'
-            
-            html_content += '''
-            </div>
-            
-            <div class="example-container">
-                <h5>Example</h5>
-                <div class="example-code" id="code-''' + query_key + '''">''' + generate_example_code(query_key, inputs) + '''</div>
-'''
-            
-            # Handle the run button and special cases
-            if query_key == 'waitForStateTransitionResult':
-                html_content += '''<p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'''
-            else:
-                html_content += f'''<button class="run-button" id="run-{query_key}" onclick="runExample('{query_key}')">Run</button>'''
-                if query_key in ['getPathElements', 'getDataContractHistory', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
-                    html_content += ''' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'''
-            
-            # Add second example for getIdentityKeys with specific keys
-            if query_key == 'getIdentityKeys':
-                html_content += '''
-                <div class="example-container">
-                    <h5>Example 2 - Get Specific Keys</h5>
-                    <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 'specific', [0, 1, 2]);</div>
-<button class="run-button" id="run-getIdentityKeys2" onclick="runExample('getIdentityKeys2')">Run</button>
-                    <div class="example-result" id="result-getIdentityKeys2"></div>
-                </div>'''
-            
-            # Add path info only for getPathElements
-            if query_key == 'getPathElements':
-                html_content += '''
-                <div class="path-info">
-                    <h6>Common Path Values:</h6>
-                    <table class="path-table">
-                        <tr><th>Path Value</th><th>Description</th></tr>
-                        <tr><td><code>64</code></td><td>Data Contract Documents</td></tr>
-                        <tr><td><code>32</code></td><td>Identities</td></tr>
-                        <tr><td><code>24</code></td><td>Unique Public Key Hashes to Identities</td></tr>
-                        <tr><td><code>8</code></td><td>Non-Unique Public Key Hashes to Identities</td></tr>
-                        <tr><td><code>16</code></td><td>Tokens</td></tr>
-                        <tr><td><code>48</code></td><td>Pools</td></tr>
-                        <tr><td><code>40</code></td><td>Prefunded Specialized Balances</td></tr>
-                        <tr><td><code>72</code></td><td>Spent Asset Lock Transactions</td></tr>
-                        <tr><td><code>80</code></td><td>Withdrawal Transactions</td></tr>
-                        <tr><td><code>88</code></td><td>Group Actions</td></tr>
-                        <tr><td><code>96</code></td><td>Balances</td></tr>
-                        <tr><td><code>104</code></td><td>Misc</td></tr>
-                        <tr><td><code>112</code></td><td>Votes</td></tr>
-                        <tr><td><code>120</code></td><td>Versions</td></tr>
-                    </table>
-                    <h6>Example Paths:</h6>
-                    <ul>
-                        <li><code>[32, identity_id]</code> - Access identity data</li>
-                        <li><code>[96, identity_id]</code> - Access identity balance</li>
-                        <li><code>[16, contract_id, token_id]</code> - Access token info</li>
-                        <li><code>[64, contract_id, 1, document_type]</code> - Access documents by type</li>
-                        <li><code>[88, contract_id, group_position]</code> - Access group actions</li>
-                        <li><code>[112]</code> - Access votes tree</li>
-                    </ul>
-                </div>'''
-            
-            html_content += '''
-                <div class="example-result" id="result-''' + query_key + '''"></div>
-            </div>
-        </div>
-'''
-        
-        html_content += '</div>'
+    html_content += generate_operation_docs(query_defs, 'query', 'query')
     
     # Add state transition documentation
     html_content += '<h2 id="transitions">State Transitions</h2>'
-    
-    for cat_key, category in transition_defs.items():
-        html_content += f'''
-    <div class="category">
-        <h3>{category.get('label', cat_key)}</h3>
-'''
-        
-        transitions = category.get('transitions', {})
-        for trans_key, transition in transitions.items():
-            html_content += f'''
-        <div class="operation">
-            <h4 id="transition-{trans_key}">{transition.get('label', trans_key)}</h4>
-            <p class="description">{transition.get('description', 'No description available')}</p>
-            
-            <div class="parameters">
-                <h5>Parameters:</h5>
-'''
-            
-            inputs = transition.get('inputs', [])
-            if not inputs:
-                html_content += '<p class="param-optional">No parameters required</p>'
-            else:
-                for param in inputs:
-                    required_text = '<span class="param-required">(required)</span>' if param.get('required', False) else '<span class="param-optional">(optional)</span>'
-                    html_content += f'''
-                <div class="parameter">
-                    <span class="param-name">{param.get('label', param.get('name', 'Unknown'))}</span>
-                    <span class="param-type">{param.get('type', 'text')}</span>
-                    {required_text}
-'''
-                    if param.get('placeholder'):
-                        html_content += f'<br><small>Example: {html.escape(param.get("placeholder"))}</small>'
-                    elif param.get('name') == 'limit' and not param.get('required', False):
-                        html_content += f'<br><small>Default: 100 (maximum items returned if not specified)</small>'
-                    if param.get('options'):
-                        html_content += '<br><small>Options: '
-                        opts = [f'{opt.get("label", opt.get("value"))}' for opt in param.get('options', [])]
-                        html_content += ', '.join(opts)
-                        html_content += '</small>'
-                    html_content += '</div>'
-            
-            html_content += '''
-            </div>
-        </div>
-'''
-        
-        html_content += '</div>'
+    html_content += generate_operation_docs(transition_defs, 'transition', 'transition')
     
     # Close main content div
     html_content += '''
@@ -1507,9 +1503,9 @@ const result = await sdk.{query_name}(param1, param2, ...);
             
             # Generate example based on query type
             if query_key == 'getIdentity':
-                md_content += 'const identity = await sdk.get_identity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");'
+                md_content += 'const identity = await sdk.getIdentity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");'
             elif query_key == 'getDocuments':
-                md_content += '''const docs = await sdk.get_documents(
+                md_content += '''const docs = await sdk.getDocuments(
     contractId,
     "note",
     JSON.stringify([["$ownerId", "==", identityId]]),
@@ -1517,7 +1513,7 @@ const result = await sdk.{query_name}(param1, param2, ...);
     10
 );'''
             elif query_key == 'getIdentityBalance':
-                md_content += 'const balance = await sdk.get_identity_balance(identityId);'
+                md_content += 'const balance = await sdk.getIdentityBalance(identityId);'
             elif query_key == 'getPathElements':
                 md_content += '''// Access any data in the Dash Platform state tree
 // Common root paths:
@@ -1623,7 +1619,7 @@ const documents = await sdk.getPathElements(['64'], ['contractId', '1', 'documen
 ### Error Handling
 ```javascript
 try {
-    const result = await sdk.get_identity(identityId);
+    const result = await sdk.getIdentity(identityId);
     console.log(result);
 } catch (error) {
     console.error("Query failed:", error);
@@ -1636,7 +1632,7 @@ try {
 const sdk = await WasmSdk.new(transport, true);
 
 // Query with proof verification
-const identityWithProof = await sdk.get_identity(identityId);
+const identityWithProof = await sdk.getIdentity(identityId);
 ```
 
 ### Document Queries with Where/OrderBy
@@ -1652,7 +1648,7 @@ const orderBy = JSON.stringify([
     ["$createdAt", "desc"]
 ]);
 
-const docs = await sdk.get_documents(
+const docs = await sdk.getDocuments(
     contractId,
     documentType,
     whereClause,
@@ -1665,7 +1661,7 @@ const docs = await sdk.get_documents(
 ```javascript
 // Get multiple identities
 const identityIds = ["id1", "id2", "id3"];
-const balances = await sdk.get_identities_balances(identityIds);
+const balances = await sdk.getIdentitiesBalances(identityIds);
 ```
 
 ## Important Notes
