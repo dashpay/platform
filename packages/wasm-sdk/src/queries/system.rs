@@ -316,11 +316,26 @@ pub async fn wait_for_state_transition_result(
 #[wasm_bindgen]
 pub async fn get_path_elements(
     sdk: &WasmSdk,
+    path: Vec<String>,
     keys: Vec<String>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::{KeysInPath, Elements};
     use dash_sdk::drive::grovedb::Element;
+    
+    // Convert string path to byte vectors
+    // Path elements can be either numeric values (like "96" for Balances) or string keys
+    let path_bytes: Vec<Vec<u8>> = path.iter()
+        .map(|p| {
+            // Try to parse as a u8 number first (for root tree paths)
+            if let Ok(num) = p.parse::<u8>() {
+                vec![num]
+            } else {
+                // Otherwise treat as a string key
+                p.as_bytes().to_vec()
+            }
+        })
+        .collect();
     
     // Convert string keys to byte vectors
     let key_bytes: Vec<Vec<u8>> = keys.iter()
@@ -329,7 +344,7 @@ pub async fn get_path_elements(
     
     // Create the query
     let query = KeysInPath {
-        path: vec![], // Root path - can be adjusted if needed
+        path: path_bytes,
         keys: key_bytes,
     };
     
@@ -435,12 +450,27 @@ pub async fn get_prefunded_specialized_balance_with_proof_info(
 #[wasm_bindgen]
 pub async fn get_path_elements_with_proof_info(
     sdk: &WasmSdk,
+    path: Vec<String>,
     keys: Vec<String>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::{KeysInPath, Elements};
     use dash_sdk::drive::grovedb::Element;
     use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    
+    // Convert string path to byte vectors
+    // Path elements can be either numeric values (like "96" for Balances) or string keys
+    let path_bytes: Vec<Vec<u8>> = path.iter()
+        .map(|p| {
+            // Try to parse as a u8 number first (for root tree paths)
+            if let Ok(num) = p.parse::<u8>() {
+                vec![num]
+            } else {
+                // Otherwise treat as a string key
+                p.as_bytes().to_vec()
+            }
+        })
+        .collect();
     
     // Convert string keys to byte vectors
     let key_bytes: Vec<Vec<u8>> = keys.iter()
@@ -449,7 +479,7 @@ pub async fn get_path_elements_with_proof_info(
     
     // Create the query
     let query = KeysInPath {
-        path: vec![], // Root path
+        path: path_bytes,
         keys: key_bytes,
     };
     

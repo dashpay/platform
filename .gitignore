@@ -50,6 +50,10 @@ packages/wasm-sdk/.cargo/
 packages/wasm-sdk/pkg/
 packages/wasm-sdk/dist/
 packages/wasm-sdk/*.bak
+packages/wasm-sdk/wasm_sdk.js
+packages/wasm-sdk/wasm_sdk_bg.wasm
+packages/wasm-sdk/documentation-check-report.txt
+packages/wasm-sdk/extracted_definitions.json
 
 # gRPC coverage report
 grpc-coverage-report.txt

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cache Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .status { margin: 10px 0; padding: 10px; background: #f0f0f0; }
+        .cached { color: green; }
+        .network { color: blue; }
+        .error { color: red; }
+        button { margin: 5px; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>WASM SDK Cache Test</h1>
+    
+    <div class="status" id="status">Checking service worker...</div>
+    
+    <div>
+        <button onclick="checkCache()">Check Cache</button>
+        <button onclick="clearCache()">Clear Cache</button>
+        <button onclick="testFetch()">Test Fetch WASM</button>
+        <button onclick="unregisterSW()">Unregister SW</button>
+    </div>
+    
+    <div class="status" id="results"></div>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+        const statusDiv = document.getElementById('status');
+        
+        // Check service worker status
+        async function checkSWStatus() {
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    // Clear existing content
+                    statusDiv.textContent = '';
+                    
+                    // Create status elements safely
+                    const swStatus = document.createElement('div');
+                    swStatus.innerHTML = 'Service Worker: <span class="cached">Registered</span>';
+                    statusDiv.appendChild(swStatus);
+                    
+                    const scope = document.createElement('div');
+                    scope.textContent = `Scope: ${registration.scope}`;
+                    statusDiv.appendChild(scope);
+                    
+                    const active = document.createElement('div');
+                    active.textContent = `Active: ${registration.active ? 'Yes' : 'No'}`;
+                    statusDiv.appendChild(active);
+                    
+                    const installing = document.createElement('div');
+                    installing.textContent = `Installing: ${registration.installing ? 'Yes' : 'No'}`;
+                    statusDiv.appendChild(installing);
+                    
+                    const waiting = document.createElement('div');
+                    waiting.textContent = `Waiting: ${registration.waiting ? 'Yes' : 'No'}`;
+                    statusDiv.appendChild(waiting);
+                } else {
+                    statusDiv.innerHTML = '<span class="error">No service worker registered</span>';
+                }
+            } else {
+                statusDiv.innerHTML = '<span class="error">Service workers not supported</span>';
+            }
+        }
+        
+        async function checkCache() {
+            resultsDiv.innerHTML = 'Checking cache...<br>';
+            
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                resultsDiv.innerHTML += `Found ${cacheNames.length} cache(s):<br>`;
+                
+                for (const cacheName of cacheNames) {
+                    resultsDiv.innerHTML += `<br>Cache: ${cacheName}<br>`;
+                    const cache = await caches.open(cacheName);
+                    const keys = await cache.keys();
+                    
+                    for (const request of keys) {
+                        const response = await cache.match(request);
+                        const size = response.headers.get('content-length') || 'unknown';
+                        const date = response.headers.get('date') || 'unknown';
+                        resultsDiv.innerHTML += `  - ${request.url.split('/').pop()}: ${size} bytes, cached at: ${date}<br>`;
+                    }
+                }
+            } else {
+                resultsDiv.innerHTML = '<span class="error">Cache API not supported</span>';
+            }
+        }
+        
+        async function clearCache() {
+            resultsDiv.innerHTML = 'Clearing cache...<br>';
+            
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                for (const cacheName of cacheNames) {
+                    await caches.delete(cacheName);
+                    resultsDiv.innerHTML += `Deleted cache: ${cacheName}<br>`;
+                }
+                resultsDiv.innerHTML += '<span class="cached">All caches cleared!</span>';
+            }
+        }
+        
+        async function testFetch() {
+            resultsDiv.innerHTML = 'Testing WASM fetch...<br>';
+            
+            try {
+                const start = performance.now();
+                // Use relative path to support different serving contexts
+                const wasmPath = new URL('../pkg/wasm_sdk_bg.wasm', import.meta.url).href;
+                const response = await fetch(wasmPath);
+                const end = performance.now();
+                
+                resultsDiv.innerHTML += `
+                    Status: ${response.status}<br>
+                    Time: ${(end - start).toFixed(2)}ms<br>
+                    Size: ${response.headers.get('content-length')} bytes<br>
+                    From Cache: ${response.headers.get('cf-cache-status') || 'Check DevTools Network tab'}<br>
+                `;
+                
+                // Check if it's from service worker
+                if (end - start < 50) {
+                    resultsDiv.innerHTML += '<span class="cached">Likely from cache (fast response)</span><br>';
+                } else {
+                    resultsDiv.innerHTML += '<span class="network">Likely from network (slower response)</span><br>';
+                }
+            } catch (error) {
+                resultsDiv.innerHTML += `<span class="error">Error: ${error.message}</span>`;
+            }
+        }
+        
+        async function unregisterSW() {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
+                resultsDiv.innerHTML = '<span class="cached">All service workers unregistered. Reload the page.</span>';
+            }
+        }
+        
+        // Initial check
+        checkSWStatus();
+        
+        // Update status every second
+        setInterval(checkSWStatus, 1000);
+    </script>
+</body>
+</html>

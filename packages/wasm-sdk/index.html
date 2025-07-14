@@ -7,11 +7,46 @@
 <head>
   <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dash Platform WASM JS SDK</title>
+  <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+  <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
   <style>
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background-color: #f5f5f5;
+    }
+
+    .header {
+      background-color: #2c3e50;
+      color: white;
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 500;
+    }
+
+    .header-nav {
+      display: flex;
+      gap: 20px;
+    }
+
+    .header-nav a {
+      color: white;
+      text-decoration: none;
+      font-weight: 500;
+      transition: opacity 0.2s;
+    }
+
+    .header-nav a:hover {
+      opacity: 0.8;
     }
 
     #preloader {
@@ -63,7 +98,7 @@
 
     .app-container {
       display: flex;
-      height: calc(100vh - 50px); /* Account for status banner height */
+      height: calc(100vh - 110px); /* Account for header and status banner height */
       overflow: hidden;
     }
 
@@ -741,6 +776,15 @@
 </head>
 
 <body>
+  <div class="header">
+    <h1>Dash Platform WASM JS SDK</h1>
+    <nav class="header-nav">
+      <a href="docs.html">Documentation</a>
+      <a href="AI_REFERENCE.md">AI Reference</a>
+      <a href="https://github.com/dashpay/platform" target="_blank">GitHub</a>
+    </nav>
+  </div>
+  
   <div id="preloader">
     <div class="preloader-content">
       <div class="preloader-text">Loading WASM module...</div>
@@ -1348,6 +1392,9 @@
               },
               { name: "specificKeyIds", type: "array", label: "Key IDs (for Specific Keys)", required: false, 
                 dependsOn: { field: "keyRequestType", value: "specific" } },
+              { name: "searchPurposeMap", type: "text", label: "Search Purpose Map (JSON)", required: false,
+                placeholder: '{"0": {"0": "current"}, "1": {"0": "all"}}',
+                dependsOn: { field: "keyRequestType", value: "search" } },
               { name: "limit", type: "number", label: "Limit", required: false },
               { name: "offset", type: "number", label: "Offset", required: false }
             ]
@@ -3227,11 +3274,22 @@ ${indentStr}]`;
           }
         } else if (queryType === 'getIdentityKeys') {
           const keyIds = values.keyRequestType === 'specific' ? values.specificKeyIds : undefined;
+          const searchPurposeMap = values.keyRequestType === 'search' ? values.searchPurposeMap : undefined;
+          
+          // Validate required parameters based on key request type
+          if (values.keyRequestType === 'search' && !searchPurposeMap) {
+            throw new Error('Search Purpose Map is required when using search key request type');
+          }
+          if (values.keyRequestType === 'specific' && (!keyIds || keyIds.length === 0)) {
+            throw new Error('Key IDs are required when using specific key request type');
+          }
+          
           result = await get_identity_keys(
             sdk,
             values.identityId,
             values.keyRequestType,
             keyIds,
+            searchPurposeMap,
             values.limit,
             values.offset
           );
@@ -3502,13 +3560,24 @@ ${indentStr}]`;
           if (!values.identityId) {
             throw new Error('Missing required parameter: identityId is required');
           }
-          result = await get_prefunded_specialized_balance(sdk, values.identityId);
+          if (useProofs) {
+            result = await get_prefunded_specialized_balance_with_proof_info(sdk, values.identityId);
+          } else {
+            result = await get_prefunded_specialized_balance(sdk, values.identityId);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getPathElements') {
           if (!values.keys || values.keys.length === 0) {
             throw new Error('Missing required parameter: keys array is required');
           }
-          result = await get_path_elements(sdk, values.keys);
+          if (!values.path) {
+            values.path = []; // Default to empty path if not provided
+          }
+          if (useProofs) {
+            result = await get_path_elements_with_proof_info(sdk, values.path, values.keys);
+          } else {
+            result = await get_path_elements(sdk, values.path, values.keys);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         }
         // Token queries
