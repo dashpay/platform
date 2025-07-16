@@ -209,10 +209,16 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
 fi
 
-# Create module map for DashSDKFFI only (DashSPVFFI defined by SwiftDashCoreSDK)
-echo -e "${GREEN}Creating module map for DashSDKFFI...${NC}"
+# Create module map for both DashSDKFFI and DashSPVFFI
+# Both modules point to the same unified header but allow separate imports
+echo -e "${GREEN}Creating module map for DashSDKFFI and DashSPVFFI...${NC}"
 cat > "$OUTPUT_DIR/module.modulemap" << EOF
 module DashSDKFFI {
+    header "dash_sdk_ffi.h"
+    export *
+}
+
+module DashSPVFFI {
     header "dash_sdk_ffi.h"
     export *
 }
