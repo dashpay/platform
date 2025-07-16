@@ -1,14 +1,15 @@
-//! Dash Platform SDK FFI bindings
+//! Dash Unified SDK FFI bindings
 //!
-//! This crate provides C-compatible FFI bindings for the Dash Platform SDK,
-//! enabling cross-platform applications to interact with Dash Platform through C interfaces.
+//! This crate provides C-compatible FFI bindings for both Dash Core (SPV) and Platform SDKs,
+//! enabling cross-platform applications to interact with the complete Dash ecosystem through C interfaces.
 
+mod callback_bridge;
 mod contested_resource;
 mod context_callbacks;
 mod context_provider;
 #[cfg(test)]
 mod context_provider_stubs;
-// core_stubs module removed - no longer needed with callback approach
+mod core_sdk;
 mod data_contract;
 mod document;
 mod error;
@@ -21,15 +22,18 @@ mod signer;
 mod system;
 mod token;
 mod types;
+mod unified;
 mod utils;
 mod voting;
 
 #[cfg(test)]
 mod test_utils;
 
+pub use callback_bridge::*;
 pub use contested_resource::*;
 pub use context_callbacks::*;
 pub use context_provider::*;
+pub use core_sdk::*;
 pub use data_contract::*;
 pub use document::*;
 pub use error::*;
@@ -42,7 +46,12 @@ pub use signer::*;
 pub use system::*;
 pub use token::*;
 pub use types::*;
+pub use unified::*;
 pub use voting::*;
+
+// Re-export all Core SDK functions and types for unified access
+pub use dash_spv_ffi::*;
+
 
 use std::panic;
 

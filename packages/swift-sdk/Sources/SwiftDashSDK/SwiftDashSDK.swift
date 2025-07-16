@@ -1,5 +1,5 @@
 // Re-export all C types so they're available to clients
-@_exported import CDashSDKFFI
+@_exported import DashSDKFFI
 
 // Type aliases for easier access
 public typealias Network = DashSDKNetwork

@@ -1,4 +1,4 @@
-# cbindgen configuration for Dash SDK FFI
+# cbindgen configuration for Dash SDK FFI (iOS without Core SDK conflicts)
 
 language = "C"
 pragma_once = true
@@ -8,7 +8,7 @@ include_version = true
 namespaces = []
 using_namespaces = []
 sys_includes = ["stdint.h", "stdbool.h"]
-includes = ["dash_spv_ffi.h"]
+includes = []
 no_includes = false
 cpp_compat = true
 documentation = true

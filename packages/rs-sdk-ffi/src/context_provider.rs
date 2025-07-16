@@ -13,7 +13,7 @@ use dash_sdk::dpp::prelude::{DataContract, Identifier, CoreBlockHeight};
 use dash_sdk::dpp::version::PlatformVersion;
 
 use crate::{DashSDKError, DashSDKErrorCode, FFIError};
-use crate::context_callbacks::{CallbackContextProvider, ContextProviderCallbacks as FFIContextProviderCallbacks};
+use crate::context_callbacks::{CallbackContextProvider, ContextProviderCallbacks};
 
 /// Handle for Core SDK that can be passed to Platform SDK
 /// This matches the definition from dash_spv_ffi.h
@@ -164,14 +164,14 @@ pub unsafe extern "C" fn dash_sdk_context_provider_from_core(
 /// - `callbacks` must contain valid function pointers
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_context_provider_from_callbacks(
-    callbacks: *const FFIContextProviderCallbacks,
+    callbacks: *const ContextProviderCallbacks,
 ) -> *mut ContextProviderHandle {
     if callbacks.is_null() {
         return std::ptr::null_mut();
     }
 
     let callbacks = &*callbacks;
-    let provider = CallbackContextProvider::new(FFIContextProviderCallbacks {
+    let provider = CallbackContextProvider::new(ContextProviderCallbacks {
         core_handle: callbacks.core_handle,
         get_platform_activation_height: callbacks.get_platform_activation_height,
         get_quorum_public_key: callbacks.get_quorum_public_key,

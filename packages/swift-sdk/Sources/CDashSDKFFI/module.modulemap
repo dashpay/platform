@@ -1,5 +1,5 @@
 module CDashSDKFFI [system] {
-    header "DashSDKFFI.h"
+    header "dash_sdk_ffi.h"
     link "rs_sdk_ffi"
     export *
 }

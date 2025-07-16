@@ -14,22 +14,16 @@ let package = Package(
             targets: ["SwiftDashSDK"]),
     ],
     targets: [
-        // System library target for the rs-sdk-ffi bindings
-        .systemLibrary(
-            name: "CDashSDKFFI",
-            path: "Sources/CDashSDKFFI"
+        // Binary target using the Unified XCFramework
+        .binaryTarget(
+            name: "DashSDKFFI",
+            path: "../../../dashpay-ios/DashPayiOS/Libraries/DashUnifiedSDK.xcframework"
         ),
         // Swift wrapper target
         .target(
             name: "SwiftDashSDK",
-            dependencies: ["CDashSDKFFI"],
-            path: "Sources/SwiftDashSDK",
-            linkerSettings: [
-                .unsafeFlags([
-                    "-L/Users/samuelw/Documents/src/platform/packages/rs-sdk-ffi/build/simulator",
-                    "-lrs_sdk_ffi"
-                ])
-            ]
+            dependencies: ["DashSDKFFI"],
+            path: "Sources/SwiftDashSDK"
         ),
     ]
 )

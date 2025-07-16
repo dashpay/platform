@@ -1,10 +1,16 @@
-# Dash SDK FFI
+# Dash SDK FFI - Unified SDK
 
-FFI bindings for integrating Dash Platform SDK with cross-platform applications.
+FFI bindings for integrating both Dash Core (Layer 1) and Dash Platform (Layer 2) functionality through a unified SDK.
 
 ## Overview
 
-This crate provides C-compatible FFI bindings for the Dash Platform SDK (`rs-sdk`), enabling applications on any platform that supports C interfaces to interact with Dash Platform. This includes iOS (Swift), Android (JNI), Python (ctypes/cffi), Node.js (node-ffi), and more.
+This crate provides C-compatible FFI bindings for both the Dash Platform SDK (`rs-sdk`) and Dash Core SDK (`dash-spv-ffi`), creating a unified SDK that eliminates duplicate symbols and reduces binary size by 79.4%. Applications can use Core-only, Platform-only, or both functionalities from a single binary.
+
+### Key Features
+- **Unified Binary**: Single 29.5MB library (down from 143MB combined)
+- **Dual Layer Support**: Access both Layer 1 (SPV/transactions) and Layer 2 (identities/documents)
+- **No Symbol Conflicts**: Intelligent header merging resolves type conflicts
+- **Cross-Platform**: Works on iOS, Android, and any platform supporting C interfaces
 
 ## Building
 
@@ -29,21 +35,27 @@ This crate provides C-compatible FFI bindings for the Dash Platform SDK (`rs-sdk
 
 ### Build Instructions
 
-For standard builds:
-```bash
-cargo build --release
-```
+The unified SDK includes both Core and Platform functionality by default:
 
-To generate C headers:
 ```bash
+# Standard build (includes both Core and Platform)
+cargo build --release
+
+# Generate unified C headers
 GENERATE_BINDINGS=1 cargo build --release
 ```
 
 ### Platform-Specific Builds
 
-#### iOS
+#### iOS (Unified SDK)
 ```bash
-./build_ios.sh
+# Build unified SDK for iOS (recommended)
+./build_ios.sh [arm|x86|universal]
+
+# Creates DashUnifiedSDK.xcframework with:
+# - Both dash_sdk_* (Platform) and dash_spv_ffi_* (Core) symbols
+# - Unified header with resolved type conflicts
+# - Support for device and simulator architectures
 ```
 
 #### Android
@@ -153,32 +165,49 @@ result = lib.dash_sdk_create(byref(config))
 
 ## API Reference
 
-### Core Functions
+### Platform SDK Functions (Layer 2)
 
+#### Core Functions
 - `dash_sdk_init()` - Initialize the FFI library
 - `dash_sdk_create()` - Create an SDK instance
 - `dash_sdk_destroy()` - Destroy an SDK instance
 - `dash_sdk_version()` - Get the SDK version
 
-### Identity Operations
-
+#### Identity Operations
 - `dash_sdk_identity_fetch()` - Fetch an identity by ID
 - `dash_sdk_identity_create()` - Create a new identity
 - `dash_sdk_identity_topup()` - Top up identity with credits
 - `dash_sdk_identity_register_name()` - Register a DPNS name
 
-### Document Operations
-
+#### Document Operations
 - `dash_sdk_document_create()` - Create a new document
 - `dash_sdk_document_update()` - Update an existing document
 - `dash_sdk_document_delete()` - Delete a document
 - `dash_sdk_document_fetch()` - Fetch documents by query
 
-### Data Contract Operations
-
+#### Data Contract Operations
 - `dash_sdk_data_contract_create()` - Create a new data contract
 - `dash_sdk_data_contract_update()` - Update a data contract
 - `dash_sdk_data_contract_fetch()` - Fetch a data contract
+
+### Core SDK Functions (Layer 1)
+
+#### SPV Client Operations
+- `dash_spv_ffi_client_new()` - Create SPV client instance
+- `dash_spv_ffi_client_start()` - Start SPV synchronization
+- `dash_spv_ffi_client_stop()` - Stop SPV client
+- `dash_spv_ffi_client_sync_to_tip()` - Sync blockchain to latest block
+
+#### Wallet Operations
+- `dash_spv_ffi_client_get_balance()` - Get wallet balance
+- `dash_spv_ffi_client_watch_address()` - Watch address for transactions
+- `dash_spv_ffi_client_broadcast_transaction()` - Broadcast transaction
+- `dash_spv_ffi_client_get_transaction()` - Get transaction details
+
+#### HD Wallet Functions
+- `key_wallet_ffi_mnemonic_generate()` - Generate HD wallet mnemonic
+- `key_wallet_ffi_derive_address()` - Derive addresses from HD wallet
+- `key_wallet_ffi_sign_transaction()` - Sign transactions with HD keys
 
 ## Architecture
 

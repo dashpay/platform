@@ -1,5 +1,5 @@
 import Foundation
-import CDashSDKFFI
+import DashSDKFFI
 
 // MARK: - Data Extensions
 extension Data {
