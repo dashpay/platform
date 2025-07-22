@@ -55,6 +55,8 @@ packages/swift-sdk/generated/DashSDKFFI.h
 # Generated Swift SDK files
 packages/swift-sdk/Sources/CDashSDKFFI/librs_sdk_ffi.pc
 packages/swift-sdk/SwiftExampleApp/DashSDK.xcframework/
+packages/swift-sdk/*.xcframework/
+packages/swift-sdk/**/*.xcframework/
 
 # rs-sdk-ffi build directory
 packages/rs-sdk-ffi/build/

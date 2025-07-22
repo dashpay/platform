@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0E7148EC2E0333380055790F /* DashSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashSDK.xcframework */; };
 		0E7148ED2E0333380055790F /* DashSDK.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashSDK.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		0EC20E1A2E2821F000A92860 /* DashSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashSDK.xcframework */; };
 		FB6D4D772DF55174000F3FE1 /* SwiftDashSDK in Frameworks */ = {isa = PBXBuildFile; productRef = FB6D4D762DF55174000F3FE1 /* SwiftDashSDK */; };
 /* End PBXBuildFile section */
 
@@ -73,6 +74,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0EC20E1A2E2821F000A92860 /* DashSDK.xcframework in Frameworks */,
 				0E7148EC2E0333380055790F /* DashSDK.xcframework in Frameworks */,
 				FB6D4D772DF55174000F3FE1 /* SwiftDashSDK in Frameworks */,
 			);

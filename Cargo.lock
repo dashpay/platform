@@ -1547,6 +1547,7 @@ dependencies = [
  "hex",
  "hex_lit",
  "key-wallet",
+ "log",
  "rustversion",
  "secp256k1",
  "serde",

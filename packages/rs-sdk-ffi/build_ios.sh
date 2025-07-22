@@ -6,6 +6,12 @@ set -e
 # Usage: ./build_ios.sh [arm|x86|universal]
 # Default: arm
 # Note: Core SDK integration is always enabled (unified architecture)
+#
+# IMPORTANT: This script expects dash-spv-ffi to be already built!
+# Before running this script, build dash-spv-ffi:
+#   cd ../../../rust-dashcore/dash-spv-ffi
+#   cargo build --release --target aarch64-apple-ios
+#   cargo build --release --target aarch64-apple-ios-sim
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/../.."
@@ -24,24 +30,23 @@ for arg in "$@"; do
     esac
 done
 
-# Unified SDK always includes Core SDK integration (no more feature flags)
-CARGO_FEATURES=""
-FRAMEWORK_NAME="DashUnifiedSDK"
-echo -e "${GREEN}Building Unified SDK (Core + Platform integration always enabled)${NC}"
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}Building Dash iOS SDK for architecture: $BUILD_ARCH${NC}"
+# Unified SDK always includes Core SDK integration (no more feature flags)
+CARGO_FEATURES=""
+FRAMEWORK_NAME="DashUnifiedSDK"
+
+echo -e "${GREEN}Building Dash Unified SDK for iOS ($BUILD_ARCH)${NC}"
 
 # Check if we have the required iOS targets installed
 check_target() {
     if ! rustup target list --installed | grep -q "$1"; then
         echo -e "${YELLOW}Installing target $1...${NC}"
-        rustup target add "$1"
+        rustup target add "$1" > /tmp/rustup_target.log 2>&1
     fi
 }
 
@@ -60,23 +65,53 @@ fi
 
 # Build for iOS device (arm64) - always needed
 if [ "$BUILD_ARCH" != "x86" ]; then
-    echo -e "${GREEN}Building for iOS device (arm64)...${NC}"
-    cargo build --target aarch64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES
+    echo -ne "${GREEN}Building for iOS device (arm64)...${NC}"
+    if cargo build --target aarch64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_device.log 2>&1; then
+        echo -e "\r${GREEN}✓ iOS device (arm64) build successful${NC}       "
+    else
+        echo -e "\r${RED}✗ iOS device build failed${NC}              "
+        cat /tmp/cargo_build_device.log
+        exit 1
+    fi
 fi
 
 # Build for iOS simulator based on architecture
 if [ "$BUILD_ARCH" = "x86" ]; then
-    echo -e "${GREEN}Building for iOS simulator (x86_64)...${NC}"
-    cargo build --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES
+    echo -ne "${GREEN}Building for iOS simulator (x86_64)...${NC}"
+    if cargo build --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_x86.log 2>&1; then
+        echo -e "\r${GREEN}✓ iOS simulator (x86_64) build successful${NC}      "
+    else
+        echo -e "\r${RED}✗ iOS simulator (x86_64) build failed${NC}          "
+        cat /tmp/cargo_build_sim_x86.log
+        exit 1
+    fi
 elif [ "$BUILD_ARCH" = "universal" ]; then
-    echo -e "${GREEN}Building for iOS simulator (arm64)...${NC}"
-    cargo build --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES
-    echo -e "${GREEN}Building for iOS simulator (x86_64)...${NC}"
-    cargo build --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES
+    echo -ne "${GREEN}Building for iOS simulator (arm64)...${NC}"
+    if cargo build --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_arm.log 2>&1; then
+        echo -e "\r${GREEN}✓ iOS simulator (arm64) build successful${NC}       "
+    else
+        echo -e "\r${RED}✗ iOS simulator (arm64) build failed${NC}           "
+        cat /tmp/cargo_build_sim_arm.log
+        exit 1
+    fi
+    echo -ne "${GREEN}Building for iOS simulator (x86_64)...${NC}"
+    if cargo build --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_x86.log 2>&1; then
+        echo -e "\r${GREEN}✓ iOS simulator (x86_64) build successful${NC}      "
+    else
+        echo -e "\r${RED}✗ iOS simulator (x86_64) build failed${NC}          "
+        cat /tmp/cargo_build_sim_x86.log
+        exit 1
+    fi
 else
     # Default to ARM
-    echo -e "${GREEN}Building for iOS simulator (arm64)...${NC}"
-    cargo build --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES
+    echo -ne "${GREEN}Building for iOS simulator (arm64)...${NC}"
+    if cargo build --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_arm.log 2>&1; then
+        echo -e "\r${GREEN}✓ iOS simulator (arm64) build successful${NC}       "
+    else
+        echo -e "\r${RED}✗ iOS simulator (arm64) build failed${NC}           "
+        cat /tmp/cargo_build_sim_arm.log
+        exit 1
+    fi
 fi
 
 # Create output directory
@@ -84,26 +119,34 @@ OUTPUT_DIR="$SCRIPT_DIR/build"
 mkdir -p "$OUTPUT_DIR"
 
 # Generate C headers
-echo -e "${GREEN}Generating C headers...${NC}"
+echo -ne "${GREEN}Generating C headers...${NC}"
 cd "$PROJECT_ROOT"
-GENERATE_BINDINGS=1 cargo build --release --package rs-sdk-ffi $CARGO_FEATURES
-cp "$PROJECT_ROOT/target/release/build/"*"/out/dash_sdk_ffi.h" "$OUTPUT_DIR/" 2>/dev/null || {
-    echo -e "${YELLOW}Warning: Could not find generated header. Running cbindgen manually...${NC}"
-    
-    # Use iOS-specific cbindgen config to avoid conflicts with SwiftDashCoreSDK
-    echo -e "${GREEN}Using iOS-specific cbindgen config to avoid type conflicts...${NC}"
-    cd "$SCRIPT_DIR"
-    cbindgen --config cbindgen-ios.toml --crate rs-sdk-ffi --output "$OUTPUT_DIR/dash_sdk_ffi.h"
-}
+if GENERATE_BINDINGS=1 cargo build --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_headers.log 2>&1; then
+    if cp "$PROJECT_ROOT/target/release/build/"*"/out/dash_sdk_ffi.h" "$OUTPUT_DIR/" 2>/dev/null; then
+        echo -e "\r${GREEN}✓ Headers generated successfully${NC}              "
+    else
+        echo -e "\r${YELLOW}⚠ Generated header not found, using cbindgen...${NC}"
+        cd "$SCRIPT_DIR"
+        if cbindgen --config cbindgen-ios.toml --crate rs-sdk-ffi --output "$OUTPUT_DIR/dash_sdk_ffi.h" > /tmp/cbindgen.log 2>&1; then
+            echo -e "${GREEN}✓ Headers generated with cbindgen${NC}"
+        else
+            echo -e "${RED}✗ Failed to generate headers${NC}"
+            cat /tmp/cbindgen.log
+            exit 1
+        fi
+    fi
+else
+    echo -e "\r${RED}✗ Header generation build failed${NC}              "
+    cat /tmp/cargo_build_headers.log
+    exit 1
+fi
 
 # Merge SPV FFI headers to create unified header
-echo -e "${GREEN}Merging SPV FFI headers for unified access...${NC}"
+echo -e "${GREEN}Merging headers...${NC}"
 RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
 SPV_HEADER_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi/include/dash_spv_ffi.h"
 
 if [ -f "$SPV_HEADER_PATH" ]; then
-    echo -e "${GREEN}Found SPV FFI header at: $SPV_HEADER_PATH${NC}"
-    
     # Create merged header with unified include guard
     MERGED_HEADER="$OUTPUT_DIR/dash_unified_ffi.h"
     
@@ -174,19 +217,14 @@ EOF
     echo "" >> "$MERGED_HEADER"
     echo "#endif /* DASH_UNIFIED_FFI_H */" >> "$MERGED_HEADER"
     
-    echo -e "${GREEN}Created unified header: $MERGED_HEADER${NC}"
-    echo -e "${GREEN}Handled duplicate type definitions with compatibility aliases${NC}"
-    
     # Replace the original header reference with unified header
     cp "$MERGED_HEADER" "$OUTPUT_DIR/dash_sdk_ffi.h"
-    echo -e "${GREEN}Updated dash_sdk_ffi.h with unified content${NC}"
+    echo -e "${GREEN}✓ Headers merged successfully${NC}"
 else
-    echo -e "${YELLOW}Warning: SPV FFI header not found at $SPV_HEADER_PATH${NC}"
-    echo -e "${YELLOW}Unified SDK will only contain Platform FFI functions${NC}"
+    echo -e "${YELLOW}⚠ SPV FFI header not found - SDK will only contain Platform functions${NC}"
 fi
 
 # Create simulator library based on architecture
-echo -e "${GREEN}Creating simulator library...${NC}"
 mkdir -p "$OUTPUT_DIR/simulator"
 
 if [ "$BUILD_ARCH" = "x86" ]; then
@@ -204,14 +242,11 @@ fi
 
 # Copy device library (if built)
 if [ "$BUILD_ARCH" != "x86" ]; then
-    echo -e "${GREEN}Copying device library...${NC}"
     mkdir -p "$OUTPUT_DIR/device"
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
 fi
 
 # Create module map for both DashSDKFFI and DashSPVFFI
-# Both modules point to the same unified header but allow separate imports
-echo -e "${GREEN}Creating module map for DashSDKFFI and DashSPVFFI...${NC}"
 cat > "$OUTPUT_DIR/module.modulemap" << EOF
 module DashSDKFFI {
     header "dash_sdk_ffi.h"
@@ -225,7 +260,6 @@ module DashSPVFFI {
 EOF
 
 # Prepare headers directory for XCFramework
-echo -e "${GREEN}Preparing headers for XCFramework...${NC}"
 HEADERS_DIR="$OUTPUT_DIR/headers"
 mkdir -p "$HEADERS_DIR"
 cp "$OUTPUT_DIR/dash_sdk_ffi.h" "$HEADERS_DIR/"
@@ -248,10 +282,13 @@ fi
 
 XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -output $OUTPUT_DIR/$FRAMEWORK_NAME.xcframework"
 
-eval $XCFRAMEWORK_CMD
+if eval $XCFRAMEWORK_CMD > /tmp/xcframework.log 2>&1; then
+    echo -e "${GREEN}✓ XCFramework created successfully${NC}"
+else
+    echo -e "${RED}✗ XCFramework creation failed${NC}"
+    cat /tmp/xcframework.log
+    exit 1
+fi
 
-echo -e "${GREEN}Build complete!${NC}"
-echo -e "XCFramework created at: ${YELLOW}$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework${NC}"
-echo -e "To use in your iOS project:"
-echo -e "1. Drag $FRAMEWORK_NAME.xcframework into your Xcode project"
-echo -e "2. Import the module: ${YELLOW}import DashSDKFFI${NC}"
+echo -e "\n${GREEN}Build complete!${NC}"
+echo -e "Output: ${YELLOW}$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework${NC}"
