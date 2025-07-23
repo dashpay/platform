@@ -129,7 +129,7 @@ impl Person {
                 first_name: first_names.choose(&mut rng).unwrap().clone(),
                 middle_name: middle_names.choose(&mut rng).unwrap().clone(),
                 last_name: last_names.choose(&mut rng).unwrap().clone(),
-                age: rng.gen_range(0..85),
+                age: rng.gen_range(20..30),
             };
             vec.push(person);
         }
@@ -220,6 +220,81 @@ pub fn setup_family_tests(
     let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract.json",
+        None,
+        None,
+        None::<fn(&mut DataContract)>,
+        Some(&db_transaction),
+        Some(platform_version),
+    );
+
+    let people = Person::random_people(count, seed);
+    for person in people {
+        let value = serde_json::to_value(person).expect("serialized person");
+        let document_cbor = cbor_serializer::serializable_value_to_cbor(&value, Some(0))
+            .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+    }
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .unwrap()
+        .expect("transaction should be committed");
+
+    (drive, contract)
+}
+
+#[cfg(feature = "server")]
+/// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
+pub fn setup_countable_family_tests(
+    count: u32,
+    seed: u64,
+    platform_version: &PlatformVersion,
+) -> (Drive, DataContract) {
+    let drive_config = DriveConfig::default();
+
+    let drive = setup_drive(Some(drive_config));
+
+    let db_transaction = drive.grove.start_transaction();
+
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
+    drive
+        .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+        .expect("expected to create contracts tree successfully");
+
+    // setup code
+    let contract = test_helpers::setup_contract(
+        &drive,
+        "tests/supporting_files/contract/family/family-contract-countable.json",
         None,
         None,
         None::<fn(&mut DataContract)>,
@@ -6997,5 +7072,52 @@ mod tests {
             .expect("should query documents");
 
         assert_eq!(query_result.documents().len(), 1);
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn test_count_regular_index() {
+        let platform_version = PlatformVersion::latest();
+
+        let (drive, contract) = setup_countable_family_tests(10, 15, platform_version);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let root_hash = drive
+            .grove
+            .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        // A query getting all elements by firstName
+
+        let query_value = platform_value!({
+            "where": [
+                ["age", ">=", 1]
+            ],
+            "orderBy": [
+                ["age", "asc"]
+            ]
+        });
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+
+        let query = DriveDocumentQuery::from_value(
+            query_value,
+            &contract,
+            person_document_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (proof, _) = query
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("we should be able to a proof");
+
+        dbg!(hex::encode(proof));
+
+        // assert_eq!(root_hash, proof_root_hash);
     }
 }

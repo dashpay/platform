@@ -26,6 +26,7 @@ use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
 #[cfg(feature = "index-serde-conversion")]
 use std::fmt;
+use std::ops::BitOrAssign;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
@@ -283,6 +284,30 @@ impl Default for ContestedIndexInformation {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum IndexAggregationType {
+    #[default]
+    NoAggregation,
+    Count,
+    Sum,
+    Average,
+}
+
+impl BitOrAssign for IndexAggregationType {
+    fn bitor_assign(&mut self, rhs: Self) {
+        use IndexAggregationType::*;
+
+        *self = match (*self, rhs) {
+            (Average, _) | (_, Average) => Average,
+            (Count, Sum) | (Sum, Count) => Average,
+            (NoAggregation, other) => other,
+            (other, NoAggregation) => other,
+            (Count, Count) => Count,
+            (Sum, Sum) => Sum,
+        };
+    }
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
@@ -295,6 +320,8 @@ pub struct Index {
     pub null_searchable: bool,
     /// Contested indexes are useful when a resource is considered valuable
     pub contested_index: Option<ContestedIndexInformation>,
+    /// The aggregation type on the index
+    pub aggregation_type: IndexAggregationType,
 }
 
 impl Index {
@@ -469,6 +496,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut name = None;
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
+        let mut aggregation_type = IndexAggregationType::NoAggregation;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -604,6 +632,29 @@ impl TryFrom<&[(Value, Value)]> for Index {
                         index_properties.push(index_property);
                     }
                 }
+                "count" => {
+                    // This is a boolean value
+                    // If it is not a boolean value, then it is an error
+                    let count = value_value
+                        .as_bool()
+                        .ok_or(DataContractError::ValueWrongType(
+                            "the count attribute on the index should be a bool".to_string(),
+                        ))?;
+                    if count {
+                        aggregation_type |= IndexAggregationType::Count;
+                    }
+                }
+                // Todo: enable sum trees
+                // "sum" => {
+                //     // This is a boolean value
+                //     // If it is not a boolean value, then it is an error
+                //     let sum = value_value.as_bool().ok_or(DataContractError::ValueWrongType(
+                //         "the sum attribute on the index should be a bool".to_string(),
+                //     ))?;
+                //     if sum {
+                //         aggregation_type |= IndexAggregationType::Sum;
+                //     }
+                // }
                 _ => {
                     return Err(DataContractError::ValueWrongType(
                         "unexpected property name".to_string(),
@@ -627,6 +678,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
             unique,
             null_searchable,
             contested_index,
+            aggregation_type,
         })
     }
 }

@@ -1,0 +1,74 @@
+{
+  "$format_version": "0",
+  "id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "version": 1,
+  "documentSchemas": {
+    "person": {
+      "type": "object",
+      "indices": [
+        {
+          "properties": [
+            {
+              "firstName": "asc"
+            },
+            {
+              "lastName": "asc"
+            }
+          ],
+          "count": true
+        },
+        {
+          "properties": [
+            {
+              "firstName": "asc"
+            },
+            {
+              "middleName": "asc"
+            },
+            {
+              "lastName": "asc"
+            }
+          ],
+          "unique": true,
+          "count": true
+        },
+        {
+          "properties": [
+            {
+              "age": "asc"
+            }
+          ],
+          "count": true
+        }
+      ],
+      "properties": {
+        "age": {
+          "type": "integer",
+          "position": 0
+        },
+        "firstName": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 1
+        },
+        "middleName": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 2
+        },
+        "lastName": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 3
+        }
+      },
+      "required": [
+        "firstName",
+        "lastName",
+        "age"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

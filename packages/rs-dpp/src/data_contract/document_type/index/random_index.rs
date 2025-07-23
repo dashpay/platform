@@ -60,6 +60,7 @@ impl Index {
             unique,
             null_searchable: true,
             contested_index: None,
+            aggregation_type: Default::default(),
         })
     }
 }

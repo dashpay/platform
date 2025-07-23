@@ -1,37 +1,21 @@
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::{
-    DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
-};
-#[cfg(feature = "validation")]
-use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::index::Index;
-use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::property::DocumentPropertyType;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::schema::validate_max_depth;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
-use indexmap::IndexMap;
-use std::collections::BTreeMap;
-#[cfg(feature = "validation")]
-use std::collections::HashSet;
-use std::convert::TryInto;
-
-#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::{
+    DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError,
+};
+#[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "validation")]
@@ -42,22 +26,57 @@ use crate::data_contract::document_type::class_methods::try_from_schema::{
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error, try_from_schema,
 };
+use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::DocumentProperty;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
 };
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validate_max_depth;
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 #[cfg(feature = "validation")]
-use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
+use crate::validation::meta_validators::{DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use indexmap::IndexMap;
+use jsonschema::JSONSchema;
 use platform_value::{Identifier, Value};
+use std::collections::BTreeMap;
+#[cfg(feature = "validation")]
+use std::collections::HashSet;
+use std::convert::TryInto;
 
 impl DocumentTypeV0 {
+    pub fn document_type_metaschema(
+        platform_version: &PlatformVersion,
+    ) -> Result<JSONSchema, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .schema_version
+        {
+            0 => Ok(DOCUMENT_META_SCHEMA_V0),
+            1 => Ok(DOCUMENT_META_SCHEMA_V1),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "document_type_metaschema".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
@@ -132,8 +151,10 @@ impl DocumentTypeV0 {
                 )
             })?;
 
+            let document_meta_schema = Self::document_type_metaschema(platform_version)?;
+
             // Validate against JSON Schema
-            DOCUMENT_META_SCHEMA_V0
+            document_meta_schema
                 .validate(&root_json_schema)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 

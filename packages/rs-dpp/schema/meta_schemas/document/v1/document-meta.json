@@ -1,0 +1,613 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json",
+  "type": "object",
+  "$defs": {
+    "documentProperties": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9-_]{1,64}$": {
+          "type": "object",
+          "allOf": [
+            {
+              "$ref": "#/$defs/documentSchema"
+            }
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+      },
+      "minProperties": 1,
+      "maxProperties": 100
+    },
+    "documentSchemaArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/$defs/documentSchema"
+          }
+        ],
+        "unevaluatedProperties": false
+      }
+    },
+    "documentSchema": {
+      "type": "object",
+      "properties": {
+        "$id": {
+          "type": "string",
+          "pattern": "^#",
+          "minLength": 1
+        },
+        "$ref": {
+          "type": "string",
+          "pattern": "^#",
+          "minLength": 1
+        },
+        "$comment": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/core#/properties/$comment"
+        },
+        "description": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/description"
+        },
+        "examples": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/examples"
+        },
+        "multipleOf": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/multipleOf"
+        },
+        "maximum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maximum"
+        },
+        "exclusiveMaximum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMaximum"
+        },
+        "minimum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minimum"
+        },
+        "exclusiveMinimum": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/exclusiveMinimum"
+        },
+        "maxLength": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxLength"
+        },
+        "minLength": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minLength"
+        },
+        "pattern": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/pattern"
+        },
+        "maxItems": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxItems"
+        },
+        "minItems": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minItems"
+        },
+        "uniqueItems": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/uniqueItems"
+        },
+        "contains": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
+        },
+        "maxProperties": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/maxProperties"
+        },
+        "minProperties": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/minProperties"
+        },
+        "required": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/required"
+        },
+        "additionalProperties": {
+          "type": "boolean",
+          "const": false
+        },
+        "properties": {
+          "$ref": "#/$defs/documentProperties"
+        },
+        "dependentRequired": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray"
+          }
+        },
+        "const": true,
+        "enum": {
+          "type": "array",
+          "items": true,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "type": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/type"
+        },
+        "format": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/format-annotation#/properties/format"
+        },
+        "contentMediaType": {
+          "$ref": "https://json-schema.org/draft/2020-12/meta/content#/properties/contentMediaType"
+        },
+        "byteArray": {
+          "type": "boolean",
+          "const": true
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "dependentSchemas": {
+        "byteArray": {
+          "description": "should be used only with array type",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "array"
+            }
+          }
+        },
+        "contentMediaType": {
+          "if": {
+            "properties": {
+              "contentMediaType": {
+                "const": "application/x.dash.dpp.identifier"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "byteArray": {
+                "const": true
+              },
+              "minItems": {
+                "const": 32
+              },
+              "maxItems": {
+                "const": 32
+              }
+            },
+            "required": [
+              "byteArray",
+              "minItems",
+              "maxItems"
+            ]
+          }
+        },
+        "pattern": {
+          "description": "prevent slow pattern matching of large strings",
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          },
+          "required": [
+            "maxLength"
+          ]
+        },
+        "format": {
+          "description": "prevent slow format validation of large strings",
+          "properties": {
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          },
+          "required": [
+            "maxLength"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "require index for object properties",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "position": true
+                  },
+                  "required": [
+                    "position"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "allow only byte arrays",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "byteArray": true
+            },
+            "required": [
+              "byteArray"
+            ]
+          }
+        },
+        {
+          "$comment": "all object properties must be defined",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "not": {
+              "properties": {
+                "$ref": true
+              },
+              "required": [
+                "$ref"
+              ]
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "$ref": "#/$defs/documentProperties"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/documentSchema/properties/additionalProperties"
+              }
+            },
+            "required": [
+              "properties",
+              "additionalProperties"
+            ]
+          }
+        }
+      ]
+    },
+    "documentActionTokenCost": {
+      "type": "object",
+      "properties": {
+        "contractId": {
+          "type": "array",
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32
+        },
+        "tokenPosition": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 281474976710655
+        },
+        "effect": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "description": "0 - TransferTokenToContractOwner (default), 1 - Burn"
+        },
+        "gasFeesPaidBy": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2
+          ],
+          "description": "0 - DocumentOwner (default), 1 - ContractOwner, 2 - PreferContractOwner"
+        }
+      },
+      "required": [
+        "tokenPosition",
+        "amount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "object"
+    },
+    "$schema": {
+      "type": "string",
+      "const": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json"
+    },
+    "$defs": {
+      "$ref": "#/$defs/documentProperties"
+    },
+    "indices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "maxLength": 256
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": [
+                  "asc"
+                ]
+              },
+              "minProperties": 1,
+              "maxProperties": 1
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "unique": {
+            "type": "boolean"
+          },
+          "nullSearchable": {
+            "type": "boolean"
+          },
+          "contested": {
+            "type": "object",
+            "properties": {
+              "fieldMatches": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "regexPattern": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "field",
+                    "regexPattern"
+                  ]
+                },
+                "minItems": 1
+              },
+              "resolution": {
+                "type": "integer",
+                "enum": [
+                  0
+                ],
+                "description": "Resolution. 0 - Masternode Vote"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "resolution"
+            ],
+            "additionalProperties": false
+          },
+          "count": {
+            "type": "boolean",
+            "description": "Enables count operations on the index. Adds extra costs for documents storage"
+          }
+        },
+        "required": [
+          "properties",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 10
+    },
+    "signatureSecurityLevelRequirement": {
+      "type": "integer",
+      "enum": [
+        1,
+        2,
+        3
+      ],
+      "description": "Public key security level. 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
+    },
+    "documentsKeepHistory": {
+      "type": "boolean",
+      "description": "True if the documents keep all their history, default is false"
+    },
+    "documentsMutable": {
+      "type": "boolean",
+      "description": "True if the documents are mutable, default is true"
+    },
+    "canBeDeleted": {
+      "type": "boolean",
+      "description": "True if the documents can be deleted, default is true"
+    },
+    "transferable": {
+      "type": "integer",
+      "enum": [
+        0,
+        1
+      ],
+      "description": "Transferable without a marketplace sell. 0 - Never, 1 - Always"
+    },
+    "tradeMode": {
+      "type": "integer",
+      "enum": [
+        0,
+        1
+      ],
+      "description": "Built in marketplace system. 0 - None, 1 - Direct purchase (The user can buy the item without the need for an approval)"
+    },
+    "creationRestrictionMode": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2
+      ],
+      "description": "Restrictions of document creation. 0 - No restrictions, 1 - Owner only, 2 - No creation (System Only)"
+    },
+    "requiresIdentityEncryptionBoundedKey": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2
+      ],
+      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Multiple, 2 - Multiple with reference to latest key."
+    },
+    "requiresIdentityDecryptionBoundedKey": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2
+      ],
+      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Multiple, 2 - Multiple with reference to latest key."
+    },
+    "tokenCost": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "replace": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "delete": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "transfer": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "update_price": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "purchase": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        }
+      },
+      "additionalProperties": false
+    },
+    "properties": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/$defs/documentSchema"
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "properties": {
+        "$id": true,
+        "$ownerId": true,
+        "$revision": true,
+        "$createdAt": true,
+        "$updatedAt": true,
+        "$transferredAt": true,
+        "$createdAtBlockHeight": true,
+        "$updatedAtBlockHeight": true,
+        "$transferredAtBlockHeight": true,
+        "$createdAtCoreBlockHeight": true,
+        "$updatedAtCoreBlockHeight": true,
+        "$transferredAtCoreBlockHeight": true
+      },
+      "propertyNames": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "$id",
+              "$ownerId",
+              "$revision",
+              "$createdAt",
+              "$updatedAt",
+              "$transferredAt",
+              "$createdAtBlockHeight",
+              "$updatedAtBlockHeight",
+              "$transferredAtBlockHeight",
+              "$createdAtCoreBlockHeight",
+              "$updatedAtCoreBlockHeight",
+              "$transferredAtCoreBlockHeight"
+            ]
+          }
+        ]
+      },
+      "minProperties": 1,
+      "maxProperties": 100
+    },
+    "transient": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "keywords": {
+      "type": "array",
+      "description": "List of up to 20 descriptive keywords for the contract, used in the Keyword Search contract",
+      "items": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 50
+      },
+      "maxItems": 20,
+      "uniqueItems": true
+    },
+    "additionalProperties": {
+      "type": "boolean",
+      "const": false
+    }
+  },
+  "required": [
+    "$schema",
+    "type",
+    "properties",
+    "additionalProperties"
+  ]
+}
