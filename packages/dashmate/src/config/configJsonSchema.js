@@ -307,6 +307,19 @@ export default {
           required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
+        zmq: {
+          type: 'object',
+          properties: {
+            host: {
+              $ref: '#/definitions/host',
+            },
+            port: {
+              $ref: '#/definitions/port',
+            },
+          },
+          required: ['host', 'port'],
+          additionalProperties: false,
+        },
         spork: {
           type: 'object',
           properties: {
@@ -475,7 +488,7 @@ export default {
             + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
+      required: ['docker', 'p2p', 'rpc', 'zmq', 'spork', 'masternode', 'miner', 'devnet', 'log',
         'indexes', 'insight'],
       additionalProperties: false,
     },
