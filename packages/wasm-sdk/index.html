@@ -201,6 +201,20 @@
     input:checked + .toggle-slider:before {
       transform: translateX(26px);
     }
+    
+    /* Style for SDK config details */
+    details.sdk-config summary::-webkit-details-marker {
+      display: none;
+    }
+    
+    details.sdk-config[open] summary span:last-child {
+      transform: rotate(180deg);
+      transition: transform 0.2s;
+    }
+    
+    details.sdk-config summary span:last-child {
+      transition: transform 0.2s;
+    }
 
 
     .query-container {
@@ -812,6 +826,48 @@
           Trusted Quorums Mode
         </label>
       </div>
+      
+      <!-- SDK Configuration Section (Collapsible) -->
+      <details class="sdk-config" style="margin: 0; padding: 0; border-bottom: 1px solid #e0e0e0;">
+        <summary style="padding: 15px 20px; background-color: #f8f9fa; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-weight: 500; color: #333;">Advanced SDK Configuration</span>
+          <span style="font-size: 0.8em; color: #666;">▼</span>
+        </summary>
+        <div style="padding: 15px 20px; background-color: #f0f4f8;">
+          <div style="margin-bottom: 10px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Platform Version:</label>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <input type="number" id="platformVersion" placeholder="Latest" style="flex: 1; padding: 5px;" min="1">
+              <span id="latestVersionInfo" style="font-size: 0.9em; color: #666;"></span>
+            </div>
+            <small style="color: #666;">Leave empty for latest version</small>
+          </div>
+          
+          <details style="margin-top: 10px;">
+            <summary style="cursor: pointer; font-weight: 500; margin-bottom: 10px;">Request Settings</summary>
+            <div style="margin-top: 10px;">
+              <label style="display: block; margin-bottom: 5px;">Connect Timeout (ms):</label>
+              <input type="number" id="connectTimeout" placeholder="Default: 3000" style="width: 100%; padding: 5px;">
+            </div>
+            <div style="margin-top: 10px;">
+              <label style="display: block; margin-bottom: 5px;">Request Timeout (ms):</label>
+              <input type="number" id="requestTimeout" placeholder="Default: 60000" style="width: 100%; padding: 5px;">
+            </div>
+            <div style="margin-top: 10px;">
+              <label style="display: block; margin-bottom: 5px;">Retries:</label>
+              <input type="number" id="retries" placeholder="Default: 5" style="width: 100%; padding: 5px;">
+            </div>
+            <div style="margin-top: 10px;">
+              <label style="display: flex; align-items: center;">
+                <input type="checkbox" id="banFailedAddress" style="margin-right: 5px;">
+                Ban Failed Addresses
+              </label>
+            </div>
+          </details>
+          
+          <button id="applyConfig" style="margin-top: 15px; padding: 8px 15px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;">Apply Configuration</button>
+        </div>
+      </details>
       
       <div class="query-container">
         <div class="query-selector">
@@ -1948,6 +2004,9 @@
       const contractId = contractIdInput.value;
       const documentType = documentTypeInput.value;
       
+      // Start timing
+      const startTime = performance.now();
+      
       try {
         updateStatus('Loading data contract...', 'loading');
         
@@ -1999,7 +2058,7 @@
           }
         });
 
-        updateStatus('Data contract loaded successfully', 'success');
+        updateStatusWithTime('Data contract loaded successfully', 'success', startTime);
       } catch (error) {
         console.error('Error loading data contract:', error);
         updateStatus(`Error loading data contract: ${error.message}`, 'error');
@@ -2835,6 +2894,13 @@ ${indentStr}]`;
       statusBanner.textContent = message;
       statusBanner.className = `status-banner ${type}`;
     }
+    
+    // Helper to update status with execution time
+    function updateStatusWithTime(message, type, startTime) {
+      const endTime = performance.now();
+      const executionTime = ((endTime - startTime) / 1000).toFixed(1);
+      updateStatus(`${message} (${executionTime}s)`, type);
+    }
 
     async function initializeSdk(network) {
       const currentRequestToken = ++initRequestCounter;
@@ -2857,7 +2923,28 @@ ${indentStr}]`;
               console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
               shouldContinue = false;
             } else {
-              newSdk = await WasmSdkBuilder.new_mainnet_trusted().build();
+              let builder = WasmSdkBuilder.new_mainnet_trusted();
+              
+              // Apply configuration options
+              const platformVersion = document.getElementById('platformVersion').value;
+              if (platformVersion) {
+                builder = builder.with_version(parseInt(platformVersion));
+              }
+              
+              // Apply request settings
+              const connectTimeout = document.getElementById('connectTimeout').value;
+              const requestTimeout = document.getElementById('requestTimeout').value;
+              const retries = document.getElementById('retries').value;
+              const banFailedAddress = document.getElementById('banFailedAddress').checked;
+              
+              builder = builder.with_settings(
+                connectTimeout ? parseInt(connectTimeout) : null,
+                requestTimeout ? parseInt(requestTimeout) : null,
+                retries ? parseInt(retries) : null,
+                banFailedAddress ? banFailedAddress : null
+              );
+              
+              newSdk = await builder.build();
             }
           } else {
             await prefetch_trusted_quorums_testnet();
@@ -2865,7 +2952,28 @@ ${indentStr}]`;
               console.log(`Discarding stale SDK initialization request ${currentRequestToken}`);
               shouldContinue = false;
             } else {
-              newSdk = await WasmSdkBuilder.new_testnet_trusted().build();
+              let builder = WasmSdkBuilder.new_testnet_trusted();
+              
+              // Apply configuration options
+              const platformVersion = document.getElementById('platformVersion').value;
+              if (platformVersion) {
+                builder = builder.with_version(parseInt(platformVersion));
+              }
+              
+              // Apply request settings
+              const connectTimeout = document.getElementById('connectTimeout').value;
+              const requestTimeout = document.getElementById('requestTimeout').value;
+              const retries = document.getElementById('retries').value;
+              const banFailedAddress = document.getElementById('banFailedAddress').checked;
+              
+              builder = builder.with_settings(
+                connectTimeout ? parseInt(connectTimeout) : null,
+                requestTimeout ? parseInt(requestTimeout) : null,
+                retries ? parseInt(retries) : null,
+                banFailedAddress ? banFailedAddress : null
+              );
+              
+              newSdk = await builder.build();
             }
           }
         } else if (shouldContinue) {
@@ -2885,6 +2993,14 @@ ${indentStr}]`;
           // When the proof toggle is ON (checked), queries return verified data WITH proof information displayed
           // When the proof toggle is OFF (unchecked), queries return verified data WITHOUT proof information displayed
           // Note: Both modes use proof verification internally; the toggle only controls whether proof details are shown
+          
+          // Display latest platform version info
+          try {
+            const latestVersion = WasmSdkBuilder.getLatestVersionNumber();
+            document.getElementById('latestVersionInfo').textContent = `(Latest: v${latestVersion})`;
+          } catch (e) {
+            console.warn('Could not get latest platform version:', e);
+          }
         }
       } catch (error) {
         if (currentRequestToken === initRequestCounter) {
@@ -3252,6 +3368,9 @@ ${indentStr}]`;
         alert('Invalid query selection');
         return;
       }
+      
+      // Start timing
+      const startTime = performance.now();
 
       const button = document.getElementById('executeQuery');
       const originalButtonText = button.textContent;
@@ -3832,7 +3951,11 @@ ${indentStr}]`;
         }
         
         displayResult(result);
-        updateStatus(`${queryDef.label} executed successfully`, 'success');
+        
+        // Calculate and display execution time
+        const endTime = performance.now();
+        const executionTime = ((endTime - startTime) / 1000).toFixed(1);
+        updateStatus(`${queryDef.label} executed successfully (${executionTime}s)`, 'success');
       } catch (error) {
         console.error(`Error executing ${queryType}:`, error);
         displayResult(`Error executing query: ${error.message || error}`, true);
@@ -3848,6 +3971,9 @@ ${indentStr}]`;
       const originalButtonText = button.textContent;
       button.disabled = true;
       button.textContent = 'Processing...';
+      
+      // Start timing
+      const startTime = performance.now();
       
       updateStatus(`Executing ${transitionType} state transition...`, 'loading');
       
@@ -3882,7 +4008,7 @@ ${indentStr}]`;
             values.publicNote || null
           );
           displayResult(JSON.stringify(result, null, 2));
-          updateStatus('Token mint executed successfully', 'success');
+          updateStatusWithTime('Token mint executed successfully', 'success', startTime);
         } else if (transitionType === 'tokenBurn') {
           result = await sdk.tokenBurn(
             values.contractId,
@@ -3894,7 +4020,7 @@ ${indentStr}]`;
             values.publicNote || null
           );
           displayResult(JSON.stringify(result, null, 2));
-          updateStatus('Token burn executed successfully', 'success');
+          updateStatusWithTime('Token burn executed successfully', 'success', startTime);
         } else if (transitionType === 'documentCreate') {
           // Collect document fields from dynamic inputs
           const documentData = collectDocumentFields();
@@ -3918,7 +4044,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Document created successfully', 'success');
+          updateStatusWithTime('Document created successfully', 'success', startTime);
         } else if (transitionType === 'documentReplace') {
           // Collect document fields from dynamic inputs
           const documentData = collectDocumentFields();
@@ -3942,7 +4068,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Document replaced successfully', 'success');
+          updateStatusWithTime('Document replaced successfully', 'success', startTime);
           
           // Reset loaded data
           loadedDocumentData = null;
@@ -3960,7 +4086,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Document deleted successfully', 'success');
+          updateStatusWithTime('Document deleted successfully', 'success', startTime);
         } else if (transitionType === 'documentTransfer') {
           // Handle document transfer
           result = await sdk.documentTransfer(
@@ -3975,7 +4101,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Document transferred successfully', 'success');
+          updateStatusWithTime('Document transferred successfully', 'success', startTime);
         } else if (transitionType === 'documentSetPrice') {
           // Handle document set price
           result = await sdk.documentSetPrice(
@@ -3990,7 +4116,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Document price set successfully', 'success');
+          updateStatusWithTime('Document price set successfully', 'success', startTime);
         } else if (transitionType === 'dpnsRegister') {
           // Handle DPNS registration
           // First validate the username
@@ -4109,7 +4235,7 @@ ${indentStr}]`;
           // Since our callback is called at the end, let's update the message
           // to reflect that both documents were submitted
           displayResult(JSON.stringify(result, null, 2));
-          updateStatus('DPNS name registered successfully! Both preorder and domain documents submitted.', 'success');
+          updateStatusWithTime('DPNS name registered successfully! Both preorder and domain documents submitted.', 'success', startTime);
         } else if (transitionType === 'documentPurchase') {
           // Handle document purchase
           result = await sdk.documentPurchase(
@@ -4124,7 +4250,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Document purchased successfully', 'success');
+          updateStatusWithTime('Document purchased successfully', 'success', startTime);
         } else if (transitionType === 'identityCreditTransfer') {
           // Handle identity credit transfer
           result = await sdk.identityCreditTransfer(
@@ -4137,7 +4263,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Credits transferred successfully', 'success');
+          updateStatusWithTime('Credits transferred successfully', 'success', startTime);
         } else if (transitionType === 'identityCreditWithdrawal') {
           // Handle identity credit withdrawal
           result = await sdk.identityCreditWithdrawal(
@@ -4151,7 +4277,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Credits withdrawn successfully', 'success');
+          updateStatusWithTime('Credits withdrawn successfully', 'success', startTime);
         } else if (transitionType === 'identityUpdate') {
           // Handle identity update
           
@@ -4172,7 +4298,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Identity updated successfully', 'success');
+          updateStatusWithTime('Identity updated successfully', 'success', startTime);
         } else if (transitionType === 'dpnsUsername') {
           // Handle DPNS Username vote (simplified version of masternode vote)
           
@@ -4202,7 +4328,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('DPNS username vote submitted successfully', 'success');
+          updateStatusWithTime('DPNS username vote submitted successfully', 'success', startTime);
         } else if (transitionType === 'masternodeVote') {
           // Handle masternode vote
           
@@ -4250,7 +4376,7 @@ ${indentStr}]`;
           
           // Pass the result object directly to displayResult
           displayResult(result);
-          updateStatus('Vote submitted successfully', 'success');
+          updateStatusWithTime('Vote submitted successfully', 'success', startTime);
         } else if (transitionType === 'dataContractCreate') {
           // Get document schemas JSON
           const schemasTextarea = document.querySelector('textarea[name="documentSchemas"]');
@@ -4330,7 +4456,7 @@ ${indentStr}]`;
           );
           
           displayResult(result);
-          updateStatus('Data contract created successfully', 'success');
+          updateStatusWithTime('Data contract created successfully', 'success', startTime);
         } else if (transitionType === 'dataContractUpdate') {
           // First fetch the existing contract
           updateStatus(`Fetching contract ${values.dataContractId}...`, 'loading');
@@ -4426,7 +4552,7 @@ ${indentStr}]`;
           );
           
           displayResult(result);
-          updateStatus('Data contract updated successfully', 'success');
+          updateStatusWithTime('Data contract updated successfully', 'success', startTime);
         } else {
           // For other transitions not yet implemented
           const transitionData = {
@@ -4679,6 +4805,14 @@ ${indentStr}]`;
     });
 
     // Trusted mode is always on, no need for event listener
+    
+    // Apply Configuration button handler
+    document.getElementById('applyConfig').addEventListener('click', async () => {
+      const network = document.querySelector('input[name="network"]:checked')?.value || 'mainnet';
+      clearResults();
+      updateStatus('Applying new SDK configuration...', 'loading');
+      await initializeSdk(network);
+    });
 
     // Store loaded document data globally for document replace
     let loadedDocumentData = null;
@@ -4698,6 +4832,9 @@ ${indentStr}]`;
         updateStatus('Please fill in Contract ID, Document Type, and Document ID', 'error');
         return;
       }
+      
+      // Start timing
+      const startTime = performance.now();
       
       try {
         updateStatus('Loading document and schema...', 'loading');
@@ -4738,7 +4875,7 @@ ${indentStr}]`;
           populateDocumentFields(docType, fieldsContainer, loadedDocumentData);
         }
         
-        updateStatus(`Document loaded successfully (revision: ${loadedDocumentRevision})`, 'success');
+        updateStatusWithTime(`Document loaded successfully (revision: ${loadedDocumentRevision})`, 'success', startTime);
       } catch (error) {
         console.error('Error loading document:', error);
         updateStatus(`Error loading document: ${error.message}`, 'error');
