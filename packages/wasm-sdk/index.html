@@ -2928,7 +2928,7 @@ ${indentStr}]`;
               // Apply configuration options
               const platformVersion = document.getElementById('platformVersion').value;
               if (platformVersion) {
-                builder = builder.with_version(parseInt(platformVersion));
+                builder = builder.with_version(parseInt(platformVersion, 10));
               }
               
               // Apply request settings
@@ -2938,9 +2938,9 @@ ${indentStr}]`;
               const banFailedAddress = document.getElementById('banFailedAddress').checked;
               
               builder = builder.with_settings(
-                connectTimeout ? parseInt(connectTimeout) : undefined,
-                requestTimeout ? parseInt(requestTimeout) : undefined,
-                retries ? parseInt(retries) : undefined,
+                connectTimeout ? parseInt(connectTimeout, 10) : undefined,
+                requestTimeout ? parseInt(requestTimeout, 10) : undefined,
+                retries ? parseInt(retries, 10) : undefined,
                 banFailedAddress || undefined
               );
               
@@ -2957,7 +2957,7 @@ ${indentStr}]`;
               // Apply configuration options
               const platformVersion = document.getElementById('platformVersion').value;
               if (platformVersion) {
-                builder = builder.with_version(parseInt(platformVersion));
+                builder = builder.with_version(parseInt(platformVersion, 10));
               }
               
               // Apply request settings
@@ -2967,9 +2967,9 @@ ${indentStr}]`;
               const banFailedAddress = document.getElementById('banFailedAddress').checked;
               
               builder = builder.with_settings(
-                connectTimeout ? parseInt(connectTimeout) : undefined,
-                requestTimeout ? parseInt(requestTimeout) : undefined,
-                retries ? parseInt(retries) : undefined,
+                connectTimeout ? parseInt(connectTimeout, 10) : undefined,
+                requestTimeout ? parseInt(requestTimeout, 10) : undefined,
+                retries ? parseInt(retries, 10) : undefined,
                 banFailedAddress || undefined
               );
               
