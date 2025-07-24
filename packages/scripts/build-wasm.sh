@@ -96,6 +96,19 @@ cd "$PACKAGE_DIR"
 
 echo "Building $PACKAGE_NAME..."
 
+# Helper function to set build-time environment variables
+set_build_env_vars() {
+    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+    BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    export GIT_COMMIT
+    export GIT_BRANCH
+    export BUILD_TIME
+    
+    echo "Build info: commit=$GIT_COMMIT, branch=$GIT_BRANCH, time=$BUILD_TIME"
+}
+
 # Create pkg directory if it doesn't exist
 mkdir -p pkg
 
@@ -104,11 +117,7 @@ if [ "$USE_WASM_PACK" = true ]; then
     echo "Building with wasm-pack..."
     
     # Set build-time environment variables
-    export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-    export GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
-    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    
-    echo "Build info: commit=$GIT_COMMIT, branch=$GIT_BRANCH, time=$BUILD_TIME"
+    set_build_env_vars
     
     # Disable LTO for wasm-pack builds to avoid conflicts
     export CARGO_PROFILE_RELEASE_LTO=false
@@ -132,11 +141,7 @@ else
     echo "Building with cargo..."
     
     # Set build-time environment variables
-    export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-    export GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
-    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    
-    echo "Build info: commit=$GIT_COMMIT, branch=$GIT_BRANCH, time=$BUILD_TIME"
+    set_build_env_vars
     
     # Add features if specified
     FEATURES_ARG=""
