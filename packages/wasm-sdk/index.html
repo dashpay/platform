@@ -2938,10 +2938,10 @@ ${indentStr}]`;
               const banFailedAddress = document.getElementById('banFailedAddress').checked;
               
               builder = builder.with_settings(
-                connectTimeout ? parseInt(connectTimeout) : null,
-                requestTimeout ? parseInt(requestTimeout) : null,
-                retries ? parseInt(retries) : null,
-                banFailedAddress ? banFailedAddress : null
+                connectTimeout ? parseInt(connectTimeout) : undefined,
+                requestTimeout ? parseInt(requestTimeout) : undefined,
+                retries ? parseInt(retries) : undefined,
+                banFailedAddress || undefined
               );
               
               newSdk = await builder.build();
@@ -2967,10 +2967,10 @@ ${indentStr}]`;
               const banFailedAddress = document.getElementById('banFailedAddress').checked;
               
               builder = builder.with_settings(
-                connectTimeout ? parseInt(connectTimeout) : null,
-                requestTimeout ? parseInt(requestTimeout) : null,
-                retries ? parseInt(retries) : null,
-                banFailedAddress ? banFailedAddress : null
+                connectTimeout ? parseInt(connectTimeout) : undefined,
+                requestTimeout ? parseInt(requestTimeout) : undefined,
+                retries ? parseInt(retries) : undefined,
+                banFailedAddress || undefined
               );
               
               newSdk = await builder.build();
