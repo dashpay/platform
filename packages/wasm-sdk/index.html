@@ -3286,15 +3286,12 @@ ${indentStr}]`;
           
           // Display version information in header
           try {
-            const packageVersion = sdk.packageVersion();
             const gitCommit = sdk.gitCommit();
             const gitBranch = sdk.gitBranch();
-            const buildTime = sdk.buildTime();
-            const protocolVersion = sdk.version();
             
-            const versionText = `v${packageVersion} (${gitCommit}@${gitBranch}) • Protocol v${protocolVersion} • Built ${buildTime}`;
+            const versionText = `Built from branch: ${gitBranch} (${gitCommit})`;
             document.getElementById('versionInfo').textContent = versionText;
-            document.getElementById('versionInfo').title = `Package: v${packageVersion}\nCommit: ${gitCommit}\nBranch: ${gitBranch}\nProtocol: v${protocolVersion}\nBuild Time: ${buildTime}`;
+            document.getElementById('versionInfo').title = `Branch: ${gitBranch}\nCommit: ${gitCommit}`;
           } catch (error) {
             console.warn('Failed to get version info:', error);
             document.getElementById('versionInfo').textContent = 'Version info unavailable';
