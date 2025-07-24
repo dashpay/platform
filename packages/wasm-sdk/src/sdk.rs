@@ -13,11 +13,15 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
+use dapi_grpc::platform::VersionedGrpcResponse;
 use platform_value::platform_value;
+use dash_sdk::dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use rs_dapi_client::RequestSettings;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
+use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use web_sys::{console, js_sys};
@@ -129,6 +133,11 @@ impl DerefMut for WasmSdkBuilder {
 
 #[wasm_bindgen]
 impl WasmSdkBuilder {
+    /// Get the latest platform version number
+    #[wasm_bindgen(js_name = "getLatestVersionNumber")]
+    pub fn get_latest_version_number() -> u32 {
+        PlatformVersion::latest().protocol_version
+    }
     pub fn new_mainnet() -> Self {
         // Mainnet addresses from mnowatch.org
         let mainnet_addresses = vec![
@@ -653,6 +662,56 @@ impl WasmSdkBuilder {
 
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
+    }
+    
+    /// Configure platform version to use.
+    /// 
+    /// Available versions:
+    /// - 1: Platform version 1
+    /// - 2: Platform version 2
+    /// - ... up to latest version
+    /// 
+    /// Defaults to latest version if not specified.
+    pub fn with_version(self, version_number: u32) -> Result<Self, JsError> {
+        let version = PlatformVersion::get(version_number)
+            .map_err(|e| JsError::new(&format!("Invalid platform version {}: {}", version_number, e)))?;
+        
+        Ok(WasmSdkBuilder(self.0.with_version(version)))
+    }
+    
+    /// Configure request settings for the SDK.
+    /// 
+    /// Settings include:
+    /// - connect_timeout_ms: Timeout for establishing connection (in milliseconds)
+    /// - timeout_ms: Timeout for single request (in milliseconds)
+    /// - retries: Number of retries in case of failed requests
+    /// - ban_failed_address: Whether to ban DAPI address if node not responded or responded with error
+    pub fn with_settings(
+        self,
+        connect_timeout_ms: Option<u32>,
+        timeout_ms: Option<u32>,
+        retries: Option<u32>,
+        ban_failed_address: Option<bool>,
+    ) -> Self {
+        let mut settings = RequestSettings::default();
+        
+        if let Some(connect_timeout) = connect_timeout_ms {
+            settings.connect_timeout = Some(Duration::from_millis(connect_timeout as u64));
+        }
+        
+        if let Some(timeout) = timeout_ms {
+            settings.timeout = Some(Duration::from_millis(timeout as u64));
+        }
+        
+        if let Some(retries) = retries {
+            settings.retries = Some(retries as usize);
+        }
+        
+        if let Some(ban) = ban_failed_address {
+            settings.ban_failed_address = Some(ban);
+        }
+        
+        WasmSdkBuilder(self.0.with_settings(settings))
     }
     
     // TODO: Add with_proofs method when it's available in the SDK builder
