@@ -103,9 +103,16 @@ if [ "$USE_WASM_PACK" = true ]; then
     # Build using wasm-pack
     echo "Building with wasm-pack..."
     
+    # Set build-time environment variables
+    export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    export GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    echo "Build info: commit=$GIT_COMMIT, branch=$GIT_BRANCH, time=$BUILD_TIME"
+    
     # Disable LTO for wasm-pack builds to avoid conflicts
     export CARGO_PROFILE_RELEASE_LTO=false
-    export RUSTFLAGS="-C lto=off"
+    export RUSTFLAGS="-C lto=off --cfg=env_vars_set"
     
     # Add features if specified
     FEATURES_ARG=""
@@ -123,6 +130,13 @@ if [ "$USE_WASM_PACK" = true ]; then
 else
     # Build using cargo directly
     echo "Building with cargo..."
+    
+    # Set build-time environment variables
+    export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    export GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    echo "Build info: commit=$GIT_COMMIT, branch=$GIT_BRANCH, time=$BUILD_TIME"
     
     # Add features if specified
     FEATURES_ARG=""

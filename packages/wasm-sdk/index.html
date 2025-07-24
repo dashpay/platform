@@ -791,7 +791,12 @@
 
 <body>
   <div class="header">
-    <h1>Dash Platform WASM JS SDK</h1>
+    <div>
+      <h1>Dash Platform WASM JS SDK</h1>
+      <div id="versionInfo" style="font-size: 0.8em; color: #b0b0b0; margin-top: -5px;">
+        Loading version info...
+      </div>
+    </div>
     <nav class="header-nav">
       <a href="docs.html">Documentation</a>
       <a href="AI_REFERENCE.md">AI Reference</a>
@@ -3278,6 +3283,22 @@ ${indentStr}]`;
           currentNetwork = network; // Store the current network
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
+          
+          // Display version information in header
+          try {
+            const packageVersion = sdk.packageVersion();
+            const gitCommit = sdk.gitCommit();
+            const gitBranch = sdk.gitBranch();
+            const buildTime = sdk.buildTime();
+            const protocolVersion = sdk.version();
+            
+            const versionText = `v${packageVersion} (${gitCommit}@${gitBranch}) • Protocol v${protocolVersion} • Built ${buildTime}`;
+            document.getElementById('versionInfo').textContent = versionText;
+            document.getElementById('versionInfo').title = `Package: v${packageVersion}\nCommit: ${gitCommit}\nBranch: ${gitBranch}\nProtocol: v${protocolVersion}\nBuild Time: ${buildTime}`;
+          } catch (error) {
+            console.warn('Failed to get version info:', error);
+            document.getElementById('versionInfo').textContent = 'Version info unavailable';
+          }
           
           // Proof support is available for all queries - internally all queries use proof verification
           // When the proof toggle is ON (checked), queries return verified data WITH proof information displayed

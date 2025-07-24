@@ -55,6 +55,30 @@ impl WasmSdk {
         self.0.version().protocol_version
     }
     
+    /// Get the package version of the SDK
+    #[wasm_bindgen(js_name = packageVersion)]
+    pub fn package_version(&self) -> String {
+        env!("CARGO_PKG_VERSION", "Package version not available").to_string()
+    }
+    
+    /// Get the git commit hash this build was created from
+    #[wasm_bindgen(js_name = gitCommit)]
+    pub fn git_commit(&self) -> String {
+        option_env!("GIT_COMMIT").unwrap_or("unknown").to_string()
+    }
+    
+    /// Get the git branch this build was created from
+    #[wasm_bindgen(js_name = gitBranch)]
+    pub fn git_branch(&self) -> String {
+        option_env!("GIT_BRANCH").unwrap_or("unknown").to_string()
+    }
+    
+    /// Get the build timestamp
+    #[wasm_bindgen(js_name = buildTime)]
+    pub fn build_time(&self) -> String {
+        option_env!("BUILD_TIME").unwrap_or("unknown").to_string()
+    }
+    
     /// Get the network this SDK is configured for
     pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
         self.0.network
