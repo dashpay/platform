@@ -8,12 +8,14 @@ pub mod sdk;
 pub mod state_transitions;
 pub mod verify;
 pub mod queries;
+pub mod wallet;
 
 // Re-export commonly used items
 pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use queries::*;
 pub use state_transitions::*;
 pub use dpns::*;
+pub use wallet::*;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

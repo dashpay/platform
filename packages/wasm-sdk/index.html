@@ -874,6 +874,7 @@
           <select id="operationType">
             <option value="queries">Queries</option>
             <option value="transitions">State Transitions</option>
+            <option value="wallet">Wallet</option>
           </select>
           
           <select id="queryCategory">
@@ -1147,13 +1148,35 @@
       dpns_is_contested_username,
       dpns_register_name,
       dpns_is_name_available,
-      dpns_resolve_name
+      dpns_resolve_name,
+      // Wallet functions
+      generate_key_pair,
+      generate_key_pairs,
+      key_pair_from_wif,
+      key_pair_from_hex,
+      pubkey_to_address,
+      validate_address,
+      sign_message,
+      derivation_path_bip44_mainnet,
+      derivation_path_bip44_testnet,
+      derivation_path_dip9_mainnet,
+      derivation_path_dip9_testnet,
+      generate_mnemonic,
+      validate_mnemonic,
+      mnemonic_to_seed,
+      derive_key_from_seed_phrase,
+      derive_key_from_seed_with_path,
+      derivation_path_dip13_mainnet,
+      derivation_path_dip13_testnet,
+      derive_child_public_key,
+      xprv_to_xpub
     } from './pkg/wasm_sdk.js';
     
     // Import all placeholder query functions
     import * as queryFunctions from './pkg/wasm_sdk.js';
 
     let sdk = null;
+    let currentNetwork = 'mainnet'; // Track the current network (defaults to mainnet)
     let currentResult = null;
     let initRequestCounter = 0;
     
@@ -1416,6 +1439,164 @@
               { name: "targetIdentity", type: "text", label: "Target Identity ID (if voting for identity)", required: false,
                 placeholder: "Identity ID to vote for",
                 dependsOn: { field: "voteChoice", value: "towardsIdentity" } }
+            ]
+          }
+        }
+      }
+    };
+
+    // Wallet definitions
+    const walletDefinitions = {
+      keyGeneration: {
+        label: "Key Generation",
+        operations: {
+          generateSeed: {
+            label: "Generate Seed",
+            description: "Generate a new mnemonic seed phrase",
+            inputs: [
+              { name: "wordCount", type: "select", label: "Word Count", required: true,
+                options: [
+                  { value: "12", label: "12 words" },
+                  { value: "15", label: "15 words" },
+                  { value: "18", label: "18 words" },
+                  { value: "21", label: "21 words" },
+                  { value: "24", label: "24 words" }
+                ]
+              },
+              { name: "language", type: "select", label: "Language", required: false,
+                options: [
+                  { value: "en", label: "English" },
+                  { value: "zh-cn", label: "Chinese Simplified" },
+                  { value: "zh-tw", label: "Chinese Traditional" },
+                  { value: "cs", label: "Czech" },
+                  { value: "fr", label: "French" },
+                  { value: "it", label: "Italian" },
+                  { value: "ja", label: "Japanese" },
+                  { value: "ko", label: "Korean" },
+                  { value: "pt", label: "Portuguese" },
+                  { value: "es", label: "Spanish" }
+                ],
+                defaultValue: "en"
+              }
+            ]
+          },
+          generateKeyPair: {
+            label: "Generate Key Pair",
+            description: "Generate a new random key pair",
+            inputs: []
+          },
+          generateKeyPairs: {
+            label: "Generate Multiple Key Pairs",
+            description: "Generate multiple random key pairs",
+            inputs: [
+              { name: "count", type: "number", label: "Number of Key Pairs", required: true, min: 1, max: 100 }
+            ]
+          },
+          keyPairFromWif: {
+            label: "Key Pair from WIF",
+            description: "Import a key pair from WIF (Wallet Import Format)",
+            inputs: [
+              { name: "privateKeyWif", type: "text", label: "Private Key (WIF)", required: true, 
+                placeholder: "e.g., XBrZJKcW4ajWVNAU6yP87WQog6CjFnpbqyAKgNTZRqmhYvPgMNV2" }
+            ]
+          },
+          keyPairFromHex: {
+            label: "Key Pair from Hex",
+            description: "Import a key pair from hex private key",
+            inputs: [
+              { name: "privateKeyHex", type: "text", label: "Private Key (Hex)", required: true,
+                placeholder: "64 character hex string" }
+            ]
+          },
+          pubkeyToAddress: {
+            label: "Public Key to Address",
+            description: "Convert a public key to a Dash address",
+            inputs: [
+              { name: "pubkeyHex", type: "text", label: "Public Key (Hex)", required: true,
+                placeholder: "Compressed public key hex" }
+            ]
+          },
+          validateAddress: {
+            label: "Validate Address",
+            description: "Check if a Dash address is valid",
+            inputs: [
+              { name: "address", type: "text", label: "Dash Address", required: true }
+            ]
+          },
+          signMessage: {
+            label: "Sign Message",
+            description: "Sign a message with a private key",
+            inputs: [
+              { name: "message", type: "text", label: "Message to Sign", required: true },
+              { name: "privateKeyWif", type: "text", label: "Private Key (WIF)", required: true }
+            ]
+          }
+        }
+      },
+      keyDerivation: {
+        label: "Key Derivation",
+        operations: {
+          derivationPathBip44: {
+            label: "BIP44 from Seed",
+            description: "⚠️ WARNING: Only use test seeds! Never enter seeds with real funds!",
+            inputs: [
+              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
+                placeholder: "Enter test seed phrase (12-24 words)" },
+              { name: "generateSeedButton", type: "button", label: "Generate Test Seed", 
+                action: "generateTestSeed" },
+              { name: "passphrase", type: "text", label: "Passphrase (optional)", required: false,
+                placeholder: "Optional BIP39 passphrase" },
+              { name: "account", type: "number", label: "Account Index", required: true, min: 0, value: 0 },
+              { name: "change", type: "checkbox", label: "Internal Address (change)", required: false },
+              { name: "index", type: "number", label: "Address Index", required: true, min: 0, value: 0 }
+            ]
+          },
+          derivationPathDip9: {
+            label: "DIP9 Path",
+            description: "Create a DIP9 derivation path",
+            inputs: [
+              { name: "featureType", type: "number", label: "Feature Type", required: true, min: 0 },
+              { name: "account", type: "number", label: "Account Index", required: true, min: 0, value: 0 },
+              { name: "index", type: "number", label: "Address Index", required: true, min: 0, value: 0 }
+            ]
+          },
+          enteredPath: {
+            label: "Entered Path", 
+            description: "Derive a key from a custom BIP32 derivation path",
+            inputs: [
+              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
+                placeholder: "Enter test seed phrase (12-24 words)" },
+              { name: "generateSeedButton", type: "button", label: "Generate Test Seed", 
+                action: "generateTestSeed" },
+              { name: "passphrase", type: "text", label: "Passphrase (optional)", required: false,
+                placeholder: "Optional BIP39 passphrase" },
+              { name: "path", type: "text", label: "Derivation Path", required: true, 
+                placeholder: "m/44'/5'/0'/0/0", 
+                help: "Enter any BIP32 derivation path (e.g., m/44'/5'/0'/0/0 or m/9'/5'/0/1/0 or m/13'/5'/0)" }
+            ]
+          },
+          derivationPathDip13: {
+            label: "DIP13 Identity Keys",
+            description: "Derive keys for Dash Platform identities using DIP13 (HD identity wallets)",
+            inputs: [
+              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
+                placeholder: "Enter test seed phrase (12-24 words)" },
+              { name: "generateSeedButton", type: "button", label: "Generate Test Seed", 
+                action: "generateTestSeed" },
+              { name: "passphrase", type: "text", label: "Passphrase (optional)", required: false,
+                placeholder: "Optional BIP39 passphrase" },
+              { name: "subFeature", type: "select", label: "Key Type", required: true,
+                options: [
+                  { value: "0", label: "Authentication Keys" },
+                  { value: "1", label: "Registration Funding Keys" },
+                  { value: "2", label: "Top Up Funding Keys" },
+                  { value: "3", label: "Invitation Funding Keys" }
+                ]
+              },
+              { name: "identityIndex", type: "number", label: "Identity Index", required: true, min: 0, value: 0,
+                help: "Index of the identity (0 for first identity, 1 for second, etc.)" },
+              { name: "keyIndex", type: "number", label: "Key Index", required: false, min: 0, value: 0,
+                help: "For authentication keys only - index of the key (0 for first key, 1 for second, etc.)" }
             ]
           }
         }
@@ -1991,6 +2172,35 @@
         });
     };
 
+    // Function to generate a test seed phrase
+    window.generateTestSeed = async function() {
+      const seedInput = document.querySelector('textarea[name="seedPhrase"]');
+      if (!seedInput) return;
+      
+      try {
+        // Generate a proper BIP39 mnemonic with valid checksum
+        // The generate_mnemonic function is already imported at the top
+        const mnemonic = generate_mnemonic(12); // Generate 12-word mnemonic
+        
+        seedInput.value = mnemonic;
+        
+        // Add a warning in red
+        const existingWarning = seedInput.parentElement.querySelector('.seed-warning');
+        if (!existingWarning) {
+          const warning = document.createElement('div');
+          warning.className = 'seed-warning';
+          warning.style.color = '#dc3545';
+          warning.style.fontSize = '0.9em';
+          warning.style.marginTop = '5px';
+          warning.textContent = '⚠️ TEST SEED GENERATED - Never use this with real funds!';
+          seedInput.parentElement.appendChild(warning);
+        }
+      } catch (error) {
+        console.error('Error generating test seed:', error);
+        alert('Failed to generate test seed: ' + error.message);
+      }
+    };
+    
     // Function to load data contract and populate index selector
     window.loadDataContractForDocuments = async function() {
       const contractIdInput = document.querySelector('input[name="dataContractId"]');
@@ -2986,6 +3196,7 @@ ${indentStr}]`;
         
         if (shouldContinue && currentRequestToken === initRequestCounter) {
           sdk = newSdk;
+          currentNetwork = network; // Store the current network
           console.log(`Initialized ${network} SDK (${modeStr} mode):`, sdk);
           updateStatus(`WASM SDK successfully loaded on ${network.toUpperCase()} (${modeStr} mode)`, 'success');
           
@@ -3183,6 +3394,19 @@ ${indentStr}]`;
         textarea.style.borderRadius = '4px';
         textarea.style.fontFamily = 'monospace';
         textarea.setAttribute('data-json', 'true'); // Mark as JSON textarea
+        inputGroup.appendChild(textarea);
+      } else if (inputDef.type === 'textarea') {
+        const textarea = document.createElement('textarea');
+        textarea.name = inputDef.name;
+        textarea.placeholder = inputDef.placeholder || inputDef.label;
+        textarea.rows = inputDef.rows || 3;
+        textarea.style.width = '100%';
+        textarea.style.padding = '8px';
+        textarea.style.border = '1px solid #ddd';
+        textarea.style.borderRadius = '4px';
+        if (inputDef.defaultValue !== undefined) {
+          textarea.value = inputDef.defaultValue;
+        }
         inputGroup.appendChild(textarea);
       } else if (inputDef.type === 'button') {
         const button = document.createElement('button');
@@ -4577,6 +4801,264 @@ ${indentStr}]`;
       }
     }
 
+    async function executeWalletOperation(category, operationType) {
+      const button = document.getElementById('executeQuery');
+      const originalButtonText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Processing...';
+      
+      const startTime = performance.now();
+      
+      try {
+        const values = getInputValues();
+        let result;
+        
+        updateStatus(`Executing ${operationType}...`, 'loading');
+        
+        switch (operationType) {
+          case 'generateKeyPair':
+            result = await generate_key_pair(currentNetwork);
+            displayResult(JSON.stringify(result, null, 2));
+            updateStatusWithTime('Key pair generated successfully', 'success', startTime);
+            break;
+            
+          case 'generateKeyPairs':
+            result = await generate_key_pairs(currentNetwork, values.count);
+            displayResult(JSON.stringify(result, null, 2));
+            updateStatusWithTime(`${values.count} key pairs generated successfully`, 'success', startTime);
+            break;
+            
+          case 'keyPairFromWif':
+            result = await key_pair_from_wif(values.privateKeyWif);
+            displayResult(JSON.stringify(result, null, 2));
+            updateStatusWithTime('Key pair imported from WIF successfully', 'success', startTime);
+            break;
+            
+          case 'keyPairFromHex':
+            result = await key_pair_from_hex(values.privateKeyHex, currentNetwork);
+            displayResult(JSON.stringify(result, null, 2));
+            updateStatusWithTime('Key pair imported from hex successfully', 'success', startTime);
+            break;
+            
+          case 'pubkeyToAddress':
+            result = await pubkey_to_address(values.pubkeyHex, currentNetwork);
+            displayResult(result);
+            updateStatusWithTime('Address generated successfully', 'success', startTime);
+            break;
+            
+          case 'validateAddress':
+            result = await validate_address(values.address, currentNetwork);
+            displayResult(result ? 'Valid address' : 'Invalid address');
+            updateStatusWithTime(`Address validation completed: ${result ? 'valid' : 'invalid'}`, result ? 'success' : 'warning', startTime);
+            break;
+            
+          case 'signMessage':
+            result = await sign_message(values.message, values.privateKeyWif);
+            displayResult(result);
+            updateStatusWithTime('Message signed successfully', 'success', startTime);
+            break;
+            
+          case 'derivationPathBip44':
+            // This now derives from seed
+            if (!values.seedPhrase) {
+              throw new Error('Seed phrase is required');
+            }
+            
+            // Derive key from seed phrase
+            result = await derive_key_from_seed_phrase(values.seedPhrase, values.passphrase || undefined, currentNetwork);
+            
+            // Add derivation path info to result
+            const changeValue = values.change ? 1 : 0;
+            const pathInfo = {
+              ...result,
+              derivationPath: `m/44'/${currentNetwork === 'mainnet' ? '5' : '1'}'/${values.account}'/${changeValue}/${values.index}`,
+              account: values.account,
+              change: changeValue,
+              index: values.index
+            };
+            
+            displayResult(JSON.stringify(pathInfo, null, 2));
+            updateStatusWithTime('Key derived from seed phrase successfully', 'success', startTime);
+            break;
+            
+          case 'derivationPathDip9':
+            if (currentNetwork === 'mainnet') {
+              result = await derivation_path_dip9_mainnet(values.featureType, values.account, values.index);
+            } else {
+              result = await derivation_path_dip9_testnet(values.featureType, values.account, values.index);
+            }
+            displayResult(JSON.stringify(result, null, 2));
+            updateStatusWithTime(`DIP9 ${currentNetwork} path created`, 'success', startTime);
+            break;
+            
+          case 'enteredPath':
+            // Derive key from custom path
+            const pathStr = values.path.trim();
+            const seedPhrase = values.seedPhrase.trim();
+            
+            if (!seedPhrase) {
+              throw new Error('Please enter a seed phrase');
+            }
+            
+            // Validate mnemonic
+            if (!validate_mnemonic(seedPhrase)) {
+              throw new Error('Invalid seed phrase');
+            }
+            
+            try {
+              // Use the new flexible path derivation function
+              result = await derive_key_from_seed_with_path(
+                seedPhrase,
+                values.passphrase || undefined,
+                pathStr,
+                currentNetwork
+              );
+              
+              displayResult(JSON.stringify(result, null, 2));
+              updateStatusWithTime(`Key derived for path ${pathStr}`, 'success', startTime);
+            } catch (deriveError) {
+              throw new Error(`Failed to derive key: ${deriveError.message}`);
+            }
+            break;
+            
+          case 'derivationPathDip13':
+            // DIP13 Identity key derivation
+            const dip13SeedPhrase = values.seedPhrase.trim();
+            
+            if (!dip13SeedPhrase) {
+              throw new Error('Please enter a seed phrase');
+            }
+            
+            // Validate mnemonic
+            if (!validate_mnemonic(dip13SeedPhrase)) {
+              throw new Error('Invalid seed phrase');
+            }
+            
+            // Build DIP13 path based on sub-feature
+            // m / 9' / coin_type' / 5' / sub_feature' / ...
+            const coinType = currentNetwork === 'mainnet' ? 5 : 1;
+            const subFeature = parseInt(values.subFeature);
+            let dip13Path;
+            
+            switch (subFeature) {
+              case 0: // Authentication keys
+                // m / 9' / coin_type' / 5' / 0' / key_type' / identity_index' / key_index'
+                // For now, we'll use ECDSA (0') as key type
+                const keyType = 0; // ECDSA
+                dip13Path = `m/9'/${coinType}'/5'/0'/${keyType}'/${values.identityIndex}'/${values.keyIndex || 0}'`;
+                break;
+              case 1: // Registration Funding keys
+                // m / 9' / coin_type' / 5' / 1' / identity_index
+                dip13Path = `m/9'/${coinType}'/5'/1'/${values.identityIndex}`;
+                break;
+              case 2: // Top Up Funding keys
+                // m / 9' / coin_type' / 5' / 2' / funding_index
+                dip13Path = `m/9'/${coinType}'/5'/2'/${values.identityIndex}`;
+                break;
+              case 3: // Invitation Funding keys
+                // m / 9' / coin_type' / 5' / 3' / funding_index'
+                dip13Path = `m/9'/${coinType}'/5'/3'/${values.identityIndex}'`;
+                break;
+              default:
+                throw new Error('Invalid sub-feature selected');
+            }
+            
+            try {
+              // Derive key using the constructed DIP13 path
+              console.log('Calling derive_key_from_seed_with_path with:', {
+                seedPhrase: dip13SeedPhrase.substring(0, 20) + '...',
+                passphrase: values.passphrase ? 'provided' : 'none',
+                path: dip13Path,
+                network: currentNetwork
+              });
+              
+              const rawResult = derive_key_from_seed_with_path(
+                dip13SeedPhrase,
+                values.passphrase || undefined,
+                dip13Path,
+                currentNetwork
+              );
+              
+              console.log('Raw result (before await):', rawResult);
+              
+              result = await rawResult;
+              
+              // Debug: log what we actually received
+              console.log('DIP13 derive_key_from_seed_with_path result (after await):', result);
+              console.log('Result type:', typeof result);
+              console.log('Result keys:', result ? Object.keys(result) : 'null');
+              
+              // If result is still not right, let's try to display it as is first
+              if (!result) {
+                throw new Error('derive_key_from_seed_with_path returned null/undefined');
+              }
+              
+              // Create a combined result with both key info and DIP13 info
+              const dip13KeyType = ['Authentication', 'Registration Funding', 'Top Up Funding', 'Invitation Funding'][subFeature];
+              
+              // Try to display the raw result first to see what we have
+              console.log('Attempting to display raw result first...');
+              displayResult(JSON.stringify(result, null, 2));
+              
+              // Now let's try to add DIP13 info
+              setTimeout(() => {
+                try {
+                  const enrichedResult = {
+                    ...result,
+                    dip13Info: {
+                      keyType: dip13KeyType,
+                      identityIndex: values.identityIndex,
+                      keyIndex: subFeature === 0 ? (values.keyIndex || 0) : undefined,
+                      purpose: "DIP13 - Identities in HD Wallets"
+                    }
+                  };
+                  
+                  console.log('Enriched result:', enrichedResult);
+                  displayResult(JSON.stringify(enrichedResult, null, 2));
+                  updateStatusWithTime(`DIP13 ${dip13KeyType} key derived for identity ${values.identityIndex}`, 'success', startTime);
+                } catch (enrichError) {
+                  console.error('Error enriching result:', enrichError);
+                }
+              }, 100);
+            } catch (deriveError) {
+              throw new Error(`Failed to derive DIP13 key: ${deriveError.message}`);
+            }
+            break;
+            
+          case 'generateSeed':
+            // Generate mnemonic based on word count and language
+            const wordCount = parseInt(values.wordCount, 10) || 12;
+            const language = values.language || undefined;
+            try {
+              const mnemonic = await generate_mnemonic(wordCount, language);
+              const result = {
+                mnemonic: mnemonic,
+                wordCount: wordCount,
+                language: language || 'en',
+                warning: '⚠️ This is a cryptographically secure seed phrase. Store it safely and never share it!'
+              };
+              displayResult(JSON.stringify(result, null, 2));
+              updateStatusWithTime(`${wordCount}-word seed phrase generated successfully`, 'success', startTime);
+            } catch (error) {
+              throw new Error(`Failed to generate seed: ${error.message || error}`);
+            }
+            break;
+            
+          default:
+            displayResult(`Wallet operation ${operationType} not implemented`, true);
+            updateStatus(`Wallet operation ${operationType} not implemented`, 'error');
+        }
+        
+      } catch (error) {
+        console.error(`Error executing wallet operation ${operationType}:`, error);
+        displayResult(`Error: ${error.message || error}`, true);
+        updateStatus(`Error: ${error.message || error}`, 'error');
+      } finally {
+        button.disabled = false;
+        button.textContent = originalButtonText;
+      }
+    }
+
     // Event handlers
     document.getElementById('operationType').addEventListener('change', (e) => {
       const operationType = e.target.value;
@@ -4600,6 +5082,14 @@ ${indentStr}]`;
       } else if (operationType === 'transitions') {
         // Populate transition categories
         Object.entries(stateTransitionDefinitions).forEach(([key, category]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = category.label;
+          categorySelect.appendChild(option);
+        });
+      } else if (operationType === 'wallet') {
+        // Populate wallet categories
+        Object.entries(walletDefinitions).forEach(([key, category]) => {
           const option = document.createElement('option');
           option.value = key;
           option.textContent = category.label;
@@ -4658,6 +5148,14 @@ ${indentStr}]`;
           
           queryTypeSelect.appendChild(option);
         });
+      } else if (operationType === 'wallet' && category && walletDefinitions[category]) {
+        // Populate wallet operation types
+        Object.entries(walletDefinitions[category].operations).forEach(([key, operation]) => {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = operation.label;
+          queryTypeSelect.appendChild(option);
+        });
       }
     });
 
@@ -4679,6 +5177,8 @@ ${indentStr}]`;
         definition = queryDefinitions[category].queries[queryType];
       } else if (operationType === 'transitions' && queryType && category && stateTransitionDefinitions[category]?.transitions[queryType]) {
         definition = stateTransitionDefinitions[category].transitions[queryType];
+      } else if (operationType === 'wallet' && queryType && category && walletDefinitions[category]?.operations[queryType]) {
+        definition = walletDefinitions[category].operations[queryType];
       }
       
       if (definition) {
@@ -4726,7 +5226,13 @@ ${indentStr}]`;
         }
         
         // Update button text based on operation type
-        executeButton.textContent = operationType === 'transitions' ? 'Execute' : 'Execute Query';
+        if (operationType === 'transitions') {
+          executeButton.textContent = 'Execute';
+        } else if (operationType === 'wallet') {
+          executeButton.textContent = 'View';
+        } else {
+          executeButton.textContent = 'Execute Query';
+        }
         
         // Update authentication labels for masternode vote
         if (operationType === 'transitions' && (queryType === 'masternodeVote' || queryType === 'dpnsUsername')) {
@@ -4784,6 +5290,8 @@ ${indentStr}]`;
         await executeQuery(category, queryType);
       } else if (operationType === 'transitions') {
         await executeStateTransition(category, queryType);
+      } else if (operationType === 'wallet') {
+        await executeWalletOperation(category, queryType);
       }
     });
 

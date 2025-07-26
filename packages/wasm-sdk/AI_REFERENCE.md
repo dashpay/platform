@@ -1117,6 +1117,144 @@ const identityIds = ["id1", "id2", "id3"];
 const balances = await sdk.getIdentitiesBalances(identityIds);
 ```
 
+## Wallet Functions
+
+The WASM SDK provides comprehensive wallet functionality including BIP39 mnemonic generation, key derivation, and address management.
+
+### Mnemonic Generation
+
+#### Generate BIP39 Mnemonic
+```javascript
+// Generate a cryptographically secure BIP39 mnemonic
+const mnemonic = await generate_mnemonic(12); // 12, 15, 18, 21, or 24 words
+console.log("Generated mnemonic:", mnemonic);
+
+// With language (currently only English is supported)
+const mnemonicEn = await generate_mnemonic(24, "en");
+```
+
+#### Validate Mnemonic
+```javascript
+// Validate a BIP39 mnemonic phrase
+const isValid = await validate_mnemonic("your twelve word seed phrase");
+// Returns: true if valid BIP39 mnemonic
+
+// With language validation
+const isValidEn = await validate_mnemonic("your seed phrase", "en");
+```
+
+#### Mnemonic to Seed
+```javascript
+// Convert mnemonic to BIP39 seed (512-bit)
+const seedBytes = await mnemonic_to_seed(
+  "your twelve word seed phrase",
+  "optional_passphrase" // Optional BIP39 passphrase
+);
+// Returns: Uint8Array of seed bytes
+```
+
+### Key Derivation
+
+#### Derive Key from Seed Phrase
+```javascript
+// Derive a key from BIP39 seed phrase
+// Note: Uses simplified derivation (first 32 bytes of seed)
+// TODO: Implement full BIP32/BIP44 HD derivation
+const keyPair = await derive_key_from_seed_phrase(
+  "your twelve word seed phrase",
+  "optional_passphrase", // Optional BIP39 passphrase
+  "testnet" // or "mainnet"
+);
+// Returns: { privateKeyWif, privateKeyHex, publicKey, address, network }
+```
+
+### Key Generation
+
+#### Generate Random Key Pair
+```javascript
+const keyPair = await generate_key_pair("mainnet"); // or "testnet"
+// Returns:
+// {
+//   private_key_wif: "XBrZJKc...",
+//   private_key_hex: "1234abcd...",
+//   public_key: "03abcd1234...",
+//   address: "Xr8JKc...",
+//   network: "mainnet"
+// }
+```
+
+#### Generate Multiple Key Pairs
+```javascript
+const keyPairs = await generate_key_pairs("testnet", 5); // Generate 5 key pairs
+// Returns array of key pair objects
+```
+
+#### Import Key from WIF
+```javascript
+const keyPair = await key_pair_from_wif("XBrZJKcW4ajWVNAU6yP87WQog6CjFnpbqyAKgNTZRqmhYvPgMNV2");
+```
+
+#### Import Key from Hex
+```javascript
+const keyPair = await key_pair_from_hex("1234567890abcdef...", "mainnet");
+```
+
+### Address Operations
+
+#### Convert Public Key to Address
+```javascript
+const address = await pubkey_to_address("03abcd1234...", "mainnet");
+```
+
+#### Validate Address
+```javascript
+const isValid = await validate_address("Xr8JKc...", "mainnet");
+// Returns: true or false
+```
+
+### Message Signing
+
+#### Sign a Message
+```javascript
+const signature = await sign_message("Hello, Dash!", "XBrZJKc..."); // WIF private key
+// Returns hex-encoded signature
+```
+
+### Derivation Paths
+
+#### BIP44 Derivation Paths
+```javascript
+// Mainnet: m/44'/5'/account'/change/index
+const pathMainnet = await derivation_path_bip44_mainnet(0, 0, 0); // account=0, change=0, index=0
+
+// Testnet: m/44'/1'/account'/change/index  
+const pathTestnet = await derivation_path_bip44_testnet(0, 0, 0);
+
+// Returns:
+// {
+//   purpose: 44,
+//   coin_type: 5, // or 1 for testnet
+//   account: 0,
+//   change: 0,
+//   index: 0
+// }
+```
+
+#### DIP9 Derivation Paths (Dash-specific)
+```javascript
+// DIP9 is used for special Dash features
+const pathDip9 = await derivation_path_dip9_mainnet(9, 0, 0); // feature_type=9, account=0, index=0
+```
+
+### Notes on Wallet Functions
+
+1. **BIP39 Support**: The WASM SDK uses the `bip39` crate for proper mnemonic generation and validation
+2. **Language Support**: Currently only English is supported for mnemonics
+3. **HD Derivation**: The current implementation uses a simplified approach (first 32 bytes of seed). Full BIP32/BIP44 HD derivation is planned
+4. **Private Keys**: Always keep private keys secure and never expose them in logs or UI
+5. **WIF Format**: Wallet Import Format is the standard for Dash private keys
+6. **Networks**: Always specify the correct network (mainnet/testnet) to avoid address mismatches
+
 ## Important Notes
 
 1. **Network Endpoints**: 

@@ -8,6 +8,7 @@ and generates both user documentation (HTML) and AI reference (Markdown)
 import os
 import re
 import json
+import html as html_lib
 import html
 from pathlib import Path
 from datetime import datetime
@@ -333,34 +334,34 @@ def extract_inputs(inputs_str):
 
 def generate_sidebar_entries(definitions, type_prefix, section_class=""):
     """Generate sidebar entries for queries or transitions"""
-    html = ""
+    html_content = ""
     for cat_key, category in definitions.items():
-        html += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
+        html_content += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
         items = category.get('queries' if type_prefix == 'query' else 'transitions', {})
         for item_key in items:
             item = items[item_key]
-            html += f'            <li style="margin-left: 20px;"><a href="#{type_prefix}-{item_key}">{item.get("label", item_key)}</a></li>\n'
-    return html
+            html_content += f'            <li style="margin-left: 20px;"><a href="#{type_prefix}-{item_key}">{item.get("label", item_key)}</a></li>\n'
+    return html_content
 
 def generate_operation_docs(definitions, type_name, type_prefix):
     """Generate documentation for operations (queries or transitions)"""
-    html = ""
+    html_content = ""
     for cat_key, category in definitions.items():
-        html += f'''\n    <div class="category">
+        html_content += f'''\n    <div class="category">
         <h3>{category.get('label', cat_key)}</h3>
 '''
         
         items_key = 'queries' if type_prefix == 'query' else 'transitions'
         items = category.get(items_key, {})
         for item_key, item in items.items():
-            html += generate_operation_entry(item_key, item, type_prefix)
+            html_content += generate_operation_entry(item_key, item, type_prefix)
         
-        html += '    </div>'
-    return html
+        html_content += '    </div>'
+    return html_content
 
 def generate_operation_entry(operation_key, operation, type_prefix):
     """Generate documentation for a single operation"""
-    html = f'''        <div class="operation">
+    html_content = f'''        <div class="operation">
             <h4 id="{type_prefix}-{operation_key}">{operation.get('label', operation_key)}</h4>
             <p class="description">{operation.get('description', 'No description available')}</p>
             
@@ -370,12 +371,12 @@ def generate_operation_entry(operation_key, operation, type_prefix):
     
     inputs = operation.get('inputs', [])
     if not inputs:
-        html += '                <p class="param-optional">No parameters required</p>'
+        html_content += '                <p class="param-optional">No parameters required</p>'
     else:
         for param in inputs:
-            html += generate_parameter_entry(param)
+            html_content += generate_parameter_entry(param)
     
-    html += '''            </div>
+    html_content += '''            </div>
             
             <div class="example-container">
                 <h5>Example</h5>
@@ -383,56 +384,56 @@ def generate_operation_entry(operation_key, operation, type_prefix):
     
     if type_prefix == 'query':
         example_code = generate_example_code(operation_key, inputs)
-        html += f'                <div class="example-code" id="code-{operation_key}">{example_code}</div>\n'
+        html_content += f'                <div class="example-code" id="code-{operation_key}">{example_code}</div>\n'
         
         # Special handling for certain operations
         if operation_key == 'waitForStateTransitionResult':
-            html += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
+            html_content += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
         else:
-            html += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
+            html_content += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
             if operation_key in ['getPathElements', 'getDataContractHistory', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
-                html += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
+                html_content += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
         
         # Add special examples and info
         if operation_key == 'getIdentityKeys':
-            html += '''\n                <div class="example-container">
+            html_content += '''\n                <div class="example-container">
                     <h5>Example 2 - Get Specific Keys</h5>
                     <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
 <button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
                     <div class="example-result" id="result-getIdentityKeys2"></div>
                 </div>'''
         elif operation_key == 'getPathElements':
-            html += generate_path_elements_info()
+            html_content += generate_path_elements_info()
         
-        html += f'\n                <div class="example-result" id="result-{operation_key}"></div>'
+        html_content += f'\n                <div class="example-result" id="result-{operation_key}"></div>'
     else:
         # State transitions don't have run buttons
-        html += f'                <div class="example-code">{generate_transition_example(operation_key)}</div>'
+        html_content += f'                <div class="example-code">{generate_transition_example(operation_key)}</div>'
     
-    html += '''            </div>
+    html_content += '''            </div>
         </div>
 '''
-    return html
+    return html_content
 
 def generate_parameter_entry(param):
     """Generate documentation for a single parameter"""
     required_text = '<span class="param-required">(required)</span>' if param.get('required', False) else '<span class="param-optional">(optional)</span>'
-    html = f'''                <div class="parameter">
+    html_content = f'''                <div class="parameter">
                     <span class="param-name">{param.get('label', param.get('name', 'Unknown'))}</span>
                     <span class="param-type">{param.get('type', 'text')}</span>
                     {required_text}
 '''
     if param.get('placeholder'):
-        html += f'                    <br><small>Example: {html.escape(param.get("placeholder"))}</small>\n'
+        html_content += f'                    <br><small>Example: {html_lib.escape(param.get("placeholder"))}</small>\n'
     elif param.get('name') == 'limit' and not param.get('required', False):
-        html += '                    <br><small>Default: 100 (maximum items returned if not specified)</small>\n'
+        html_content += '                    <br><small>Default: 100 (maximum items returned if not specified)</small>\n'
     if param.get('options'):
-        html += '                    <br><small>Options: '
+        html_content += '                    <br><small>Options: '
         opts = [f'{opt.get("label", opt.get("value"))}' for opt in param.get('options', [])]
-        html += ', '.join(opts)
-        html += '</small>\n'
-    html += '                </div>\n'
-    return html
+        html_content += ', '.join(opts)
+        html_content += '</small>\n'
+    html_content += '                </div>\n'
+    return html_content
 
 def generate_transition_example(trans_key):
     """Generate example code for state transitions"""
