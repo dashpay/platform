@@ -116,7 +116,7 @@
                 log(`Calculating token ID for contract: ${contractId}, position: ${position}`);
                 const tokenId = wasmSdk.calculate_token_id_from_contract(contractId, position);
                 
-                resultElement.innerHTML = `Token ID: ${tokenId}\n\nContract: ${contractId}\nPosition: ${position}`;
+                resultElement.textContent = `Token ID: ${tokenId}\n\nContract: ${contractId}\nPosition: ${position}`;
                 resultElement.className = 'success';
                 log(`Token ID calculated: ${tokenId}`);
             } catch (error) {
