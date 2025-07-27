@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-07-27T07:31:35.568603",
+  "generated_at": "2025-07-27T13:06:04.539212",
   "queries": {
     "getIdentity": {
       "category": "identity",
@@ -260,6 +260,22 @@
       "documented": true
     },
     "tokenMint": {
+      "category": "token",
+      "documented": true
+    },
+    "tokenClaim": {
+      "category": "token",
+      "documented": true
+    },
+    "tokenSetPriceForDirectPurchase": {
+      "category": "token",
+      "documented": true
+    },
+    "tokenDirectPurchase": {
+      "category": "token",
+      "documented": true
+    },
+    "tokenConfigUpdate": {
       "category": "token",
       "documented": true
     },

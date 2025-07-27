@@ -1347,7 +1347,6 @@
               { name: "contractId", type: "text", label: "Data Contract ID", required: true },
               { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
               { name: "amount", type: "text", label: "Amount to Burn", required: true },
-              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
               { name: "publicNote", type: "text", label: "Public Note", required: false }
             ]
           },
@@ -1358,8 +1357,71 @@
               { name: "contractId", type: "text", label: "Data Contract ID", required: true },
               { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
               { name: "amount", type: "text", label: "Amount to Mint", required: true },
-              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
               { name: "issuedToIdentityId", type: "text", label: "Issue To Identity ID", required: false },
+              { name: "publicNote", type: "text", label: "Public Note", required: false }
+            ]
+          },
+          tokenClaim: {
+            label: "Token Claim",
+            description: "Claim tokens from a distribution",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
+              { name: "distributionType", type: "select", label: "Distribution Type", required: true, options: [
+                { value: "perpetual", label: "Perpetual" },
+                { value: "preprogrammed", label: "Pre-programmed" }
+              ]},
+              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
+              { name: "publicNote", type: "text", label: "Public Note", required: false }
+            ]
+          },
+          tokenSetPriceForDirectPurchase: {
+            label: "Token Set Price",
+            description: "Set or update the price for direct token purchases",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
+              { name: "priceType", type: "select", label: "Price Type", required: true, options: [
+                { value: "single", label: "Single Price" },
+                { value: "tiered", label: "Tiered Pricing" }
+              ]},
+              { name: "priceData", type: "text", label: "Price Data (single price or JSON map)", required: false, placeholder: "Leave empty to remove pricing" },
+              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
+              { name: "publicNote", type: "text", label: "Public Note", required: false }
+            ]
+          },
+          tokenDirectPurchase: {
+            label: "Token Direct Purchase",
+            description: "Purchase tokens directly at the configured price",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
+              { name: "amount", type: "text", label: "Amount to Purchase", required: true },
+              { name: "totalAgreedPrice", type: "text", label: "Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided", required: false },
+              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true }
+            ]
+          },
+          tokenConfigUpdate: {
+            label: "Token Config Update",
+            description: "Update token configuration settings",
+            inputs: [
+              { name: "contractId", type: "text", label: "Data Contract ID", required: true },
+              { name: "tokenPosition", type: "number", label: "Token Contract Position", required: true },
+              { name: "configItemType", type: "select", label: "Config Item Type", required: true, options: [
+                { value: "conventions", label: "Conventions" },
+                { value: "max_supply", label: "Max Supply" },
+                { value: "perpetual_distribution", label: "Perpetual Distribution" },
+                { value: "new_tokens_destination_identity", label: "New Tokens Destination Identity" },
+                { value: "minting_allow_choosing_destination", label: "Minting Allow Choosing Destination" },
+                { value: "manual_minting", label: "Manual Minting" },
+                { value: "manual_burning", label: "Manual Burning" },
+                { value: "conventions_control_group", label: "Conventions Control Group" },
+                { value: "conventions_admin_group", label: "Conventions Admin Group" },
+                { value: "max_supply_control_group", label: "Max Supply Control Group" },
+                { value: "max_supply_admin_group", label: "Max Supply Admin Group" }
+              ]},
+              { name: "configValue", type: "text", label: "Config Value (JSON or specific value)", required: true },
+              { name: "keyId", type: "number", label: "Key ID (for signing)", required: true },
               { name: "publicNote", type: "text", label: "Public Note", required: false }
             ]
           },
@@ -4256,7 +4318,6 @@ ${indentStr}]`;
             values.amount,
             identityId,
             privateKey,
-            Number(values.keyId),
             values.issuedToIdentityId || null,
             values.publicNote || null
           );
@@ -4269,11 +4330,56 @@ ${indentStr}]`;
             values.amount,
             identityId,
             privateKey,
-            Number(values.keyId),
             values.publicNote || null
           );
           displayResult(JSON.stringify(result, null, 2));
           updateStatusWithTime('Token burn executed successfully', 'success', startTime);
+        } else if (transitionType === 'tokenClaim') {
+          result = await sdk.tokenClaim(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.distributionType,
+            identityId,
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Token claim executed successfully', 'success', startTime);
+        } else if (transitionType === 'tokenSetPriceForDirectPurchase') {
+          result = await sdk.tokenSetPriceForDirectPurchase(
+            values.contractId,
+            Number(values.tokenPosition),
+            identityId,
+            values.priceType,
+            values.priceData || '',
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Token price updated successfully', 'success', startTime);
+        } else if (transitionType === 'tokenDirectPurchase') {
+          result = await sdk.tokenDirectPurchase(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.amount,
+            identityId,
+            values.totalAgreedPrice || null,  // Pass null if not provided
+            privateKey
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Token purchase executed successfully', 'success', startTime);
+        } else if (transitionType === 'tokenConfigUpdate') {
+          result = await sdk.tokenConfigUpdate(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.configItemType,
+            values.configValue,
+            identityId,
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Token configuration updated successfully', 'success', startTime);
         } else if (transitionType === 'documentCreate') {
           // Collect document fields from dynamic inputs
           const documentData = collectDocumentFields();

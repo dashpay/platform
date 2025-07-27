@@ -929,6 +929,10 @@
             <li class="category">Token Transitions</li>
             <li style="margin-left: 20px;"><a href="#transition-tokenBurn">Token Burn</a></li>
             <li style="margin-left: 20px;"><a href="#transition-tokenMint">Token Mint</a></li>
+            <li style="margin-left: 20px;"><a href="#transition-tokenClaim">Token Claim</a></li>
+            <li style="margin-left: 20px;"><a href="#transition-tokenSetPriceForDirectPurchase">Token Set Price</a></li>
+            <li style="margin-left: 20px;"><a href="#transition-tokenDirectPurchase">Token Direct Purchase</a></li>
+            <li style="margin-left: 20px;"><a href="#transition-tokenConfigUpdate">Token Config Update</a></li>
             <li style="margin-left: 20px;"><a href="#transition-tokenTransfer">Token Transfer</a></li>
             <li style="margin-left: 20px;"><a href="#transition-tokenFreeze">Token Freeze</a></li>
             <li style="margin-left: 20px;"><a href="#transition-tokenUnfreeze">Token Unfreeze</a></li>
@@ -2880,6 +2884,168 @@
             <div class="example-container">
                 <h5>Example</h5>
                 <div class="example-code">const result = await sdk.tokenMint(identityHex, /* params */, privateKeyHex);</div>            </div>
+        </div>
+        <div class="operation">
+            <h4 id="transition-tokenClaim">Token Claim</h4>
+            <p class="description">Claim tokens from a distribution</p>
+            
+            <div class="parameters">
+                <h5>Parameters:</h5>
+                <div class="parameter">
+                    <span class="param-name">Data Contract ID</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Token Contract Position</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Distribution Type</span>
+                    <span class="param-type">select</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>Options: Perpetual, Pre-programmed</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Key ID (for signing)</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Public Note</span>
+                    <span class="param-type">text</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example</h5>
+                <div class="example-code">const result = await sdk.tokenClaim(identityHex, /* params */, privateKeyHex);</div>            </div>
+        </div>
+        <div class="operation">
+            <h4 id="transition-tokenSetPriceForDirectPurchase">Token Set Price</h4>
+            <p class="description">Set or update the price for direct token purchases</p>
+            
+            <div class="parameters">
+                <h5>Parameters:</h5>
+                <div class="parameter">
+                    <span class="param-name">Data Contract ID</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Token Contract Position</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Price Type</span>
+                    <span class="param-type">select</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>Options: Single Price, Tiered Pricing</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Price Data (single price or JSON map)</span>
+                    <span class="param-type">text</span>
+                    <span class="param-optional">(optional)</span>
+                    <br><small>Example: Leave empty to remove pricing</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Key ID (for signing)</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Public Note</span>
+                    <span class="param-type">text</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example</h5>
+                <div class="example-code">const result = await sdk.tokenSetPriceForDirectPurchase(identityHex, /* params */, privateKeyHex);</div>            </div>
+        </div>
+        <div class="operation">
+            <h4 id="transition-tokenDirectPurchase">Token Direct Purchase</h4>
+            <p class="description">Purchase tokens directly at the configured price</p>
+            
+            <div class="parameters">
+                <h5>Parameters:</h5>
+                <div class="parameter">
+                    <span class="param-name">Data Contract ID</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Token Contract Position</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Amount to Purchase</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Total Agreed Price (in credits)</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Key ID (for signing)</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example</h5>
+                <div class="example-code">const result = await sdk.tokenDirectPurchase(identityHex, /* params */, privateKeyHex);</div>            </div>
+        </div>
+        <div class="operation">
+            <h4 id="transition-tokenConfigUpdate">Token Config Update</h4>
+            <p class="description">Update token configuration settings</p>
+            
+            <div class="parameters">
+                <h5>Parameters:</h5>
+                <div class="parameter">
+                    <span class="param-name">Data Contract ID</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Token Contract Position</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Config Item Type</span>
+                    <span class="param-type">select</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>Options: No Change, Conventions, Max Supply, Perpetual Distribution, New Tokens Destination Identity, Minting Allow Choosing Destination, Manual Minting, Manual Burning, Conventions Control Group, Conventions Admin Group, Max Supply Control Group, Max Supply Admin Group</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Config Value (JSON or specific value)</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Key ID (for signing)</span>
+                    <span class="param-type">number</span>
+                    <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Public Note</span>
+                    <span class="param-type">text</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example</h5>
+                <div class="example-code">const result = await sdk.tokenConfigUpdate(identityHex, /* params */, privateKeyHex);</div>            </div>
         </div>
         <div class="operation">
             <h4 id="transition-tokenTransfer">Token Transfer</h4>

@@ -10,6 +10,122 @@ use dash_sdk::dpp::tokens::status::TokenStatus;
 use dash_sdk::dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
 use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+use dash_sdk::dpp::tokens::calculate_token_id;
+
+/// Calculate token ID from contract ID and token position
+/// 
+/// This function calculates the unique token ID based on a data contract ID
+/// and the position of the token within that contract.
+/// 
+/// # Arguments
+/// * `contract_id` - The data contract ID in base58 format
+/// * `token_position` - The position of the token in the contract (0-indexed)
+/// 
+/// # Returns
+/// The calculated token ID in base58 format
+/// 
+/// # Example
+/// ```javascript
+/// const tokenId = await sdk.calculateTokenId("Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", 0);
+/// ```
+#[wasm_bindgen]
+pub fn calculate_token_id_from_contract(contract_id: &str, token_position: u16) -> Result<String, JsError> {
+    // Parse contract ID
+    let contract_identifier = Identifier::from_string(
+        contract_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Calculate token ID
+    let token_id = Identifier::from(calculate_token_id(
+        contract_identifier.as_bytes(),
+        token_position,
+    ));
+    
+    // Return as base58 string
+    Ok(token_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58))
+}
+
+/// Get the current price of a token by contract ID and position
+/// 
+/// This is a convenience function that calculates the token ID from the contract ID
+/// and position, then fetches the current pricing schedule for that token.
+/// 
+/// # Arguments
+/// * `sdk` - The WasmSdk instance
+/// * `contract_id` - The data contract ID in base58 format
+/// * `token_position` - The position of the token in the contract (0-indexed)
+/// 
+/// # Returns
+/// An object containing:
+/// - `tokenId`: The calculated token ID
+/// - `currentPrice`: The current price of the token
+/// - `basePrice`: The base price of the token (may be same as current for single price)
+/// 
+/// # Example
+/// ```javascript
+/// const priceInfo = await sdk.getTokenPriceByContract(
+///     sdk,
+///     "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
+///     0
+/// );
+/// console.log(`Token ${priceInfo.tokenId} current price: ${priceInfo.currentPrice}`);
+/// ```
+#[wasm_bindgen]
+pub async fn get_token_price_by_contract(
+    sdk: &WasmSdk,
+    contract_id: &str,
+    token_position: u16,
+) -> Result<JsValue, JsError> {
+    // Calculate token ID
+    let token_id_string = calculate_token_id_from_contract(contract_id, token_position)?;
+    
+    // Parse token ID for the query
+    let token_identifier = Identifier::from_string(
+        &token_id_string,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Fetch token prices
+    let prices_result: drive_proof_verifier::types::TokenDirectPurchasePrices = 
+        TokenPricingSchedule::fetch_many(sdk.as_ref(), &[token_identifier][..])
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch token price: {}", e)))?;
+    
+    // Extract price information
+    if let Some(price_opt) = prices_result.get(&token_identifier) {
+        if let Some(schedule) = price_opt.as_ref() {
+            let (base_price, current_price) = match &schedule {
+                dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(price) => {
+                    (price.to_string(), price.to_string())
+                },
+                dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(prices) => {
+                    // Use first price as base, last as current
+                    let base = prices.first_key_value()
+                        .map(|(_, p)| p.to_string())
+                        .unwrap_or_else(|| "0".to_string());
+                    let current = prices.last_key_value()
+                        .map(|(_, p)| p.to_string())
+                        .unwrap_or_else(|| "0".to_string());
+                    (base, current)
+                },
+            };
+            
+            let response = TokenPriceResponse {
+                token_id: token_id_string,
+                current_price,
+                base_price,
+            };
+            
+            serde_wasm_bindgen::to_value(&response)
+                .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        } else {
+            Err(JsError::new(&format!("No pricing schedule found for token at contract {} position {}", contract_id, token_position)))
+        }
+    } else {
+        Err(JsError::new(&format!("Token not found at contract {} position {}", contract_id, token_position)))
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

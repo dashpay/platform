@@ -78,7 +78,7 @@ impl WasmSdk {
     }
     
     /// Find authentication key matching the provided private key
-    fn find_authentication_key<'a>(
+    pub(crate) fn find_authentication_key<'a>(
         identity: &'a dash_sdk::platform::Identity,
         private_key_wif: &str,
     ) -> Result<(u32, &'a IdentityPublicKey), JsValue> {
@@ -144,7 +144,7 @@ impl WasmSdk {
     }
     
     /// Create a signer from WIF private key
-    fn create_signer_from_wif(
+    pub(crate) fn create_signer_from_wif(
         private_key_wif: &str,
         network: dash_sdk::dpp::dashcore::Network,
     ) -> Result<SingleKeySigner, JsValue> {
