@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test DIP13 Key Derivation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test DIP13 Key Derivation</h1>
+    
+    <div class="test-section">
+        <h2>Test Direct DIP13 Path Derivation</h2>
+        <button onclick="testDIP13()">Test DIP13 Authentication Key</button>
+        <button onclick="testDIP13Registration()">Test DIP13 Registration Funding</button>
+        <div id="result"></div>
+    </div>
+
+    <script type="module">
+        import init, { 
+            generate_mnemonic, 
+            validate_mnemonic,
+            derive_key_from_seed_with_path
+        } from './pkg/wasm_sdk.js';
+
+        await init();
+
+        const testSeed = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+        window.testDIP13 = async function() {
+            try {
+                // Test DIP13 Authentication key path
+                // m / 9' / 5' / 5' / 0' / 0' / 0' / 0'
+                const path = "m/9'/5'/5'/0'/0'/0'/0'";
+                
+                console.log("Testing path:", path);
+                console.log("With seed:", testSeed);
+                
+                const result = await derive_key_from_seed_with_path(
+                    testSeed,
+                    undefined,
+                    path,
+                    "mainnet"
+                );
+                
+                console.log("Raw result:", result);
+                
+                // Test adding dip13Info
+                result.dip13Info = {
+                    keyType: 'Authentication',
+                    identityIndex: 0,
+                    keyIndex: 0,
+                    purpose: "DIP13 - Identities in HD Wallets"
+                };
+                
+                console.log("Result with dip13Info:", result);
+                
+                document.getElementById('result').innerHTML = `
+                    <div class="success">✅ DIP13 Authentication Key Derived:</div>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('result').innerHTML = `
+                    <div class="error">❌ Error: ${error.message}</div>
+                `;
+            }
+        };
+
+        window.testDIP13Registration = async function() {
+            try {
+                // Test DIP13 Registration Funding key path
+                // m / 9' / 5' / 5' / 1' / 0
+                const path = "m/9'/5'/5'/1'/0";
+                
+                console.log("Testing path:", path);
+                console.log("With seed:", testSeed);
+                
+                const result = await derive_key_from_seed_with_path(
+                    testSeed,
+                    undefined,
+                    path,
+                    "mainnet"
+                );
+                
+                console.log("Raw result:", result);
+                
+                // Test adding dip13Info
+                result.dip13Info = {
+                    keyType: 'Registration Funding',
+                    identityIndex: 0,
+                    purpose: "DIP13 - Identities in HD Wallets"
+                };
+                
+                console.log("Result with dip13Info:", result);
+                
+                document.getElementById('result').innerHTML = `
+                    <div class="success">✅ DIP13 Registration Funding Key Derived:</div>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('result').innerHTML = `
+                    <div class="error">❌ Error: ${error.message}</div>
+                `;
+            }
+        };
+    </script>
+</body>
+</html>

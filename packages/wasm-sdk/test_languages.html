@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Multi-Language BIP39</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        pre {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Multi-Language BIP39 Support</h1>
+    <div id="results"></div>
+
+    <script type="module">
+        import init, { generate_mnemonic } from './pkg/wasm_sdk.js';
+
+        async function runTests() {
+            await init();
+            
+            const resultsDiv = document.getElementById('results');
+            const languages = [
+                { code: 'en', name: 'English' },
+                { code: 'zh-cn', name: 'Simplified Chinese' },
+                { code: 'zh-tw', name: 'Traditional Chinese' },
+                { code: 'cs', name: 'Czech' },
+                { code: 'fr', name: 'French' },
+                { code: 'it', name: 'Italian' },
+                { code: 'ja', name: 'Japanese' },
+                { code: 'ko', name: 'Korean' },
+                { code: 'pt', name: 'Portuguese' },
+                { code: 'es', name: 'Spanish' }
+            ];
+
+            for (const lang of languages) {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'test-result';
+                
+                try {
+                    // Test 12-word mnemonic
+                    const mnemonic12 = generate_mnemonic(12, lang.code);
+                    const words12 = mnemonic12.split(' ');
+                    
+                    // Test 24-word mnemonic
+                    const mnemonic24 = generate_mnemonic(24, lang.code);
+                    const words24 = mnemonic24.split(' ');
+                    
+                    resultDiv.className += ' success';
+                    resultDiv.innerHTML = `
+                        <h3>✅ ${lang.name} (${lang.code})</h3>
+                        <p><strong>12-word mnemonic (${words12.length} words):</strong></p>
+                        <pre>${mnemonic12}</pre>
+                        <p><strong>24-word mnemonic (${words24.length} words):</strong></p>
+                        <pre>${mnemonic24}</pre>
+                    `;
+                } catch (error) {
+                    resultDiv.className += ' error';
+                    resultDiv.innerHTML = `
+                        <h3>❌ ${lang.name} (${lang.code})</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    `;
+                }
+                
+                resultsDiv.appendChild(resultDiv);
+            }
+
+            // Test invalid language
+            const invalidDiv = document.createElement('div');
+            invalidDiv.className = 'test-result';
+            try {
+                generate_mnemonic(12, 'invalid');
+                invalidDiv.className += ' error';
+                invalidDiv.innerHTML = `<h3>❌ Invalid language test failed - should have thrown error</h3>`;
+            } catch (error) {
+                invalidDiv.className += ' success';
+                invalidDiv.innerHTML = `
+                    <h3>✅ Invalid language test</h3>
+                    <p>Correctly rejected invalid language with error: ${error.message}</p>
+                `;
+            }
+            resultsDiv.appendChild(invalidDiv);
+        }
+
+        runTests().catch(console.error);
+    </script>
+</body>
+</html>
