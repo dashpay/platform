@@ -65,6 +65,16 @@
             derive_key_from_seed_phrase 
         } from './pkg/wasm_sdk.js';
 
+        // Utility function to escape HTML special characters
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         await init();
 
         window.testGenerateMnemonic = function() {
@@ -82,7 +92,7 @@
                 document.getElementById('seed-input').value = mnemonic;
             } catch (error) {
                 document.getElementById('mnemonic-result').innerHTML = `
-                    <div class="error">❌ Error: ${error.message}</div>
+                    <div class="error">❌ Error: ${escapeHtml(error.message)}</div>
                 `;
             }
         };
@@ -102,7 +112,7 @@
                 document.getElementById('seed-input').value = mnemonic;
             } catch (error) {
                 document.getElementById('mnemonic-result').innerHTML = `
-                    <div class="error">❌ Error: ${error.message}</div>
+                    <div class="error">❌ Error: ${escapeHtml(error.message)}</div>
                 `;
             }
         };
@@ -135,7 +145,7 @@
                 `;
             } catch (error) {
                 document.getElementById('bip44-result').innerHTML = `
-                    <div class="error">❌ Error: ${error.message}</div>
+                    <div class="error">❌ Error: ${escapeHtml(error.message)}</div>
                 `;
             }
         };
