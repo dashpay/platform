@@ -13,11 +13,18 @@ const __dirname = dirname(__filename);
 const testFiles = [
     { name: 'SDK Initialization', file: 'sdk-init-simple.test.mjs' },
     { name: 'Key Generation', file: 'key-generation.test.mjs' },
+    { name: 'DIP Derivation', file: 'dip-derivation.test.mjs' },
     { name: 'DPNS Functions', file: 'dpns.test.mjs' },
     { name: 'Utility Functions', file: 'utilities-simple.test.mjs' },
     { name: 'Identity Queries', file: 'identity-queries.test.mjs' },
     { name: 'Document Queries', file: 'document-queries.test.mjs' },
     { name: 'Specialized Queries', file: 'specialized-queries.test.mjs' },
+    { name: 'Voting & Contested Resources', file: 'voting-contested-resources.test.mjs' },
+    { name: 'Token Queries', file: 'token-queries.test.mjs' },
+    { name: 'Group Queries', file: 'group-queries.test.mjs' },
+    { name: 'Epoch & Block Queries', file: 'epoch-block-queries.test.mjs' },
+    { name: 'Protocol & Version Queries', file: 'protocol-version-queries.test.mjs' },
+    { name: 'System & Utility Queries', file: 'system-utility-queries.test.mjs' },
     { name: 'State Transitions', file: 'state-transitions.test.mjs' },
     { name: 'Proof Verification', file: 'proof-verification.test.mjs' }
 ];

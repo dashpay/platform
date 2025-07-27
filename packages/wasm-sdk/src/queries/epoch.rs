@@ -166,42 +166,39 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     epoch: u16,
     ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::ProposerBlockCountById;
+    use drive_proof_verifier::types::{ProposerBlockCountById, ProposerBlockCounts};
     
-    // Silence unused variables since this function is not yet implemented
-    let _ = (sdk, ids);
-    
-    // TODO: Use the SDK's FetchMany trait to get proposer block counts
-    // This would automatically handle proof verification when sdk.prove() is true
-    // Currently commented out due to query format issues - needs investigation
-    /*
-    let proposer_block_counts = ProposerBlockCountById::fetch_many(
-        sdk.as_ref(),
-        (Some(epoch), pro_tx_hashes),
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to fetch evonode proposed blocks by ids: {}", e)))?;
-    
-    // Convert the response to our format
-    let all_counts: Vec<ProposerBlockCount> = proposer_block_counts.0
+    // Parse the ProTxHash strings
+    let pro_tx_hashes: Vec<ProTxHash> = ids
         .into_iter()
-        .map(|(identifier, count)| {
-            // Convert Identifier back to ProTxHash
-            let bytes = identifier.to_buffer();
-            let hash = dash_sdk::dpp::dashcore::hashes::sha256d::Hash::from_slice(&bytes).unwrap();
-            let pro_tx_hash = ProTxHash::from_raw_hash(hash);
-            ProposerBlockCount {
-                proposer_pro_tx_hash: pro_tx_hash.to_string(),
-                count,
-            }
+        .map(|hash_str| {
+            ProTxHash::from_str(&hash_str)
+                .map_err(|e| JsError::new(&format!("Invalid ProTxHash '{}': {}", hash_str, e)))
         })
-        .collect();
-    */
+        .collect::<Result<Vec<_>, _>>()?;
     
-    // For now, return empty results until the proper SDK query format is determined
-    let all_counts: Vec<ProposerBlockCount> = vec![];
+    // Use FetchMany to get block counts for specific IDs
+    let counts = ProposerBlockCountById::fetch_many(sdk.as_ref(), (epoch, pro_tx_hashes))
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to fetch evonode proposed blocks: {}", e)))?;
     
-    serde_wasm_bindgen::to_value(&all_counts)
+    // Convert to response format
+    let mut evonodes_proposed_block_counts = BTreeMap::new();
+    for (identifier, count) in counts.0 {
+        // Convert Identifier to ProTxHash for consistent output format
+        let bytes = identifier.to_buffer();
+        if bytes.len() == 32 {
+            let hash_array: [u8; 32] = bytes.try_into().unwrap();
+            let pro_tx_hash = ProTxHash::from_byte_array(hash_array);
+            evonodes_proposed_block_counts.insert(pro_tx_hash.to_string(), count);
+        }
+    }
+    
+    let response = EvonodesProposedBlocksResponse {
+        evonodes_proposed_block_counts,
+    };
+    
+    serde_wasm_bindgen::to_value(&response)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 

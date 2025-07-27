@@ -1166,6 +1166,8 @@
       mnemonic_to_seed,
       derive_key_from_seed_phrase,
       derive_key_from_seed_with_path,
+      derive_key_from_seed_with_extended_path,
+      derive_dashpay_contact_key,
       derivation_path_dip13_mainnet,
       derivation_path_dip13_testnet,
       derive_child_public_key,
@@ -1536,30 +1538,6 @@
       keyDerivation: {
         label: "Key Derivation",
         operations: {
-          derivationPathBip44: {
-            label: "BIP44 from Seed",
-            description: "⚠️ WARNING: Only use test seeds! Never enter seeds with real funds!",
-            inputs: [
-              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
-                placeholder: "Enter test seed phrase (12-24 words)" },
-              { name: "generateSeedButton", type: "button", label: "Generate Test Seed", 
-                action: "generateTestSeed" },
-              { name: "passphrase", type: "text", label: "Passphrase (optional)", required: false,
-                placeholder: "Optional BIP39 passphrase" },
-              { name: "account", type: "number", label: "Account Index", required: true, min: 0, value: 0 },
-              { name: "change", type: "checkbox", label: "Internal Address (change)", required: false },
-              { name: "index", type: "number", label: "Address Index", required: true, min: 0, value: 0 }
-            ]
-          },
-          derivationPathDip9: {
-            label: "DIP9 Path",
-            description: "Create a DIP9 derivation path",
-            inputs: [
-              { name: "featureType", type: "number", label: "Feature Type", required: true, min: 0 },
-              { name: "account", type: "number", label: "Account Index", required: true, min: 0, value: 0 },
-              { name: "index", type: "number", label: "Address Index", required: true, min: 0, value: 0 }
-            ]
-          },
           enteredPath: {
             label: "Entered Path", 
             description: "Derive a key from a custom BIP32 derivation path",
@@ -1573,6 +1551,21 @@
               { name: "path", type: "text", label: "Derivation Path", required: true, 
                 placeholder: "m/44'/5'/0'/0/0", 
                 help: "Enter any BIP32 derivation path (e.g., m/44'/5'/0'/0/0 or m/9'/5'/0/1/0 or m/13'/5'/0)" }
+            ]
+          },
+          derivationPathBip44: {
+            label: "BIP44 from Seed",
+            description: "⚠️ WARNING: Only use test seeds! Never enter seeds with real funds!",
+            inputs: [
+              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
+                placeholder: "Enter test seed phrase (12-24 words)" },
+              { name: "generateSeedButton", type: "button", label: "Generate Test Seed", 
+                action: "generateTestSeed" },
+              { name: "passphrase", type: "text", label: "Passphrase (optional)", required: false,
+                placeholder: "Optional BIP39 passphrase" },
+              { name: "account", type: "number", label: "Account Index", required: true, min: 0, value: 0 },
+              { name: "change", type: "checkbox", label: "Internal Address (change)", required: false },
+              { name: "index", type: "number", label: "Address Index", required: true, min: 0, value: 0 }
             ]
           },
           derivationPathDip13: {
@@ -1597,6 +1590,30 @@
                 help: "Index of the identity (0 for first identity, 1 for second, etc.)" },
               { name: "keyIndex", type: "number", label: "Key Index", required: false, min: 0, value: 0,
                 help: "For authentication keys only - index of the key (0 for first key, 1 for second, etc.)" }
+            ]
+          },
+          dashpayPath: {
+            label: "DashPay Contact Keys (DIP15)",
+            description: "Derive payment keys between two DashPay users using DIP15",
+            inputs: [
+              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
+                placeholder: "Enter test seed phrase (12-24 words)" },
+              { name: "generateSeedButton", type: "button", label: "Generate Test Seed", 
+                action: "generateTestSeed" },
+              { name: "passphrase", type: "text", label: "Passphrase (optional)", required: false,
+                placeholder: "Optional BIP39 passphrase" },
+              { name: "senderIdentity", type: "text", label: "Sender Identity ID", required: true,
+                placeholder: "e.g., 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+                help: "Your identity ID (the owner of this seed)" },
+              { name: "receiverIdentity", type: "text", label: "Receiver Identity ID", required: true,
+                placeholder: "e.g., 3mFKtDYspCMd8YmXNTB3qzKmbY3Azf4Kx3x8e36V8Gho",
+                help: "The contact's identity ID you want to pay" },
+              { name: "account", type: "number", label: "Account", required: true, min: 0, value: 0,
+                help: "Usually 0 for the first account" },
+              { name: "addressIndex", type: "number", label: "Address Index", required: true, min: 0, value: 0,
+                help: "Index for this contact (0 for first address, increment for new addresses)" },
+              { name: "dipInfo", type: "info", label: "DIP15 Information", 
+                content: "<strong>DIP15 Path Structure:</strong> <code>m/9'/coin'/15'/account'/sender_id/receiver_id/index</code><br><br>This creates deterministic payment addresses between two DashPay users. Each user derives unique addresses for each contact, enabling private payments without sharing keys.<br><br><strong>✅ Full DIP14/DIP15 Support:</strong> This implementation fully supports 256-bit identity IDs in derivation paths." }
             ]
           }
         }
@@ -3226,7 +3243,7 @@ ${indentStr}]`;
       }
     }
 
-    // Dynamic input creation
+// Dynamic input creation
     function createInput(inputDef, container) {
       const inputGroup = document.createElement('div');
       inputGroup.className = 'input-group';
@@ -3414,6 +3431,18 @@ ${indentStr}]`;
         button.className = 'action-button';
         button.onclick = () => window[inputDef.action]();
         inputGroup.appendChild(button);
+      } else if (inputDef.type === 'info') {
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'info-box';
+        infoDiv.style.padding = '10px';
+        infoDiv.style.backgroundColor = '#f0f8ff';
+        infoDiv.style.border = '1px solid #4682b4';
+        infoDiv.style.borderRadius = '4px';
+        infoDiv.style.marginTop = '10px';
+        infoDiv.style.fontSize = '0.9em';
+        infoDiv.innerHTML = inputDef.content || '';
+        infoDiv.id = `info_${inputDef.name}`;
+        inputGroup.appendChild(infoDiv);
       } else if (inputDef.type === 'dynamic') {
         // Container for dynamically generated fields
         const dynamicContainer = document.createElement('div');
@@ -4881,16 +4910,6 @@ ${indentStr}]`;
             updateStatusWithTime('Key derived from seed phrase successfully', 'success', startTime);
             break;
             
-          case 'derivationPathDip9':
-            if (currentNetwork === 'mainnet') {
-              result = await derivation_path_dip9_mainnet(values.featureType, values.account, values.index);
-            } else {
-              result = await derivation_path_dip9_testnet(values.featureType, values.account, values.index);
-            }
-            displayResult(JSON.stringify(result, null, 2));
-            updateStatusWithTime(`DIP9 ${currentNetwork} path created`, 'success', startTime);
-            break;
-            
           case 'enteredPath':
             // Derive key from custom path
             const pathStr = values.path.trim();
@@ -4906,13 +4925,31 @@ ${indentStr}]`;
             }
             
             try {
-              // Use the new flexible path derivation function
-              result = await derive_key_from_seed_with_path(
-                seedPhrase,
-                values.passphrase || undefined,
-                pathStr,
-                currentNetwork
-              );
+              // Check if the path contains identity IDs (hex or base58)
+              const pathParts = pathStr.split('/');
+              const hasIdentityIds = pathParts.some(part => {
+                const cleanPart = part.replace(/['h]$/, ''); // Remove hardened markers
+                // Check for hex (0x...) or base58 (long non-numeric strings)
+                return cleanPart.startsWith('0x') || (cleanPart.length > 10 && !cleanPart.match(/^\d+$/));
+              });
+              
+              if (hasIdentityIds) {
+                // Use the extended path function that supports 256-bit identity IDs
+                result = await derive_key_from_seed_with_extended_path(
+                  seedPhrase,
+                  values.passphrase || undefined,
+                  pathStr,
+                  currentNetwork
+                );
+              } else {
+                // Use regular path function for standard BIP32 paths
+                result = await derive_key_from_seed_with_path(
+                  seedPhrase,
+                  values.passphrase || undefined,
+                  pathStr,
+                  currentNetwork
+                );
+              }
               
               displayResult(JSON.stringify(result, null, 2));
               updateStatusWithTime(`Key derived for path ${pathStr}`, 'success', startTime);
@@ -4921,7 +4958,7 @@ ${indentStr}]`;
             }
             break;
             
-          case 'derivationPathDip13':
+          case 'derivationPathDip13': {
             // DIP13 Identity key derivation
             const dip13SeedPhrase = values.seedPhrase.trim();
             
@@ -5024,6 +5061,51 @@ ${indentStr}]`;
               throw new Error(`Failed to derive DIP13 key: ${deriveError.message}`);
             }
             break;
+          }
+            
+          case 'dashpayPath': {
+            // DIP15 DashPay contact key derivation
+            const dashpaySeedPhrase = values.seedPhrase.trim();
+            
+            if (!dashpaySeedPhrase) {
+              throw new Error('Please enter a seed phrase');
+            }
+            
+            // Validate mnemonic
+            if (!validate_mnemonic(dashpaySeedPhrase)) {
+              throw new Error('Invalid seed phrase');
+            }
+            
+            // Get values
+            const senderIdentity = values.senderIdentity.trim();
+            const receiverIdentity = values.receiverIdentity.trim();
+            const account = parseInt(values.account) || 0;
+            const addressIndex = parseInt(values.addressIndex) || 0;
+            
+            if (!senderIdentity || !receiverIdentity) {
+              throw new Error('Both sender and receiver identity IDs are required');
+            }
+            
+            try {
+              // Use the new derive_dashpay_contact_key function that supports 256-bit identity IDs
+              const result = await derive_dashpay_contact_key(
+                dashpaySeedPhrase,
+                values.passphrase || undefined,
+                senderIdentity,
+                receiverIdentity,
+                account,
+                addressIndex,
+                currentNetwork
+              );
+              
+              // The result already includes DIP15 metadata
+              displayResult(JSON.stringify(result, null, 2));
+              updateStatusWithTime(`DashPay contact key derived for ${receiverIdentity.substring(0, 8)}...`, 'success', startTime);
+            } catch (deriveError) {
+              throw new Error(`Failed to derive DashPay key: ${deriveError.message}`);
+            }
+            break;
+          }
             
           case 'generateSeed':
             // Generate mnemonic based on word count and language
@@ -5211,6 +5293,7 @@ ${indentStr}]`;
                 dependent.style.display = 'none';
               }
             });
+            
           });
         });
         

@@ -60,7 +60,16 @@ console.log(`- Identity: ${TEST_IDENTITY}`);
 console.log(`- DPNS Contract: ${DPNS_CONTRACT}`);
 console.log(`- Token Contract: ${TOKEN_CONTRACT}`);
 
-// Initialize SDK - use trusted builder for WASM (required for proof verification)
+// Initialize SDK - prefetch quorums for trusted mode
+console.log('Prefetching trusted quorums...');
+try {
+    await wasmSdk.prefetch_trusted_quorums_testnet();
+    console.log('Quorums prefetched successfully');
+} catch (error) {
+    console.log('Warning: Could not prefetch quorums:', error.message);
+}
+
+// Use trusted builder as required for WASM
 const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
 const sdk = await builder.build();
 
@@ -241,6 +250,23 @@ await test('get_identity_token_infos', async () => {
     }
 });
 
+await test('get_identities_token_infos', async () => {
+    try {
+        const result = await wasmSdk.get_identities_token_infos(
+            sdk,
+            [TEST_IDENTITY],
+            TOKEN_CONTRACT
+        );
+        console.log(`   Token infos for identities: ${JSON.stringify(result)}`);
+    } catch (error) {
+        if (error.message.includes('network') || error.message.includes('connection')) {
+            console.log('   Expected network error (offline)');
+        } else {
+            throw error;
+        }
+    }
+});
+
 // Public Key Hash Queries
 describe('Public Key Hash Queries');
 
@@ -257,6 +283,24 @@ await test('get_identity_by_public_key_hash - requires valid hash', async () => 
             throw error;
         }
         console.log('   Expected error with invalid hash');
+    }
+});
+
+await test('get_identity_by_non_unique_public_key_hash - requires valid hash', async () => {
+    try {
+        // Example non-unique public key hash from docs
+        const result = await wasmSdk.get_identity_by_non_unique_public_key_hash(
+            sdk,
+            '518038dc858461bcee90478fd994bba8057b7531',
+            null  // start_after parameter (optional)
+        );
+        console.log(`   Found ${result?.length || 0} identities with this public key hash`);
+    } catch (error) {
+        if (error.message.includes('network') || error.message.includes('connection')) {
+            console.log('   Expected network error (offline)');
+        } else {
+            throw error;
+        }
     }
 });
 

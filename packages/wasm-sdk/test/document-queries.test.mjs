@@ -239,6 +239,23 @@ await test('data_contract_fetch_history - DPNS contract history', async () => {
     }
 });
 
+await test('get_data_contracts - fetch multiple contracts', async () => {
+    try {
+        // Note: This function expects Vec<String> in Rust, which should work with JS array
+        const result = await wasmSdk.get_data_contracts(
+            sdk,
+            [DPNS_CONTRACT, 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A']
+        );
+        console.log(`   Found ${result?.length || 0} data contracts`);
+    } catch (error) {
+        if (error.message.includes('network') || error.message.includes('connection')) {
+            console.log('   Expected network error (offline)');
+        } else {
+            throw error;
+        }
+    }
+});
+
 // Token Document Queries
 describe('Token Document Queries');
 

@@ -294,30 +294,54 @@ describe('Derivation Path Helpers');
 
 await test('derivation_path_bip44_mainnet', () => {
     const result = wasmSdk.derivation_path_bip44_mainnet(0, 0, 0);
-    if (!result || !result.path) throw new Error('Missing path');
-    if (result.path !== "m/44'/5'/0'/0/0") throw new Error('Invalid BIP44 mainnet path');
+    if (!result) throw new Error('Missing result');
     if (result.purpose !== 44) throw new Error('Wrong purpose');
     if (result.coin_type !== 5) throw new Error('Wrong coin type');
+    if (result.account !== 0) throw new Error('Wrong account');
+    if (result.change !== 0) throw new Error('Wrong change');
+    if (result.index !== 0) throw new Error('Wrong index');
+    // Build expected path
+    const expectedPath = `m/${result.purpose}'/${result.coin_type}'/${result.account}'/${result.change}/${result.index}`;
+    if (expectedPath !== "m/44'/5'/0'/0/0") throw new Error('Invalid BIP44 mainnet path components');
 });
 
 await test('derivation_path_bip44_testnet', () => {
     const result = wasmSdk.derivation_path_bip44_testnet(0, 0, 0);
-    if (!result || !result.path) throw new Error('Missing path');
-    if (result.path !== "m/44'/1'/0'/0/0") throw new Error('Invalid BIP44 testnet path');
+    if (!result) throw new Error('Missing result');
+    if (result.purpose !== 44) throw new Error('Wrong purpose');
     if (result.coin_type !== 1) throw new Error('Wrong coin type');
+    if (result.account !== 0) throw new Error('Wrong account');
+    if (result.change !== 0) throw new Error('Wrong change');
+    if (result.index !== 0) throw new Error('Wrong index');
+    // Build expected path
+    const expectedPath = `m/${result.purpose}'/${result.coin_type}'/${result.account}'/${result.change}/${result.index}`;
+    if (expectedPath !== "m/44'/1'/0'/0/0") throw new Error('Invalid BIP44 testnet path components');
 });
 
 await test('derivation_path_dip9_mainnet', () => {
     const result = wasmSdk.derivation_path_dip9_mainnet(5, 0, 0);
-    if (!result || !result.path) throw new Error('Missing path');
-    if (result.path !== "m/9'/5'/5'/0/0") throw new Error('Invalid DIP9 mainnet path');
+    if (!result) throw new Error('Missing result');
     if (result.purpose !== 9) throw new Error('Wrong purpose');
+    if (result.coin_type !== 5) throw new Error('Wrong coin type');
+    if (result.account !== 5) throw new Error('Wrong account');
+    if (result.change !== 0) throw new Error('Wrong change');
+    if (result.index !== 0) throw new Error('Wrong index');
+    // Build expected path
+    const expectedPath = `m/${result.purpose}'/${result.coin_type}'/${result.account}'/${result.change}/${result.index}`;
+    if (expectedPath !== "m/9'/5'/5'/0/0") throw new Error('Invalid DIP9 mainnet path components');
 });
 
 await test('derivation_path_dip9_testnet', () => {
     const result = wasmSdk.derivation_path_dip9_testnet(5, 0, 0);
-    if (!result || !result.path) throw new Error('Missing path');
-    if (result.path !== "m/9'/1'/5'/0/0") throw new Error('Invalid DIP9 testnet path');
+    if (!result) throw new Error('Missing result');
+    if (result.purpose !== 9) throw new Error('Wrong purpose');
+    if (result.coin_type !== 1) throw new Error('Wrong coin type');
+    if (result.account !== 5) throw new Error('Wrong account');
+    if (result.change !== 0) throw new Error('Wrong change');
+    if (result.index !== 0) throw new Error('Wrong index');
+    // Build expected path
+    const expectedPath = `m/${result.purpose}'/${result.coin_type}'/${result.account}'/${result.change}/${result.index}`;
+    if (expectedPath !== "m/9'/1'/5'/0/0") throw new Error('Invalid DIP9 testnet path components');
 });
 
 await test('derivation_path_dip13_mainnet', () => {

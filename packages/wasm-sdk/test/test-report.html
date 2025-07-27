@@ -38,29 +38,29 @@
 <body>
     <div class="container">
         <h1>WASM SDK Test Report</h1>
-        <p class="timestamp">Generated: 7/26/2025, 6:29:46 AM</p>
+        <p class="timestamp">Generated: 7/27/2025, 4:14:07 AM</p>
         
         <div class="summary">
             <div class="summary-item total">
                 <h3>Total Tests</h3>
-                <div class="number">98</div>
+                <div class="number">105</div>
             </div>
             <div class="summary-item passed">
                 <h3>Passed</h3>
-                <div class="number">65</div>
+                <div class="number">101</div>
             </div>
             <div class="summary-item failed">
                 <h3>Failed</h3>
-                <div class="number">33</div>
+                <div class="number">4</div>
             </div>
         </div>
         
         <h2>Test Suites</h2>
         
             <div class="suite">
-                <div class="suite-header failed" 
+                <div class="suite-header passed" 
                      onclick="toggleSuite('suite-0')">
-                    SDK Initialization - 9/10 passed (46ms)
+                    SDK Initialization - 10/10 passed (48ms)
                     
                 </div>
                 <div class="suite-body" id="suite-0">
@@ -102,7 +102,7 @@
                             Can derive keys from mnemonic
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             Can validate addresses
                         </div>
                     
@@ -110,9 +110,9 @@
             </div>
         
             <div class="suite">
-                <div class="suite-header failed" 
+                <div class="suite-header passed" 
                      onclick="toggleSuite('suite-1')">
-                    Key Generation - 49/53 passed (64ms)
+                    Key Generation - 53/53 passed (65ms)
                     
                 </div>
                 <div class="suite-body" id="suite-1">
@@ -234,19 +234,19 @@
                             derive_key_from_seed_with_path - invalid path
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             derivation_path_bip44_mainnet
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             derivation_path_bip44_testnet
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             derivation_path_dip9_mainnet
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             derivation_path_dip9_testnet
                         </div>
                     
@@ -336,10 +336,98 @@
             <div class="suite">
                 <div class="suite-header passed" 
                      onclick="toggleSuite('suite-2')">
-                    DPNS Functions - 0/0 passed (596ms)
+                    DIP Derivation - 19/19 passed (81ms)
                     
                 </div>
                 <div class="suite-body" id="suite-2">
+                    
+                    
+                        <div class="test passed">
+                            DIP9 basic structure - mainnet
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP9 basic structure - testnet
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP9 with different features
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP9 key derivation - mainnet
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 identity root path - mainnet
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 identity root path - testnet
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 multiple identity indices
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 authentication key path
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 registration funding key path
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 top-up funding key path
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 invitation funding key path
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP14 backwards compatibility with BIP32
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP14 large index support
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP15 feature path structure
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP15 incoming funds base path
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP9 + DIP13 identity derivation
+                        </div>
+                    
+                        <div class="test passed">
+                            Multiple identity key derivation
+                        </div>
+                    
+                        <div class="test passed">
+                            Non-hardened vs hardened DIP9 paths
+                        </div>
+                    
+                        <div class="test passed">
+                            DIP13 identity recovery
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-3')">
+                    DPNS Functions - 0/0 passed (755ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-3">
                     
                     
                         <div class="test passed">
@@ -426,6 +514,10 @@
                             dpns_is_contested_username - three letter
                         </div>
                     
+                        <div class="test failed">
+                            get_dpns_usernames - get usernames for identity
+                        </div>
+                    
                         <div class="test passed">
                             dpns_register_name - requires identity and network
                         </div>
@@ -439,11 +531,11 @@
         
             <div class="suite">
                 <div class="suite-header failed" 
-                     onclick="toggleSuite('suite-3')">
-                    Utility Functions - 0/0 passed (82616ms)
+                     onclick="toggleSuite('suite-4')">
+                    Utility Functions - 0/0 passed (81437ms)
                     <span style="float: right;">⚠ Panic</span>
                 </div>
-                <div class="suite-body" id="suite-3">
+                <div class="suite-body" id="suite-4">
                     <div class="panic">Test suite panicked - see output for details</div>
                     
                         <div class="test passed">
@@ -498,56 +590,60 @@
             </div>
         
             <div class="suite">
-                <div class="suite-header failed" 
-                     onclick="toggleSuite('suite-4')">
-                    Identity Queries - 1/12 passed (2291ms)
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-5')">
+                    Identity Queries - 0/0 passed (2552ms)
                     
                 </div>
-                <div class="suite-body" id="suite-4">
+                <div class="suite-body" id="suite-5">
                     
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             identity_fetch - documented test identity
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_balance - documented test identity
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_keys - all keys
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_nonce
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_contract_nonce - with DPNS contract
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identities_balances - single identity
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_balance_and_revision
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identities_contract_keys - DPNS contract
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_token_balances
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identities_token_balances
                         </div>
                     
-                        <div class="test failed">
+                        <div class="test passed">
                             get_identity_token_infos
+                        </div>
+                    
+                        <div class="test passed">
+                            get_identities_token_infos
                         </div>
                     
                         <div class="test passed">
@@ -558,12 +654,12 @@
             </div>
         
             <div class="suite">
-                <div class="suite-header failed" 
-                     onclick="toggleSuite('suite-5')">
-                    Document Queries - 3/12 passed (1975ms)
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-6')">
+                    Document Queries - 0/0 passed (1914ms)
                     
                 </div>
-                <div class="suite-body" id="suite-5">
+                <div class="suite-body" id="suite-6">
                     
                     
                         <div class="test failed">
@@ -598,6 +694,10 @@
                             data_contract_fetch_history - DPNS contract history
                         </div>
                     
+                        <div class="test failed">
+                            get_data_contracts - fetch multiple contracts
+                        </div>
+                    
                         <div class="test passed">
                             get_documents - token documents
                         </div>
@@ -606,24 +706,16 @@
                             get_status - platform status
                         </div>
                     
-                        <div class="test failed">
-                            get_current_epoch
-                        </div>
-                    
-                        <div class="test failed">
-                            get_epoch_info
-                        </div>
-                    
                 </div>
             </div>
         
             <div class="suite">
-                <div class="suite-header failed" 
-                     onclick="toggleSuite('suite-6')">
-                    Specialized Queries - 3/11 passed (320ms)
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-7')">
+                    Specialized Queries - 3/3 passed (293ms)
                     
                 </div>
-                <div class="suite-body" id="suite-6">
+                <div class="suite-body" id="suite-7">
                     
                     
                         <div class="test passed">
@@ -634,40 +726,8 @@
                             get_masternode_score - requires valid proTxHash
                         </div>
                     
-                        <div class="test failed">
-                            get_evonodes - fetch evonode list
-                        </div>
-                    
-                        <div class="test failed">
-                            group_query_public_keys_and_identity_ids - requires group definition
-                        </div>
-                    
-                        <div class="test failed">
-                            get_proofs_query - multiple query proofs
-                        </div>
-                    
-                        <div class="test failed">
-                            get_token_infos_by_owner - list all tokens owned by identity
-                        </div>
-                    
-                        <div class="test failed">
-                            get_total_token_supplies - get supplies for multiple tokens
-                        </div>
-                    
-                        <div class="test failed">
-                            get_current_protocol_version
-                        </div>
-                    
-                        <div class="test failed">
-                            get_platform_block_metadata
-                        </div>
-                    
                         <div class="test passed">
                             get_prefunded_specialized_balance - requires valid document ID
-                        </div>
-                    
-                        <div class="test failed">
-                            get_total_document_count_in_system
                         </div>
                     
                 </div>
@@ -675,11 +735,167 @@
         
             <div class="suite">
                 <div class="suite-header failed" 
-                     onclick="toggleSuite('suite-7')">
-                    State Transitions - 0/0 passed (37ms)
+                     onclick="toggleSuite('suite-8')">
+                    Voting & Contested Resources - 2/5 passed (425ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-8">
+                    
+                    
+                        <div class="test failed">
+                            get_contested_resources - fetch contested domain names
+                        </div>
+                    
+                        <div class="test failed">
+                            get_contested_resource_vote_state - get vote state for contested resource
+                        </div>
+                    
+                        <div class="test failed">
+                            get_contested_resource_voters_for_identity - get voters for identity
+                        </div>
+                    
+                        <div class="test passed">
+                            get_contested_resource_identity_votes - get votes by identity
+                        </div>
+                    
+                        <div class="test passed">
+                            get_vote_polls_by_end_date - get vote polls in date range
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header failed" 
+                     onclick="toggleSuite('suite-9')">
+                    Token Queries - 4/5 passed (1671ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-9">
+                    
+                    
+                        <div class="test passed">
+                            get_token_statuses - fetch status for multiple tokens
+                        </div>
+                    
+                        <div class="test passed">
+                            get_token_direct_purchase_prices - get token purchase prices
+                        </div>
+                    
+                        <div class="test passed">
+                            get_token_contract_info - get token contract information
+                        </div>
+                    
+                        <div class="test failed">
+                            get_token_perpetual_distribution_last_claim - get last claim info
+                        </div>
+                    
+                        <div class="test passed">
+                            get_token_total_supply - get token total supply
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-10')">
+                    Group Queries - 4/4 passed (1335ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-10">
+                    
+                    
+                        <div class="test passed">
+                            get_group_info - fetch specific group info
+                        </div>
+                    
+                        <div class="test passed">
+                            get_group_infos - fetch multiple group infos
+                        </div>
+                    
+                        <div class="test passed">
+                            get_group_actions - fetch group actions
+                        </div>
+                    
+                        <div class="test passed">
+                            get_group_action_signers - fetch action signers
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-11')">
+                    Epoch & Block Queries - 4/4 passed (1561ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-11">
+                    
+                    
+                        <div class="test passed">
+                            get_epochs_info - fetch epoch information
+                        </div>
+                    
+                        <div class="test passed">
+                            get_finalized_epoch_infos - fetch finalized epoch infos
+                        </div>
+                    
+                        <div class="test passed">
+                            get_evonodes_proposed_epoch_blocks_by_ids - fetch blocks by IDs
+                        </div>
+                    
+                        <div class="test passed">
+                            get_evonodes_proposed_epoch_blocks_by_range - fetch blocks by range
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-12')">
+                    Protocol & Version Queries - 2/2 passed (841ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-12">
+                    
+                    
+                        <div class="test passed">
+                            get_protocol_version_upgrade_state - fetch upgrade state
+                        </div>
+                    
+                        <div class="test passed">
+                            get_protocol_version_upgrade_vote_status - fetch vote status
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header passed" 
+                     onclick="toggleSuite('suite-13')">
+                    System & Utility Queries - 0/0 passed (939ms)
+                    
+                </div>
+                <div class="suite-body" id="suite-13">
+                    
+                    
+                        <div class="test passed">
+                            get_current_quorums_info - fetch current quorum information
+                        </div>
+                    
+                </div>
+            </div>
+        
+            <div class="suite">
+                <div class="suite-header failed" 
+                     onclick="toggleSuite('suite-14')">
+                    State Transitions - 0/0 passed (39ms)
                     <span style="float: right;">⚠ Panic</span>
                 </div>
-                <div class="suite-body" id="suite-7">
+                <div class="suite-body" id="suite-14">
                     <div class="panic">Test suite panicked - see output for details</div>
                     
                         <div class="test passed">
@@ -703,11 +919,11 @@
         
             <div class="suite">
                 <div class="suite-header passed" 
-                     onclick="toggleSuite('suite-8')">
-                    Proof Verification - 0/0 passed (811ms)
+                     onclick="toggleSuite('suite-15')">
+                    Proof Verification - 0/0 passed (764ms)
                     
                 </div>
-                <div class="suite-body" id="suite-8">
+                <div class="suite-body" id="suite-15">
                     
                     
                         <div class="test passed">
@@ -743,8 +959,8 @@
         
         
         <h2>Execution Details</h2>
-        <p>Total execution time: 88.78 seconds</p>
-        <p>Test files executed: 9</p>
+        <p>Total execution time: 94.75 seconds</p>
+        <p>Test files executed: 16</p>
     </div>
 </body>
 </html>

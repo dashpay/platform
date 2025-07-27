@@ -187,8 +187,9 @@ await test('Can derive keys from mnemonic', () => {
 
 // Test 10: Test address validation
 await test('Can validate addresses', () => {
-    const mainnetAddress = "XdRhagDMpNbHZSvgMXqkcCCWmrDYYty5Nh";
-    const testnetAddress = "yXdRhagDMpNbHZSvgMXqkcCCWmrDYYty5Nh";
+    // Use real valid Dash addresses
+    const mainnetAddress = "XoJA8qE3N2Y3jMLEtZ3vcN42qseZ8LvFf5";  // Real mainnet address
+    const testnetAddress = "yRd4FhXfVGHXpsuZXPNkMrfD9GVj46pnjt";  // Real testnet address
     
     if (!wasmSdk.validate_address(mainnetAddress, "mainnet")) {
         throw new Error('Failed to validate mainnet address');

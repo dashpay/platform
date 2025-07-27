@@ -214,6 +214,23 @@ try {
 }
 
 if (sdk) {
+    await test('get_dpns_usernames - get usernames for identity', async () => {
+        try {
+            const result = await wasmSdk.get_dpns_usernames(
+                sdk,
+                '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk',
+                10  // limit parameter
+            );
+            console.log(`   Found ${result?.length || 0} usernames for identity`);
+        } catch (error) {
+            if (error.message.includes('network') || error.message.includes('connection')) {
+                console.log('   Expected network error (offline)');
+            } else {
+                throw error;
+            }
+        }
+    });
+
     await test('dpns_register_name - requires identity and network', async () => {
         try {
             // This will fail without a valid identity and network connection

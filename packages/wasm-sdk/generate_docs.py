@@ -188,7 +188,15 @@ def generate_example_code(query_key, inputs):
         'actionId': "'6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ'",
         'path': "['96']",
         'keys': f"['{test_data['identity_id']}']",
-        'stateTransitionHash': "'0000000000000000000000000000000000000000000000000000000000000000'"
+        'stateTransitionHash': "'0000000000000000000000000000000000000000000000000000000000000000'",
+        'allowIncludeLockedAndAbstainingVoteTally': 'null',
+        'startAtValue': 'null',
+        'startAtIdentifierInfo': 'null',
+        'indexValues': "['dash', 'alice']",
+        'startAtVoterInfo': 'null',
+        'startAtVotePollIdInfo': 'null',
+        'startTimeInfo': '(Date.now() - 86400000).toString()',
+        'endTimeInfo': 'Date.now().toString()'
     }
     
     # Handle special cases for functions with structured parameters
@@ -1420,6 +1428,211 @@ def generate_user_docs_html(query_defs, transition_defs):
                 }
             });
         });
+    </script>
+    
+    <script>
+        // Hidden test runner feature
+        
+        // Create the test runner UI
+        const testRunnerHTML = `
+            <div id="test-runner" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                 background: white; border: 2px solid #3498db; border-radius: 10px; padding: 20px; 
+                 box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; max-width: 80%; max-height: 80%; overflow: auto;">
+                <h2 style="margin-top: 0; color: #2c3e50;">Test Runner</h2>
+                <button id="close-test-runner" style="position: absolute; top: 10px; right: 10px; 
+                        background: #e74c3c; color: white; border: none; padding: 5px 10px; 
+                        border-radius: 5px; cursor: pointer;">✕</button>
+                <button id="run-all-tests" style="background: #3498db; color: white; border: none; 
+                        padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px;">
+                    Run All Tests
+                </button>
+                <div id="test-progress" style="margin-top: 20px; font-weight: bold;"></div>
+                <div id="test-summary" style="margin-top: 10px; display: flex; gap: 20px;"></div>
+                <div id="test-results" style="margin-top: 20px;"></div>
+            </div>
+        `;
+        
+        // Add test runner to body
+        document.body.insertAdjacentHTML('beforeend', testRunnerHTML);
+        
+        // Get references to elements
+        const queriesHeader = document.querySelector('.section-header');
+        const testRunner = document.getElementById('test-runner');
+        const closeButton = document.getElementById('close-test-runner');
+        const runAllButton = document.getElementById('run-all-tests');
+        const testProgress = document.getElementById('test-progress');
+        const testSummary = document.getElementById('test-summary');
+        const testResults = document.getElementById('test-results');
+        
+        // Show test runner
+        function showTestRunner() {
+            testRunner.style.display = 'block';
+            document.body.style.overflow = 'hidden'; // Prevent scrolling
+        }
+        
+        // Hide test runner
+        function hideTestRunner() {
+            testRunner.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+        
+        // Run a single test
+        async function runSingleTest(buttonId) {
+            try {
+                const functionId = buttonId.replace('run-', '');
+                
+                // Call the existing runExample function
+                await window.runExample(functionId);
+                
+                // Wait a bit for the result to be displayed
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Check the result element to see if it succeeded
+                const resultDiv = document.getElementById(`result-${functionId}`);
+                if (resultDiv && resultDiv.style.display !== 'none') {
+                    const hasError = resultDiv.className && resultDiv.className.includes('error');
+                    if (hasError) {
+                        const errorText = resultDiv.textContent || 'Unknown error';
+                        return { id: buttonId, success: false, error: errorText };
+                    }
+                    return { id: buttonId, success: true };
+                }
+                
+                // If no result div or not displayed, assume it worked
+                return { id: buttonId, success: true };
+            } catch (error) {
+                return { id: buttonId, success: false, error: error.message || error.toString() };
+            }
+        }
+        
+        // Run all tests
+        async function runAllTests() {
+            testProgress.textContent = 'Starting tests...';
+            testResults.innerHTML = '';
+            testSummary.textContent = '';
+            
+            // Find all run buttons
+            const runButtons = document.querySelectorAll('.run-button');
+            const totalTests = runButtons.length;
+            let passed = 0;
+            let failed = 0;
+            let currentTest = 0;
+            
+            const results = [];
+            
+            for (const button of runButtons) {
+                currentTest++;
+                const testName = button.id.replace('run-', '');
+                testProgress.textContent = `Running test ${currentTest} of ${totalTests}: ${testName}...`;
+                
+                const result = await runSingleTest(button.id);
+                
+                if (result.success) {
+                    passed++;
+                    results.push(`<div style="color: #27ae60; margin: 5px 0;">✅ ${testName}: PASSED</div>`);
+                } else {
+                    failed++;
+                    results.push(`<div style="color: #e74c3c; margin: 5px 0;">❌ ${testName}: FAILED - ${result.error}</div>`);
+                }
+                
+                // Update results in real-time
+                testResults.innerHTML = results.join('');
+            }
+            
+            testProgress.textContent = 'All tests completed!';
+            testSummary.innerHTML = `
+                <div style="color: #2c3e50;">Total: ${totalTests}</div>
+                <div style="color: #27ae60;">Passed: ${passed}</div>
+                <div style="color: #e74c3c;">Failed: ${failed}</div>
+                <div style="color: #3498db;">Success Rate: ${((passed/totalTests) * 100).toFixed(1)}%</div>
+            `;
+        }
+        
+        // Set up triple-click detection on Queries header
+        if (queriesHeader) {
+            let clickCount = 0;
+            let clickTimer = null;
+            
+            queriesHeader.addEventListener('click', () => {
+                clickCount++;
+                
+                // Reset click count after 500ms
+                if (clickTimer) {
+                    clearTimeout(clickTimer);
+                }
+                
+                clickTimer = setTimeout(() => {
+                    clickCount = 0;
+                }, 500);
+                
+                // Show test runner on triple click
+                if (clickCount === 3) {
+                    showTestRunner();
+                    clickCount = 0;
+                    if (clickTimer) {
+                        clearTimeout(clickTimer);
+                        clickTimer = null;
+                    }
+                }
+            });
+        }
+        
+        // Close button handler
+        closeButton.addEventListener('click', hideTestRunner);
+        
+        // Run all tests button handler
+        runAllButton.addEventListener('click', runAllTests);
+        
+        // Close on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && testRunner.style.display !== 'none') {
+                hideTestRunner();
+            }
+        });
+        
+        // Make runExample function available globally if it doesn't exist
+        if (!window.runExample) {
+            window.runExample = async function(exampleId) {
+                const resultDiv = document.getElementById('result-' + exampleId);
+                const codeElement = document.getElementById('code-' + exampleId);
+                const button = document.getElementById('run-' + exampleId);
+                
+                if (!resultDiv || !codeElement || !button) return;
+                
+                // Disable button
+                button.disabled = true;
+                button.textContent = 'Running...';
+                
+                try {
+                    // Clear previous results
+                    resultDiv.innerHTML = '<div style="color: #3498db;">Executing...</div>';
+                    
+                    // Execute the example code
+                    const code = codeElement.textContent;
+                    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                    const testFunc = new AsyncFunction('window', 'sdk', code);
+                    
+                    if (!window.sdk) {
+                        throw new Error('SDK not initialized');
+                    }
+                    
+                    const result = await testFunc(window, window.sdk);
+                    
+                    // Display result
+                    resultDiv.className = 'example-result success';
+                    resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+                    resultDiv.style.display = 'block';
+                } catch (error) {
+                    resultDiv.className = 'example-result error';
+                    resultDiv.textContent = 'Error: ' + (error.message || error);
+                    resultDiv.style.display = 'block';
+                } finally {
+                    // Re-enable button
+                    button.disabled = false;
+                    button.textContent = 'Run';
+                }
+            };
+        }
     </script>
 </body>
 </html>

@@ -333,27 +333,39 @@ const result = await sdk.dpnsResolve("name");
 *Get list of contested resources*
 
 Parameters:
-- `resultType` (select, required) - Result Type
 - `documentTypeName` (text, required) - Document Type
+- `dataContractId` (text, required) - Data Contract ID
 - `indexName` (text, required) - Index Name
-- `count` (number, optional) - Count
+- `resultType` (text, required) - Result Type
+- `allowIncludeLockedAndAbstainingVoteTally` (checkbox, optional) - Allow Include Locked and Abstaining Vote Tally
+- `startAtValue` (text, optional) - Start At Value
+- `limit` (number, optional) - Limit
+- `offset` (number, optional) - Offset
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getContestedResources("resultType", "documentTypeName", "indexName");
+const result = await sdk.getContestedResources("documentTypeName", "dataContractId", "indexName", "resultType");
 ```
 
 **Get Contested Resource Vote State** - `getContestedResourceVoteState`
 *Get the current vote state for a contested resource*
 
 Parameters:
-- `contractId` (text, required) - Contract ID
+- `dataContractId` (text, required) - Data Contract ID
 - `documentTypeName` (text, required) - Document Type
 - `indexName` (text, required) - Index Name
+- `indexValues` (array, required) - Index Values
+  - Example: `["dash", "alice"]`
+- `resultType` (text, required) - Result Type
+- `allowIncludeLockedAndAbstainingVoteTally` (checkbox, optional) - Allow Include Locked and Abstaining Vote Tally
+- `startAtIdentifierInfo` (text, optional) - Start At Identifier Info
+- `count` (number, optional) - Count
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getContestedResourceVoteState("contractId", "documentTypeName", "indexName");
+const result = await sdk.getContestedResourceVoteState("dataContractId", "documentTypeName", "indexName", [], "resultType");
 ```
 
 **Get Contested Resource Voters for Identity** - `getContestedResourceVotersForIdentity`
@@ -363,11 +375,16 @@ Parameters:
 - `contractId` (text, required) - Contract ID
 - `documentTypeName` (text, required) - Document Type
 - `indexName` (text, required) - Index Name
+- `indexValues` (array, required) - Index Values
+  - Example: `["dash", "alice"]`
 - `contestantId` (text, required) - Contestant Identity ID
+- `startAtVoterInfo` (text, optional) - Start At Voter Info
+- `limit` (number, optional) - Limit
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getContestedResourceVotersForIdentity("contractId", "documentTypeName", "indexName", "contestantId");
+const result = await sdk.getContestedResourceVotersForIdentity("contractId", "documentTypeName", "indexName", [], "contestantId");
 ```
 
 **Get Contested Resource Identity Votes** - `getContestedResourceIdentityVotes`
@@ -375,6 +392,9 @@ const result = await sdk.getContestedResourceVotersForIdentity("contractId", "do
 
 Parameters:
 - `identityId` (text, required) - Identity ID
+- `limit` (number, optional) - Limit
+- `startAtVotePollIdInfo` (text, optional) - Start At Vote Poll ID Info
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
@@ -385,12 +405,16 @@ const result = await sdk.getContestedResourceIdentityVotes("identityId");
 *Get vote polls within a time range*
 
 Parameters:
-- `startTimeMs` (number, required) - Start Time (ms)
-- `endTimeMs` (number, required) - End Time (ms)
+- `startTimeInfo` (text, optional) - Start Time Info
+  - Example: `Timestamp in milliseconds as string`
+- `endTimeInfo` (text, optional) - End Time Info
+  - Example: `Timestamp in milliseconds as string`
+- `limit` (number, optional) - Limit
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getVotePollsByEndDate(100, 100);
+const result = await sdk.getVotePollsByEndDate();
 ```
 
 #### Protocol & Version
@@ -459,12 +483,13 @@ const result = await sdk.getFinalizedEpochInfos(100, 100);
 *Get proposed blocks by evonode IDs*
 
 Parameters:
+- `epoch` (number, required) - Epoch
 - `ids` (array, required) - ProTx Hashes
   - Example: `["143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"]`
 
 Example:
 ```javascript
-const result = await sdk.getEvonodesProposedEpochBlocksByIds([]);
+const result = await sdk.getEvonodesProposedEpochBlocksByIds(100, []);
 ```
 
 **Get Evonodes Proposed Epoch Blocks by Range** - `getEvonodesProposedEpochBlocksByRange`
@@ -1116,144 +1141,6 @@ const docs = await sdk.getDocuments(
 const identityIds = ["id1", "id2", "id3"];
 const balances = await sdk.getIdentitiesBalances(identityIds);
 ```
-
-## Wallet Functions
-
-The WASM SDK provides comprehensive wallet functionality including BIP39 mnemonic generation, key derivation, and address management.
-
-### Mnemonic Generation
-
-#### Generate BIP39 Mnemonic
-```javascript
-// Generate a cryptographically secure BIP39 mnemonic
-const mnemonic = await generate_mnemonic(12); // 12, 15, 18, 21, or 24 words
-console.log("Generated mnemonic:", mnemonic);
-
-// With language (currently only English is supported)
-const mnemonicEn = await generate_mnemonic(24, "en");
-```
-
-#### Validate Mnemonic
-```javascript
-// Validate a BIP39 mnemonic phrase
-const isValid = await validate_mnemonic("your twelve word seed phrase");
-// Returns: true if valid BIP39 mnemonic
-
-// With language validation
-const isValidEn = await validate_mnemonic("your seed phrase", "en");
-```
-
-#### Mnemonic to Seed
-```javascript
-// Convert mnemonic to BIP39 seed (512-bit)
-const seedBytes = await mnemonic_to_seed(
-  "your twelve word seed phrase",
-  "optional_passphrase" // Optional BIP39 passphrase
-);
-// Returns: Uint8Array of seed bytes
-```
-
-### Key Derivation
-
-#### Derive Key from Seed Phrase
-```javascript
-// Derive a key from BIP39 seed phrase
-// Note: Uses simplified derivation (first 32 bytes of seed)
-// TODO: Implement full BIP32/BIP44 HD derivation
-const keyPair = await derive_key_from_seed_phrase(
-  "your twelve word seed phrase",
-  "optional_passphrase", // Optional BIP39 passphrase
-  "testnet" // or "mainnet"
-);
-// Returns: { privateKeyWif, privateKeyHex, publicKey, address, network }
-```
-
-### Key Generation
-
-#### Generate Random Key Pair
-```javascript
-const keyPair = await generate_key_pair("mainnet"); // or "testnet"
-// Returns:
-// {
-//   private_key_wif: "XBrZJKc...",
-//   private_key_hex: "1234abcd...",
-//   public_key: "03abcd1234...",
-//   address: "Xr8JKc...",
-//   network: "mainnet"
-// }
-```
-
-#### Generate Multiple Key Pairs
-```javascript
-const keyPairs = await generate_key_pairs("testnet", 5); // Generate 5 key pairs
-// Returns array of key pair objects
-```
-
-#### Import Key from WIF
-```javascript
-const keyPair = await key_pair_from_wif("XBrZJKcW4ajWVNAU6yP87WQog6CjFnpbqyAKgNTZRqmhYvPgMNV2");
-```
-
-#### Import Key from Hex
-```javascript
-const keyPair = await key_pair_from_hex("1234567890abcdef...", "mainnet");
-```
-
-### Address Operations
-
-#### Convert Public Key to Address
-```javascript
-const address = await pubkey_to_address("03abcd1234...", "mainnet");
-```
-
-#### Validate Address
-```javascript
-const isValid = await validate_address("Xr8JKc...", "mainnet");
-// Returns: true or false
-```
-
-### Message Signing
-
-#### Sign a Message
-```javascript
-const signature = await sign_message("Hello, Dash!", "XBrZJKc..."); // WIF private key
-// Returns hex-encoded signature
-```
-
-### Derivation Paths
-
-#### BIP44 Derivation Paths
-```javascript
-// Mainnet: m/44'/5'/account'/change/index
-const pathMainnet = await derivation_path_bip44_mainnet(0, 0, 0); // account=0, change=0, index=0
-
-// Testnet: m/44'/1'/account'/change/index  
-const pathTestnet = await derivation_path_bip44_testnet(0, 0, 0);
-
-// Returns:
-// {
-//   purpose: 44,
-//   coin_type: 5, // or 1 for testnet
-//   account: 0,
-//   change: 0,
-//   index: 0
-// }
-```
-
-#### DIP9 Derivation Paths (Dash-specific)
-```javascript
-// DIP9 is used for special Dash features
-const pathDip9 = await derivation_path_dip9_mainnet(9, 0, 0); // feature_type=9, account=0, index=0
-```
-
-### Notes on Wallet Functions
-
-1. **BIP39 Support**: The WASM SDK uses the `bip39` crate for proper mnemonic generation and validation
-2. **Language Support**: Currently only English is supported for mnemonics
-3. **HD Derivation**: The current implementation uses a simplified approach (first 32 bytes of seed). Full BIP32/BIP44 HD derivation is planned
-4. **Private Keys**: Always keep private keys secure and never expose them in logs or UI
-5. **WIF Format**: Wallet Import Format is the standard for Dash private keys
-6. **Networks**: Always specify the correct network (mainnet/testnet) to avoid address mismatches
 
 ## Important Notes
 
