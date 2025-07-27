@@ -162,7 +162,7 @@
             if (path.startsWith("m/13'/")) {
                 try {
                     const network = document.querySelector('input[name="network"]:checked').value;
-                    const account = parseInt(path.split('/')[2].replace("'", ""));
+                    const account = parseInt(path.split('/')[2].replace(/'/g, ""));
                     
                     const dip13Result = network === 'mainnet' 
                         ? derivation_path_dip13_mainnet(account)
