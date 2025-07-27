@@ -138,7 +138,7 @@
                 `;
             } catch (error) {
                 document.getElementById('custom-path-result').innerHTML = `
-                    <div class="error">❌ Error: ${error.message}</div>
+                    <div class="error">❌ Error: ${escapeHtml(error.message)}</div>
                 `;
             }
         };
@@ -177,6 +177,15 @@
                 }
             }
         };
+        // Escape HTML special characters to prevent XSS
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
     </script>
 </body>
 </html>
