@@ -78,7 +78,8 @@
         function log(message, isError = false) {
             const timestamp = new Date().toISOString();
             const className = isError ? 'error' : 'success';
-            output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            const escapedMessage = message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+            output.innerHTML += `<span class="${className}">[${timestamp}] ${escapedMessage}</span>\n`;
             output.scrollTop = output.scrollHeight;
         }
         
@@ -119,7 +120,7 @@
                 resultElement.className = 'success';
                 log(`Token ID calculated: ${tokenId}`);
             } catch (error) {
-                resultElement.innerHTML = `Error: ${error.message}`;
+                resultElement.textContent = `Error: ${error.message}`;
                 resultElement.className = 'error';
                 log(`Error calculating token ID: ${error.message}`, true);
             }
@@ -138,7 +139,7 @@
                 resultElement.className = 'success';
                 log(`Token price fetched successfully`);
             } catch (error) {
-                resultElement.innerHTML = `Error: ${error.message}`;
+                resultElement.textContent = `Error: ${error.message}`;
                 resultElement.className = 'error';
                 log(`Error fetching token price: ${error.message}`, true);
             }
