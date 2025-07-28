@@ -144,7 +144,7 @@ def generate_example_code(query_key, inputs):
     
     # Map input names to test values
     param_mapping = {
-        'id': f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
+        'id': "'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
         'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else f"'{test_data['identity_id']}'",
         'ids': f"['{test_data['data_contract_id']}', '{test_data['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{test_data['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{test_data['identity_id']}']",
         'identitiesIds': f"['{test_data['identity_id']}']",
