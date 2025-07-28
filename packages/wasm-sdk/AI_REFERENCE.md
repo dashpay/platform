@@ -746,18 +746,18 @@ const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThe
 const publicKeys = JSON.stringify([
   {
     id: 0,
-    keyType: "ECDSA_HASH160",
-    purpose: "AUTHENTICATION",
-    securityLevel: "MASTER",
-    privateKeyHex: "private_key_hex_here",
+    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
+    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
+    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
+    data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
     readOnly: false
   },
   {
     id: 1,
-    keyType: "ECDSA_HASH160",
-    purpose: "AUTHENTICATION", 
-    securityLevel: "HIGH",
-    privateKeyHex: "private_key_hex_here",
+    type: 0,
+    purpose: 0,
+    securityLevel: 2,
+    data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
     readOnly: false
   }
 ]);
@@ -787,7 +787,7 @@ const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProo
 
 Parameters (in addition to identity/key):
 - `addPublicKeys` (textarea, optional) - Keys to Add (JSON array)
-  - Example: `[{"keyType":"ECDSA_HASH160","purpose":"AUTHENTICATION","data":"base64_key_data"}]`
+  - Example: `[{"type":0,"purpose":0,"securityLevel":2,"data":"base64_encoded_public_key","readOnly":false}]`
 - `disablePublicKeys` (text, optional) - Key IDs to Disable (comma-separated)
   - Example: `2,3,5`
 
