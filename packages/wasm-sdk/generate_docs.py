@@ -404,12 +404,14 @@ def generate_operation_entry(operation_key, operation, type_prefix):
         
         # Add special examples and info
         if operation_key == 'getIdentityKeys':
-            html_content += '''\n                <div class="example-container">
-                    <h5>Example 2 - Get Specific Keys</h5>
-                    <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
-<button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
-                    <div class="example-result" id="result-getIdentityKeys2"></div>
-                </div>'''
+            html_content += '''
+            </div>
+            
+            <div class="example-container">
+                <h5>Example 2 - Get Specific Keys</h5>
+                <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
+                <button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
+                <div class="example-result" id="result-getIdentityKeys2"></div>'''
         elif operation_key == 'getPathElements':
             html_content += generate_path_elements_info()
         

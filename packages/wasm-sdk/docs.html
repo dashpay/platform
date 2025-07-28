@@ -1035,12 +1035,13 @@
                 <h5>Example</h5>
                 <div class="example-code" id="code-getIdentityKeys">return await window.wasmFunctions.get_identity_keys(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 'all');</div>
                 <button class="run-button" id="run-getIdentityKeys" onclick="runExample('getIdentityKeys')">Run</button>
-                <div class="example-container">
-                    <h5>Example 2 - Get Specific Keys</h5>
-                    <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 'specific', [0, 1, 2]);</div>
-<button class="run-button" id="run-getIdentityKeys2" onclick="runExample('getIdentityKeys2')">Run</button>
-                    <div class="example-result" id="result-getIdentityKeys2"></div>
-                </div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example 2 - Get Specific Keys</h5>
+                <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 'specific', [0, 1, 2]);</div>
+                <button class="run-button" id="run-getIdentityKeys2" onclick="runExample('getIdentityKeys2')">Run</button>
+                <div class="example-result" id="result-getIdentityKeys2"></div>
                 <div class="example-result" id="result-getIdentityKeys"></div>            </div>
         </div>
         <div class="operation">
@@ -2828,11 +2829,6 @@
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
                     <span class="param-name">Public Note</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
@@ -2862,11 +2858,6 @@
                 <div class="parameter">
                     <span class="param-name">Amount to Mint</span>
                     <span class="param-type">text</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
@@ -2908,11 +2899,6 @@
                     <br><small>Options: Perpetual, Pre-programmed</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
                     <span class="param-name">Public Note</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
@@ -2952,11 +2938,6 @@
                     <br><small>Example: Leave empty to remove pricing</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
                     <span class="param-name">Public Note</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
@@ -2989,9 +2970,9 @@
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Total Agreed Price (in credits)</span>
+                    <span class="param-name">Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided</span>
                     <span class="param-type">text</span>
-                    <span class="param-required">(required)</span>
+                    <span class="param-optional">(optional)</span>
                 </div>
                 <div class="parameter">
                     <span class="param-name">Key ID (for signing)</span>
@@ -3024,16 +3005,11 @@
                     <span class="param-name">Config Item Type</span>
                     <span class="param-type">select</span>
                     <span class="param-required">(required)</span>
-                    <br><small>Options: No Change, Conventions, Max Supply, Perpetual Distribution, New Tokens Destination Identity, Minting Allow Choosing Destination, Manual Minting, Manual Burning, Conventions Control Group, Conventions Admin Group, Max Supply Control Group, Max Supply Admin Group</small>
+                    <br><small>Options: Conventions, Max Supply, Perpetual Distribution, New Tokens Destination Identity, Minting Allow Choosing Destination, Manual Minting, Manual Burning, Conventions Control Group, Conventions Admin Group, Max Supply Control Group, Max Supply Admin Group</small>
                 </div>
                 <div class="parameter">
                     <span class="param-name">Config Value (JSON or specific value)</span>
                     <span class="param-type">text</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">

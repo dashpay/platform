@@ -974,7 +974,6 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Burn
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
@@ -989,7 +988,6 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Mint
-- `keyId` (number, required) - Key ID (for signing)
 - `issuedToIdentityId` (text, optional) - Issue To Identity ID
 - `publicNote` (text, optional) - Public Note
 
@@ -1005,7 +1003,6 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `distributionType` (select, required) - Distribution Type
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
@@ -1022,7 +1019,6 @@ Parameters (in addition to identity/key):
 - `priceType` (select, required) - Price Type
 - `priceData` (text, optional) - Price Data (single price or JSON map)
   - Example: `Leave empty to remove pricing`
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
@@ -1037,7 +1033,7 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Purchase
-- `totalAgreedPrice` (text, required) - Total Agreed Price (in credits)
+- `totalAgreedPrice` (text, optional) - Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided
 - `keyId` (number, required) - Key ID (for signing)
 
 Example:
@@ -1053,7 +1049,6 @@ Parameters (in addition to identity/key):
 - `tokenPosition` (number, required) - Token Contract Position
 - `configItemType` (select, required) - Config Item Type
 - `configValue` (text, required) - Config Value (JSON or specific value)
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
