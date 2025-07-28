@@ -5605,7 +5605,7 @@ ${indentStr}]`;
               
               previewContainer.innerHTML = keysHtml;
             } catch (error) {
-              previewContainer.innerHTML = `<p style="color: #dc3545;">Error generating keys: ${error.message}</p>`;
+              previewContainer.innerHTML = DOMPurify.sanitize(`<p style="color: #dc3545;">Error generating keys: ${error.message}</p>`);
             }
           };
           
