@@ -740,7 +740,7 @@ Example:
 ```javascript
 // Asset lock proof is a hex-encoded JSON object
 const assetLockProof = "a9147d3b... (hex-encoded)";
-const privateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
 
 // Public keys array with proper key types
 const publicKeys = JSON.stringify([
@@ -762,7 +762,7 @@ const publicKeys = JSON.stringify([
   }
 ]);
 
-const result = await sdk.identityCreate(assetLockProof, privateKey, publicKeys);
+const result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey, publicKeys);
 ```
 
 **Identity Top Up** - `identityTopUp`
@@ -777,9 +777,9 @@ Example:
 ```javascript
 const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
 const assetLockProof = "a9147d3b... (hex-encoded)";
-const privateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
 
-const result = await sdk.identityTopUp(identityId, assetLockProof, privateKey);
+const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProofPrivateKey);
 ```
 
 **Identity Update** - `identityUpdate`

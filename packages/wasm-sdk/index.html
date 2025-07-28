@@ -898,9 +898,13 @@
         
         <div id="authenticationInputs" class="query-inputs" style="display: none;">
           <h4>Authentication</h4>
-          <div class="input-group">
+          <div class="input-group" id="identityIdGroup">
             <label for="identityId">Identity ID</label>
             <input type="text" id="identityId" placeholder="Enter identity ID">
+          </div>
+          <div class="input-group" id="assetLockProofGroup" style="display: none;">
+            <label for="assetLockProof">Asset Lock Proof</label>
+            <input type="text" id="assetLockProof" placeholder="Enter asset lock proof (hex encoded)">
           </div>
           <div class="input-group">
             <label for="privateKey">Private Key (WIF or hex, optionally with :keyId)</label>
@@ -4335,20 +4339,19 @@ ${indentStr}]`;
         // Get authentication values
         let identityId = document.getElementById('identityId').value.trim();
         let privateKey = document.getElementById('privateKey').value.trim();
+        let assetLockProof = document.getElementById('assetLockProof').value.trim();
         
-        // For Identity Create and Top Up, identityId field contains asset lock proof
-        let assetLockProof = null;
+        // Validate based on transition type
         if (transitionType === 'identityCreate' || transitionType === 'identityTopUp') {
-          assetLockProof = identityId; // Asset lock proof is in the identityId field
-          identityId = null; // No identity ID needed for create
-          
           if (!assetLockProof || !privateKey) {
             throw new Error('Asset Lock Proof and Private Key are required for this transition');
           }
+          identityId = null; // No identity ID needed for create (except for topUp which gets it from form)
         } else {
           if (!identityId || !privateKey) {
             throw new Error('Identity ID and Private Key are required for state transitions');
           }
+          assetLockProof = null; // No asset lock proof needed for other transitions
         }
         
         // Get input values
@@ -5388,6 +5391,16 @@ ${indentStr}]`;
       // Show/hide auth inputs
       authInputs.style.display = operationType === 'transitions' ? 'block' : 'none';
       
+      // Reset authentication input visibility to defaults
+      const identityIdGroup = document.getElementById('identityIdGroup');
+      const assetLockProofGroup = document.getElementById('assetLockProofGroup');
+      if (identityIdGroup) {
+        identityIdGroup.style.display = 'block';
+      }
+      if (assetLockProofGroup) {
+        assetLockProofGroup.style.display = 'none';
+      }
+      
       if (operationType === 'queries') {
         // Populate query categories
         Object.entries(queryDefinitions).forEach(([key, category]) => {
@@ -5482,6 +5495,14 @@ ${indentStr}]`;
       
       // Clear existing inputs
       dynamicInputs.innerHTML = '';
+      
+      // Clear authentication inputs to prevent stale data
+      const identityIdInput = document.getElementById('identityId');
+      const assetLockProofInput = document.getElementById('assetLockProof');
+      const privateKeyInput = document.getElementById('privateKey');
+      if (identityIdInput) identityIdInput.value = '';
+      if (assetLockProofInput) assetLockProofInput.value = '';
+      if (privateKeyInput) privateKeyInput.value = '';
       
       let definition;
       if (operationType === 'queries' && queryType && category && queryDefinitions[category]?.queries[queryType]) {
@@ -5641,30 +5662,42 @@ ${indentStr}]`;
             privateKeyInput.placeholder = 'Enter your voting private key (WIF or 32-byte hex)';
           }
         } else if (operationType === 'transitions' && (queryType === 'identityCreate' || queryType === 'identityTopUp')) {
-          // For Identity Create and Top Up, change to Asset Lock Proof
-          const identityIdLabel = document.querySelector('#authenticationInputs label[for="identityId"]');
+          // For Identity Create and Top Up, show asset lock proof field instead of identity ID
+          const identityIdGroup = document.getElementById('identityIdGroup');
+          const assetLockProofGroup = document.getElementById('assetLockProofGroup');
           const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
-          const identityIdInput = document.getElementById('identityId');
           const privateKeyInput = document.getElementById('privateKey');
           
-          if (identityIdLabel) {
-            identityIdLabel.textContent = 'Asset Lock Proof';
+          // Hide identity ID and show asset lock proof
+          if (identityIdGroup) {
+            identityIdGroup.style.display = 'none';
           }
+          if (assetLockProofGroup) {
+            assetLockProofGroup.style.display = 'block';
+          }
+          
           if (privateKeyLabel) {
             privateKeyLabel.textContent = 'Asset Lock Proof Private Key (WIF)';
-          }
-          if (identityIdInput) {
-            identityIdInput.placeholder = 'Enter asset lock proof (hex or base64)';
           }
           if (privateKeyInput) {
             privateKeyInput.placeholder = 'Enter the private key used in the asset lock';
           }
         } else if (operationType === 'transitions') {
           // Reset to default labels for other transitions
+          const identityIdGroup = document.getElementById('identityIdGroup');
+          const assetLockProofGroup = document.getElementById('assetLockProofGroup');
           const identityIdLabel = document.querySelector('#authenticationInputs label[for="identityId"]');
           const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
           const identityIdInput = document.getElementById('identityId');
           const privateKeyInput = document.getElementById('privateKey');
+          
+          // Show identity ID and hide asset lock proof
+          if (identityIdGroup) {
+            identityIdGroup.style.display = 'block';
+          }
+          if (assetLockProofGroup) {
+            assetLockProofGroup.style.display = 'none';
+          }
           
           if (identityIdLabel) {
             identityIdLabel.textContent = 'Identity ID';

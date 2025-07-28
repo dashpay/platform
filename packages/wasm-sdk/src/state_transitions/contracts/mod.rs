@@ -106,7 +106,7 @@ impl WasmSdk {
         .map_err(|e| JsValue::from_str(&format!("Failed to create data contract from JSON: {}", e)))?;
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Create and broadcast the contract
@@ -275,7 +275,7 @@ impl WasmSdk {
         };
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the update transition

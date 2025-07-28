@@ -44,7 +44,7 @@ impl WasmSdk {
         // Debug log all parameters
         web_sys::console::log_1(&JsValue::from_str(&format!("identityCreate called with:")));
         web_sys::console::log_1(&JsValue::from_str(&format!("  asset_lock_proof (length {}): {}", asset_lock_proof.len(), if asset_lock_proof.len() > 100 { format!("{}...", &asset_lock_proof[..100]) } else { asset_lock_proof.clone() })));
-        web_sys::console::log_1(&JsValue::from_str(&format!("  asset_lock_proof_private_key: {}", asset_lock_proof_private_key)));
+        web_sys::console::log_1(&JsValue::from_str(&format!("  asset_lock_proof_private_key: [REDACTED] (length: {})", asset_lock_proof_private_key.len())));
         web_sys::console::log_1(&JsValue::from_str(&format!("  public_keys: {}", public_keys)));
         
         // Parse asset lock proof - try hex first, then JSON
@@ -67,12 +67,11 @@ impl WasmSdk {
         
         // Parse private key - WIF format
         // Log the private key format for debugging
-        web_sys::console::log_1(&JsValue::from_str(&format!("Private key starts with: {}, length: {}", 
-            &asset_lock_proof_private_key.chars().take(2).collect::<String>(), 
+        web_sys::console::log_1(&JsValue::from_str(&format!("Private key format validation - length: {}", 
             asset_lock_proof_private_key.len())));
         
         let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
-            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}. Key provided: {}", e, &asset_lock_proof_private_key)))?;
+            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
         
         // Parse public keys from JSON
         let keys_data: serde_json::Value = serde_json::from_str(&public_keys)
@@ -137,10 +136,10 @@ impl WasmSdk {
                 private_key_array.copy_from_slice(&private_key_bytes);
                 
                 // Use DPP's built-in method to get the correct public key data for the key type
-                // Note: Using testnet for now, but should ideally detect from SDK configuration
+                // Use network from SDK configuration
                 key_type.public_key_data_from_private_key_data(
                     &private_key_array,
-                    dash_sdk::dpp::dashcore::Network::Testnet
+                    self.network()
                 ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?
             } else if let Some(data_str) = key_data["data"].as_str() {
                 // Fall back to using provided data (base64 encoded)
@@ -176,8 +175,8 @@ impl WasmSdk {
             revision: 0,
         });
         
-        // Create signer from asset lock proof private key
-        let signer = SingleKeySigner::from_string(&asset_lock_proof_private_key, dash_sdk::dpp::dashcore::Network::Testnet)
+        // Create signer from asset lock proof private key using SDK's network configuration
+        let signer = SingleKeySigner::from_string(&asset_lock_proof_private_key, self.network())
             .map_err(|e| {
                 let error_msg = format!("Invalid private key: {}", e);
                 web_sys::console::error_1(&JsValue::from_str(&error_msg));
@@ -262,12 +261,11 @@ impl WasmSdk {
         
         // Parse private key - WIF format
         // Log the private key format for debugging
-        web_sys::console::log_1(&JsValue::from_str(&format!("Private key starts with: {}, length: {}", 
-            &asset_lock_proof_private_key.chars().take(2).collect::<String>(), 
+        web_sys::console::log_1(&JsValue::from_str(&format!("Private key format validation - length: {}", 
             asset_lock_proof_private_key.len())));
         
         let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
-            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}. Key provided: {}", e, &asset_lock_proof_private_key)))?;
+            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
         
         // Fetch the identity
         let identity = match dash_sdk::platform::Identity::fetch(&sdk, identifier).await {
@@ -414,7 +412,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the credit transfer transition
@@ -555,7 +553,7 @@ impl WasmSdk {
         };
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Import the withdraw trait
@@ -768,7 +766,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the identity update transition
@@ -918,7 +916,7 @@ impl WasmSdk {
             if key_bytes.len() != 32 {
                 return Err(JsValue::from_str("Private key must be 32 bytes"));
             }
-            PrivateKey::from_slice(&key_bytes, dash_sdk::dpp::dashcore::Network::Testnet)
+            PrivateKey::from_slice(&key_bytes, self.network())
                 .map_err(|e| JsValue::from_str(&format!("Invalid private key bytes: {}", e)))?
         } else {
             // Try WIF
@@ -976,7 +974,7 @@ impl WasmSdk {
         let vote = Vote::ResourceVote(resource_vote);
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&voting_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&voting_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Submit the vote using PutVote trait
