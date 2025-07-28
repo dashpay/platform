@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Token Pricing Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #0f0;
+        }
+        pre {
+            background-color: #000;
+            padding: 10px;
+            border: 1px solid #0f0;
+            overflow-x: auto;
+        }
+        .error {
+            color: #f00;
+        }
+        .success {
+            color: #0f0;
+        }
+        button {
+            background-color: #333;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #444;
+        }
+        input {
+            background-color: #000;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 5px;
+            margin: 5px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Token Pricing Query Test</h1>
+    
+    <div>
+        <h3>Test Calculate Token ID</h3>
+        <input type="text" id="contractId" placeholder="Contract ID" value="H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy">
+        <input type="number" id="tokenPosition" placeholder="Position" value="0">
+        <button onclick="calculateTokenId()">Calculate Token ID</button>
+        <pre id="tokenIdResult"></pre>
+    </div>
+    
+    <div>
+        <h3>Test Get Token Price by Contract</h3>
+        <input type="text" id="priceContractId" placeholder="Contract ID" value="H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy">
+        <input type="number" id="priceTokenPosition" placeholder="Position" value="0">
+        <button onclick="getTokenPrice()">Get Token Price</button>
+        <pre id="priceResult"></pre>
+    </div>
+    
+    <div>
+        <h3>Test Multiple Token Prices</h3>
+        <button onclick="testMultipleTokens()">Test Multiple Tokens</button>
+        <pre id="multipleResult"></pre>
+    </div>
+    
+    <pre id="output"></pre>
+
+    <script type="module">
+        import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+        
+        let sdk;
+        const output = document.getElementById('output');
+        
+        function log(message, isError = false) {
+            const timestamp = new Date().toISOString();
+            const className = isError ? 'error' : 'success';
+            const escapedMessage = message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+            output.innerHTML += `<span class="${className}">[${timestamp}] ${escapedMessage}</span>\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        async function initializeSDK() {
+            try {
+                log('Initializing WASM SDK...');
+                await init();
+                
+                log('Prefetching trusted quorums...');
+                await wasmSdk.prefetch_trusted_quorums_testnet();
+                
+                log('Building SDK...');
+                const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
+                sdk = await builder.build();
+                
+                log('SDK initialized successfully!');
+                
+                // Make functions globally available
+                window.calculateTokenId = calculateTokenId;
+                window.getTokenPrice = getTokenPrice;
+                window.testMultipleTokens = testMultipleTokens;
+                
+            } catch (error) {
+                log(`Initialization error: ${error.message}`, true);
+            }
+        }
+        
+        async function calculateTokenId() {
+            const contractId = document.getElementById('contractId').value;
+            const position = parseInt(document.getElementById('tokenPosition').value);
+            const resultElement = document.getElementById('tokenIdResult');
+            
+            try {
+                log(`Calculating token ID for contract: ${contractId}, position: ${position}`);
+                const tokenId = wasmSdk.calculate_token_id_from_contract(contractId, position);
+                
+                resultElement.textContent = `Token ID: ${tokenId}\n\nContract: ${contractId}\nPosition: ${position}`;
+                resultElement.className = 'success';
+                log(`Token ID calculated: ${tokenId}`);
+            } catch (error) {
+                resultElement.textContent = `Error: ${error.message}`;
+                resultElement.className = 'error';
+                log(`Error calculating token ID: ${error.message}`, true);
+            }
+        }
+        
+        async function getTokenPrice() {
+            const contractId = document.getElementById('priceContractId').value;
+            const position = parseInt(document.getElementById('priceTokenPosition').value);
+            const resultElement = document.getElementById('priceResult');
+            
+            try {
+                log(`Fetching token price for contract: ${contractId}, position: ${position}`);
+                const priceInfo = await wasmSdk.get_token_price_by_contract(sdk, contractId, position);
+                
+                resultElement.innerHTML = JSON.stringify(priceInfo, null, 2);
+                resultElement.className = 'success';
+                log(`Token price fetched successfully`);
+            } catch (error) {
+                resultElement.textContent = `Error: ${error.message}`;
+                resultElement.className = 'error';
+                log(`Error fetching token price: ${error.message}`, true);
+            }
+        }
+        
+        async function testMultipleTokens() {
+            const resultElement = document.getElementById('multipleResult');
+            const testContracts = [
+                { id: 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv', position: 0 },
+                { id: 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy', position: 0 },
+                { id: 'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta', position: 0 }
+            ];
+            
+            let results = [];
+            
+            for (const contract of testContracts) {
+                try {
+                    log(`Testing contract: ${contract.id}, position: ${contract.position}`);
+                    
+                    // Calculate token ID
+                    const tokenId = wasmSdk.calculate_token_id_from_contract(contract.id, contract.position);
+                    
+                    // Try to get price
+                    try {
+                        const priceInfo = await wasmSdk.get_token_price_by_contract(sdk, contract.id, contract.position);
+                        results.push({
+                            contractId: contract.id,
+                            position: contract.position,
+                            tokenId: tokenId,
+                            priceInfo: priceInfo,
+                            status: 'success'
+                        });
+                    } catch (priceError) {
+                        results.push({
+                            contractId: contract.id,
+                            position: contract.position,
+                            tokenId: tokenId,
+                            error: priceError.message,
+                            status: 'no_pricing'
+                        });
+                    }
+                } catch (error) {
+                    results.push({
+                        contractId: contract.id,
+                        position: contract.position,
+                        error: error.message,
+                        status: 'error'
+                    });
+                }
+            }
+            
+            resultElement.innerHTML = JSON.stringify(results, null, 2);
+            resultElement.className = 'success';
+            log('Multiple token test completed');
+        }
+        
+        // Initialize on load
+        initializeSDK();
+    </script>
+</body>
+</html>

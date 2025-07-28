@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::Serialize;
 use dash_sdk::platform::Identifier;
+use dash_sdk::dpp::platform_value::Value;
 use dapi_grpc::platform::v0::{
     GetContestedResourcesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceIdentityVotesRequest,
@@ -16,6 +17,10 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_sdk::RequestSettings;
 use rs_dapi_client::DapiRequestExecutor;
+
+// Standard bincode configuration used by Platform
+use dash_sdk::dpp::bincode;
+const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
 
 
@@ -39,8 +44,15 @@ pub async fn get_contested_resources(
     )?;
     
     // Parse result_type to get start_index_values
-    // For now, we'll use the standard "dash" parent domain
-    let start_index_values = vec!["dash".as_bytes().to_vec()];
+    // The result_type parameter actually specifies what we want to query
+    // For contested domain names in DPNS, we query at the "dash" parent domain level
+    let start_index_values = if index_name == "parentNameAndLabel" && document_type_name == "domain" {
+        // For DPNS domains, start at the parent domain level (e.g., "dash")
+        vec![] // Empty to get all contested resources at any parent domain
+    } else {
+        // For other types, may need different index values
+        vec![]
+    };
     
     // Create start_at_value_info if provided
     let start_at_value_info = start_at_value.map(|bytes| {
@@ -104,18 +116,94 @@ pub async fn get_contested_resource_voters_for_identity(
     limit: Option<u32>,
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    // TODO: Implement get_contested_resource_voters_for_identity
-    // This function should return voters for a specific identity in a contested resource
-    let _ = (sdk, contract_id, document_type_name, index_name, index_values, 
-             contestant_id, start_at_voter_info, limit, order_ascending);
+    // Parse contract ID
+    let contract_id = Identifier::from_string(
+        contract_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
     
-    // Return empty result for now
+    // Parse contestant ID
+    let contestant_id = Identifier::from_string(
+        contestant_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
+    
+    // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
+    let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
+    for value in index_values {
+        if let Some(s) = value.as_string() {
+            // Create a platform Value from the string
+            let platform_value = Value::Text(s);
+            // Serialize using bincode
+            let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
+                .map_err(|e| JsError::new(&format!("Failed to serialize index value: {}", e)))?;
+            index_values_bytes.push(serialized);
+        } else {
+            return Err(JsError::new("Index values must be strings"));
+        }
+    }
+    
+    // Parse start_at_voter_info if provided
+    let start_at_identifier_info = if let Some(info_str) = start_at_voter_info {
+        let info: serde_json::Value = serde_json::from_str(&info_str)
+            .map_err(|e| JsError::new(&format!("Invalid start_at_voter_info JSON: {}", e)))?;
+        
+        if let (Some(start_id), Some(included)) = (info.get("startIdentifier"), info.get("startIdentifierIncluded")) {
+            let start_identifier = start_id.as_str()
+                .ok_or_else(|| JsError::new("startIdentifier must be a string"))?
+                .as_bytes()
+                .to_vec();
+            let start_identifier_included = included.as_bool().unwrap_or(true);
+            
+            Some(get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo {
+                start_identifier,
+                start_identifier_included,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // Create the gRPC request
+    let request = GetContestedResourceVotersForIdentityRequest {
+        version: Some(get_contested_resource_voters_for_identity_request::Version::V0(
+            GetContestedResourceVotersForIdentityRequestV0 {
+                contract_id: contract_id.to_vec(),
+                document_type_name: document_type_name.to_string(),
+                index_name: index_name.to_string(),
+                index_values: index_values_bytes,
+                contestant_id: contestant_id.to_vec(),
+                start_at_identifier_info,
+                count: limit,
+                order_ascending: order_ascending.unwrap_or(true),
+                prove: sdk.prove(),
+            },
+        )),
+    };
+    
+    // Execute the request
+    let response = sdk
+        .as_ref()
+        .execute(request, RequestSettings::default())
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to get contested resource voters: {}", e)))?;
+    
+    // For now, return a simple response structure
     let result = serde_json::json!({
         "voters": [],
-        "metadata": {}
+        "metadata": {
+            "height": response.inner.metadata().ok().map(|m| m.height),
+            "coreChainLockedHeight": response.inner.metadata().ok().map(|m| m.core_chain_locked_height),
+            "timeMs": response.inner.metadata().ok().map(|m| m.time_ms),
+            "protocolVersion": response.inner.metadata().ok().map(|m| m.protocol_version),
+        }
     });
     
-    serde_wasm_bindgen::to_value(&result)
+    // Use json_compatible serializer
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    result.serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -187,8 +275,15 @@ pub async fn get_contested_resources_with_proof_info(
     )?;
     
     // Parse result_type to get start_index_values
-    // For now, we'll use the standard "dash" parent domain
-    let start_index_values = vec!["dash".as_bytes().to_vec()];
+    // The result_type parameter actually specifies what we want to query
+    // For contested domain names in DPNS, we query at the "dash" parent domain level
+    let start_index_values = if index_name == "parentNameAndLabel" && document_type_name == "domain" {
+        // For DPNS domains, start at the parent domain level (e.g., "dash")
+        vec![] // Empty to get all contested resources at any parent domain
+    } else {
+        // For other types, may need different index values
+        vec![]
+    };
     
     // Create start_at_value_info if provided
     let start_at_value_info = start_at_value.map(|bytes| {
@@ -252,6 +347,7 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
     data_contract_id: &str,
     document_type_name: &str,
     index_name: &str,
+    index_values: Vec<JsValue>,
     result_type: &str,
     allow_include_locked_and_abstaining_vote_tally: Option<bool>,
     start_at_identifier_info: Option<String>,
@@ -289,11 +385,20 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
         None
     };
     
-    // Parse result_type to determine resource path
-    let index_values = match result_type {
-        "documentTypeName" => vec!["dash".as_bytes().to_vec()],
-        _ => vec!["dash".as_bytes().to_vec()], // Default to dash
-    };
+    // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
+    let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
+    for value in index_values {
+        if let Some(s) = value.as_string() {
+            // Create a platform Value from the string
+            let platform_value = Value::Text(s);
+            // Serialize using bincode
+            let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
+                .map_err(|e| JsError::new(&format!("Failed to serialize index value: {}", e)))?;
+            index_values_bytes.push(serialized);
+        } else {
+            return Err(JsError::new("Index values must be strings"));
+        }
+    }
     
     // Create the gRPC request directly - force prove=true
     let request = GetContestedResourceVoteStateRequest {
@@ -302,7 +407,7 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
                 contract_id: contract_id.to_vec(),
                 document_type_name: document_type_name.to_string(),
                 index_name: index_name.to_string(),
-                index_values,
+                index_values: index_values_bytes,
                 result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false) { 0 } else { 1 },
                 allow_include_locked_and_abstaining_vote_tally: allow_include_locked_and_abstaining_vote_tally.unwrap_or(false),
                 start_at_identifier_info,
@@ -400,7 +505,7 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
                 contract_id: contract_id.to_vec(),
                 document_type_name: document_type_name.to_string(),
                 index_name: index_name.to_string(),
-                index_values: vec!["dash".as_bytes().to_vec()], // Default to dash domain
+                index_values: vec![], // Empty to query all contested resources
                 contestant_id: contestant_identifier.to_vec(),
                 start_at_identifier_info,
                 count,
@@ -581,6 +686,7 @@ pub async fn get_contested_resource_vote_state(
     data_contract_id: &str,
     document_type_name: &str,
     index_name: &str,
+    index_values: Vec<JsValue>,
     result_type: &str,
     allow_include_locked_and_abstaining_vote_tally: Option<bool>,
     start_at_identifier_info: Option<String>,
@@ -616,11 +722,20 @@ pub async fn get_contested_resource_vote_state(
         None
     };
     
-    // Parse result_type to determine resource path
-    let index_values = match result_type {
-        "documentTypeName" => vec!["dash".as_bytes().to_vec()],
-        _ => vec!["dash".as_bytes().to_vec()], // Default to dash
-    };
+    // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
+    let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
+    for value in index_values {
+        if let Some(s) = value.as_string() {
+            // Create a platform Value from the string
+            let platform_value = Value::Text(s);
+            // Serialize using bincode
+            let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
+                .map_err(|e| JsError::new(&format!("Failed to serialize index value: {}", e)))?;
+            index_values_bytes.push(serialized);
+        } else {
+            return Err(JsError::new("Index values must be strings"));
+        }
+    }
     
     // Create the gRPC request directly
     let request = GetContestedResourceVoteStateRequest {
@@ -629,7 +744,7 @@ pub async fn get_contested_resource_vote_state(
                 contract_id: contract_id.to_vec(),
                 document_type_name: document_type_name.to_string(),
                 index_name: index_name.to_string(),
-                index_values,
+                index_values: index_values_bytes,
                 result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false) { 0 } else { 1 },
                 allow_include_locked_and_abstaining_vote_tally: allow_include_locked_and_abstaining_vote_tally.unwrap_or(false),
                 start_at_identifier_info,

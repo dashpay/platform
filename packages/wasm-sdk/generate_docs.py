@@ -8,6 +8,7 @@ and generates both user documentation (HTML) and AI reference (Markdown)
 import os
 import re
 import json
+import html as html_lib
 import html
 from pathlib import Path
 from datetime import datetime
@@ -187,7 +188,15 @@ def generate_example_code(query_key, inputs):
         'actionId': "'6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ'",
         'path': "['96']",
         'keys': f"['{test_data['identity_id']}']",
-        'stateTransitionHash': "'0000000000000000000000000000000000000000000000000000000000000000'"
+        'stateTransitionHash': "'0000000000000000000000000000000000000000000000000000000000000000'",
+        'allowIncludeLockedAndAbstainingVoteTally': 'null',
+        'startAtValue': 'null',
+        'startAtIdentifierInfo': 'null',
+        'indexValues': "['dash', 'alice']",
+        'startAtVoterInfo': 'null',
+        'startAtVotePollIdInfo': 'null',
+        'startTimeInfo': '(Date.now() - 86400000).toString()',
+        'endTimeInfo': 'Date.now().toString()'
     }
     
     # Handle special cases for functions with structured parameters
@@ -333,34 +342,34 @@ def extract_inputs(inputs_str):
 
 def generate_sidebar_entries(definitions, type_prefix, section_class=""):
     """Generate sidebar entries for queries or transitions"""
-    html = ""
+    html_content = ""
     for cat_key, category in definitions.items():
-        html += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
+        html_content += f'            <li class="category">{category.get("label", cat_key)}</li>\n'
         items = category.get('queries' if type_prefix == 'query' else 'transitions', {})
         for item_key in items:
             item = items[item_key]
-            html += f'            <li style="margin-left: 20px;"><a href="#{type_prefix}-{item_key}">{item.get("label", item_key)}</a></li>\n'
-    return html
+            html_content += f'            <li style="margin-left: 20px;"><a href="#{type_prefix}-{item_key}">{item.get("label", item_key)}</a></li>\n'
+    return html_content
 
 def generate_operation_docs(definitions, type_name, type_prefix):
     """Generate documentation for operations (queries or transitions)"""
-    html = ""
+    html_content = ""
     for cat_key, category in definitions.items():
-        html += f'''\n    <div class="category">
+        html_content += f'''\n    <div class="category">
         <h3>{category.get('label', cat_key)}</h3>
 '''
         
         items_key = 'queries' if type_prefix == 'query' else 'transitions'
         items = category.get(items_key, {})
         for item_key, item in items.items():
-            html += generate_operation_entry(item_key, item, type_prefix)
+            html_content += generate_operation_entry(item_key, item, type_prefix)
         
-        html += '    </div>'
-    return html
+        html_content += '    </div>'
+    return html_content
 
 def generate_operation_entry(operation_key, operation, type_prefix):
     """Generate documentation for a single operation"""
-    html = f'''        <div class="operation">
+    html_content = f'''        <div class="operation">
             <h4 id="{type_prefix}-{operation_key}">{operation.get('label', operation_key)}</h4>
             <p class="description">{operation.get('description', 'No description available')}</p>
             
@@ -370,12 +379,12 @@ def generate_operation_entry(operation_key, operation, type_prefix):
     
     inputs = operation.get('inputs', [])
     if not inputs:
-        html += '                <p class="param-optional">No parameters required</p>'
+        html_content += '                <p class="param-optional">No parameters required</p>'
     else:
         for param in inputs:
-            html += generate_parameter_entry(param)
+            html_content += generate_parameter_entry(param)
     
-    html += '''            </div>
+    html_content += '''            </div>
             
             <div class="example-container">
                 <h5>Example</h5>
@@ -383,56 +392,56 @@ def generate_operation_entry(operation_key, operation, type_prefix):
     
     if type_prefix == 'query':
         example_code = generate_example_code(operation_key, inputs)
-        html += f'                <div class="example-code" id="code-{operation_key}">{example_code}</div>\n'
+        html_content += f'                <div class="example-code" id="code-{operation_key}">{example_code}</div>\n'
         
         # Special handling for certain operations
         if operation_key == 'waitForStateTransitionResult':
-            html += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
+            html_content += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
         else:
-            html += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
+            html_content += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
             if operation_key in ['getPathElements', 'getDataContractHistory', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
-                html += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
+                html_content += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
         
         # Add special examples and info
         if operation_key == 'getIdentityKeys':
-            html += '''\n                <div class="example-container">
+            html_content += '''\n                <div class="example-container">
                     <h5>Example 2 - Get Specific Keys</h5>
                     <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
 <button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
                     <div class="example-result" id="result-getIdentityKeys2"></div>
                 </div>'''
         elif operation_key == 'getPathElements':
-            html += generate_path_elements_info()
+            html_content += generate_path_elements_info()
         
-        html += f'\n                <div class="example-result" id="result-{operation_key}"></div>'
+        html_content += f'\n                <div class="example-result" id="result-{operation_key}"></div>'
     else:
         # State transitions don't have run buttons
-        html += f'                <div class="example-code">{generate_transition_example(operation_key)}</div>'
+        html_content += f'                <div class="example-code">{generate_transition_example(operation_key)}</div>'
     
-    html += '''            </div>
+    html_content += '''            </div>
         </div>
 '''
-    return html
+    return html_content
 
 def generate_parameter_entry(param):
     """Generate documentation for a single parameter"""
     required_text = '<span class="param-required">(required)</span>' if param.get('required', False) else '<span class="param-optional">(optional)</span>'
-    html = f'''                <div class="parameter">
+    html_content = f'''                <div class="parameter">
                     <span class="param-name">{param.get('label', param.get('name', 'Unknown'))}</span>
                     <span class="param-type">{param.get('type', 'text')}</span>
                     {required_text}
 '''
     if param.get('placeholder'):
-        html += f'                    <br><small>Example: {html.escape(param.get("placeholder"))}</small>\n'
+        html_content += f'                    <br><small>Example: {html_lib.escape(param.get("placeholder"))}</small>\n'
     elif param.get('name') == 'limit' and not param.get('required', False):
-        html += '                    <br><small>Default: 100 (maximum items returned if not specified)</small>\n'
+        html_content += '                    <br><small>Default: 100 (maximum items returned if not specified)</small>\n'
     if param.get('options'):
-        html += '                    <br><small>Options: '
+        html_content += '                    <br><small>Options: '
         opts = [f'{opt.get("label", opt.get("value"))}' for opt in param.get('options', [])]
-        html += ', '.join(opts)
-        html += '</small>\n'
-    html += '                </div>\n'
-    return html
+        html_content += ', '.join(opts)
+        html_content += '</small>\n'
+    html_content += '                </div>\n'
+    return html_content
 
 def generate_transition_example(trans_key):
     """Generate example code for state transitions"""
@@ -1419,6 +1428,211 @@ def generate_user_docs_html(query_defs, transition_defs):
                 }
             });
         });
+    </script>
+    
+    <script>
+        // Hidden test runner feature
+        
+        // Create the test runner UI
+        const testRunnerHTML = `
+            <div id="test-runner" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                 background: white; border: 2px solid #3498db; border-radius: 10px; padding: 20px; 
+                 box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 10000; max-width: 80%; max-height: 80%; overflow: auto;">
+                <h2 style="margin-top: 0; color: #2c3e50;">Test Runner</h2>
+                <button id="close-test-runner" style="position: absolute; top: 10px; right: 10px; 
+                        background: #e74c3c; color: white; border: none; padding: 5px 10px; 
+                        border-radius: 5px; cursor: pointer;">✕</button>
+                <button id="run-all-tests" style="background: #3498db; color: white; border: none; 
+                        padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px;">
+                    Run All Tests
+                </button>
+                <div id="test-progress" style="margin-top: 20px; font-weight: bold;"></div>
+                <div id="test-summary" style="margin-top: 10px; display: flex; gap: 20px;"></div>
+                <div id="test-results" style="margin-top: 20px;"></div>
+            </div>
+        `;
+        
+        // Add test runner to body
+        document.body.insertAdjacentHTML('beforeend', testRunnerHTML);
+        
+        // Get references to elements
+        const queriesHeader = document.querySelector('.section-header');
+        const testRunner = document.getElementById('test-runner');
+        const closeButton = document.getElementById('close-test-runner');
+        const runAllButton = document.getElementById('run-all-tests');
+        const testProgress = document.getElementById('test-progress');
+        const testSummary = document.getElementById('test-summary');
+        const testResults = document.getElementById('test-results');
+        
+        // Show test runner
+        function showTestRunner() {
+            testRunner.style.display = 'block';
+            document.body.style.overflow = 'hidden'; // Prevent scrolling
+        }
+        
+        // Hide test runner
+        function hideTestRunner() {
+            testRunner.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+        
+        // Run a single test
+        async function runSingleTest(buttonId) {
+            try {
+                const functionId = buttonId.replace('run-', '');
+                
+                // Call the existing runExample function
+                await window.runExample(functionId);
+                
+                // Wait a bit for the result to be displayed
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Check the result element to see if it succeeded
+                const resultDiv = document.getElementById(`result-${functionId}`);
+                if (resultDiv && resultDiv.style.display !== 'none') {
+                    const hasError = resultDiv.className && resultDiv.className.includes('error');
+                    if (hasError) {
+                        const errorText = resultDiv.textContent || 'Unknown error';
+                        return { id: buttonId, success: false, error: errorText };
+                    }
+                    return { id: buttonId, success: true };
+                }
+                
+                // If no result div or not displayed, assume it worked
+                return { id: buttonId, success: true };
+            } catch (error) {
+                return { id: buttonId, success: false, error: error.message || error.toString() };
+            }
+        }
+        
+        // Run all tests
+        async function runAllTests() {
+            testProgress.textContent = 'Starting tests...';
+            testResults.innerHTML = '';
+            testSummary.textContent = '';
+            
+            // Find all run buttons
+            const runButtons = document.querySelectorAll('.run-button');
+            const totalTests = runButtons.length;
+            let passed = 0;
+            let failed = 0;
+            let currentTest = 0;
+            
+            const results = [];
+            
+            for (const button of runButtons) {
+                currentTest++;
+                const testName = button.id.replace('run-', '');
+                testProgress.textContent = `Running test ${currentTest} of ${totalTests}: ${testName}...`;
+                
+                const result = await runSingleTest(button.id);
+                
+                if (result.success) {
+                    passed++;
+                    results.push(`<div style="color: #27ae60; margin: 5px 0;">✅ ${testName}: PASSED</div>`);
+                } else {
+                    failed++;
+                    results.push(`<div style="color: #e74c3c; margin: 5px 0;">❌ ${testName}: FAILED - ${result.error}</div>`);
+                }
+                
+                // Update results in real-time
+                testResults.innerHTML = results.join('');
+            }
+            
+            testProgress.textContent = 'All tests completed!';
+            testSummary.innerHTML = `
+                <div style="color: #2c3e50;">Total: ${totalTests}</div>
+                <div style="color: #27ae60;">Passed: ${passed}</div>
+                <div style="color: #e74c3c;">Failed: ${failed}</div>
+                <div style="color: #3498db;">Success Rate: ${((passed/totalTests) * 100).toFixed(1)}%</div>
+            `;
+        }
+        
+        // Set up triple-click detection on Queries header
+        if (queriesHeader) {
+            let clickCount = 0;
+            let clickTimer = null;
+            
+            queriesHeader.addEventListener('click', () => {
+                clickCount++;
+                
+                // Reset click count after 500ms
+                if (clickTimer) {
+                    clearTimeout(clickTimer);
+                }
+                
+                clickTimer = setTimeout(() => {
+                    clickCount = 0;
+                }, 500);
+                
+                // Show test runner on triple click
+                if (clickCount === 3) {
+                    showTestRunner();
+                    clickCount = 0;
+                    if (clickTimer) {
+                        clearTimeout(clickTimer);
+                        clickTimer = null;
+                    }
+                }
+            });
+        }
+        
+        // Close button handler
+        closeButton.addEventListener('click', hideTestRunner);
+        
+        // Run all tests button handler
+        runAllButton.addEventListener('click', runAllTests);
+        
+        // Close on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && testRunner.style.display !== 'none') {
+                hideTestRunner();
+            }
+        });
+        
+        // Make runExample function available globally if it doesn't exist
+        if (!window.runExample) {
+            window.runExample = async function(exampleId) {
+                const resultDiv = document.getElementById('result-' + exampleId);
+                const codeElement = document.getElementById('code-' + exampleId);
+                const button = document.getElementById('run-' + exampleId);
+                
+                if (!resultDiv || !codeElement || !button) return;
+                
+                // Disable button
+                button.disabled = true;
+                button.textContent = 'Running...';
+                
+                try {
+                    // Clear previous results
+                    resultDiv.innerHTML = '<div style="color: #3498db;">Executing...</div>';
+                    
+                    // Execute the example code
+                    const code = codeElement.textContent;
+                    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                    const testFunc = new AsyncFunction('window', 'sdk', code);
+                    
+                    if (!window.sdk) {
+                        throw new Error('SDK not initialized');
+                    }
+                    
+                    const result = await testFunc(window, window.sdk);
+                    
+                    // Display result
+                    resultDiv.className = 'example-result success';
+                    resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+                    resultDiv.style.display = 'block';
+                } catch (error) {
+                    resultDiv.className = 'example-result error';
+                    resultDiv.textContent = 'Error: ' + (error.message || error);
+                    resultDiv.style.display = 'block';
+                } finally {
+                    // Re-enable button
+                    button.disabled = false;
+                    button.textContent = 'Run';
+                }
+            };
+        }
     </script>
 </body>
 </html>

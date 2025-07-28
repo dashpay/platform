@@ -333,27 +333,39 @@ const result = await sdk.dpnsResolve("name");
 *Get list of contested resources*
 
 Parameters:
-- `resultType` (select, required) - Result Type
 - `documentTypeName` (text, required) - Document Type
+- `dataContractId` (text, required) - Data Contract ID
 - `indexName` (text, required) - Index Name
-- `count` (number, optional) - Count
+- `resultType` (text, required) - Result Type
+- `allowIncludeLockedAndAbstainingVoteTally` (checkbox, optional) - Allow Include Locked and Abstaining Vote Tally
+- `startAtValue` (text, optional) - Start At Value
+- `limit` (number, optional) - Limit
+- `offset` (number, optional) - Offset
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getContestedResources("resultType", "documentTypeName", "indexName");
+const result = await sdk.getContestedResources("documentTypeName", "dataContractId", "indexName", "resultType");
 ```
 
 **Get Contested Resource Vote State** - `getContestedResourceVoteState`
 *Get the current vote state for a contested resource*
 
 Parameters:
-- `contractId` (text, required) - Contract ID
+- `dataContractId` (text, required) - Data Contract ID
 - `documentTypeName` (text, required) - Document Type
 - `indexName` (text, required) - Index Name
+- `indexValues` (array, required) - Index Values
+  - Example: `["dash", "alice"]`
+- `resultType` (text, required) - Result Type
+- `allowIncludeLockedAndAbstainingVoteTally` (checkbox, optional) - Allow Include Locked and Abstaining Vote Tally
+- `startAtIdentifierInfo` (text, optional) - Start At Identifier Info
+- `count` (number, optional) - Count
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getContestedResourceVoteState("contractId", "documentTypeName", "indexName");
+const result = await sdk.getContestedResourceVoteState("dataContractId", "documentTypeName", "indexName", [], "resultType");
 ```
 
 **Get Contested Resource Voters for Identity** - `getContestedResourceVotersForIdentity`
@@ -363,11 +375,16 @@ Parameters:
 - `contractId` (text, required) - Contract ID
 - `documentTypeName` (text, required) - Document Type
 - `indexName` (text, required) - Index Name
+- `indexValues` (array, required) - Index Values
+  - Example: `["dash", "alice"]`
 - `contestantId` (text, required) - Contestant Identity ID
+- `startAtVoterInfo` (text, optional) - Start At Voter Info
+- `limit` (number, optional) - Limit
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getContestedResourceVotersForIdentity("contractId", "documentTypeName", "indexName", "contestantId");
+const result = await sdk.getContestedResourceVotersForIdentity("contractId", "documentTypeName", "indexName", [], "contestantId");
 ```
 
 **Get Contested Resource Identity Votes** - `getContestedResourceIdentityVotes`
@@ -375,6 +392,9 @@ const result = await sdk.getContestedResourceVotersForIdentity("contractId", "do
 
 Parameters:
 - `identityId` (text, required) - Identity ID
+- `limit` (number, optional) - Limit
+- `startAtVotePollIdInfo` (text, optional) - Start At Vote Poll ID Info
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
@@ -385,12 +405,16 @@ const result = await sdk.getContestedResourceIdentityVotes("identityId");
 *Get vote polls within a time range*
 
 Parameters:
-- `startTimeMs` (number, required) - Start Time (ms)
-- `endTimeMs` (number, required) - End Time (ms)
+- `startTimeInfo` (text, optional) - Start Time Info
+  - Example: `Timestamp in milliseconds as string`
+- `endTimeInfo` (text, optional) - End Time Info
+  - Example: `Timestamp in milliseconds as string`
+- `limit` (number, optional) - Limit
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getVotePollsByEndDate(100, 100);
+const result = await sdk.getVotePollsByEndDate();
 ```
 
 #### Protocol & Version
@@ -459,12 +483,13 @@ const result = await sdk.getFinalizedEpochInfos(100, 100);
 *Get proposed blocks by evonode IDs*
 
 Parameters:
+- `epoch` (number, required) - Epoch
 - `ids` (array, required) - ProTx Hashes
   - Example: `["143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"]`
 
 Example:
 ```javascript
-const result = await sdk.getEvonodesProposedEpochBlocksByIds([]);
+const result = await sdk.getEvonodesProposedEpochBlocksByIds(100, []);
 ```
 
 **Get Evonodes Proposed Epoch Blocks by Range** - `getEvonodesProposedEpochBlocksByRange`
@@ -971,6 +996,69 @@ Parameters (in addition to identity/key):
 Example:
 ```javascript
 const result = await sdk.tokenMint(identityHex, /* params */, privateKeyHex);
+```
+
+**Token Claim** - `tokenClaim`
+*Claim tokens from a distribution*
+
+Parameters (in addition to identity/key):
+- `contractId` (text, required) - Data Contract ID
+- `tokenPosition` (number, required) - Token Contract Position
+- `distributionType` (select, required) - Distribution Type
+- `keyId` (number, required) - Key ID (for signing)
+- `publicNote` (text, optional) - Public Note
+
+Example:
+```javascript
+const result = await sdk.tokenClaim(identityHex, /* params */, privateKeyHex);
+```
+
+**Token Set Price** - `tokenSetPriceForDirectPurchase`
+*Set or update the price for direct token purchases*
+
+Parameters (in addition to identity/key):
+- `contractId` (text, required) - Data Contract ID
+- `tokenPosition` (number, required) - Token Contract Position
+- `priceType` (select, required) - Price Type
+- `priceData` (text, optional) - Price Data (single price or JSON map)
+  - Example: `Leave empty to remove pricing`
+- `keyId` (number, required) - Key ID (for signing)
+- `publicNote` (text, optional) - Public Note
+
+Example:
+```javascript
+const result = await sdk.tokenSetPriceForDirectPurchase(identityHex, /* params */, privateKeyHex);
+```
+
+**Token Direct Purchase** - `tokenDirectPurchase`
+*Purchase tokens directly at the configured price*
+
+Parameters (in addition to identity/key):
+- `contractId` (text, required) - Data Contract ID
+- `tokenPosition` (number, required) - Token Contract Position
+- `amount` (text, required) - Amount to Purchase
+- `totalAgreedPrice` (text, required) - Total Agreed Price (in credits)
+- `keyId` (number, required) - Key ID (for signing)
+
+Example:
+```javascript
+const result = await sdk.tokenDirectPurchase(identityHex, /* params */, privateKeyHex);
+```
+
+**Token Config Update** - `tokenConfigUpdate`
+*Update token configuration settings*
+
+Parameters (in addition to identity/key):
+- `contractId` (text, required) - Data Contract ID
+- `tokenPosition` (number, required) - Token Contract Position
+- `configItemType` (select, required) - Config Item Type
+- `configValue` (text, required) - Config Value (JSON or specific value)
+- `keyId` (number, required) - Key ID (for signing)
+- `publicNote` (text, optional) - Public Note
+
+Example:
+```javascript
+const result = await sdk.tokenConfigUpdate(identityHex, /* params */, privateKeyHex);
 ```
 
 **Token Transfer** - `tokenTransfer`

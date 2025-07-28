@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Custom Path Derivation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        input, textarea {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 60px;
+        }
+        input[type="text"] {
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Custom Path Derivation</h1>
+    
+    <div class="test-section">
+        <h2>1. Generate Test Seed</h2>
+        <button onclick="generateSeed()">Generate 12-word Seed</button>
+        <button onclick="generateSeed(24)">Generate 24-word Seed</button>
+        <div id="seed-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Test Custom Path Derivation</h2>
+        <textarea id="seed-input" placeholder="Enter seed phrase (12-24 words)"></textarea><br>
+        <input type="text" id="passphrase-input" placeholder="Passphrase (optional)"><br>
+        <input type="text" id="path-input" placeholder="Derivation path (e.g., m/44'/5'/0'/0/0)" value="m/44'/5'/0'/0/0"><br>
+        <label>
+            <input type="radio" name="network" value="mainnet" checked> Mainnet
+            <input type="radio" name="network" value="testnet"> Testnet
+        </label><br>
+        <button onclick="deriveCustomPath()">Derive Key</button>
+        <div id="custom-path-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Test Different Path Types</h2>
+        <button onclick="testPath(`m/44'/5'/0'/0/0`)">BIP44 Mainnet</button>
+        <button onclick="testPath(`m/44'/1'/0'/0/0`)">BIP44 Testnet</button>
+        <button onclick="testPath(`m/9'/5'/0/1/0`)">DIP9 Mainnet</button>
+        <button onclick="testPath(`m/13'/5'/0'`)">DIP13 Mainnet (Masternode)</button>
+        <button onclick="testPath(`m/0'/0'/0'`)">Custom Path</button>
+        <button onclick="testPath(`m/999'/5'/0'/0/0`)">Non-standard Purpose</button>
+        <div id="path-test-result"></div>
+    </div>
+
+    <script type="module">
+        import init, { 
+            generate_mnemonic, 
+            validate_mnemonic,
+            derive_key_from_seed_with_path,
+            derivation_path_dip13_mainnet,
+            derivation_path_dip13_testnet
+        } from './pkg/wasm_sdk.js';
+
+        await init();
+
+        window.generateSeed = function(wordCount = 12) {
+            try {
+                const mnemonic = generate_mnemonic(wordCount);
+                document.getElementById('seed-result').innerHTML = `
+                    <div class="success">✅ Generated ${wordCount}-word mnemonic:</div>
+                    <pre>${mnemonic}</pre>
+                `;
+                
+                // Auto-fill seed input
+                document.getElementById('seed-input').value = mnemonic;
+            } catch (error) {
+                document.getElementById('seed-result').innerHTML = `
+                    <div class="error">❌ Error: ${error.message}</div>
+                `;
+            }
+        };
+
+        window.deriveCustomPath = async function() {
+            const seedPhrase = document.getElementById('seed-input').value.trim();
+            const passphrase = document.getElementById('passphrase-input').value || undefined;
+            const path = document.getElementById('path-input').value.trim();
+            const network = document.querySelector('input[name="network"]:checked').value;
+            
+            if (!seedPhrase) {
+                document.getElementById('custom-path-result').innerHTML = `
+                    <div class="error">❌ Please enter a seed phrase</div>
+                `;
+                return;
+            }
+            
+            try {
+                // Validate mnemonic
+                if (!validate_mnemonic(seedPhrase)) {
+                    throw new Error('Invalid seed phrase');
+                }
+                
+                // Derive key
+                const result = await derive_key_from_seed_with_path(
+                    seedPhrase,
+                    passphrase,
+                    path,
+                    network
+                );
+                
+                document.getElementById('custom-path-result').innerHTML = `
+                    <div class="success">✅ Successfully derived key:</div>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } catch (error) {
+                document.getElementById('custom-path-result').innerHTML = `
+                    <div class="error">❌ Error: ${escapeHtml(error.message)}</div>
+                `;
+            }
+        };
+
+        window.testPath = async function(path) {
+            document.getElementById('path-input').value = path;
+            
+            // Use test seed if none provided
+            const seedInput = document.getElementById('seed-input');
+            if (!seedInput.value.trim()) {
+                seedInput.value = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+            }
+            
+            document.getElementById('path-test-result').innerHTML = `
+                <p>Testing path: <strong>${path}</strong></p>
+            `;
+            
+            await deriveCustomPath();
+            
+            // Also show DIP13 path creation if it's a DIP13 path
+            if (path.startsWith("m/13'/")) {
+                try {
+                    const network = document.querySelector('input[name="network"]:checked').value;
+                    const account = parseInt(path.split('/')[2].replace(/'/g, ""));
+                    
+                    const dip13Result = network === 'mainnet' 
+                        ? derivation_path_dip13_mainnet(account)
+                        : derivation_path_dip13_testnet(account);
+                    
+                    document.getElementById('path-test-result').innerHTML += `
+                        <div class="success">DIP13 Path Info:</div>
+                        <pre>${JSON.stringify(dip13Result, null, 2)}</pre>
+                    `;
+                } catch (e) {
+                    console.error('DIP13 error:', e);
+                }
+            }
+        };
+        // Escape HTML special characters to prevent XSS
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+    </script>
+</body>
+</html>

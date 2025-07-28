@@ -437,15 +437,15 @@
           "description": "Get list of contested resources",
           "inputs": [
             {
-              "name": "resultType",
-              "type": "select",
-              "label": "Result Type",
-              "required": true
-            },
-            {
               "name": "documentTypeName",
               "type": "text",
               "label": "Document Type",
+              "required": true
+            },
+            {
+              "name": "dataContractId",
+              "type": "text",
+              "label": "Data Contract ID",
               "required": true
             },
             {
@@ -455,9 +455,39 @@
               "required": true
             },
             {
-              "name": "count",
+              "name": "resultType",
+              "type": "text",
+              "label": "Result Type",
+              "required": true
+            },
+            {
+              "name": "allowIncludeLockedAndAbstainingVoteTally",
+              "type": "checkbox",
+              "label": "Allow Include Locked and Abstaining Vote Tally",
+              "required": false
+            },
+            {
+              "name": "startAtValue",
+              "type": "text",
+              "label": "Start At Value",
+              "required": false
+            },
+            {
+              "name": "limit",
               "type": "number",
-              "label": "Count",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
+              "required": false
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
               "required": false
             }
           ]
@@ -467,9 +497,9 @@
           "description": "Get the current vote state for a contested resource",
           "inputs": [
             {
-              "name": "contractId",
+              "name": "dataContractId",
               "type": "text",
-              "label": "Contract ID",
+              "label": "Data Contract ID",
               "required": true
             },
             {
@@ -483,6 +513,43 @@
               "type": "text",
               "label": "Index Name",
               "required": true
+            },
+            {
+              "name": "indexValues",
+              "type": "array",
+              "label": "Index Values",
+              "required": true,
+              "placeholder": "[\"dash\", \"alice\"]"
+            },
+            {
+              "name": "resultType",
+              "type": "text",
+              "label": "Result Type",
+              "required": true
+            },
+            {
+              "name": "allowIncludeLockedAndAbstainingVoteTally",
+              "type": "checkbox",
+              "label": "Allow Include Locked and Abstaining Vote Tally",
+              "required": false
+            },
+            {
+              "name": "startAtIdentifierInfo",
+              "type": "text",
+              "label": "Start At Identifier Info",
+              "required": false
+            },
+            {
+              "name": "count",
+              "type": "number",
+              "label": "Count",
+              "required": false
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
+              "required": false
             }
           ]
         },
@@ -509,10 +576,35 @@
               "required": true
             },
             {
+              "name": "indexValues",
+              "type": "array",
+              "label": "Index Values",
+              "required": true,
+              "placeholder": "[\"dash\", \"alice\"]"
+            },
+            {
               "name": "contestantId",
               "type": "text",
               "label": "Contestant Identity ID",
               "required": true
+            },
+            {
+              "name": "startAtVoterInfo",
+              "type": "text",
+              "label": "Start At Voter Info",
+              "required": false
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
+              "required": false
             }
           ]
         },
@@ -525,6 +617,24 @@
               "type": "text",
               "label": "Identity ID",
               "required": true
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "startAtVotePollIdInfo",
+              "type": "text",
+              "label": "Start At Vote Poll ID Info",
+              "required": false
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
+              "required": false
             }
           ]
         },
@@ -533,16 +643,30 @@
           "description": "Get vote polls within a time range",
           "inputs": [
             {
-              "name": "startTimeMs",
-              "type": "number",
-              "label": "Start Time (ms)",
-              "required": true
+              "name": "startTimeInfo",
+              "type": "text",
+              "label": "Start Time Info",
+              "required": false,
+              "placeholder": "Timestamp in milliseconds as string"
             },
             {
-              "name": "endTimeMs",
+              "name": "endTimeInfo",
+              "type": "text",
+              "label": "End Time Info",
+              "required": false,
+              "placeholder": "Timestamp in milliseconds as string"
+            },
+            {
+              "name": "limit",
               "type": "number",
-              "label": "End Time (ms)",
-              "required": true
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
+              "required": false
             }
           ]
         }
@@ -631,6 +755,12 @@
           "label": "Get Evonodes Proposed Epoch Blocks by IDs",
           "description": "Get proposed blocks by evonode IDs",
           "inputs": [
+            {
+              "name": "epoch",
+              "type": "number",
+              "label": "Epoch",
+              "required": true
+            },
             {
               "name": "ids",
               "type": "array",
@@ -1391,12 +1521,6 @@
               "required": true
             },
             {
-              "name": "keyId",
-              "type": "number",
-              "label": "Key ID (for signing)",
-              "required": true
-            },
-            {
               "name": "publicNote",
               "type": "text",
               "label": "Public Note",
@@ -1427,16 +1551,215 @@
               "required": true
             },
             {
-              "name": "keyId",
-              "type": "number",
-              "label": "Key ID (for signing)",
-              "required": true
-            },
-            {
               "name": "issuedToIdentityId",
               "type": "text",
               "label": "Issue To Identity ID",
               "required": false
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
+            }
+          ]
+        },
+        "tokenClaim": {
+          "label": "Token Claim",
+          "description": "Claim tokens from a distribution",
+          "inputs": [
+            {
+              "name": "contractId",
+              "type": "text",
+              "label": "Data Contract ID",
+              "required": true
+            },
+            {
+              "name": "tokenPosition",
+              "type": "number",
+              "label": "Token Contract Position",
+              "required": true
+            },
+            {
+              "name": "distributionType",
+              "type": "select",
+              "label": "Distribution Type",
+              "required": true,
+              "options": [
+                {
+                  "value": "perpetual",
+                  "label": "Perpetual"
+                },
+                {
+                  "value": "preprogrammed",
+                  "label": "Pre-programmed"
+                }
+              ]
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
+            }
+          ]
+        },
+        "tokenSetPriceForDirectPurchase": {
+          "label": "Token Set Price",
+          "description": "Set or update the price for direct token purchases",
+          "inputs": [
+            {
+              "name": "contractId",
+              "type": "text",
+              "label": "Data Contract ID",
+              "required": true
+            },
+            {
+              "name": "tokenPosition",
+              "type": "number",
+              "label": "Token Contract Position",
+              "required": true
+            },
+            {
+              "name": "priceType",
+              "type": "select",
+              "label": "Price Type",
+              "required": true,
+              "options": [
+                {
+                  "value": "single",
+                  "label": "Single Price"
+                },
+                {
+                  "value": "tiered",
+                  "label": "Tiered Pricing"
+                }
+              ]
+            },
+            {
+              "name": "priceData",
+              "type": "text",
+              "label": "Price Data (single price or JSON map)",
+              "required": false,
+              "placeholder": "Leave empty to remove pricing"
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
+            }
+          ]
+        },
+        "tokenDirectPurchase": {
+          "label": "Token Direct Purchase",
+          "description": "Purchase tokens directly at the configured price",
+          "inputs": [
+            {
+              "name": "contractId",
+              "type": "text",
+              "label": "Data Contract ID",
+              "required": true
+            },
+            {
+              "name": "tokenPosition",
+              "type": "number",
+              "label": "Token Contract Position",
+              "required": true
+            },
+            {
+              "name": "amount",
+              "type": "text",
+              "label": "Amount to Purchase",
+              "required": true
+            },
+            {
+              "name": "totalAgreedPrice",
+              "type": "text",
+              "label": "Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided",
+              "required": false
+            },
+            {
+              "name": "keyId",
+              "type": "number",
+              "label": "Key ID (for signing)",
+              "required": true
+            }
+          ]
+        },
+        "tokenConfigUpdate": {
+          "label": "Token Config Update",
+          "description": "Update token configuration settings",
+          "inputs": [
+            {
+              "name": "contractId",
+              "type": "text",
+              "label": "Data Contract ID",
+              "required": true
+            },
+            {
+              "name": "tokenPosition",
+              "type": "number",
+              "label": "Token Contract Position",
+              "required": true
+            },
+            {
+              "name": "configItemType",
+              "type": "select",
+              "label": "Config Item Type",
+              "required": true,
+              "options": [
+                {
+                  "value": "conventions",
+                  "label": "Conventions"
+                },
+                {
+                  "value": "max_supply",
+                  "label": "Max Supply"
+                },
+                {
+                  "value": "perpetual_distribution",
+                  "label": "Perpetual Distribution"
+                },
+                {
+                  "value": "new_tokens_destination_identity",
+                  "label": "New Tokens Destination Identity"
+                },
+                {
+                  "value": "minting_allow_choosing_destination",
+                  "label": "Minting Allow Choosing Destination"
+                },
+                {
+                  "value": "manual_minting",
+                  "label": "Manual Minting"
+                },
+                {
+                  "value": "manual_burning",
+                  "label": "Manual Burning"
+                },
+                {
+                  "value": "conventions_control_group",
+                  "label": "Conventions Control Group"
+                },
+                {
+                  "value": "conventions_admin_group",
+                  "label": "Conventions Admin Group"
+                },
+                {
+                  "value": "max_supply_control_group",
+                  "label": "Max Supply Control Group"
+                },
+                {
+                  "value": "max_supply_admin_group",
+                  "label": "Max Supply Admin Group"
+                }
+              ]
+            },
+            {
+              "name": "configValue",
+              "type": "text",
+              "label": "Config Value (JSON or specific value)",
+              "required": true
             },
             {
               "name": "publicNote",
