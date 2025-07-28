@@ -1082,16 +1082,52 @@
           "description": "Create a new identity with initial credits",
           "inputs": [
             {
-              "name": "publicKeys",
-              "type": "keyArray",
-              "label": "Public Keys",
-              "required": true
+              "name": "seedPhrase",
+              "type": "textarea",
+              "label": "Seed Phrase",
+              "required": true,
+              "placeholder": "Enter seed phrase (12-24 words) or click Generate",
+              "help": "The wallet seed phrase that will be used to derive identity keys"
             },
             {
-              "name": "assetLockProof",
-              "type": "assetLockProof",
-              "label": "Asset Lock Proof",
-              "required": true
+              "name": "generateSeedButton",
+              "type": "button",
+              "label": "Generate New Seed",
+              "action": "generateTestSeed"
+            },
+            {
+              "name": "identityIndex",
+              "type": "number",
+              "label": "Identity Index",
+              "required": true,
+              "value": 0,
+              "min": 0,
+              "max": 999,
+              "help": "The identity index is an internal reference within the wallet. Leave as 0 for first identity."
+            },
+            {
+              "name": "keySelectionMode",
+              "type": "select",
+              "label": "Key Selection Mode",
+              "required": true,
+              "value": "default",
+              "options": [
+                {
+                  "value": "default",
+                  "label": "Default (Recommended)"
+                },
+                {
+                  "value": "advanced",
+                  "label": "Advanced"
+                }
+              ],
+              "help": "Default adds standard keys for most Platform operations. Advanced allows custom key configuration."
+            },
+            {
+              "name": "keyPreview",
+              "type": "keyPreview",
+              "label": "Keys to be added",
+              "help": "These keys will be added to your new identity"
             }
           ]
         },
@@ -1100,10 +1136,12 @@
           "description": "Add credits to an existing identity",
           "inputs": [
             {
-              "name": "assetLockProof",
-              "type": "assetLockProof",
-              "label": "Asset Lock Proof",
-              "required": true
+              "name": "identityId",
+              "type": "text",
+              "label": "Identity ID",
+              "required": true,
+              "placeholder": "Enter the identity ID to top up (base58)",
+              "help": "The identity ID that will receive the credits from the asset lock proof"
             }
           ]
         },
