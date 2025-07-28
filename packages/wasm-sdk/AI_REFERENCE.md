@@ -731,24 +731,55 @@ const result = await sdk.{transition_name}(identityHex, ...params, privateKeyHex
 **Identity Create** - `identityCreate`
 *Create a new identity with initial credits*
 
-Parameters (in addition to identity/key):
-- `publicKeys` (keyArray, required) - Public Keys
-- `assetLockProof` (assetLockProof, required) - Asset Lock Proof
+Parameters:
+- `assetLockProof` (string, required) - Asset lock proof (hex-encoded JSON)
+- `assetLockProofPrivateKey` (string, required) - Private key for the asset lock proof (WIF format)
+- `publicKeys` (string, required) - JSON array of public keys to add to the identity
 
 Example:
 ```javascript
-const result = await sdk.identityCreate(identityHex, /* params */, privateKeyHex);
+// Asset lock proof is a hex-encoded JSON object
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const privateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+// Public keys array with proper key types
+const publicKeys = JSON.stringify([
+  {
+    id: 0,
+    keyType: "ECDSA_HASH160",
+    purpose: "AUTHENTICATION",
+    securityLevel: "MASTER",
+    privateKeyHex: "private_key_hex_here",
+    readOnly: false
+  },
+  {
+    id: 1,
+    keyType: "ECDSA_HASH160",
+    purpose: "AUTHENTICATION", 
+    securityLevel: "HIGH",
+    privateKeyHex: "private_key_hex_here",
+    readOnly: false
+  }
+]);
+
+const result = await sdk.identityCreate(assetLockProof, privateKey, publicKeys);
 ```
 
 **Identity Top Up** - `identityTopUp`
 *Add credits to an existing identity*
 
-Parameters (in addition to identity/key):
-- `assetLockProof` (assetLockProof, required) - Asset Lock Proof
+Parameters:
+- `identityId` (string, required) - The identity ID to top up (base58 format)
+- `assetLockProof` (string, required) - Asset lock proof (hex-encoded JSON)
+- `assetLockProofPrivateKey` (string, required) - Private key for the asset lock proof (WIF format)
 
 Example:
 ```javascript
-const result = await sdk.identityTopUp(identityHex, /* params */, privateKeyHex);
+const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const privateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+const result = await sdk.identityTopUp(identityId, assetLockProof, privateKey);
 ```
 
 **Identity Update** - `identityUpdate`
@@ -974,7 +1005,6 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Burn
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
@@ -989,7 +1019,6 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Mint
-- `keyId` (number, required) - Key ID (for signing)
 - `issuedToIdentityId` (text, optional) - Issue To Identity ID
 - `publicNote` (text, optional) - Public Note
 
@@ -1005,7 +1034,6 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `distributionType` (select, required) - Distribution Type
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
@@ -1022,7 +1050,6 @@ Parameters (in addition to identity/key):
 - `priceType` (select, required) - Price Type
 - `priceData` (text, optional) - Price Data (single price or JSON map)
   - Example: `Leave empty to remove pricing`
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:
@@ -1037,7 +1064,7 @@ Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Purchase
-- `totalAgreedPrice` (text, required) - Total Agreed Price (in credits)
+- `totalAgreedPrice` (text, optional) - Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided
 - `keyId` (number, required) - Key ID (for signing)
 
 Example:
@@ -1053,7 +1080,6 @@ Parameters (in addition to identity/key):
 - `tokenPosition` (number, required) - Token Contract Position
 - `configItemType` (select, required) - Config Item Type
 - `configValue` (text, required) - Config Value (JSON or specific value)
-- `keyId` (number, required) - Key ID (for signing)
 - `publicNote` (text, optional) - Public Note
 
 Example:

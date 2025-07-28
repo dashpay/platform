@@ -2335,20 +2335,52 @@
             <div class="parameters">
                 <h5>Parameters:</h5>
                 <div class="parameter">
-                    <span class="param-name">Public Keys</span>
-                    <span class="param-type">keyArray</span>
+                    <span class="param-name">Asset Lock Proof</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
+                    <br><small>Hex-encoded JSON asset lock proof</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Asset Lock Proof</span>
-                    <span class="param-type">assetLockProof</span>
+                    <span class="param-name">Asset Lock Proof Private Key</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
+                    <br><small>WIF format private key</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Public Keys</span>
+                    <span class="param-type">string</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>JSON array of public keys</small>
                 </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code">const result = await sdk.identityCreate(identityHex, /* params */, privateKeyHex);</div>            </div>
+                <div class="example-code">// Asset lock proof is a hex-encoded JSON object
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const privateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+// Public keys array with proper key types
+const publicKeys = JSON.stringify([
+  {
+    id: 0,
+    keyType: "ECDSA_HASH160",
+    purpose: "AUTHENTICATION",
+    securityLevel: "MASTER",
+    privateKeyHex: "private_key_hex_here",
+    readOnly: false
+  },
+  {
+    id: 1,
+    keyType: "ECDSA_HASH160",
+    purpose: "AUTHENTICATION", 
+    securityLevel: "HIGH",
+    privateKeyHex: "private_key_hex_here",
+    readOnly: false
+  }
+]);
+
+const result = await sdk.identityCreate(assetLockProof, privateKey, publicKeys);</div>            </div>
         </div>
         <div class="operation">
             <h4 id="transition-identityTopUp">Identity Top Up</h4>
@@ -2357,15 +2389,31 @@
             <div class="parameters">
                 <h5>Parameters:</h5>
                 <div class="parameter">
-                    <span class="param-name">Asset Lock Proof</span>
-                    <span class="param-type">assetLockProof</span>
+                    <span class="param-name">Identity ID</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
+                    <br><small>Base58 format identity ID</small>
                 </div>
+                <div class="parameter">
+                    <span class="param-name">Asset Lock Proof</span>
+                    <span class="param-type">string</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>Hex-encoded JSON asset lock proof</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Asset Lock Proof Private Key</span>
+                    <span class="param-type">string</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>WIF format private key</small>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code">const result = await sdk.identityTopUp(identityHex, /* params */, privateKeyHex);</div>            </div>
+                <div class="example-code">const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const privateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+const result = await sdk.identityTopUp(identityId, assetLockProof, privateKey);</div>            </div>
         </div>
         <div class="operation">
             <h4 id="transition-identityUpdate">Identity Update</h4>
@@ -2828,11 +2876,6 @@
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
                     <span class="param-name">Public Note</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
@@ -2862,11 +2905,6 @@
                 <div class="parameter">
                     <span class="param-name">Amount to Mint</span>
                     <span class="param-type">text</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
@@ -2908,11 +2946,6 @@
                     <br><small>Options: Perpetual, Pre-programmed</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
                     <span class="param-name">Public Note</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
@@ -2952,11 +2985,6 @@
                     <br><small>Example: Leave empty to remove pricing</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
                     <span class="param-name">Public Note</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
@@ -2989,9 +3017,9 @@
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Total Agreed Price (in credits)</span>
+                    <span class="param-name">Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided</span>
                     <span class="param-type">text</span>
-                    <span class="param-required">(required)</span>
+                    <span class="param-optional">(optional)</span>
                 </div>
                 <div class="parameter">
                     <span class="param-name">Key ID (for signing)</span>
@@ -3024,16 +3052,11 @@
                     <span class="param-name">Config Item Type</span>
                     <span class="param-type">select</span>
                     <span class="param-required">(required)</span>
-                    <br><small>Options: No Change, Conventions, Max Supply, Perpetual Distribution, New Tokens Destination Identity, Minting Allow Choosing Destination, Manual Minting, Manual Burning, Conventions Control Group, Conventions Admin Group, Max Supply Control Group, Max Supply Admin Group</small>
+                    <br><small>Options: Conventions, Max Supply, Perpetual Distribution, New Tokens Destination Identity, Minting Allow Choosing Destination, Manual Minting, Manual Burning, Conventions Control Group, Conventions Admin Group, Max Supply Control Group, Max Supply Admin Group</small>
                 </div>
                 <div class="parameter">
                     <span class="param-name">Config Value (JSON or specific value)</span>
                     <span class="param-type">text</span>
-                    <span class="param-required">(required)</span>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
