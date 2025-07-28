@@ -541,41 +541,73 @@ pub async fn get_token_perpetual_distribution_last_claim(
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
     
-    // Create query
-    let query = TokenLastClaimQuery {
-        token_id: token_identifier,
-        identity_id: identity_identifier,
+    // Use direct gRPC request instead of high-level SDK fetch to avoid proof verification issues
+    use dapi_grpc::platform::v0::{
+        GetTokenPerpetualDistributionLastClaimRequest,
+        get_token_perpetual_distribution_last_claim_request::{
+            Version, GetTokenPerpetualDistributionLastClaimRequestV0
+        }
+    };
+    use rs_dapi_client::DapiRequestExecutor;
+    
+    // Create direct gRPC Request without proofs to avoid context provider issues
+    let request = GetTokenPerpetualDistributionLastClaimRequest {
+        version: Some(Version::V0(GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_identifier.to_vec(),
+            identity_id: identity_identifier.to_vec(),
+            contract_info: None, // Not needed for this query
+            prove: false, // Use prove: false to avoid proof verification and context provider dependency
+        })),
     };
     
-    // Fetch last claim info
-    let claim_result = RewardDistributionMoment::fetch(sdk.as_ref(), query)
+    // Execute the gRPC request
+    let response = sdk.inner_sdk()
+        .execute(request, rs_dapi_client::RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch token perpetual distribution last claim: {}", e)))?;
     
-    if let Some(moment) = claim_result {
-        // Extract timestamp and block height based on the moment type
-        // Since we need both timestamp and block height in the response,
-        // we'll return the moment value and type
-        let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-            dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::BlockBasedMoment(height) => {
-                (0, height) // No timestamp available for block-based
-            },
-            dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::TimeBasedMoment(timestamp) => {
-                (timestamp, 0) // No block height available for time-based
-            },
-            dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::EpochBasedMoment(epoch) => {
-                (0, epoch as u64) // Convert epoch to u64, no timestamp available
-            },
-        };
-        
+    // Extract result from response and convert to our expected format
+    let claim_result = match response.inner.version {
+        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(v0)) => {
+            match v0.result {
+                Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(claim)) => {
+                    // Convert gRPC response to RewardDistributionMoment equivalent
+                    match claim.paid_at {
+                        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::TimestampMs(timestamp)) => {
+                            Some((timestamp, 0)) // (timestamp_ms, block_height)
+                        },
+                        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::BlockHeight(height)) => {
+                            Some((0, height)) // (timestamp_ms, block_height)
+                        },
+                        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::Epoch(epoch)) => {
+                            Some((0, epoch as u64)) // (timestamp_ms, block_height)
+                        },
+                        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(_)) => {
+                            Some((0, 0)) // Raw bytes not supported, return zeros
+                        },
+                        None => None, // No paid_at info
+                    }
+                },
+                Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(_)) => {
+                    return Err(JsError::new("Received proof instead of data - this should not happen with prove: false"))
+                },
+                None => None, // No claim found
+            }
+        },
+        None => {
+            return Err(JsError::new("Invalid response version"))
+        }
+    };
+    
+    if let Some((timestamp_ms, block_height)) = claim_result {
         let response = LastClaimResponse {
-            last_claim_timestamp_ms,
-            last_claim_block_height,
+            last_claim_timestamp_ms: timestamp_ms,
+            last_claim_block_height: block_height,
         };
         
         // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        response.serialize(&serializer)
             .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     } else {
         Ok(JsValue::NULL)

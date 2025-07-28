@@ -55,6 +55,11 @@ impl WasmSdk {
         self.0.version().protocol_version
     }
     
+    /// Get reference to the inner SDK for direct gRPC calls
+    pub(crate) fn inner_sdk(&self) -> &Sdk {
+        &self.0
+    }
+    
     /// Get the network this SDK is configured for
     pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
         self.0.network
