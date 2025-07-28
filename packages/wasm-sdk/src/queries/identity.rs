@@ -157,8 +157,8 @@ pub async fn get_identity_keys(
             let request = GetIdentityKeysRequest {
                 version: Some(Version::V0(GetIdentityKeysRequestV0 {
                     identity_id: id.to_vec(),
-                    prove: true,
-                    limit: limit.map(|l| l.into()),
+                    prove: false,
+                    limit: Some(limit.unwrap_or(100).into()), // Always provide a limit when prove=false
                     offset: offset.map(|o| o.into()),
                     request_type: Some(KeyRequestType {
                         request: Some(Request::SpecificKeys(SpecificKeys {
@@ -254,8 +254,8 @@ pub async fn get_identity_keys(
             let request = GetIdentityKeysRequest {
                 version: Some(Version::V0(GetIdentityKeysRequestV0 {
                     identity_id: id.to_vec(),
-                    prove: true,
-                    limit: limit.map(|l| l.into()),
+                    prove: false,
+                    limit: Some(limit.unwrap_or(100).into()), // Always provide a limit when prove=false
                     offset: offset.map(|o| o.into()),
                     request_type: Some(KeyRequestType {
                         request: Some(Request::SearchKey(SearchKey {
