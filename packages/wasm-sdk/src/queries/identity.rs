@@ -159,7 +159,7 @@ pub async fn get_identity_keys(
                     identity_id: id.to_vec(),
                     prove: false,
                     limit: Some(limit.unwrap_or(100).into()), // Always provide a limit when prove=false
-                    offset: offset.map(|o| o.into()),
+                    offset: None, // Offsets not supported when prove=false
                     request_type: Some(KeyRequestType {
                         request: Some(Request::SpecificKeys(SpecificKeys {
                             key_ids,
@@ -256,7 +256,7 @@ pub async fn get_identity_keys(
                     identity_id: id.to_vec(),
                     prove: false,
                     limit: Some(limit.unwrap_or(100).into()), // Always provide a limit when prove=false
-                    offset: offset.map(|o| o.into()),
+                    offset: None, // Offsets not supported when prove=false
                     request_type: Some(KeyRequestType {
                         request: Some(Request::SearchKey(SearchKey {
                             purpose_map,
