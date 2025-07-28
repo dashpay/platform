@@ -206,6 +206,10 @@ def generate_example_code(query_key, inputs):
     elif query_key == 'getGroupActions':
         # getGroupActions expects: sdk, contractId, groupContractPosition, status, startAtInfo (object or null), count
         params = [f"'{test_data['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
+    elif query_key == 'getDataContractHistory':
+        # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
+        # Use the specific contract ID requested by the user
+        params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0"]
     else:
         # Generate parameters normally
         params = []
@@ -399,7 +403,7 @@ def generate_operation_entry(operation_key, operation, type_prefix):
             html_content += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
         else:
             html_content += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
-            if operation_key in ['getPathElements', 'getDataContractHistory', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
+            if operation_key in ['getPathElements', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
                 html_content += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
         
         # Add special examples and info
