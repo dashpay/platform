@@ -130,6 +130,7 @@ def generate_example_code(query_key, inputs):
         'specialized_balance_id': 'AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT',
         'contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         'data_contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        'data_contract_history_id': 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM',
         'token_contract_id': 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A',
         'group_contract_id': '49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N',
         'public_key_hash_unique': 'b7e904ce25ed97594e72f7af0e66f298031c1754',
@@ -144,7 +145,7 @@ def generate_example_code(query_key, inputs):
     
     # Map input names to test values
     param_mapping = {
-        'id': "'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
+        'id': f"'{test_data['data_contract_history_id']}'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
         'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['identity_id']}'",
         'ids': f"['{test_data['data_contract_id']}', '{test_data['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{test_data['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{test_data['identity_id']}']",
         'identitiesIds': f"['{test_data['identity_id']}']",
@@ -208,7 +209,7 @@ def generate_example_code(query_key, inputs):
         params = [f"'{test_data['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
     elif query_key == 'getDataContractHistory':
         # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
-        # Use the specific contract ID requested by the user
+        # Use the specific contract ID for getDataContractHistory examples
         params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0"]
     else:
         # Generate parameters normally
@@ -403,7 +404,7 @@ def generate_operation_entry(operation_key, operation, type_prefix):
             html_content += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
         else:
             html_content += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
-            if operation_key in ['getPathElements', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
+            if operation_key in ['getPathElements', 'getContestedResourceVotersForIdentity']:
                 html_content += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
         
         # Add special examples and info

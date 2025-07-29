@@ -64,7 +64,7 @@ query_inputs = {
         {"name": "id", "type": "text", "label": "Data Contract ID", "required": True, "placeholder": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"}
     ],
     "getDataContractHistory": [
-        {"name": "id", "type": "text", "label": "Data Contract ID", "required": True, "placeholder": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"},
+        {"name": "id", "type": "text", "label": "Data Contract ID", "required": True, "placeholder": "HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM"},
         {"name": "limit", "type": "number", "label": "Limit", "required": False},
         {"name": "offset", "type": "number", "label": "Offset", "required": False}
     ],
