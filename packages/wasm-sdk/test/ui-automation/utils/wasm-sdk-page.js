@@ -174,19 +174,48 @@ class WasmSdkPage extends BaseTest {
    * Enable proof information toggle
    */
   async enableProofInfo() {
+    // Wait a moment for the UI to fully load after query setup
+    await this.page.waitForTimeout(1000);
+    
     const proofContainer = this.page.locator(this.selectors.proofToggleContainer);
     
-    // Wait for proof container to be visible with timeout
+    // Check if proof container exists and becomes visible
     try {
-      await proofContainer.waitFor({ state: 'visible', timeout: 5000 });
+      // Wait longer and check if container becomes visible or is already attached
+      await proofContainer.waitFor({ state: 'attached', timeout: 10000 });
+      
+      // Check if it's visible or can be made visible
+      const isVisible = await proofContainer.isVisible();
+      if (!isVisible) {
+        // It might be hidden by display:none, check if it exists in the DOM
+        const count = await proofContainer.count();
+        if (count === 0) {
+          console.log('⚠️ Proof toggle container not found in DOM');
+          return false;
+        }
+        
+        // Try to wait a bit more for it to become visible
+        try {
+          await proofContainer.waitFor({ state: 'visible', timeout: 3000 });
+        } catch {
+          console.log('⚠️ Proof toggle container exists but remains hidden - may not be available for this query type');
+          return false;
+        }
+      }
       
       const proofToggle = this.page.locator(this.selectors.proofToggle);
-      await proofToggle.waitFor({ state: 'visible', timeout: 5000 });
-      await proofToggle.check();
+      await proofToggle.waitFor({ state: 'visible', timeout: 3000 });
+      
+      // Check if already enabled
+      const isChecked = await proofToggle.isChecked();
+      if (!isChecked) {
+        await proofToggle.check();
+      }
+      
       console.log('✅ Proof info enabled');
       return true;
     } catch (error) {
-      console.log('⚠️ Proof toggle not available for this query type');
+      console.log(`⚠️ Proof toggle not available for this query type: ${error.message}`);
       return false;
     }
   }
@@ -195,19 +224,48 @@ class WasmSdkPage extends BaseTest {
    * Disable proof information toggle
    */
   async disableProofInfo() {
+    // Wait a moment for the UI to fully load after query setup
+    await this.page.waitForTimeout(1000);
+    
     const proofContainer = this.page.locator(this.selectors.proofToggleContainer);
     
-    // Wait for proof container to be visible with timeout
+    // Check if proof container exists and becomes visible
     try {
-      await proofContainer.waitFor({ state: 'visible', timeout: 5000 });
+      // Wait longer and check if container becomes visible or is already attached
+      await proofContainer.waitFor({ state: 'attached', timeout: 10000 });
+      
+      // Check if it's visible or can be made visible
+      const isVisible = await proofContainer.isVisible();
+      if (!isVisible) {
+        // It might be hidden by display:none, check if it exists in the DOM
+        const count = await proofContainer.count();
+        if (count === 0) {
+          console.log('⚠️ Proof toggle container not found in DOM');
+          return false;
+        }
+        
+        // Try to wait a bit more for it to become visible
+        try {
+          await proofContainer.waitFor({ state: 'visible', timeout: 3000 });
+        } catch {
+          console.log('⚠️ Proof toggle container exists but remains hidden - may not be available for this query type');
+          return false;
+        }
+      }
       
       const proofToggle = this.page.locator(this.selectors.proofToggle);
-      await proofToggle.waitFor({ state: 'visible', timeout: 5000 });
-      await proofToggle.uncheck();
+      await proofToggle.waitFor({ state: 'visible', timeout: 3000 });
+      
+      // Check if already disabled
+      const isChecked = await proofToggle.isChecked();
+      if (isChecked) {
+        await proofToggle.uncheck();
+      }
+      
       console.log('✅ Proof info disabled');
       return true;
     } catch (error) {
-      console.log('⚠️ Proof toggle not available for this query type');
+      console.log(`⚠️ Proof toggle not available for this query type: ${error.message}`);
       return false;
     }
   }
