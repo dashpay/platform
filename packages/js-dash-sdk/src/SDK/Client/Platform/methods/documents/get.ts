@@ -96,6 +96,83 @@ export async function get(this: Platform, typeLocator: string, opts: QueryOption
     throw new Error(`Missing contract ID for ${appName}`);
   }
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    try {
+      // Convert where conditions to wasm-sdk format
+      let whereClause: string | undefined;
+      if (opts.where) {
+        // Ensure app contract is fetched for binary properties
+        await ensureAppContractFetched.call(this, appName);
+        const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
+        
+        const convertedWhere = opts.where.map((whereCondition) => 
+          convertIdentifierProperties(whereCondition, binaryProperties)
+        );
+        
+        // Convert to JSON string for wasm-sdk
+        whereClause = JSON.stringify(convertedWhere);
+      }
+      
+      // Convert orderBy to wasm-sdk format
+      let orderByClause: string | undefined;
+      if (opts.orderBy) {
+        orderByClause = JSON.stringify(opts.orderBy);
+      }
+      
+      // Convert startAt/startAfter
+      let startAt = opts.startAt;
+      let startAfter = opts.startAfter;
+      
+      if (startAt instanceof ExtendedDocument) {
+        startAt = startAt.getId().toString();
+      } else if (typeof startAt === 'string') {
+        startAt = Identifier.from(startAt).toString();
+      } else if (startAt && typeof startAt === 'object') {
+        startAt = startAt.toString();
+      }
+      
+      if (startAfter instanceof ExtendedDocument) {
+        startAfter = startAfter.getId().toString();
+      } else if (typeof startAfter === 'string') {
+        startAfter = Identifier.from(startAfter).toString();
+      } else if (startAfter && typeof startAfter === 'object') {
+        startAfter = startAfter.toString();
+      }
+      
+      // Call wasm-sdk getDocuments
+      const result = await this.wasmSdk.getDocuments(
+        appDefinition.contractId.toString(),
+        fieldType,
+        whereClause,
+        orderByClause,
+        opts.limit,
+        startAt ? parseInt(startAt as string) : undefined,
+        startAfter ? parseInt(startAfter as string) : undefined
+      );
+      
+      if (!result || !Array.isArray(result)) {
+        return [];
+      }
+      
+      // Convert wasm-sdk documents to js-dash-sdk format
+      const documents = result.map(doc => adapter.convertResponse(doc, 'document'));
+      
+      this.logger.debug(`[Documents#get] Obtained ${documents.length} document(s) for "${typeLocator}"`);
+      
+      return documents;
+    } catch (e) {
+      if (e.message?.includes('not found') || e.message?.includes('does not exist')) {
+        this.logger.debug(`[Documents#get] Obtained 0 documents for "${typeLocator}"`);
+        return [];
+      }
+      throw e;
+    }
+  }
+
+  // Legacy implementation - will be removed once migration is complete
   // If not present, will fetch contract based on appName and contractId store in this.apps.
   await ensureAppContractFetched.call(this, appName);
   this.logger.silly(`[Documents#get] Ensured app contract is fetched "${typeLocator}"`);

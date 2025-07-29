@@ -11,6 +11,30 @@ import convertToHomographSafeChars from '../../../../../utils/convertToHomograph
 export async function search(this: Platform, labelPrefix: string, parentDomainName: string = '') {
   await this.initialize();
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    this.logger.debug(`[Names#search] Calling wasm-sdk getNameBySearch for "${labelPrefix}"`);
+    
+    // Call wasm-sdk getNameBySearch
+    const result = await this.wasmSdk.getNameBySearch(
+      labelPrefix,
+      parentDomainName || undefined
+    );
+    
+    if (!result) {
+      return [];
+    }
+    
+    // Convert the result to array of documents
+    const documents = Array.isArray(result) ? result : [result];
+    
+    this.logger.debug(`[Names#search] Found ${documents.length} names via wasm-sdk`);
+    
+    return documents.map(doc => adapter.convertResponse(doc, 'document'));
+  }
+
   const normalizedParentDomainName = convertToHomographSafeChars(parentDomainName);
   const normalizedLabelPrefix = convertToHomographSafeChars(labelPrefix);
 

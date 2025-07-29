@@ -26,6 +26,52 @@ export default async function broadcastStateTransition(
 ): Promise<IStateTransitionResult> {
   const { client } = platform;
 
+  // If wasm-sdk is available, delegate to it
+  if (platform.wasmSdk && platform.getAdapter()) {
+    platform.logger.debug('[broadcastStateTransition] Using wasm-sdk to broadcast state transition');
+    
+    // Convert state transition to hex string
+    const stateTransitionHex = stateTransition.toBuffer().toString('hex');
+    
+    try {
+      // Call wasm-sdk broadcastStateTransition
+      const result = await platform.wasmSdk.broadcastStateTransition(stateTransitionHex);
+      
+      // Wait for the result
+      const hash = crypto.createHash('sha256')
+        .update(stateTransition.toBuffer())
+        .digest();
+        
+      const stateTransitionResult = await platform.wasmSdk.waitForStateTransitionResult(
+        hash.toString('hex')
+      );
+      
+      if (stateTransitionResult.error) {
+        const error = stateTransitionResult.error;
+        throw new StateTransitionBroadcastError(
+          error.code || 0,
+          error.message || 'Unknown error',
+          error
+        );
+      }
+      
+      platform.logger.debug('[broadcastStateTransition] State transition broadcasted successfully via wasm-sdk');
+      
+      return stateTransitionResult;
+    } catch (error) {
+      if (error instanceof StateTransitionBroadcastError) {
+        throw error;
+      }
+      
+      // Wrap other errors
+      throw new StateTransitionBroadcastError(
+        error.code || 0,
+        error.message || 'Broadcast failed',
+        error
+      );
+    }
+  }
+
   // TODO(versioning): restore
   // @ts-ignore
   // if (!options.skipValidation) {

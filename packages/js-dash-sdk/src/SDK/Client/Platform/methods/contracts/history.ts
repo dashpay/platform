@@ -29,6 +29,49 @@ export async function history(
 
   const contractId : Identifier = Identifier.from(identifier);
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    try {
+      this.logger.debug(`[Contracts#history] Calling wasm-sdk getDataContractHistory`);
+      
+      // Call wasm-sdk getDataContractHistory
+      const result = await this.wasmSdk.getDataContractHistory(
+        contractId.toString(),
+        startAtMs,
+        limit,
+        offset
+      );
+      
+      if (!result) {
+        return null;
+      }
+      
+      // Convert the response to the expected format
+      const contractHistory: { [key: number]: DataContract } = {};
+      
+      if (result.entries && Array.isArray(result.entries)) {
+        for (const entry of result.entries) {
+          if (entry.date && entry.value) {
+            // Convert wasm-sdk data contract to js-dash-sdk format
+            const dataContract = adapter.convertResponse(entry.value, 'dataContract');
+            contractHistory[Number(entry.date)] = dataContract;
+          }
+        }
+      }
+      
+      this.logger.debug(`[Contracts#history] Obtained Data Contract history for "${identifier}" via wasm-sdk`);
+      
+      return contractHistory;
+    } catch (e) {
+      if (e.message?.includes('not found') || e.message?.includes('does not exist')) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
   let dataContractHistoryResponse: GetDataContractHistoryResponse;
   try {
     dataContractHistoryResponse = await this.fetcher

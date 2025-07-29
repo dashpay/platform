@@ -26,6 +26,63 @@ export async function update(
   });
   await this.initialize();
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    // Get the identity's private key for signing (master key at index 0)
+    const account = await this.client.getWalletAccount();
+    
+    // Get the master key for signing
+    const { privateKey: masterPrivateKey } = account.identities
+      .getIdentityHDKeyById(identity.getId().toString(), 0);
+    
+    // Convert private key to WIF format
+    const privateKeyWIF = adapter.convertPrivateKeyToWIF(masterPrivateKey);
+    
+    // Prepare public keys to add
+    let addPublicKeysJson: string | undefined;
+    if (publicKeys.add && publicKeys.add.length > 0) {
+      const keysToAdd = publicKeys.add.map(key => {
+        // Get the private key for this public key to sign the proof
+        const privateKey = privateKeys[key.getId()];
+        if (!privateKey) {
+          throw new Error(`Private key for key ${key.getId()} not found`);
+        }
+        
+        return {
+          id: key.getId(),
+          type: key.getType(),
+          purpose: key.getPurpose(),
+          securityLevel: key.getSecurityLevel(),
+          data: key.getData().toString('base64'),
+          readOnly: key.isReadOnly(),
+          // Include the private key for signing the proof
+          privateKey: adapter.convertPrivateKeyToWIF(privateKey),
+        };
+      });
+      addPublicKeysJson = JSON.stringify(keysToAdd);
+    }
+    
+    // Prepare keys to disable
+    const disableKeyIds = publicKeys.disable?.map(key => key.getId());
+    
+    this.logger.debug(`[Identity#update] Calling wasm-sdk identityUpdate`);
+    
+    // Call wasm-sdk identityUpdate
+    const result = await this.wasmSdk.identityUpdate(
+      identity.getId().toString(),
+      addPublicKeysJson,
+      disableKeyIds,
+      privateKeyWIF
+    );
+    
+    this.logger.debug(`[Identity#update] Updated identity ${identity.getId().toString()}`);
+    
+    return result.success !== false;
+  }
+
+  // Legacy implementation - will be removed once migration is complete
   const { dpp } = this;
 
   const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());

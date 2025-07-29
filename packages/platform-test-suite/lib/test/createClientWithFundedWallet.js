@@ -64,6 +64,7 @@ async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
     await faucetClient.disconnect();
   }
 
+
   return client;
 }
 

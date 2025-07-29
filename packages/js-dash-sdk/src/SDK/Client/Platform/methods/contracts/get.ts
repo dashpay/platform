@@ -28,6 +28,49 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     }
   }
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    const contractIdString = contractId.toString();
+    const cacheKey = `dataContract:${contractIdString}`;
+    
+    try {
+      // Use cached query for better performance
+      const result = await adapter.cachedQuery(cacheKey, async () => {
+        const sdk = await adapter.getSdk();
+        // data_contract_fetch is a standalone function from wasm-sdk
+        const wasmAdapter = adapter as any;
+        return await wasmAdapter.wasmSdk.data_contract_fetch(sdk, contractIdString);
+      });
+      
+      if (!result) {
+        return null;
+      }
+
+      // Convert wasm-sdk response to js-dash-sdk format
+      const contract = adapter.convertResponse(result, 'dataContract');
+      
+      // Store contract to the cache
+      // eslint-disable-next-line
+      for (const appName of this.client.getApps().getNames()) {
+        const appDefinition = this.client.getApps().get(appName);
+        if (appDefinition.contractId.equals(contractId)) {
+          appDefinition.contract = contract;
+        }
+      }
+      
+      this.logger.debug(`[Contracts#get] Obtained Data Contract "${identifier}"`);
+      
+      return contract;
+    } catch (e) {
+      if (e.message?.includes('not found') || e.message?.includes('does not exist')) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  // Legacy implementation - will be removed once migration is complete
   // Fetch contract otherwise
   let dataContractResponse: GetDataContractResponse;
   try {

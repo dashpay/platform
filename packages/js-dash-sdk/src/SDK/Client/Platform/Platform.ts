@@ -1,9 +1,8 @@
-import loadWasmDpp, { DashPlatformProtocol, getLatestProtocolVersion } from '@dashevo/wasm-dpp';
-import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
+import { WasmPlatformAdapter } from './adapters/WasmPlatformAdapter';
 
 import createAssetLockTransaction from './createAssetLockTransaction';
 
@@ -48,6 +47,7 @@ export interface PlatformOpts {
   client: Client,
   network: string,
   driveProtocolVersion?: number,
+  enablePlatform?: boolean,
 }
 
 /**
@@ -107,41 +107,43 @@ interface DataContracts {
  * @param contracts - contracts
  */
 export class Platform {
-  // TODO: Address in further type system improvements
-  //  Do we want to refactor all methods to check
-  //  whether dpp is initialized instead of ts-ignoring?
-  // @ts-ignore
-  dpp: DashPlatformProtocol;
-
+  // WASM SDK adapter for platform operations
+  private adapter?: WasmPlatformAdapter;
+  // Direct access to wasm-sdk instance for method delegation
+  public wasmSdk?: any;
+  
+  // Legacy DPP - will be removed once migration is complete
+  dpp?: any;
+  
   protocolVersion?: number;
 
   public documents: Records;
 
   /**
-     * @param {Function} get - get identities from the platform
-     * @param {Function} register - register identities on the platform
-     */
+   * @param {Function} get - get identities from the platform
+   * @param {Function} register - register identities on the platform
+   */
   public identities: Identities;
 
   /**
-     * @param {Function} get - get names from the platform
-     * @param {Function} register - register names on the platform
-     */
+   * @param {Function} get - get names from the platform
+   * @param {Function} register - register names on the platform
+   */
   public names: DomainNames;
 
   /**
-     * @param {Function} get - get contracts from the platform
-     * @param {Function} create - create contracts which can be broadcasted
-     * @param {Function} register - register contracts on the platform
-     */
+   * @param {Function} get - get contracts from the platform
+   * @param {Function} create - create contracts which can be broadcasted
+   * @param {Function} register - register contracts on the platform
+   */
   public contracts: DataContracts;
 
   public logger: ConfigurableLogger;
 
   /**
-     * Broadcasts state transition
-     * @param {Object} stateTransition
-     */
+   * Broadcasts state transition
+   * @param {Object} stateTransition
+   */
   public broadcastStateTransition(stateTransition: any): Promise<IStateTransitionResult | void> {
     return broadcastStateTransition(this, stateTransition);
   }
@@ -156,12 +158,17 @@ export class Platform {
 
   public nonceManager: NonceManager;
 
+  private platformEnabled: boolean;
+
   /**
-     * Construct some instance of Platform
-     *
-     * @param {PlatformOpts} options - options for Platform
-     */
+   * Construct some instance of Platform
+   *
+   * @param {PlatformOpts} options - options for Platform
+   */
   constructor(options: PlatformOpts) {
+    // Platform functionality can be disabled for core-only builds
+    this.platformEnabled = options.enablePlatform !== false;
+    
     this.documents = {
       broadcast: broadcastDocument.bind(this),
       create: createDocument.bind(this),
@@ -207,45 +214,69 @@ export class Platform {
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
     this.nonceManager = new NonceManager(this.client.getDAPIClient());
-  }
-
-  async initialize() {
-    if (!this.dpp) {
-      await Platform.initializeDppModule();
-
-      if (this.protocolVersion === undefined) {
-        // use mapped protocol version otherwise
-        // fallback to one that set in dpp as the last option
-
-        const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
-          this.client.network,
-        );
-
-        this.protocolVersion = mappedProtocolVersion !== undefined
-          ? mappedProtocolVersion : getLatestProtocolVersion();
-      }
-
-      // eslint-disable-next-line
-
-      this.dpp = new DashPlatformProtocol(
-        {
-          generate: () => crypto.randomBytes(32),
-        },
-        this.protocolVersion,
+    
+    // Initialize adapter if platform is enabled
+    if (this.platformEnabled) {
+      this.adapter = new WasmPlatformAdapter(
+        this.client.getDAPIClient(),
+        this.client.network,
+        true // proofs enabled by default
       );
+      // Set the platform reference in the adapter
+      this.adapter.setPlatform(this);
     }
   }
 
-  // Explicitly provide DPPModule as return type.
-  // If we don't do it, typescript behaves weird and in compiled Platform.d.ts
-  // this code looks like this.
-  //
-  // ```
-  // static initializeDppModule(): Promise<typeof import("@dashevo/wasm-dppdist/dpp")>;
-  // ```
-  //
-  // Slash is missing before `dist` and TS compilation in consumers is breaking
-  static async initializeDppModule(): Promise<DPPModule> {
-    return loadWasmDpp();
+  async initialize() {
+    if (!this.platformEnabled) {
+      throw new Error('Platform functionality is disabled. Use full SDK build or enable platform.');
+    }
+
+    if (!this.wasmSdk && this.adapter) {
+      try {
+        await this.adapter.initialize();
+        this.wasmSdk = await this.adapter.getSdk();
+        
+        // Set protocol version if not already set
+        if (this.protocolVersion === undefined) {
+          const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
+            this.client.network,
+          );
+
+          this.protocolVersion = mappedProtocolVersion !== undefined
+            ? mappedProtocolVersion : 1; // Default to 1
+        }
+      } catch (error) {
+        this.logger.error('Failed to initialize wasm-sdk:', error);
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Get the platform adapter for advanced usage
+   */
+  getAdapter(): WasmPlatformAdapter | undefined {
+    return this.adapter;
+  }
+
+  /**
+   * Dispose of platform resources
+   */
+  async dispose(): Promise<void> {
+    if (this.adapter) {
+      await this.adapter.dispose();
+    }
+    this.wasmSdk = undefined;
+  }
+
+  /**
+   * Legacy method for backward compatibility during migration
+   * Will be removed once migration is complete
+   */
+  static async initializeDppModule(): Promise<any> {
+    // This is now a no-op as we use wasm-sdk
+    console.warn('Platform.initializeDppModule() is deprecated. Platform now uses wasm-sdk.');
+    return {};
   }
 }

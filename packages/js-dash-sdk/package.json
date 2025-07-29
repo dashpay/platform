@@ -6,11 +6,33 @@
   "unpkg": "dist/dash.min.js",
   "browser": "dist/dash.min.js",
   "types": "build/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./build/index.js",
+      "require": "./build/index.js",
+      "types": "./build/index.d.ts"
+    },
+    "./core": {
+      "import": "./build/index.core.js",
+      "require": "./build/index.core.js",
+      "types": "./build/index.core.d.ts"
+    },
+    "./platform": {
+      "import": "./build/index.platform.js",
+      "require": "./build/index.platform.js",
+      "types": "./build/index.platform.d.ts"
+    },
+    "./build/*": "./build/*"
+  },
   "scripts": {
     "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
     "start:ts": "tsc -p tsconfig.build.json --watch",
     "build": "yarn run build:ts && webpack --stats-error-details",
     "build:ts": "tsc -p tsconfig.build.json",
+    "build:full": "yarn run build:ts && webpack --config webpack.config.js --env target=full",
+    "build:core": "yarn run build:ts && webpack --config webpack.config.js --env target=core",
+    "build:platform": "yarn run build:ts && webpack --config webpack.config.js --env target=platform",
+    "build:all": "yarn run build:ts && webpack --config webpack.config.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "yarn run test:types && yarn run test:unit && yarn run test:browsers",
@@ -108,5 +130,8 @@
     "util": "^0.12.4",
     "webpack": "^5.94.0",
     "webpack-cli": "^4.9.1"
+  },
+  "optionalDependencies": {
+    "@dashevo/wasm-sdk": "file:../wasm-sdk/pkg"
   }
 }

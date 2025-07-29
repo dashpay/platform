@@ -29,6 +29,43 @@ export async function register(
 ): Promise<any> {
   await this.initialize();
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    // Get identity private key for signing
+    const account = await this.client.getWalletAccount();
+    
+    // Get the key for document operations (index 1)
+    const { privateKey: documentPrivateKey } = account.identities
+      .getIdentityHDKeyById(identity.getId().toString(), 1);
+    
+    // Convert private key to WIF format
+    const privateKeyWIF = adapter.convertPrivateKeyToWIF(documentPrivateKey);
+    
+    // Convert identity to hex format
+    const identityHex = identity.getId().toBuffer().toString('hex');
+    
+    // Convert records to wasm-sdk format
+    const recordsJson = JSON.stringify({
+      identity: records.identity ? Identifier.from(records.identity).toString() : undefined,
+    });
+    
+    this.logger.debug(`[Names#register] Calling wasm-sdk dpnsRegister for "${name}"`);
+    
+    // Call wasm-sdk dpnsRegister
+    const result = await this.wasmSdk.dpnsRegister(
+      identityHex,
+      privateKeyWIF,
+      name,
+      recordsJson
+    );
+    
+    this.logger.debug(`[Names#register] Registered name "${name}" via wasm-sdk`);
+    
+    return result;
+  }
+
   if (records.identity) {
     records.identity = Identifier.from(records.identity);
   }

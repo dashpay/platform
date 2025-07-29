@@ -52,6 +52,7 @@ function createFaucetClient() {
     wallet: walletOptions,
   });
 
+
   return faucetClient;
 }
 

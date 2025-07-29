@@ -12,9 +12,40 @@ export async function creditTransfer(
   this.logger.debug(`[Identity#creditTransfer] credit transfer from ${identity.getId().toString()} to ${recipientId.toString()} with amount ${amount}`);
   await this.initialize();
 
-  const { dpp } = this;
-
   recipientId = Identifier.from(recipientId);
+
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    // Get the identity's private key for signing
+    const account = await this.client.getWalletAccount();
+    
+    // Get the transfer key (index 3)
+    const { privateKey: transferPrivateKey } = account.identities
+      .getIdentityHDKeyById(identity.getId().toString(), 3);
+    
+    // Convert private key to WIF format
+    const privateKeyWIF = adapter.convertPrivateKeyToWIF(transferPrivateKey);
+    
+    // Convert identity to hex format
+    const identityHex = identity.toBuffer().toString('hex');
+    
+    // Call wasm-sdk identityCreditTransfer
+    const result = await this.wasmSdk.identityCreditTransfer(
+      identityHex,
+      privateKeyWIF,
+      recipientId.toString(),
+      amount
+    );
+    
+    this.logger.debug(`[Identity#creditTransfer] Transferred ${amount} credits from ${identity.getId().toString()} to ${recipientId.toString()}`);
+    
+    return result.success !== false;
+  }
+
+  // Legacy implementation - will be removed once migration is complete
+  const { dpp } = this;
 
   const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
 

@@ -128,3 +128,22 @@ Platform uses data contracts to define application data schemas:
 - **Value Handling**: `rs-platform-value` for cross-language data representation
 - **Proof Verification**: `rs-drive-proof-verifier` for cryptographic proofs
 - **State Transitions**: Documents and data contracts use state transitions for updates
+
+### Platform Test Suite Issues (WASM SDK Integration)
+
+When running the platform test suite after wasm-sdk integration:
+
+1. **Faucet Wallet Setup**: The faucet wallet needs funded UTXOs. Generate blocks to the faucet address:
+   ```bash
+   yarn dashmate core cli "generatetoaddress 100 yhvXpqQjfN9S4j5mBKbxeGxiETJrrLETg5"
+   ```
+
+2. **Known Issues**:
+   - "utxosList must contain at least 1 utxo" - This is a wallet sync timing issue, not a lack of funds
+   - ES module loading errors - Some tests fail to load wasm-sdk properly
+   - See `packages/platform-test-suite/WASM_SDK_TEST_ISSUES.md` for detailed troubleshooting
+
+3. **Test Environment**:
+   - Requires running local dashmate network
+   - Uses `.env` file for configuration (FAUCET_1_ADDRESS, FAUCET_1_PRIVATE_KEY, etc.)
+   - Bootstrap.js maps FAUCET_1_* vars to FAUCET_* based on worker ID

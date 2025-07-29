@@ -20,11 +20,9 @@ export async function topUp(
   await this.initialize();
 
   const { client } = this;
-
-  identityId = Identifier.from(identityId);
-
   const account = await client.getWalletAccount();
 
+  // Create asset lock transaction
   const {
     transaction: assetLockTransaction,
     privateKey: assetLockPrivateKey,
@@ -34,10 +32,39 @@ export async function topUp(
   // Broadcast Asset Lock transaction
   await account.broadcastTransaction(assetLockTransaction);
   this.logger.silly(`[Identity#topUp] Broadcasted asset lock transaction "${assetLockTransaction.hash}"`);
+  
   // Create a proof for the asset lock transaction
   const assetLockProof = await this.identities.utils
     .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
   this.logger.silly(`[Identity#topUp] Created asset lock proof with tx "${assetLockTransaction.hash}"`);
+
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    // Convert identity ID to string
+    const identityIdString = typeof identityId === 'string' ? identityId : identityId.toString();
+    
+    // Convert asset lock proof to hex format for wasm-sdk
+    const assetLockProofHex = adapter.convertAssetLockProof(assetLockProof);
+    
+    // Convert private key to WIF format
+    const assetLockPrivateKeyWIF = adapter.convertPrivateKeyToWIF(assetLockPrivateKey);
+    
+    // Call wasm-sdk identityTopUp
+    const result = await this.wasmSdk.identityTopUp(
+      identityIdString,
+      assetLockProofHex,
+      assetLockPrivateKeyWIF
+    );
+    
+    this.logger.debug(`[Identity#topUp] Topped up identity "${identityIdString}"`);
+    
+    return result.success !== false;
+  }
+
+  // Legacy implementation - will be removed once migration is complete
+  identityId = Identifier.from(identityId);
 
   const identityTopUpTransition = await this.identities.utils
     .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);

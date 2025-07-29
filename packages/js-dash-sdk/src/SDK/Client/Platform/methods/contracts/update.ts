@@ -18,6 +18,53 @@ export default async function update(
   this.logger.debug(`[DataContract#update] Update data contract ${dataContract.getId()}`);
   await this.initialize();
 
+  // If wasm-sdk is available, delegate to it
+  if (this.wasmSdk && this.getAdapter()) {
+    const adapter = this.getAdapter()!;
+    
+    // Get identity private key for signing
+    const account = await this.client.getWalletAccount();
+    
+    // Get the key for data contract operations (index 2)
+    const { privateKey: contractPrivateKey } = account.identities
+      .getIdentityHDKeyById(identity.getId().toString(), 2);
+    
+    // Convert private key to WIF format
+    const privateKeyWIF = adapter.convertPrivateKeyToWIF(contractPrivateKey);
+    
+    // Convert identity to hex format
+    const identityHex = identity.toBuffer().toString('hex');
+    
+    // Clone and increment version
+    const updatedDataContract = dataContract.clone();
+    updatedDataContract.incrementVersion();
+    
+    // Convert updated data contract to JSON
+    const dataContractJson = JSON.stringify(updatedDataContract.toJSON());
+    
+    this.logger.debug(`[DataContract#update] Calling wasm-sdk dataContractUpdate`);
+    
+    // Call wasm-sdk dataContractUpdate
+    const result = await this.wasmSdk.dataContractUpdate(
+      dataContractJson,
+      identityHex,
+      privateKeyWIF
+    );
+    
+    // Update app with updated data contract if available
+    // eslint-disable-next-line
+    for (const appName of this.client.getApps().getNames()) {
+      const appDefinition = this.client.getApps().get(appName);
+      if (appDefinition.contractId.equals(updatedDataContract.getId()) && appDefinition.contract) {
+        appDefinition.contract = updatedDataContract;
+      }
+    }
+    
+    this.logger.debug(`[DataContract#update] Updated data contract ${dataContract.getId()} via wasm-sdk`);
+    
+    return result;
+  }
+
   const { dpp } = this;
 
   // Clone contract
