@@ -583,21 +583,53 @@ pub async fn get_token_perpetual_distribution_last_claim(
                             Some((0, epoch as u64)) // (timestamp_ms, block_height)
                         },
                         Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(bytes)) => {
-                            // Based on trace logs, the 8-byte format appears to be:
-                            // First 4 bytes: timestamp (u32, in seconds)
-                            // Last 4 bytes: block height (u32)
+                            // Raw bytes format specification (confirmed via server trace logs):
+                            // - Total length: 8 bytes (big-endian encoding)
+                            // - Bytes 0-3: Timestamp as u32 (seconds since Unix epoch, 0 = no timestamp recorded)
+                            // - Bytes 4-7: Block height as u32 (Dash blockchain block number)
+                            //
+                            // Validation ranges:
+                            // - Timestamp: 0 (unset) or >= 1609459200 (Jan 1, 2021 00:00:00 UTC, before Dash Platform mainnet)
+                            // - Block height: 0 (invalid) or >= 1 (valid blockchain height)
                             if bytes.len() >= 8 {
                                 let timestamp = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as u64;
                                 let block_height = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as u64;
-                                Some((timestamp * 1000, block_height)) // Convert timestamp to milliseconds
+                                
+                                // Validate timestamp: must be 0 (unset) or a reasonable Unix timestamp
+                                let validated_timestamp = if timestamp != 0 && timestamp < 1609459200 {
+                                    web_sys::console::warn_1(&format!("Invalid timestamp in raw bytes: {} (too early)", timestamp).into());
+                                    0 // Use 0 for invalid timestamps
+                                } else {
+                                    timestamp
+                                };
+                                
+                                // Validate block height: must be a positive value
+                                let validated_block_height = if block_height == 0 {
+                                    web_sys::console::warn_1(&"Invalid block height in raw bytes: 0 (genesis block not expected)".into());
+                                    1 // Use minimum valid block height
+                                } else {
+                                    block_height
+                                };
+                                
+                                Some((validated_timestamp * 1000, validated_block_height)) // Convert timestamp to milliseconds
                             } else if bytes.len() >= 4 {
-                                // Try decoding as u32 block height only
+                                // Fallback: decode only the last 4 bytes as block height
                                 let block_height = u32::from_be_bytes([
                                     bytes[bytes.len()-4], bytes[bytes.len()-3], 
                                     bytes[bytes.len()-2], bytes[bytes.len()-1]
                                 ]) as u64;
-                                Some((0, block_height))
+                                
+                                // Validate block height
+                                let validated_block_height = if block_height == 0 {
+                                    web_sys::console::warn_1(&"Invalid block height in fallback parsing: 0".into());
+                                    1 // Use minimum valid block height
+                                } else {
+                                    block_height
+                                };
+                                
+                                Some((0, validated_block_height))
                             } else {
+                                web_sys::console::warn_1(&format!("Insufficient raw bytes length: {} (expected 8 or 4)", bytes.len()).into());
                                 Some((0, 0))
                             }
                         },
