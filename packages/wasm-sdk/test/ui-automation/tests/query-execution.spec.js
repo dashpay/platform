@@ -61,8 +61,38 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
-      // Should contain balance data (should be a number)
-      const balance = parseInt(result.result.trim());
+      // Should contain balance data (should be a number or numeric string)
+      const balanceStr = result.result.trim();
+      console.log('Raw balance result:', JSON.stringify(balanceStr));
+      
+      // Try to parse as JSON first (in case it's a JSON response)
+      let balance;
+      try {
+        const parsed = JSON.parse(balanceStr);
+        
+        // Check if it's a JSON object with a balance property
+        if (typeof parsed === 'object' && parsed.balance !== undefined) {
+          balance = Number(parsed.balance);
+          console.log('Parsed as JSON object with balance property:', parsed.balance, 'converted to:', balance);
+        } else if (typeof parsed === 'number') {
+          balance = parsed;
+          console.log('Parsed as JSON number:', balance);
+        } else {
+          balance = Number(parsed);
+          console.log('Parsed as JSON and converted to number:', balance);
+        }
+      } catch {
+        // If not JSON, try parsing directly as number
+        balance = Number(balanceStr);
+        console.log('Parsed as direct number:', balance);
+        
+        // If Number() fails, log the issue
+        if (isNaN(balance)) {
+          console.error('Failed to parse balance:', balanceStr, 'type:', typeof balanceStr);
+        }
+      }
+      
+      expect(balance).not.toBeNaN();
       expect(balance).toBeGreaterThanOrEqual(0);
       
       console.log('Identity balance result:', result.result.substring(0, 200) + '...');
