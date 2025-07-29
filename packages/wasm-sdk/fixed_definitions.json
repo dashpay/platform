@@ -285,7 +285,7 @@
               "type": "text",
               "label": "Data Contract ID",
               "required": true,
-              "placeholder": "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+              "placeholder": "HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM"
             },
             {
               "name": "limit",

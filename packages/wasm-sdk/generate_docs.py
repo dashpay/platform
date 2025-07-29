@@ -130,6 +130,7 @@ def generate_example_code(query_key, inputs):
         'specialized_balance_id': 'AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT',
         'contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         'data_contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        'data_contract_history_id': 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM',
         'token_contract_id': 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A',
         'group_contract_id': '49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N',
         'public_key_hash_unique': 'b7e904ce25ed97594e72f7af0e66f298031c1754',
@@ -144,8 +145,8 @@ def generate_example_code(query_key, inputs):
     
     # Map input names to test values
     param_mapping = {
-        'id': f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
-        'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else f"'{test_data['identity_id']}'",
+        'id': f"'{test_data['data_contract_history_id']}'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
+        'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['identity_id']}'",
         'ids': f"['{test_data['data_contract_id']}', '{test_data['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{test_data['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{test_data['identity_id']}']",
         'identitiesIds': f"['{test_data['identity_id']}']",
         'identityIds': f"['{test_data['identity_id']}']",
@@ -153,7 +154,7 @@ def generate_example_code(query_key, inputs):
         'dataContractId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenContractInfo' in query_key else f"'{test_data['data_contract_id']}'",
         'publicKeyHash': f"'{test_data['public_key_hash_unique']}'" if 'ByPublicKeyHash' in query_key and 'NonUnique' not in query_key else f"'{test_data['public_key_hash_non_unique']}'",
         'startProTxHash': f"'{test_data['pro_tx_hash']}'",
-        'tokenId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['token_id']}'",
+        'tokenId': "'HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['token_id']}'",
         'tokenIds': f"['{test_data['token_id']}', 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenStatuses' in query_key else "['H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenDirectPurchasePrices' in query_key else f"['{test_data['token_id']}']",
         'documentType': f"'{test_data['document_type']}'",
         'documentId': f"'{test_data['document_id']}'",
@@ -206,6 +207,10 @@ def generate_example_code(query_key, inputs):
     elif query_key == 'getGroupActions':
         # getGroupActions expects: sdk, contractId, groupContractPosition, status, startAtInfo (object or null), count
         params = [f"'{test_data['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
+    elif query_key == 'getDataContractHistory':
+        # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
+        # Use the specific contract ID for getDataContractHistory examples
+        params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0"]
     else:
         # Generate parameters normally
         params = []
@@ -399,17 +404,30 @@ def generate_operation_entry(operation_key, operation, type_prefix):
             html_content += '                <p class="info-note">This is an internal query used to wait for and retrieve the result of a previously submitted state transition. It requires a valid state transition hash from a prior operation.</p>'
         else:
             html_content += f'                <button class="run-button" id="run-{operation_key}" onclick="runExample(\'{operation_key}\')">Run</button>'
-            if operation_key in ['getPathElements', 'getDataContractHistory', 'getContestedResourceVotersForIdentity', 'getTokenPerpetualDistributionLastClaim']:
+            if operation_key in ['getPathElements', 'getContestedResourceVotersForIdentity']:
                 html_content += ' <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>'
         
         # Add special examples and info
         if operation_key == 'getIdentityKeys':
-            html_content += '''\n                <div class="example-container">
-                    <h5>Example 2 - Get Specific Keys</h5>
-                    <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
-<button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
-                    <div class="example-result" id="result-getIdentityKeys2"></div>
-                </div>'''
+            html_content += f'''
+                <div class="example-result" id="result-{operation_key}"></div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example 2 - Get Specific Keys</h5>
+                <div class="example-code" id="code-getIdentityKeys2">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'specific\', [0, 1, 2]);</div>
+                <button class="run-button" id="run-getIdentityKeys2" onclick="runExample(\'getIdentityKeys2\')">Run</button>
+                <div class="example-result" id="result-getIdentityKeys2"></div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example 3 - Search Keys by Purpose</h5>
+                <div class="example-code" id="code-getIdentityKeys3">return await window.wasmFunctions.get_identity_keys(sdk, \'5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\', \'search\', undefined, \'{{"0": {{"0": "current"}}, "1": {{"0": "current"}}}}\');</div>
+                <button class="run-button" id="run-getIdentityKeys3" onclick="runExample(\'getIdentityKeys3\')">Run</button>
+                <div class="example-result" id="result-getIdentityKeys3"></div>
+            </div>
+        </div>'''
+            return html_content
         elif operation_key == 'getPathElements':
             html_content += generate_path_elements_info()
         

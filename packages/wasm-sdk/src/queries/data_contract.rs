@@ -59,7 +59,7 @@ pub async fn data_contract_fetch_with_proof_info(
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct DataContractHistoryResponse {
-    versions: BTreeMap<u64, serde_json::Value>,
+    versions: BTreeMap<String, serde_json::Value>,
 }
 
 #[wasm_bindgen]
@@ -94,7 +94,7 @@ pub async fn get_data_contract_history(
     
     if let Some(history) = history_result {
         for (revision, contract) in history {
-            versions.insert(revision, contract.to_json(platform_version)?); 
+            versions.insert(revision.to_string(), contract.to_json(platform_version)?); 
         }
     }
     
@@ -183,7 +183,7 @@ pub async fn get_data_contract_history_with_proof_info(
     
     if let Some(history) = history_result {
         for (revision, contract) in history {
-            versions.insert(revision, contract.to_json(platform_version)?); 
+            versions.insert(revision.to_string(), contract.to_json(platform_version)?); 
         }
     }
     
