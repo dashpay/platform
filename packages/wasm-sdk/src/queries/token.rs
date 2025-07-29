@@ -582,10 +582,28 @@ pub async fn get_token_perpetual_distribution_last_claim(
                         Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::Epoch(epoch)) => {
                             Some((0, epoch as u64)) // (timestamp_ms, block_height)
                         },
-                        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(_)) => {
-                            Some((0, 0)) // Raw bytes not supported, return zeros
+                        Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(bytes)) => {
+                            // Based on trace logs, the 8-byte format appears to be:
+                            // First 4 bytes: timestamp (u32, in seconds)
+                            // Last 4 bytes: block height (u32)
+                            if bytes.len() >= 8 {
+                                let timestamp = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as u64;
+                                let block_height = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as u64;
+                                Some((timestamp * 1000, block_height)) // Convert timestamp to milliseconds
+                            } else if bytes.len() >= 4 {
+                                // Try decoding as u32 block height only
+                                let block_height = u32::from_be_bytes([
+                                    bytes[bytes.len()-4], bytes[bytes.len()-3], 
+                                    bytes[bytes.len()-2], bytes[bytes.len()-1]
+                                ]) as u64;
+                                Some((0, block_height))
+                            } else {
+                                Some((0, 0))
+                            }
                         },
-                        None => None, // No paid_at info
+                        None => {
+                            None // No paid_at info
+                        }
                     }
                 },
                 Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(_)) => {

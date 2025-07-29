@@ -145,7 +145,7 @@ def generate_example_code(query_key, inputs):
     # Map input names to test values
     param_mapping = {
         'id': "'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
-        'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else f"'{test_data['identity_id']}'",
+        'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['identity_id']}'",
         'ids': f"['{test_data['data_contract_id']}', '{test_data['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{test_data['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{test_data['identity_id']}']",
         'identitiesIds': f"['{test_data['identity_id']}']",
         'identityIds': f"['{test_data['identity_id']}']",
@@ -153,7 +153,7 @@ def generate_example_code(query_key, inputs):
         'dataContractId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenContractInfo' in query_key else f"'{test_data['data_contract_id']}'",
         'publicKeyHash': f"'{test_data['public_key_hash_unique']}'" if 'ByPublicKeyHash' in query_key and 'NonUnique' not in query_key else f"'{test_data['public_key_hash_non_unique']}'",
         'startProTxHash': f"'{test_data['pro_tx_hash']}'",
-        'tokenId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['token_id']}'",
+        'tokenId': "'HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['token_id']}'",
         'tokenIds': f"['{test_data['token_id']}', 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenStatuses' in query_key else "['H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenDirectPurchasePrices' in query_key else f"['{test_data['token_id']}']",
         'documentType': f"'{test_data['document_type']}'",
         'documentId': f"'{test_data['document_id']}'",
