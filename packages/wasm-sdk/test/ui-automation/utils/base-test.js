@@ -27,6 +27,19 @@ class BaseTest {
   }
 
   /**
+   * Wait for SDK to be in success state (useful after network changes)
+   */
+  async waitForSdkReady() {
+    await this.page.waitForSelector('#statusBanner.success', {
+      timeout: 30000,
+      state: 'visible'
+    });
+    
+    // Additional wait to ensure stability
+    await this.page.waitForTimeout(500);
+  }
+
+  /**
    * Wait for network loading to complete
    */
   async waitForNetworkIdle() {
@@ -139,6 +152,9 @@ class BaseTest {
     // Wait for network indicator to update
     const indicator = this.page.locator('#networkIndicator');
     await expect(indicator).toContainText(network.toUpperCase());
+    
+    // Network changes might trigger SDK re-initialization, so wait a bit
+    await this.page.waitForTimeout(1000);
     
     console.log(`✅ Network set to ${network}`);
   }

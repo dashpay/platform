@@ -1,7 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { WasmSdkPage } = require('../utils/wasm-sdk-page');
 const { ParameterInjector } = require('../utils/parameter-injector');
-const { getTestParameters } = require('../fixtures/test-data');
 
 test.describe('WASM SDK Query Execution Tests', () => {
   let wasmSdkPage;
@@ -24,10 +23,23 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Execute query
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      // Verify execution completed
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed without network errors
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
       expect(result.result.length).toBeGreaterThan(0);
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      expect(result.result).not.toContain('invalid');
+      
+      // Should contain identity data (valid JSON with expected fields)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const identityData = JSON.parse(result.result);
+      expect(identityData).toHaveProperty('id');
+      expect(identityData).toHaveProperty('publicKeys');
+      expect(identityData).toHaveProperty('balance');
       
       console.log('Identity query result:', result.result.substring(0, 200) + '...');
     });
@@ -40,8 +52,18 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain balance data (should be a number)
+      const balance = parseInt(result.result.trim());
+      expect(balance).toBeGreaterThanOrEqual(0);
       
       console.log('Identity balance result:', result.result.substring(0, 200) + '...');
     });
@@ -54,8 +76,19 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain keys data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const keysData = JSON.parse(result.result);
+      expect(keysData).toBeDefined();
       
       console.log('Identity keys result:', result.result.substring(0, 200) + '...');
     });
@@ -70,8 +103,19 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain contract data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const contractData = JSON.parse(result.result);
+      expect(contractData).toBeDefined();
       
       console.log('Data contract result:', result.result.substring(0, 200) + '...');
     });
@@ -84,8 +128,14 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
       
       console.log('Multiple data contracts result:', result.result.substring(0, 200) + '...');
     });
@@ -100,8 +150,19 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain documents data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const documentsData = JSON.parse(result.result);
+      expect(documentsData).toBeDefined();
       
       console.log('Documents query result:', result.result.substring(0, 200) + '...');
     });
@@ -114,8 +175,19 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain document data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const documentData = JSON.parse(result.result);
+      expect(documentData).toBeDefined();
       
       console.log('Single document result:', result.result.substring(0, 200) + '...');
     });
@@ -141,8 +213,17 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain epoch data (number or JSON with epoch info)
+      expect(result.result).toMatch(/\d+|epoch/i);
       
       console.log('Current epoch result:', result.result.substring(0, 200) + '...');
     });
@@ -152,8 +233,17 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain credits data (number or JSON with credits info)
+      expect(result.result).toMatch(/\d+|credits|balance/i);
       
       console.log('Total credits result:', result.result.substring(0, 200) + '...');
     });
@@ -200,8 +290,14 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
       
       // With proof info, result might be larger
       console.log('Query with proof result length:', result.result.length);
@@ -217,8 +313,17 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      expect(result.success || result.hasError).toBe(true);
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
       expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain status data with version info
+      expect(result.result).toContain('version');
       
       console.log('Mainnet status result:', result.result.substring(0, 200) + '...');
     });

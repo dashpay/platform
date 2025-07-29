@@ -71,6 +71,10 @@ class WasmSdkPage extends BaseTest {
   async initialize(network = 'testnet') {
     await this.navigateToSdk();
     await this.setNetwork(network);
+    
+    // Wait for SDK to be ready after network change
+    await this.waitForSdkReady();
+    
     return this;
   }
 
@@ -170,10 +174,20 @@ class WasmSdkPage extends BaseTest {
    * Enable proof information toggle
    */
   async enableProofInfo() {
-    const proofToggle = this.page.locator(this.selectors.proofToggle);
-    if (await proofToggle.count() > 0) {
+    const proofContainer = this.page.locator(this.selectors.proofToggleContainer);
+    
+    // Wait for proof container to be visible with timeout
+    try {
+      await proofContainer.waitFor({ state: 'visible', timeout: 5000 });
+      
+      const proofToggle = this.page.locator(this.selectors.proofToggle);
+      await proofToggle.waitFor({ state: 'visible', timeout: 5000 });
       await proofToggle.check();
       console.log('✅ Proof info enabled');
+      return true;
+    } catch (error) {
+      console.log('⚠️ Proof toggle not available for this query type');
+      return false;
     }
   }
 
@@ -181,10 +195,20 @@ class WasmSdkPage extends BaseTest {
    * Disable proof information toggle
    */
   async disableProofInfo() {
-    const proofToggle = this.page.locator(this.selectors.proofToggle);
-    if (await proofToggle.count() > 0) {
+    const proofContainer = this.page.locator(this.selectors.proofToggleContainer);
+    
+    // Wait for proof container to be visible with timeout
+    try {
+      await proofContainer.waitFor({ state: 'visible', timeout: 5000 });
+      
+      const proofToggle = this.page.locator(this.selectors.proofToggle);
+      await proofToggle.waitFor({ state: 'visible', timeout: 5000 });
       await proofToggle.uncheck();
       console.log('✅ Proof info disabled');
+      return true;
+    } catch (error) {
+      console.log('⚠️ Proof toggle not available for this query type');
+      return false;
     }
   }
 

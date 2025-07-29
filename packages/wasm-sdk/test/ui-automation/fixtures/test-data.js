@@ -4,23 +4,26 @@
  */
 
 const testData = {
-  // Known testnet identity IDs for testing
+  // Known testnet identity IDs for testing (from WASM SDK docs and tests)
   identityIds: {
     testnet: [
-      "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-      "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"
+      "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",  // Used in docs.html and multiple test files
+      "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX"   // Used in docs.html
     ],
     mainnet: [
       // Add mainnet IDs when available
     ]
   },
 
-  // Data contract IDs
+  // Data contract IDs (from WASM SDK files and update_inputs.py)
   dataContracts: {
     testnet: {
-      dpns: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+      dpns: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",  // Used in index.html as DPNS_CONTRACT_ID
       dashpay: "ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A",
-      sample: "HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM"
+      sample: "HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM",
+      tokenPricing: "H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy",  // Used in test-token-pricing-complete.html
+      tokenContract: "EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta", // Used in update_inputs.py
+      postCreate: "9nzpvjVSStUrhkEs3eNHw2JYpcNoLh1MjmqW45QiyjSa"      // Used in test_post_create.html
     },
     mainnet: {
       // Add mainnet contract IDs when available
@@ -38,7 +41,8 @@ const testData = {
   // Token IDs for testing
   tokenIds: {
     testnet: [
-      "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+      "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
+      "HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa" // Used in docs.html (last claim)
     ]
   },
 
@@ -68,18 +72,18 @@ const testData = {
     identity: {
       getIdentity: {
         testnet: [
-          { id: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec" },
-          { id: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk" }
+          { id: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk" },
+          { id: "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX" }
         ]
       },
       getIdentityKeys: {
         testnet: [
           { 
-            identityId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
             keyRequestType: "all"
           },
           {
-            identityId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            identityId: "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX",
             keyRequestType: "specific",
             specificKeyIds: ["1", "2"]
           }
@@ -87,7 +91,7 @@ const testData = {
       },
       getIdentityBalance: {
         testnet: [
-          { id: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec" }
+          { id: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk" }
         ]
       },
       getIdentityByPublicKeyHash: {
