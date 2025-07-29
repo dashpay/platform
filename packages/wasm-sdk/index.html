@@ -898,9 +898,13 @@
         
         <div id="authenticationInputs" class="query-inputs" style="display: none;">
           <h4>Authentication</h4>
-          <div class="input-group">
+          <div class="input-group" id="identityIdGroup">
             <label for="identityId">Identity ID</label>
             <input type="text" id="identityId" placeholder="Enter identity ID">
+          </div>
+          <div class="input-group" id="assetLockProofGroup" style="display: none;">
+            <label for="assetLockProof">Asset Lock Proof</label>
+            <input type="text" id="assetLockProof" placeholder="Enter asset lock proof (hex encoded)">
           </div>
           <div class="input-group">
             <label for="privateKey">Private Key (WIF or hex, optionally with :keyId)</label>
@@ -1191,15 +1195,32 @@
             label: "Identity Create",
             description: "Create a new identity with initial credits",
             inputs: [
-              { name: "publicKeys", type: "keyArray", label: "Public Keys", required: true },
-              { name: "assetLockProof", type: "assetLockProof", label: "Asset Lock Proof", required: true }
+              { name: "seedPhrase", type: "textarea", label: "Seed Phrase", required: true, 
+                placeholder: "Enter seed phrase (12-24 words) or click Generate", 
+                help: "The wallet seed phrase that will be used to derive identity keys" },
+              { name: "generateSeedButton", type: "button", label: "Generate New Seed", 
+                action: "generateTestSeed" },
+              { name: "identityIndex", type: "number", label: "Identity Index", required: true, 
+                value: 0, min: 0, max: 999,
+                help: "The identity index is an internal reference within the wallet. Leave as 0 for first identity." },
+              { name: "keySelectionMode", type: "select", label: "Key Selection Mode", required: true,
+                value: "default",
+                options: [
+                  { value: "default", label: "Default (Recommended)" },
+                  { value: "advanced", label: "Advanced" }
+                ],
+                help: "Default adds standard keys for most Platform operations. Advanced allows custom key configuration." },
+              { name: "keyPreview", type: "keyPreview", label: "Keys to be added", 
+                help: "These keys will be added to your new identity" }
             ]
           },
           identityTopUp: {
             label: "Identity Top Up",
             description: "Add credits to an existing identity",
             inputs: [
-              { name: "assetLockProof", type: "assetLockProof", label: "Asset Lock Proof", required: true }
+              { name: "identityId", type: "text", label: "Identity ID", required: true,
+                placeholder: "Enter the identity ID to top up (base58)",
+                help: "The identity ID that will receive the credits from the asset lock proof" }
             ]
           },
           identityUpdate: {
@@ -3404,16 +3425,23 @@ ${indentStr}]`;
         const select = document.createElement('select');
         select.name = inputDef.name;
         
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = `Select ${inputDef.label}`;
-        select.appendChild(defaultOption);
+        // Only add placeholder option if no default value is set
+        if (!inputDef.value) {
+          const defaultOption = document.createElement('option');
+          defaultOption.value = '';
+          defaultOption.textContent = `Select ${inputDef.label}`;
+          select.appendChild(defaultOption);
+        }
         
         if (!inputDef.dynamic) {
           inputDef.options.forEach(opt => {
             const option = document.createElement('option');
             option.value = opt.value;
             option.textContent = opt.label;
+            // Set selected if this is the default value
+            if (inputDef.value && opt.value === inputDef.value) {
+              option.selected = true;
+            }
             select.appendChild(option);
           });
         }
@@ -3493,6 +3521,21 @@ ${indentStr}]`;
         button.className = 'action-button';
         button.onclick = () => window[inputDef.action]();
         inputGroup.appendChild(button);
+      } else if (inputDef.type === 'keyPreview') {
+        // Key preview for identity creation
+        const previewContainer = document.createElement('div');
+        previewContainer.className = 'key-preview-container';
+        previewContainer.style.marginTop = '10px';
+        previewContainer.style.padding = '15px';
+        previewContainer.style.backgroundColor = '#f8f9fa';
+        previewContainer.style.border = '1px solid #dee2e6';
+        previewContainer.style.borderRadius = '4px';
+        previewContainer.id = 'keyPreviewContainer';
+        
+        // This will be updated dynamically based on seed phrase and selection mode
+        previewContainer.innerHTML = '<p style="color: #6c757d;">Enter a seed phrase to preview keys</p>';
+        
+        inputGroup.appendChild(previewContainer);
       } else if (inputDef.type === 'info') {
         const infoDiv = document.createElement('div');
         infoDiv.className = 'info-box';
@@ -4293,17 +4336,22 @@ ${indentStr}]`;
       updateStatus(`Executing ${transitionType} state transition...`, 'loading');
       
       try {
-        // Check if this transition is disabled
-        if (transitionType === 'identityCreate' || transitionType === 'identityTopUp') {
-          throw new Error('This transition requires an Asset Lock Proof and is not available in the web interface');
-        }
-        
         // Get authentication values
-        const identityId = document.getElementById('identityId').value.trim();
-        const privateKey = document.getElementById('privateKey').value.trim();
+        let identityId = document.getElementById('identityId').value.trim();
+        let privateKey = document.getElementById('privateKey').value.trim();
+        let assetLockProof = document.getElementById('assetLockProof').value.trim();
         
-        if (!identityId || !privateKey) {
-          throw new Error('Identity ID and Private Key are required for state transitions');
+        // Validate based on transition type
+        if (transitionType === 'identityCreate' || transitionType === 'identityTopUp') {
+          if (!assetLockProof || !privateKey) {
+            throw new Error('Asset Lock Proof and Private Key are required for this transition');
+          }
+          identityId = null; // No identity ID needed for create (except for topUp which gets it from form)
+        } else {
+          if (!identityId || !privateKey) {
+            throw new Error('Identity ID and Private Key are required for state transitions');
+          }
+          assetLockProof = null; // No asset lock proof needed for other transitions
         }
         
         // Get input values
@@ -4311,7 +4359,91 @@ ${indentStr}]`;
         let result;
         
         // Execute the state transition based on type
-        if (transitionType === 'tokenMint') {
+        if (transitionType === 'identityCreate') {
+          // Generate public keys from seed phrase
+          const seedPhrase = values.seedPhrase?.trim();
+          const identityIndex = parseInt(values.identityIndex || '0');
+          const keySelectionMode = values.keySelectionMode || 'default';
+          
+          if (!seedPhrase || !validate_mnemonic(seedPhrase)) {
+            throw new Error('Invalid seed phrase');
+          }
+          
+          let publicKeys = [];
+          
+          if (keySelectionMode === 'default') {
+            // Generate the same keys as shown in the preview
+            const coinType = currentNetwork === 'mainnet' ? 5 : 1;
+            
+            // Master key (authentication, master level)
+            const masterKeyPath = `m/9'/${coinType}'/5'/0'/0'/${identityIndex}'/0'`;
+            const masterKey = derive_key_from_seed_with_path(seedPhrase, undefined, masterKeyPath, currentNetwork);
+            console.log('Master key object:', masterKey);
+            console.log('Master key fields:', Object.keys(masterKey || {}));
+            
+            // Additional authentication key (high security)
+            const authKeyPath = `m/9'/${coinType}'/5'/0'/0'/${identityIndex}'/1'`;
+            const authKey = derive_key_from_seed_with_path(seedPhrase, undefined, authKeyPath, currentNetwork);
+            
+            // Transfer key (critical security)
+            const transferKeyPath = `m/9'/${coinType}'/5'/0'/0'/${identityIndex}'/2'`;
+            const transferKey = derive_key_from_seed_with_path(seedPhrase, undefined, transferKeyPath, currentNetwork);
+            
+            // Create public key objects for the SDK
+            // Pass private keys so the SDK can derive the correct public key data using DPP
+            publicKeys = [
+              {
+                id: 0,
+                keyType: "ECDSA_HASH160",
+                purpose: "AUTHENTICATION",
+                securityLevel: "MASTER",
+                privateKeyHex: masterKey.private_key_hex,
+                readOnly: false
+              },
+              {
+                id: 1,
+                keyType: "ECDSA_HASH160",
+                purpose: "AUTHENTICATION",
+                securityLevel: "HIGH",
+                privateKeyHex: authKey.private_key_hex,
+                readOnly: false
+              },
+              {
+                id: 2,
+                keyType: "ECDSA_HASH160",
+                purpose: "TRANSFER",
+                securityLevel: "CRITICAL",
+                privateKeyHex: transferKey.private_key_hex,
+                readOnly: false
+              }
+            ];
+          } else {
+            throw new Error('Advanced key selection mode not yet implemented');
+          }
+          
+          // Handle identity create with asset lock proof
+          result = await sdk.identityCreate(
+            assetLockProof,
+            privateKey,
+            JSON.stringify(publicKeys)
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Identity created successfully', 'success', startTime);
+        } else if (transitionType === 'identityTopUp') {
+          // Handle identity top up with asset lock proof
+          const identityIdToTopUp = values.identityId;
+          if (!identityIdToTopUp) {
+            throw new Error('Identity ID is required for top up');
+          }
+          
+          result = await sdk.identityTopUp(
+            identityIdToTopUp,
+            assetLockProof,
+            privateKey
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Identity topped up successfully', 'success', startTime);
+        } else if (transitionType === 'tokenMint') {
           result = await sdk.tokenMint(
             values.contractId,
             Number(values.tokenPosition),
@@ -5259,6 +5391,16 @@ ${indentStr}]`;
       // Show/hide auth inputs
       authInputs.style.display = operationType === 'transitions' ? 'block' : 'none';
       
+      // Reset authentication input visibility to defaults
+      const identityIdGroup = document.getElementById('identityIdGroup');
+      const assetLockProofGroup = document.getElementById('assetLockProofGroup');
+      if (identityIdGroup) {
+        identityIdGroup.style.display = 'block';
+      }
+      if (assetLockProofGroup) {
+        assetLockProofGroup.style.display = 'none';
+      }
+      
       if (operationType === 'queries') {
         // Populate query categories
         Object.entries(queryDefinitions).forEach(([key, category]) => {
@@ -5327,12 +5469,6 @@ ${indentStr}]`;
           option.value = key;
           option.textContent = transition.label;
           
-          // Disable transitions that require asset lock proofs
-          if (key === 'identityCreate' || key === 'identityTopUp') {
-            option.disabled = true;
-            option.textContent += ' (Requires Asset Lock Proof)';
-            option.style.color = '#999';
-          }
           
           queryTypeSelect.appendChild(option);
         });
@@ -5359,6 +5495,14 @@ ${indentStr}]`;
       
       // Clear existing inputs
       dynamicInputs.innerHTML = '';
+      
+      // Clear authentication inputs to prevent stale data
+      const identityIdInput = document.getElementById('identityId');
+      const assetLockProofInput = document.getElementById('assetLockProof');
+      const privateKeyInput = document.getElementById('privateKey');
+      if (identityIdInput) identityIdInput.value = '';
+      if (assetLockProofInput) assetLockProofInput.value = '';
+      if (privateKeyInput) privateKeyInput.value = '';
       
       let definition;
       if (operationType === 'queries' && queryType && category && queryDefinitions[category]?.queries[queryType]) {
@@ -5403,6 +5547,81 @@ ${indentStr}]`;
           });
         });
         
+        // Special handling for identity create - update key preview
+        if (operationType === 'transitions' && queryType === 'identityCreate') {
+          const updateKeyPreview = () => {
+            const seedPhrase = dynamicInputs.querySelector('[name="seedPhrase"]')?.value?.trim();
+            const identityIndex = parseInt(dynamicInputs.querySelector('[name="identityIndex"]')?.value || '0');
+            const keySelectionMode = dynamicInputs.querySelector('[name="keySelectionMode"]')?.value || 'default';
+            const previewContainer = document.getElementById('keyPreviewContainer');
+            
+            if (!seedPhrase || !previewContainer) return;
+            
+            try {
+              // Validate seed phrase
+              if (!validate_mnemonic(seedPhrase)) {
+                previewContainer.innerHTML = '<p style="color: #dc3545;">Invalid seed phrase</p>';
+                return;
+              }
+              
+              // Generate keys based on selection mode
+              let keysHtml = '<h4 style="margin-top: 0;">Keys to be created:</h4>';
+              
+              if (keySelectionMode === 'default') {
+                // Master key (authentication, master level)
+                const masterKeyPath = `m/9'/${currentNetwork === 'mainnet' ? 5 : 1}'/5'/0'/0'/${identityIndex}'/0'`;
+                const masterKey = derive_key_from_seed_with_path(seedPhrase, undefined, masterKeyPath, currentNetwork);
+                
+                // Additional authentication key (high security)
+                const authKeyPath = `m/9'/${currentNetwork === 'mainnet' ? 5 : 1}'/5'/0'/0'/${identityIndex}'/1'`;
+                const authKey = derive_key_from_seed_with_path(seedPhrase, undefined, authKeyPath, currentNetwork);
+                
+                // Transfer key (critical security)
+                const transferKeyPath = `m/9'/${currentNetwork === 'mainnet' ? 5 : 1}'/5'/0'/0'/${identityIndex}'/2'`;
+                const transferKey = derive_key_from_seed_with_path(seedPhrase, undefined, transferKeyPath, currentNetwork);
+                
+                keysHtml += `
+                  <div style="margin-bottom: 10px;">
+                    <strong>Master Key:</strong><br>
+                    <span style="font-family: monospace; font-size: 0.9em;">${masterKey.private_key_wif}</span><br>
+                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Authentication | Security: Master | Type: ECDSA_HASH160</span>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <strong>Key 1:</strong><br>
+                    <span style="font-family: monospace; font-size: 0.9em;">${authKey.private_key_wif}</span><br>
+                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Authentication | Security: High | Type: ECDSA_HASH160</span>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <strong>Key 2:</strong><br>
+                    <span style="font-family: monospace; font-size: 0.9em;">${transferKey.private_key_wif}</span><br>
+                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Transfer | Security: Critical | Type: ECDSA_HASH160</span>
+                  </div>
+                `;
+                
+                keysHtml += '<p style="color: #28a745; margin-top: 10px;">✓ Default key set allows for most Platform operations</p>';
+              } else {
+                keysHtml += '<p style="color: #6c757d;">Advanced mode: You will need to manually specify keys (not yet implemented)</p>';
+              }
+              
+              previewContainer.innerHTML = keysHtml;
+            } catch (error) {
+              previewContainer.innerHTML = DOMPurify.sanitize(`<p style="color: #dc3545;">Error generating keys: ${error.message}</p>`);
+            }
+          };
+          
+          // Add event listeners for relevant inputs
+          const seedInput = dynamicInputs.querySelector('[name="seedPhrase"]');
+          const indexInput = dynamicInputs.querySelector('[name="identityIndex"]');
+          const modeSelect = dynamicInputs.querySelector('[name="keySelectionMode"]');
+          
+          if (seedInput) seedInput.addEventListener('input', updateKeyPreview);
+          if (indexInput) indexInput.addEventListener('input', updateKeyPreview);
+          if (modeSelect) modeSelect.addEventListener('change', updateKeyPreview);
+          
+          // Initial update
+          updateKeyPreview();
+        }
+        
         queryInputs.style.display = 'block';
         executeButton.style.display = 'block';
         
@@ -5423,7 +5642,7 @@ ${indentStr}]`;
           executeButton.textContent = 'Execute Query';
         }
         
-        // Update authentication labels for masternode vote
+        // Update authentication labels based on transition type
         if (operationType === 'transitions' && (queryType === 'masternodeVote' || queryType === 'dpnsUsername')) {
           const identityIdLabel = document.querySelector('#authenticationInputs label[for="identityId"]');
           const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
@@ -5442,12 +5661,43 @@ ${indentStr}]`;
           if (privateKeyInput) {
             privateKeyInput.placeholder = 'Enter your voting private key (WIF or 32-byte hex)';
           }
+        } else if (operationType === 'transitions' && (queryType === 'identityCreate' || queryType === 'identityTopUp')) {
+          // For Identity Create and Top Up, show asset lock proof field instead of identity ID
+          const identityIdGroup = document.getElementById('identityIdGroup');
+          const assetLockProofGroup = document.getElementById('assetLockProofGroup');
+          const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
+          const privateKeyInput = document.getElementById('privateKey');
+          
+          // Hide identity ID and show asset lock proof
+          if (identityIdGroup) {
+            identityIdGroup.style.display = 'none';
+          }
+          if (assetLockProofGroup) {
+            assetLockProofGroup.style.display = 'block';
+          }
+          
+          if (privateKeyLabel) {
+            privateKeyLabel.textContent = 'Asset Lock Proof Private Key (WIF)';
+          }
+          if (privateKeyInput) {
+            privateKeyInput.placeholder = 'Enter the private key used in the asset lock';
+          }
         } else if (operationType === 'transitions') {
           // Reset to default labels for other transitions
+          const identityIdGroup = document.getElementById('identityIdGroup');
+          const assetLockProofGroup = document.getElementById('assetLockProofGroup');
           const identityIdLabel = document.querySelector('#authenticationInputs label[for="identityId"]');
           const privateKeyLabel = document.querySelector('#authenticationInputs label[for="privateKey"]');
           const identityIdInput = document.getElementById('identityId');
           const privateKeyInput = document.getElementById('privateKey');
+          
+          // Show identity ID and hide asset lock proof
+          if (identityIdGroup) {
+            identityIdGroup.style.display = 'block';
+          }
+          if (assetLockProofGroup) {
+            assetLockProofGroup.style.display = 'none';
+          }
           
           if (identityIdLabel) {
             identityIdLabel.textContent = 'Identity ID';

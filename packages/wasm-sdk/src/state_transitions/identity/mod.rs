@@ -1,6 +1,6 @@
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
-use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::{BinaryData, Identifier, string_encoding::Encoding};
@@ -13,9 +13,310 @@ use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use js_sys;
+use web_sys;
+use dash_sdk::platform::transition::put_identity::PutIdentity;
+use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::dpp::prelude::AssetLockProof;
+use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 
 #[wasm_bindgen]
 impl WasmSdk {
+    /// Create a new identity on Dash Platform.
+    ///
+    /// # Arguments
+    ///
+    /// * `asset_lock_proof` - The asset lock proof (transaction hex)
+    /// * `asset_lock_proof_private_key` - The private key that controls the asset lock
+    /// * `public_keys` - JSON array of public keys to add to the identity
+    ///
+    /// # Returns
+    ///
+    /// Returns a Promise that resolves to a JsValue containing the new identity
+    #[wasm_bindgen(js_name = identityCreate)]
+    pub async fn identity_create(
+        &self,
+        asset_lock_proof: String,
+        asset_lock_proof_private_key: String,
+        public_keys: String,
+    ) -> Result<JsValue, JsValue> {
+        let sdk = self.inner_clone();
+        
+        // Debug log all parameters
+        web_sys::console::log_1(&JsValue::from_str(&format!("identityCreate called with:")));
+        web_sys::console::log_1(&JsValue::from_str(&format!("  asset_lock_proof (length {}): {}", asset_lock_proof.len(), if asset_lock_proof.len() > 100 { format!("{}...", &asset_lock_proof[..100]) } else { asset_lock_proof.clone() })));
+        web_sys::console::log_1(&JsValue::from_str(&format!("  asset_lock_proof_private_key: [REDACTED] (length: {})", asset_lock_proof_private_key.len())));
+        web_sys::console::log_1(&JsValue::from_str(&format!("  public_keys: {}", public_keys)));
+        
+        // Parse asset lock proof - try hex first, then JSON
+        let asset_lock_proof: AssetLockProof = if asset_lock_proof.chars().all(|c| c.is_ascii_hexdigit()) {
+            // It's hex encoded - decode and parse as JSON from the decoded bytes
+            let asset_lock_proof_bytes = hex::decode(&asset_lock_proof)
+                .map_err(|e| JsValue::from_str(&format!("Invalid asset lock proof hex: {}", e)))?;
+            
+            // Convert bytes to string and parse as JSON
+            let json_str = String::from_utf8(asset_lock_proof_bytes)
+                .map_err(|e| JsValue::from_str(&format!("Invalid UTF-8 in asset lock proof: {}", e)))?;
+            
+            serde_json::from_str(&json_str)
+                .map_err(|e| JsValue::from_str(&format!("Failed to parse asset lock proof JSON: {}", e)))?
+        } else {
+            // Try JSON directly
+            serde_json::from_str(&asset_lock_proof)
+                .map_err(|e| JsValue::from_str(&format!("Invalid asset lock proof JSON: {}", e)))?
+        };
+        
+        // Parse private key - WIF format
+        // Log the private key format for debugging
+        web_sys::console::log_1(&JsValue::from_str(&format!("Private key format validation - length: {}", 
+            asset_lock_proof_private_key.len())));
+        
+        let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
+            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
+        
+        // Parse public keys from JSON
+        let keys_data: serde_json::Value = serde_json::from_str(&public_keys)
+            .map_err(|e| JsValue::from_str(&format!("Invalid JSON for public_keys: {}", e)))?;
+        
+        let keys_array = keys_data.as_array()
+            .ok_or_else(|| JsValue::from_str("public_keys must be a JSON array"))?;
+        
+        // Create identity public keys
+        let mut identity_public_keys = std::collections::BTreeMap::new();
+        let mut key_id = 0u32;
+        
+        for key_data in keys_array {
+            let key_type_str = key_data["keyType"].as_str()
+                .ok_or_else(|| JsValue::from_str("keyType is required"))?;
+            let purpose_str = key_data["purpose"].as_str()
+                .ok_or_else(|| JsValue::from_str("purpose is required"))?;
+            let security_level_str = key_data["securityLevel"].as_str()
+                .unwrap_or("HIGH");
+            
+            // Parse key type first
+            let key_type = match key_type_str {
+                "ECDSA_SECP256K1" => KeyType::ECDSA_SECP256K1,
+                "BLS12_381" => KeyType::BLS12_381,
+                "ECDSA_HASH160" => KeyType::ECDSA_HASH160,
+                "BIP13_SCRIPT_HASH" => KeyType::BIP13_SCRIPT_HASH,
+                "EDDSA_25519_HASH160" => KeyType::EDDSA_25519_HASH160,
+                _ => return Err(JsValue::from_str(&format!("Unknown key type: {}", key_type_str)))
+            };
+            
+            // Parse purpose
+            let purpose = match purpose_str {
+                "AUTHENTICATION" => Purpose::AUTHENTICATION,
+                "ENCRYPTION" => Purpose::ENCRYPTION,
+                "DECRYPTION" => Purpose::DECRYPTION,
+                "TRANSFER" => Purpose::TRANSFER,
+                "SYSTEM" => Purpose::SYSTEM,
+                "VOTING" => Purpose::VOTING,
+                _ => return Err(JsValue::from_str(&format!("Unknown purpose: {}", purpose_str)))
+            };
+            
+            // Parse security level
+            let security_level = match security_level_str {
+                "MASTER" => SecurityLevel::MASTER,
+                "CRITICAL" => SecurityLevel::CRITICAL,
+                "HIGH" => SecurityLevel::HIGH,
+                "MEDIUM" => SecurityLevel::MEDIUM,
+                _ => SecurityLevel::HIGH
+            };
+            
+            // Check if privateKeyHex is provided - if so, derive public key data from it
+            let public_key_data = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
+                // Decode private key from hex
+                let private_key_bytes = hex::decode(private_key_hex)
+                    .map_err(|e| JsValue::from_str(&format!("Invalid private key hex: {}", e)))?;
+                
+                if private_key_bytes.len() != 32 {
+                    return Err(JsValue::from_str(&format!("Private key must be 32 bytes, got {}", private_key_bytes.len())));
+                }
+                
+                let mut private_key_array = [0u8; 32];
+                private_key_array.copy_from_slice(&private_key_bytes);
+                
+                // Use DPP's built-in method to get the correct public key data for the key type
+                // Use network from SDK configuration
+                key_type.public_key_data_from_private_key_data(
+                    &private_key_array,
+                    self.network()
+                ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?
+            } else if let Some(data_str) = key_data["data"].as_str() {
+                // Fall back to using provided data (base64 encoded)
+                dash_sdk::dpp::dashcore::base64::decode(data_str)
+                    .map_err(|e| JsValue::from_str(&format!("Invalid base64 key data: {}", e)))?
+            } else {
+                return Err(JsValue::from_str("Either privateKeyHex or data must be provided"));
+            };
+            
+            // Create the identity public key
+            use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+            let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: key_id,
+                key_type,
+                purpose,
+                security_level,
+                contract_bounds: None,
+                read_only: false,
+                data: BinaryData::new(public_key_data),
+                disabled_at: None,
+            });
+            
+            identity_public_keys.insert(key_id, public_key);
+            key_id += 1;
+        }
+        
+        // Create identity
+        use dash_sdk::dpp::identity::v0::IdentityV0;
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::random(),
+            public_keys: identity_public_keys,
+            balance: 0,
+            revision: 0,
+        });
+        
+        // Create signer from asset lock proof private key using SDK's network configuration
+        let signer = SingleKeySigner::from_string(&asset_lock_proof_private_key, self.network())
+            .map_err(|e| {
+                let error_msg = format!("Invalid private key: {}", e);
+                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                JsValue::from_str(&error_msg)
+            })?;
+        
+        // Put identity to platform and wait
+        let created_identity = match identity
+            .put_to_platform_and_wait_for_response(&sdk, asset_lock_proof, &private_key, &signer, None)
+            .await
+        {
+            Ok(identity) => identity,
+            Err(e) => {
+                // Extract more detailed error information
+                let error_msg = format!("Failed to create identity: {}", e);
+                
+                web_sys::console::error_1(&JsValue::from_str(&format!("Identity creation failed: {}", error_msg)));
+                return Err(JsValue::from_str(&error_msg));
+            }
+        };
+        
+        // Create JavaScript result object
+        let result_obj = js_sys::Object::new();
+        
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("status"), &JsValue::from_str("success"))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("identityId"), &JsValue::from_str(&created_identity.id().to_string(Encoding::Base58)))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set identityId: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("balance"), &JsValue::from_f64(created_identity.balance() as f64))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set balance: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("revision"), &JsValue::from_f64(created_identity.revision() as f64))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set revision: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("publicKeys"), &JsValue::from_f64(created_identity.public_keys().len() as f64))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set publicKeys: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("message"), &JsValue::from_str("Identity created successfully"))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set message: {:?}", e)))?;
+        
+        Ok(result_obj.into())
+    }
+    
+    /// Top up an existing identity with additional credits.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id` - The identity ID to top up
+    /// * `asset_lock_proof` - The asset lock proof (transaction hex)
+    /// * `asset_lock_proof_private_key` - The private key that controls the asset lock
+    ///
+    /// # Returns
+    ///
+    /// Returns a Promise that resolves to a JsValue containing the new balance
+    #[wasm_bindgen(js_name = identityTopUp)]
+    pub async fn identity_top_up(
+        &self,
+        identity_id: String,
+        asset_lock_proof: String,
+        asset_lock_proof_private_key: String,
+    ) -> Result<JsValue, JsValue> {
+        let sdk = self.inner_clone();
+        
+        // Parse identity identifier
+        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid identity ID: {}", e)))?;
+        
+        // Parse asset lock proof - try hex first, then JSON
+        let asset_lock_proof: AssetLockProof = if asset_lock_proof.chars().all(|c| c.is_ascii_hexdigit()) {
+            // It's hex encoded - decode and parse as JSON from the decoded bytes
+            let asset_lock_proof_bytes = hex::decode(&asset_lock_proof)
+                .map_err(|e| JsValue::from_str(&format!("Invalid asset lock proof hex: {}", e)))?;
+            
+            // Convert bytes to string and parse as JSON
+            let json_str = String::from_utf8(asset_lock_proof_bytes)
+                .map_err(|e| JsValue::from_str(&format!("Invalid UTF-8 in asset lock proof: {}", e)))?;
+            
+            serde_json::from_str(&json_str)
+                .map_err(|e| JsValue::from_str(&format!("Failed to parse asset lock proof JSON: {}", e)))?
+        } else {
+            // Try JSON directly
+            serde_json::from_str(&asset_lock_proof)
+                .map_err(|e| JsValue::from_str(&format!("Invalid asset lock proof JSON: {}", e)))?
+        };
+        
+        // Parse private key - WIF format
+        // Log the private key format for debugging
+        web_sys::console::log_1(&JsValue::from_str(&format!("Private key format validation - length: {}", 
+            asset_lock_proof_private_key.len())));
+        
+        let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
+            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
+        
+        // Fetch the identity
+        let identity = match dash_sdk::platform::Identity::fetch(&sdk, identifier).await {
+            Ok(Some(identity)) => identity,
+            Ok(None) => {
+                let error_msg = format!("Identity not found: {}", identifier);
+                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                return Err(JsValue::from_str(&error_msg));
+            },
+            Err(e) => {
+                let error_msg = format!("Failed to fetch identity: {}", e);
+                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                return Err(JsValue::from_str(&error_msg));
+            }
+        };
+        
+        // Get the initial balance
+        let initial_balance = identity.balance();
+        
+        // Top up the identity
+        let new_balance = match identity
+            .top_up_identity(&sdk, asset_lock_proof, &private_key, None, None)
+            .await
+        {
+            Ok(balance) => balance,
+            Err(e) => {
+                let error_msg = format!("Failed to top up identity: {}", e);
+                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                return Err(JsValue::from_str(&error_msg));
+            }
+        };
+        
+        let topped_up_amount = new_balance.saturating_sub(initial_balance);
+        
+        // Create JavaScript result object
+        let result_obj = js_sys::Object::new();
+        
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("status"), &JsValue::from_str("success"))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("identityId"), &JsValue::from_str(&identity_id))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set identityId: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("newBalance"), &JsValue::from_f64(new_balance as f64))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set newBalance: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("toppedUpAmount"), &JsValue::from_f64(topped_up_amount as f64))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set toppedUpAmount: {:?}", e)))?;
+        js_sys::Reflect::set(&result_obj, &JsValue::from_str("message"), &JsValue::from_str("Identity topped up successfully"))
+            .map_err(|e| JsValue::from_str(&format!("Failed to set message: {:?}", e)))?;
+        
+        Ok(result_obj.into())
+    }
+    
     /// Transfer credits from one identity to another.
     ///
     /// # Arguments
@@ -111,7 +412,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the credit transfer transition
@@ -252,7 +553,7 @@ impl WasmSdk {
         };
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Import the withdraw trait
@@ -465,7 +766,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Create the identity update transition
@@ -615,7 +916,7 @@ impl WasmSdk {
             if key_bytes.len() != 32 {
                 return Err(JsValue::from_str("Private key must be 32 bytes"));
             }
-            PrivateKey::from_slice(&key_bytes, dash_sdk::dpp::dashcore::Network::Testnet)
+            PrivateKey::from_slice(&key_bytes, self.network())
                 .map_err(|e| JsValue::from_str(&format!("Invalid private key bytes: {}", e)))?
         } else {
             // Try WIF
@@ -673,7 +974,7 @@ impl WasmSdk {
         let vote = Vote::ResourceVote(resource_vote);
         
         // Create signer
-        let signer = SingleKeySigner::from_string(&voting_key_wif, dash_sdk::dpp::dashcore::Network::Testnet)
+        let signer = SingleKeySigner::from_string(&voting_key_wif, self.network())
             .map_err(|e| JsValue::from_str(&e))?;
         
         // Submit the vote using PutVote trait
