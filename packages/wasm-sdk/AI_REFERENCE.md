@@ -228,7 +228,7 @@ const result = await sdk.getDataContract("id");
 
 Parameters:
 - `id` (text, required) - Data Contract ID
-  - Example: `GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec`
+  - Example: `HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM`
 - `limit` (number, optional) - Limit
 - `offset` (number, optional) - Offset
 
