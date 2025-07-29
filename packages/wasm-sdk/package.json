@@ -6,6 +6,10 @@
     "build": "./build.sh",
     "build:release": "./build-optimized.sh",
     "test": "echo 'Tests run from web interface at index.html'",
+    "test:ui": "cd test/ui-automation && ./run-ui-tests.sh",
+    "test:ui:smoke": "cd test/ui-automation && ./run-ui-tests.sh smoke",
+    "test:ui:headed": "cd test/ui-automation && ./run-ui-tests.sh headed",
+    "test:ui:debug": "cd test/ui-automation && ./run-ui-tests.sh debug",
     "prepublishOnly": "echo 'Publishing handled by pkg/package.json'"
   },
   "ultra": {

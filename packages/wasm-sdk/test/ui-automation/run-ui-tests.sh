@@ -12,10 +12,14 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-WASM_SDK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-UI_TEST_DIR="$(dirname "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" 
+WASM_SDK_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+UI_TEST_DIR="$SCRIPT_DIR"
 SERVER_PORT=8888
 SERVER_PID=""
+
+# Debug mode flag
+DEBUG=${DEBUG:-false}
 
 # Function to print colored output
 print_status() {
@@ -30,6 +34,12 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+print_debug() {
+    if [ "$DEBUG" = "true" ]; then
+        echo -e "${YELLOW}[DEBUG]${NC} $1"
+    fi
+}
+
 # Function to cleanup on exit
 cleanup() {
     if [ ! -z "$SERVER_PID" ]; then
@@ -42,9 +52,49 @@ cleanup() {
 # Set trap to cleanup on exit
 trap cleanup EXIT
 
+# Function to validate paths
+validate_paths() {
+    print_debug "Validating directory paths..."
+    print_debug "SCRIPT_DIR: $SCRIPT_DIR"
+    print_debug "WASM_SDK_DIR: $WASM_SDK_DIR"
+    print_debug "UI_TEST_DIR: $UI_TEST_DIR"
+    
+    # Check if UI test directory exists and contains expected files
+    if [ ! -d "$UI_TEST_DIR" ]; then
+        print_error "UI test directory not found: $UI_TEST_DIR"
+        exit 1
+    fi
+    
+    if [ ! -f "$UI_TEST_DIR/package.json" ]; then
+        print_error "package.json not found in UI test directory: $UI_TEST_DIR"
+        exit 1
+    fi
+    
+    if [ ! -f "$UI_TEST_DIR/playwright.config.js" ]; then
+        print_error "playwright.config.js not found in UI test directory: $UI_TEST_DIR"
+        exit 1
+    fi
+    
+    # Check if WASM SDK directory exists
+    if [ ! -d "$WASM_SDK_DIR" ]; then
+        print_error "WASM SDK directory not found: $WASM_SDK_DIR"
+        exit 1
+    fi
+    
+    if [ ! -f "$WASM_SDK_DIR/index.html" ]; then
+        print_error "index.html not found in WASM SDK directory: $WASM_SDK_DIR"
+        exit 1
+    fi
+    
+    print_debug "Path validation passed ✓"
+}
+
 # Function to check prerequisites
 check_prerequisites() {
     print_status "Checking prerequisites..."
+    
+    # Validate paths first
+    validate_paths
     
     # Check Node.js
     if ! command -v node &> /dev/null; then
@@ -58,19 +108,26 @@ check_prerequisites() {
         print_error "Node.js version $NODE_VERSION is too old. Please install Node.js 18+ and try again."
         exit 1
     fi
+    print_debug "Node.js version: $NODE_VERSION ✓"
     
     # Check Python
     if ! command -v python3 &> /dev/null; then
         print_error "Python 3 is not installed. Please install Python 3 and try again."
         exit 1
     fi
+    PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
+    print_debug "Python version: $PYTHON_VERSION ✓"
     
     # Check if WASM SDK is built
     if [ ! -f "$WASM_SDK_DIR/pkg/wasm_sdk.js" ]; then
         print_warning "WASM SDK not found. Building..."
         cd "$WASM_SDK_DIR"
-        ./build.sh
+        if ! ./build.sh; then
+            print_error "Failed to build WASM SDK"
+            exit 1
+        fi
     fi
+    print_debug "WASM SDK found ✓"
     
     print_status "Prerequisites check passed ✓"
 }
@@ -79,22 +136,36 @@ check_prerequisites() {
 install_dependencies() {
     print_status "Installing test dependencies..."
     
-    cd "$UI_TEST_DIR"
+    cd "$UI_TEST_DIR" || {
+        print_error "Failed to change to UI test directory: $UI_TEST_DIR"
+        exit 1
+    }
+    print_debug "Changed to directory: $(pwd)"
     
     if [ ! -d "node_modules" ]; then
-        npm install
+        print_status "Installing npm dependencies..."
+        if ! npm install; then
+            print_error "Failed to install npm dependencies"
+            exit 1
+        fi
     fi
     
     # Check if browsers are installed
     if ! npx playwright --version &> /dev/null; then
         print_error "Playwright not found. Installing..."
-        npm install
+        if ! npm install; then
+            print_error "Failed to install Playwright"
+            exit 1
+        fi
     fi
     
     # Install browsers if needed
-    if [ ! -d "$HOME/.cache/ms-playwright/chromium-"* ]; then
+    if [ ! -d "$HOME/.cache/ms-playwright/chromium-"* ] 2>/dev/null; then
         print_status "Installing Playwright browsers..."
-        npx playwright install chromium
+        if ! npx playwright install chromium; then
+            print_error "Failed to install Playwright browsers"
+            exit 1
+        fi
     fi
     
     print_status "Dependencies installed ✓"
@@ -130,33 +201,57 @@ start_web_server() {
 run_tests() {
     print_status "Running UI automation tests..."
     
-    cd "$UI_TEST_DIR"
+    cd "$UI_TEST_DIR" || {
+        print_error "Failed to change to UI test directory: $UI_TEST_DIR"
+        exit 1
+    }
+    print_debug "Running tests from directory: $(pwd)"
+    
+    # Verify npm scripts exist
+    if [ ! -f "package.json" ]; then
+        print_error "package.json not found in test directory"
+        exit 1
+    fi
+    
+    # Show available npm scripts for debugging
+    print_debug "Available npm scripts:"
+    if [ "$DEBUG" = "true" ]; then
+        npm run 2>/dev/null | grep -E "^\s*(test:|build:|start)" || true
+    fi
     
     # Determine test type from arguments
     case "${1:-all}" in
         "smoke")
+            print_status "Running smoke tests..."
             npm run test:smoke
             ;;
         "queries")
+            print_status "Running query execution tests..."
             npm run test:queries
             ;;
         "parameterized")
+            print_status "Running parameterized tests..."
             npm run test:parameterized
             ;;
         "headed")
+            print_status "Running tests in headed mode..."
             npm run test:headed
             ;;
         "debug")
+            print_status "Running tests in debug mode..."
             npm run test:debug
             ;;
         "ui")
+            print_status "Running tests in UI mode..."
             npm run test:ui
             ;;
         "all")
+            print_status "Running all tests..."
             npm run test:all
             ;;
         *)
             # Pass through any other arguments to playwright
+            print_status "Running custom playwright command: $*"
             npx playwright test "$@"
             ;;
     esac
@@ -189,10 +284,14 @@ print_usage() {
     echo "  ui             - Run tests in UI mode (interactive)"
     echo "  all            - Run all tests (default)"
     echo ""
+    echo "Environment variables:"
+    echo "  DEBUG=true     - Enable debug output"
+    echo ""
     echo "Examples:"
     echo "  $0                    # Run all tests"
     echo "  $0 smoke              # Run smoke tests only"
     echo "  $0 headed             # Run tests with visible browser"
+    echo "  DEBUG=true $0 smoke   # Run smoke tests with debug output"
     echo "  $0 --grep=\"Identity\"  # Run tests matching pattern"
 }
 
