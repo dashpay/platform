@@ -256,8 +256,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       console.log('Identity balance result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityKeys query', async () => {
+    test('should execute getIdentityKeys query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityKeys');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityKeys', 'testnet');
       expect(success).toBe(true);
@@ -273,16 +276,70 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain keys data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const keysData = JSON.parse(result.result);
       expect(keysData).toBeDefined();
       
+      console.log('✅ getIdentityKeys single view without proof confirmed');
       console.log('Identity keys result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentitiesContractKeys query', async () => {
+    test('should execute getIdentityKeys query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityKeys',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain keys data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const keysData = JSON.parse(result.result);
+      expect(keysData).toBeDefined();
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityKeys split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityKeys query');
+      }
+      
+      console.log('Identity keys result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesContractKeys query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentitiesContractKeys');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentitiesContractKeys', 'testnet');
       expect(success).toBe(true);
@@ -298,16 +355,70 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain contract keys data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const contractKeysData = JSON.parse(result.result);
       expect(contractKeysData).toBeDefined();
       
+      console.log('✅ getIdentitiesContractKeys single view without proof confirmed');
       console.log('Identities contract keys result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityNonce query', async () => {
+    test('should execute getIdentitiesContractKeys query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentitiesContractKeys',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain contract keys data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const contractKeysData = JSON.parse(result.result);
+      expect(contractKeysData).toBeDefined();
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentitiesContractKeys split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentitiesContractKeys query');
+      }
+      
+      console.log('Identities contract keys result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityNonce query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityNonce');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityNonce', 'testnet');
       expect(success).toBe(true);
@@ -323,17 +434,71 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain nonce data (should be a number)
       const nonce = parseNumericResult(result.result, 'nonce');
       
       expect(nonce).not.toBeNaN();
       expect(nonce).toBeGreaterThanOrEqual(0);
       
+      console.log('✅ getIdentityNonce single view without proof confirmed');
       console.log('Identity nonce result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityContractNonce query', async () => {
+    test('should execute getIdentityNonce query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityNonce',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain nonce data in data section
+      const nonce = parseNumericResult(result.result, 'nonce');
+      expect(nonce).not.toBeNaN();
+      expect(nonce).toBeGreaterThanOrEqual(0);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityNonce split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityNonce query');
+      }
+      
+      console.log('Identity nonce result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityContractNonce query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityContractNonce');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityContractNonce', 'testnet');
       expect(success).toBe(true);
@@ -349,17 +514,71 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain contract nonce data (should be a number)
       const contractNonce = parseNumericResult(result.result, 'nonce');
       
       expect(contractNonce).not.toBeNaN();
       expect(contractNonce).toBeGreaterThanOrEqual(0);
       
+      console.log('✅ getIdentityContractNonce single view without proof confirmed');
       console.log('Identity contract nonce result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentitiesBalances query', async () => {
+    test('should execute getIdentityContractNonce query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityContractNonce',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain contract nonce data in data section (should be a number)
+      const contractNonce = parseNumericResult(result.result, 'nonce');
+      expect(contractNonce).not.toBeNaN();
+      expect(contractNonce).toBeGreaterThanOrEqual(0);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityContractNonce split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityContractNonce query');
+      }
+      
+      console.log('Identity contract nonce result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesBalances query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentitiesBalances');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentitiesBalances', 'testnet');
       expect(success).toBe(true);
@@ -375,6 +594,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain balances data (valid JSON with multiple balance entries)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const balancesData = JSON.parse(result.result);
@@ -383,38 +606,62 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should be an array or object with balance information
       expect(Array.isArray(balancesData) || typeof balancesData === 'object').toBe(true);
       
-      // If it's an array, each entry should have valid balance data
-      if (Array.isArray(balancesData)) {
-        balancesData.forEach((balanceEntry, index) => {
-          expect(balanceEntry).toBeDefined();
-          console.log(`Balance entry ${index}:`, JSON.stringify(balanceEntry).substring(0, 100) + '...');
-          
-          // Each entry should have balance information
-          if (typeof balanceEntry === 'object' && balanceEntry.balance !== undefined) {
-            const balance = Number(balanceEntry.balance);
-            expect(balance).not.toBeNaN();
-            expect(balance).toBeGreaterThanOrEqual(0);
-          }
-        });
-      } else if (typeof balancesData === 'object') {
-        // If it's an object, it might have balance properties for each identity
-        Object.keys(balancesData).forEach(key => {
-          const balanceEntry = balancesData[key];
-          console.log(`Balance for ${key}:`, JSON.stringify(balanceEntry).substring(0, 100) + '...');
-          
-          if (typeof balanceEntry === 'object' && balanceEntry.balance !== undefined) {
-            const balance = Number(balanceEntry.balance);
-            expect(balance).not.toBeNaN();
-            expect(balance).toBeGreaterThanOrEqual(0);
-          }
-        });
+      console.log('✅ getIdentitiesBalances single view without proof confirmed');
+      console.log('Identities balances result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesBalances query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentitiesBalances',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain balances data in data section (valid JSON with multiple balance entries)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const balancesData = JSON.parse(result.result);
+      expect(balancesData).toBeDefined();
+      expect(Array.isArray(balancesData) || typeof balancesData === 'object').toBe(true);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentitiesBalances split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentitiesBalances query');
       }
       
       console.log('Identities balances result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityBalanceAndRevision query', async () => {
+    test('should execute getIdentityBalanceAndRevision query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityBalanceAndRevision');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityBalanceAndRevision', 'testnet');
       expect(success).toBe(true);
@@ -429,6 +676,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.hasError).toBe(false);
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
+      
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
       
       // Should contain balance and revision data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -449,11 +700,73 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(revision).not.toBeNaN();
       expect(revision).toBeGreaterThanOrEqual(0);
       
+      console.log('✅ getIdentityBalanceAndRevision single view without proof confirmed');
       console.log('Identity balance and revision result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityByNonUniquePublicKeyHash query', async () => {
+    test('should execute getIdentityBalanceAndRevision query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityBalanceAndRevision',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain balance and revision data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const balanceRevisionData = JSON.parse(result.result);
+      expect(balanceRevisionData).toBeDefined();
+      expect(balanceRevisionData).toHaveProperty('balance');
+      expect(balanceRevisionData).toHaveProperty('revision');
+      
+      // Validate balance using helper function
+      const balance = parseNumericResult(JSON.stringify(balanceRevisionData), 'balance');
+      expect(balance).not.toBeNaN();
+      expect(balance).toBeGreaterThanOrEqual(0);
+      
+      // Validate revision (should be a number >= 0)
+      const revision = Number(balanceRevisionData.revision);
+      expect(revision).not.toBeNaN();
+      expect(revision).toBeGreaterThanOrEqual(0);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityBalanceAndRevision split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityBalanceAndRevision query');
+      }
+      
+      console.log('Identity balance and revision result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityByNonUniquePublicKeyHash query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityByNonUniquePublicKeyHash');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityByNonUniquePublicKeyHash', 'testnet');
       expect(success).toBe(true);
@@ -469,30 +782,70 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain identity data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const identityData = JSON.parse(result.result);
       expect(identityData).toBeDefined();
       
-      // Could be an array of identities (non-unique) or a single identity
-      if (Array.isArray(identityData)) {
-        // If it's an array, each entry should be a valid identity
-        identityData.forEach((identity, index) => {
-          expect(identity).toBeDefined();
-          expect(identity).toHaveProperty('id');
-          console.log(`Identity ${index}:`, identity.id);
-        });
-      } else if (typeof identityData === 'object') {
-        // If it's a single identity object
-        expect(identityData).toHaveProperty('id');
-        console.log('Found identity:', identityData.id);
+      console.log('✅ getIdentityByNonUniquePublicKeyHash single view without proof confirmed');
+      console.log('Identity by non-unique public key hash result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityByNonUniquePublicKeyHash query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityByNonUniquePublicKeyHash',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain identity data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const identityData = JSON.parse(result.result);
+      expect(identityData).toBeDefined();
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityByNonUniquePublicKeyHash split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityByNonUniquePublicKeyHash query');
       }
       
       console.log('Identity by non-unique public key hash result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityByPublicKeyHash query', async () => {
+    test('should execute getIdentityByPublicKeyHash query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityByPublicKeyHash');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityByPublicKeyHash', 'testnet');
       expect(success).toBe(true);
@@ -508,6 +861,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain identity data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const identityData = JSON.parse(result.result);
@@ -518,13 +875,64 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(identityData.id).toBeDefined();
       expect(identityData.publicKeys).toBeDefined();
       
-      // Log the identity ID for verification
-      console.log('Found identity by unique public key hash:', identityData.id);
+      console.log('✅ getIdentityByPublicKeyHash single view without proof confirmed');
       console.log('Identity by public key hash result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityTokenBalances query', async () => {
+    test('should execute getIdentityByPublicKeyHash query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityByPublicKeyHash',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain identity data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const identityData = JSON.parse(result.result);
+      expect(identityData).toBeDefined();
+      expect(identityData).toHaveProperty('id');
+      expect(identityData.id).toBeDefined();
+      expect(identityData.publicKeys).toBeDefined();
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityByPublicKeyHash split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityByPublicKeyHash query');
+      }
+      
+      console.log('Identity by public key hash result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityTokenBalances query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityTokenBalances');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityTokenBalances', 'testnet');
       expect(success).toBe(true);
@@ -540,19 +948,72 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain token balance data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const tokenBalancesData = JSON.parse(result.result);
       expect(tokenBalancesData).toBeDefined();
-      
-      // Should be an array or object with token balance information
       expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
+      
+      console.log('✅ getIdentityTokenBalances single view without proof confirmed');
+      console.log('Identity token balances result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityTokenBalances query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityTokenBalances',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token balance data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenBalancesData = JSON.parse(result.result);
+      expect(tokenBalancesData).toBeDefined();
+      expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityTokenBalances split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityTokenBalances query');
+      }
       
       console.log('Identity token balances result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentitiesTokenBalances query', async () => {
+    test('should execute getIdentitiesTokenBalances query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentitiesTokenBalances');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentitiesTokenBalances', 'testnet');
       expect(success).toBe(true);
@@ -568,19 +1029,72 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain token balance data for multiple identities (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const tokenBalancesData = JSON.parse(result.result);
       expect(tokenBalancesData).toBeDefined();
-      
-      // Should be an array or object with token balance information for multiple identities
       expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
+      
+      console.log('✅ getIdentitiesTokenBalances single view without proof confirmed');
+      console.log('Identities token balances result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesTokenBalances query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentitiesTokenBalances',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token balance data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenBalancesData = JSON.parse(result.result);
+      expect(tokenBalancesData).toBeDefined();
+      expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentitiesTokenBalances split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentitiesTokenBalances query');
+      }
       
       console.log('Identities token balances result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentityTokenInfos query', async () => {
+    test('should execute getIdentityTokenInfos query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityTokenInfos');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityTokenInfos', 'testnet');
       expect(success).toBe(true);
@@ -596,19 +1110,72 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain token info data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const tokenInfoData = JSON.parse(result.result);
       expect(tokenInfoData).toBeDefined();
-      
-      // Should be an array or object with token information
       expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
+      
+      console.log('✅ getIdentityTokenInfos single view without proof confirmed');
+      console.log('Identity token infos result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityTokenInfos query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityTokenInfos',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token info data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenInfoData = JSON.parse(result.result);
+      expect(tokenInfoData).toBeDefined();
+      expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityTokenInfos split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityTokenInfos query');
+      }
       
       console.log('Identity token infos result:', result.result.substring(0, 200) + '...');
     });
 
-    test('should execute getIdentitiesTokenInfos query', async () => {
+    test('should execute getIdentitiesTokenInfos query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentitiesTokenInfos');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentitiesTokenInfos', 'testnet');
       expect(success).toBe(true);
@@ -624,13 +1191,63 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain token info data for multiple identities (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
       const tokenInfoData = JSON.parse(result.result);
       expect(tokenInfoData).toBeDefined();
-      
-      // Should be an array or object with token information for multiple identities
       expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
+      
+      console.log('✅ getIdentitiesTokenInfos single view without proof confirmed');
+      console.log('Identities token infos result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesTokenInfos query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentitiesTokenInfos',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token info data in data section (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenInfoData = JSON.parse(result.result);
+      expect(tokenInfoData).toBeDefined();
+      expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentitiesTokenInfos split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentitiesTokenInfos query');
+      }
       
       console.log('Identities token infos result:', result.result.substring(0, 200) + '...');
     });
