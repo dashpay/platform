@@ -72,6 +72,66 @@ function parseNumericResult(resultStr, propertyName = 'balance') {
   return numericValue;
 }
 
+/**
+ * Helper function to validate basic query result properties
+ * @param {Object} result - The query result object
+ */
+function validateBasicQueryResult(result) {
+  expect(result.success).toBe(true);
+  expect(result.result).toBeDefined();
+  expect(result.hasError).toBe(false);
+  expect(result.result).not.toContain('Error executing query');
+  expect(result.result).not.toContain('not found');
+  expect(result.result).not.toContain('invalid');
+}
+
+/**
+ * Helper function to validate proof content contains expected fields
+ * @param {string} proofContent - The proof content string
+ */
+function validateProofContent(proofContent) {
+  expect(proofContent).toBeDefined();
+  expect(proofContent).not.toBe('');
+  expect(proofContent).toContain('metadata');
+  expect(proofContent).toContain('proof');
+  expect(proofContent).toContain('grovedbProof');
+  expect(proofContent).toContain('quorumHash');
+  expect(proofContent).toContain('signature');
+}
+
+/**
+ * Helper function to validate split view (proof mode) result
+ * @param {Object} result - The query result object
+ */
+function validateSplitView(result) {
+  expect(result.inSplitView).toBe(true);
+  expect(result.proofContent).toBeDefined();
+  expect(result.proofContent).not.toBe('');
+  validateProofContent(result.proofContent);
+}
+
+/**
+ * Helper function to validate single view (non-proof mode) result
+ * @param {Object} result - The query result object
+ */
+function validateSingleView(result) {
+  expect(result.inSplitView).toBe(false);
+  expect(result.proofContent).toBeNull();
+}
+
+/**
+ * Helper function to validate numeric results and ensure they're valid
+ * @param {string} resultStr - The raw result string
+ * @param {string} propertyName - The property name to extract
+ * @returns {number} - The validated numeric value
+ */
+function validateNumericResult(resultStr, propertyName = 'balance') {
+  const numericValue = parseNumericResult(resultStr, propertyName);
+  expect(numericValue).not.toBeNaN();
+  expect(numericValue).toBeGreaterThanOrEqual(0);
+  return numericValue;
+}
+
 test.describe('WASM SDK Query Execution Tests', () => {
   let wasmSdkPage;
   let parameterInjector;
@@ -97,19 +157,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed without network errors
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      validateBasicQueryResult(result);
       expect(result.result.length).toBeGreaterThan(0);
       
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      expect(result.result).not.toContain('invalid');
-      
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain identity data (valid JSON with expected fields)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -132,21 +184,12 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      validateBasicQueryResult(result);
       expect(result.result.length).toBeGreaterThan(0);
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      expect(result.result).not.toContain('invalid');
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
+        validateSplitView(result);
         
         // Verify data section still contains identity data (valid JSON with expected fields)
         expect(() => JSON.parse(result.result)).not.toThrow();
@@ -154,13 +197,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(identityData).toHaveProperty('id');
         expect(identityData).toHaveProperty('publicKeys');
         expect(identityData).toHaveProperty('balance');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
         
         console.log('✅ getIdentity split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -188,23 +224,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain balance data (should be a number or numeric string)
-      const balance = parseNumericResult(result.result, 'balance');
-      
-      expect(balance).not.toBeNaN();
-      expect(balance).toBeGreaterThanOrEqual(0);
+      validateNumericResult(result.result, 'balance');
       
       console.log('✅ getIdentityBalance single view without proof confirmed');
       console.log('Identity balance result:', result.result.substring(0, 200) + '...');
@@ -221,31 +247,14 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain balance data in data section
-      const balance = parseNumericResult(result.result, 'balance');
-      expect(balance).not.toBeNaN();
-      expect(balance).toBeGreaterThanOrEqual(0);
+      validateNumericResult(result.result, 'balance');
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentityBalance split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -269,17 +278,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain keys data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -301,13 +303,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain keys data in data section (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -316,16 +312,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentityKeys split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -349,17 +336,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain contract keys data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -381,13 +361,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain contract keys data in data section (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -396,16 +370,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentitiesContractKeys split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -429,23 +394,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain nonce data (should be a number)
-      const nonce = parseNumericResult(result.result, 'nonce');
-      
-      expect(nonce).not.toBeNaN();
-      expect(nonce).toBeGreaterThanOrEqual(0);
+      validateNumericResult(result.result, 'nonce');
       
       console.log('✅ getIdentityNonce single view without proof confirmed');
       console.log('Identity nonce result:', result.result.substring(0, 200) + '...');
@@ -461,31 +416,14 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain nonce data in data section
-      const nonce = parseNumericResult(result.result, 'nonce');
-      expect(nonce).not.toBeNaN();
-      expect(nonce).toBeGreaterThanOrEqual(0);
+      validateNumericResult(result.result, 'nonce');
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentityNonce split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -509,23 +447,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain contract nonce data (should be a number)
-      const contractNonce = parseNumericResult(result.result, 'nonce');
-      
-      expect(contractNonce).not.toBeNaN();
-      expect(contractNonce).toBeGreaterThanOrEqual(0);
+      validateNumericResult(result.result, 'nonce');
       
       console.log('✅ getIdentityContractNonce single view without proof confirmed');
       console.log('Identity contract nonce result:', result.result.substring(0, 200) + '...');
@@ -541,31 +469,14 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain contract nonce data in data section (should be a number)
-      const contractNonce = parseNumericResult(result.result, 'nonce');
-      expect(contractNonce).not.toBeNaN();
-      expect(contractNonce).toBeGreaterThanOrEqual(0);
+      validateNumericResult(result.result, 'nonce');
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentityContractNonce split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -589,17 +500,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain balances data (valid JSON with multiple balance entries)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -624,13 +528,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain balances data in data section (valid JSON with multiple balance entries)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -640,16 +538,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentitiesBalances split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -673,17 +562,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain balance and revision data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -695,9 +577,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(balanceRevisionData).toHaveProperty('revision');
       
       // Validate balance using helper function
-      const balance = parseNumericResult(JSON.stringify(balanceRevisionData), 'balance');
-      expect(balance).not.toBeNaN();
-      expect(balance).toBeGreaterThanOrEqual(0);
+      validateNumericResult(JSON.stringify(balanceRevisionData), 'balance');
       
       // Validate revision (should be a number >= 0)
       const revision = Number(balanceRevisionData.revision);
@@ -719,13 +599,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain balance and revision data in data section (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -735,9 +609,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(balanceRevisionData).toHaveProperty('revision');
       
       // Validate balance using helper function
-      const balance = parseNumericResult(JSON.stringify(balanceRevisionData), 'balance');
-      expect(balance).not.toBeNaN();
-      expect(balance).toBeGreaterThanOrEqual(0);
+      validateNumericResult(JSON.stringify(balanceRevisionData), 'balance');
       
       // Validate revision (should be a number >= 0)
       const revision = Number(balanceRevisionData.revision);
@@ -779,17 +651,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain identity data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -859,17 +724,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain identity data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -947,17 +805,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain token balance data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -1029,17 +880,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain token balance data for multiple identities (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -1061,13 +905,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       );
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should contain token balance data in data section (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -1077,16 +915,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
-        expect(result.inSplitView).toBe(true);
-        expect(result.proofContent).toBeDefined();
-        expect(result.proofContent).not.toBe('');
-        
-        // Verify proof content contains expected fields
-        expect(result.proofContent).toContain('metadata');
-        expect(result.proofContent).toContain('proof');
-        expect(result.proofContent).toContain('grovedbProof');
-        expect(result.proofContent).toContain('quorumHash');
-        expect(result.proofContent).toContain('signature');
+        validateSplitView(result);
         
         console.log('✅ getIdentitiesTokenBalances split view with proof confirmed');
         console.log('Data section length:', result.result.length);
@@ -1110,17 +939,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain token info data (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
@@ -1192,17 +1014,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
       // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      validateBasicQueryResult(result);
       
       // Should be in single view (no proof)
-      expect(result.inSplitView).toBe(false);
-      expect(result.proofContent).toBeNull();
+      validateSingleView(result);
       
       // Should contain token info data for multiple identities (valid JSON)
       expect(() => JSON.parse(result.result)).not.toThrow();
