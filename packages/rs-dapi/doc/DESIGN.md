@@ -87,7 +87,9 @@ packages/rs-dapi/
 │   ├── services/                  # gRPC service implementations (protocol-agnostic)
 │   │   ├── mod.rs
 │   │   ├── core_service.rs        # Core blockchain endpoints
-│   │   ├── platform_service.rs    # Platform endpoints
+│   │   ├── platform_service.rs    # Platform endpoints (main service implementation)
+│   │   ├── platform_service/      # Modular complex method implementations
+│   │   │   └── get_status.rs      # Complex get_status implementation with status building
 │   │   └── streams_service.rs     # Streaming endpoints
 │   ├── health/                    # Health and monitoring endpoints
 │   │   ├── mod.rs
@@ -120,7 +122,75 @@ packages/rs-dapi/
     └── DESIGN.md                  # This document
 ```
 
-### 2. External Dependencies
+### 2. Modular Service Architecture
+
+rs-dapi implements a modular service architecture that separates simple proxy operations from complex business logic:
+
+#### Architecture Principles
+- **Separation of Concerns**: Complex methods are isolated in dedicated modules
+- **Context Sharing**: All modules have access to service context without boilerplate
+- **Maintainability**: Each complex operation lives in its own file for easy maintenance
+- **Scalability**: New complex methods can be added as separate modules
+- **No Macros**: Uses simple `impl` blocks instead of macro-generated code
+
+#### Service Organization Pattern
+```
+services/
+├── service_name.rs               # Main service implementation
+│   ├── Service struct definition
+│   ├── Simple proxy methods (majority of methods)
+│   ├── Service initialization
+│   └── Delegation calls to complex modules
+├── service_name/                 # Directory for complex methods
+│   ├── complex_method_1.rs       # First complex method implementation
+│   ├── complex_method_2.rs       # Second complex method implementation
+│   └── ...                       # Additional complex methods
+└── shared_utilities.rs           # Shared helper modules
+```
+
+#### Implementation Pattern
+Each complex method follows this pattern:
+
+```rust
+// Main service file (e.g., platform_service.rs)
+mod complex_method;  // Import the complex implementation
+
+impl GrpcTrait for ServiceImpl {
+    async fn simple_method(&self, req: Request<Req>) -> Result<Response<Res>, Status> {
+        // Simple proxy - direct forwarding
+        match self.client.simple_method(req.get_ref()).await {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Client error: {}", e))),
+        }
+    }
+
+    async fn complex_method(&self, req: Request<Req>) -> Result<Response<Res>, Status> {
+        // Delegate to complex implementation
+        self.complex_method_impl(req).await
+    }
+}
+
+// Complex method file (e.g., service_name/complex_method.rs)
+impl ServiceImpl {
+    pub async fn complex_method_impl(&self, req: Request<Req>) -> Result<Response<Res>, Status> {
+        // Full access to service context:
+        // - self.clients (drive_client, tenderdash_client, etc.)
+        // - self.cache
+        // - self.config
+        // Complex business logic here...
+    }
+}
+```
+
+#### Benefits
+- **Clean Separation**: Simple methods stay in main file, complex logic isolated
+- **Full Context Access**: Complex methods have access to all service state
+- **Easy Testing**: Each complex method can be tested independently
+- **Code Navigation**: Developers can quickly find specific functionality
+- **Reduced File Size**: Main service files remain manageable
+- **Parallel Development**: Different developers can work on different complex methods
+
+### 3. External Dependencies
 
 The implementation leverages existing Dash Platform crates and external libraries:
 
@@ -149,7 +219,7 @@ The implementation leverages existing Dash Platform crates and external librarie
 
 ## Service Implementations
 
-### 3. Core Service
+### 4. Core Service
 
 Implements blockchain-related gRPC endpoints (protocol-agnostic via translation layer):
 
@@ -166,9 +236,37 @@ Implements blockchain-related gRPC endpoints (protocol-agnostic via translation 
 - Network status aggregation
 - **Protocol-Agnostic**: Works identically for gRPC, REST, and JSON-RPC clients
 
-### 4. Platform Service
+### 5. Platform Service
 
-Implements Dash Platform gRPC endpoints (protocol-agnostic via translation layer):
+Implements Dash Platform gRPC endpoints (protocol-agnostic via translation layer) with a modular architecture for complex method implementations:
+
+#### Modular Architecture
+The Platform Service uses a modular structure where complex methods are separated into dedicated modules:
+
+```
+services/
+├── platform_service.rs          # Main service implementation
+│   ├── Struct definition (PlatformServiceImpl)
+│   ├── Simple proxy methods (most Platform trait methods)
+│   ├── Service initialization and configuration
+│   └── Delegation to complex method modules
+├── platform_service/            # Complex method implementations
+│   └── get_status.rs            # Complex get_status implementation with integrated status building
+```
+
+#### Main Service (`platform_service.rs`)
+- **Service Definition**: Contains `PlatformServiceImpl` struct with all necessary context
+- **Simple Methods**: Direct proxy methods that forward requests to Drive client
+- **Complex Method Delegation**: Delegates complex operations to specialized modules
+- **Shared Context**: All struct fields marked `pub(crate)` for submodule access
+
+#### Complex Method Modules (`platform_service/`)
+- **Dedicated Files**: Each complex method gets its own module file
+- **Context Access**: Full access to service context via `impl PlatformServiceImpl` blocks
+- **Business Logic**: Contains all complex caching, validation, and processing logic
+- **Integrated Utilities**: Status building and other utilities included directly in method modules
+- **Clean Separation**: Isolated complex logic from simple proxy operations
+
 
 #### Endpoints
 - `broadcastStateTransition` - Submit state transitions
@@ -178,6 +276,10 @@ Implements Dash Platform gRPC endpoints (protocol-agnostic via translation layer
 - Unimplemented endpoints (proxy to Drive ABCI)
 
 #### Key Features
+- **Modular Organization**: Complex methods separated into dedicated modules for maintainability
+- **Context Sharing**: Submodules have full access to service context (clients, cache, config)
+- **No Boilerplate**: Uses `impl` blocks rather than wrapper structs
+- **Integrated Utilities**: Status building and other helper functions co-located with their usage
 - State transition hash validation (64-character SHA256 hex)
 - Integration with Drive for proof generation
 - Tenderdash WebSocket monitoring for real-time events
@@ -185,7 +287,7 @@ Implements Dash Platform gRPC endpoints (protocol-agnostic via translation layer
 - Error conversion from Drive responses
 - **Protocol-Agnostic**: Identical behavior across all client protocols
 
-### 5. Streams Service
+### 6. Streams Service
 
 Implements real-time streaming gRPC endpoints (protocol-agnostic via translation layer):
 
@@ -202,7 +304,7 @@ Implements real-time streaming gRPC endpoints (protocol-agnostic via translation
 - Connection resilience and reconnection
 - **Protocol-Agnostic**: Streaming works consistently across all protocols
 
-### 6. JSON-RPC Service (Legacy)
+### 7. JSON-RPC Service (Legacy)
 
 Provides legacy HTTP endpoints for backward compatibility via protocol translation:
 
@@ -217,7 +319,7 @@ Provides legacy HTTP endpoints for backward compatibility via protocol translati
 - Minimal subset focused on essential operations
 - **Deprecated**: New clients should use gRPC or REST APIs
 
-### 7. REST API Gateway
+### 8. REST API Gateway
 
 Provides RESTful HTTP endpoints via protocol translation layer:
 
@@ -240,7 +342,7 @@ GET  /v1/platform/consensus-params            -> getConsensusParams
 GET  /v1/platform/status                      -> getStatus
 ```
 
-### 8. Health and Monitoring Endpoints
+### 9. Health and Monitoring Endpoints
 
 Built-in observability and monitoring capabilities:
 
@@ -262,7 +364,7 @@ Built-in observability and monitoring capabilities:
 
 ## Data Flow and Processing
 
-### 9. Multi-Protocol Server Architecture
+### 10. Multi-Protocol Server Architecture
 
 rs-dapi implements a unified server with a protocol translation layer that normalizes all incoming requests to gRPC format, operating behind Envoy as a trusted backend service:
 
@@ -327,7 +429,7 @@ External Client → Envoy Gateway → Protocol Translation → gRPC Services →
 - **Error Translation**: Maps gRPC status codes to appropriate protocol-specific errors
 - **Streaming**: gRPC streaming for real-time data, WebSocket support for REST
 
-### 10. Protocol Translation Layer
+### 11. Protocol Translation Layer
 
 The protocol translation layer is the key architectural component that enables unified business logic while supporting multiple client protocols:
 
