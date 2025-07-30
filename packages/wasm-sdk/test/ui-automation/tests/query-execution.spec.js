@@ -3,6 +3,29 @@ const { WasmSdkPage } = require('../utils/wasm-sdk-page');
 const { ParameterInjector } = require('../utils/parameter-injector');
 
 /**
+ * Helper function to execute a query with proof toggle enabled
+ * @param {WasmSdkPage} wasmSdkPage - The page object instance
+ * @param {ParameterInjector} parameterInjector - The parameter injector instance
+ * @param {string} category - Query category (e.g., 'identity', 'documents')
+ * @param {string} queryName - Query name (e.g., 'getIdentity')
+ * @param {string} network - Network to use ('testnet' or 'mainnet')
+ * @returns {Promise<Object>} - The query result object
+ */
+async function executeQueryWithProof(wasmSdkPage, parameterInjector, category, queryName, network = 'testnet') {
+  await wasmSdkPage.setupQuery(category, queryName);
+  
+  // Enable proof info if available
+  const proofEnabled = await wasmSdkPage.enableProofInfo();
+  
+  const success = await parameterInjector.injectParameters(category, queryName, network);
+  expect(success).toBe(true);
+  
+  const result = await wasmSdkPage.executeQueryAndGetResult();
+  
+  return { result, proofEnabled };
+}
+
+/**
  * Helper function to parse balance/nonce responses that may contain large numbers
  * @param {string} resultStr - The raw result string from the query
  * @param {string} propertyName - The property name to extract (e.g., 'balance', 'nonce')
@@ -696,15 +719,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
 
   test.describe('Proof Information', () => {
     test('should execute query with proof info enabled', async () => {
-      await wasmSdkPage.setupQuery('identity', 'getIdentity');
-      
-      // Enable proof info if available
-      await wasmSdkPage.enableProofInfo();
-      
-      const success = await parameterInjector.injectParameters('identity', 'getIdentity', 'testnet');
-      expect(success).toBe(true);
-      
-      const result = await wasmSdkPage.executeQueryAndGetResult();
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentity',
+        'testnet'
+      );
       
       // Verify query executed successfully
       expect(result.success).toBe(true);
@@ -715,8 +736,25 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
-      // With proof info, result might be larger
-      console.log('Query with proof result length:', result.result.length);
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ Split view detected with proof content');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for this query');
+      }
     });
   });
 

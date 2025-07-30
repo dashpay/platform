@@ -285,12 +285,26 @@ class WasmSdkPage extends BaseTest {
       }
       
       const proofToggle = this.page.locator(this.selectors.proofToggle);
-      await proofToggle.waitFor({ state: 'visible', timeout: 3000 });
       
       // Check if already enabled
       const isChecked = await proofToggle.isChecked();
       if (!isChecked) {
-        await proofToggle.check();
+        // Click on the toggle switch container or label to toggle it
+        // Since it's a custom toggle, we need to click the label or toggle-slider
+        const toggleLabel = proofContainer.locator('label');
+        await toggleLabel.click();
+        
+        // Wait a moment for the toggle animation
+        await this.page.waitForTimeout(300);
+        
+        // Verify it's now checked
+        const isNowChecked = await proofToggle.isChecked();
+        if (!isNowChecked) {
+          console.log('⚠️ Toggle click did not work, trying alternative approach');
+          // Try clicking the toggle slider directly
+          const toggleSlider = proofContainer.locator('.toggle-slider');
+          await toggleSlider.click();
+        }
       }
       
       console.log('✅ Proof info enabled');
@@ -410,18 +424,59 @@ class WasmSdkPage extends BaseTest {
   }
 
   /**
+   * Get proof content when in split view mode
+   */
+  async getProofContent() {
+    await this.page.waitForTimeout(500); // Brief wait for content to render
+    
+    const proofContent = this.page.locator('#proofInfo');
+    const isVisible = await proofContent.isVisible();
+    
+    if (!isVisible) {
+      console.log('⚠️ Proof content not visible');
+      return '';
+    }
+    
+    const content = await proofContent.textContent();
+    return content || '';
+  }
+
+  /**
+   * Check if result is displayed in split view (proof mode)
+   */
+  async isInSplitView() {
+    const dataSection = this.page.locator('.result-data-section');
+    const proofSection = this.page.locator('.result-proof-section');
+    
+    const dataSectionVisible = await dataSection.isVisible();
+    const proofSectionVisible = await proofSection.isVisible();
+    
+    return dataSectionVisible && proofSectionVisible;
+  }
+
+  /**
    * Wait for query execution to complete and return the result
    */
-  async executeQueryAndGetResult(expectSuccess = true) {
+  async executeQueryAndGetResult() {
     const success = await this.executeQuery();
     const result = await this.getResultContent();
     const hasError = await this.hasErrorResult();
+    
+    // Check if we're in split view mode (proof mode)
+    const inSplitView = await this.isInSplitView();
+    let proofContent = null;
+    
+    if (inSplitView) {
+      proofContent = await this.getProofContent();
+    }
     
     return {
       success,
       result,
       hasError,
-      statusText: await this.getStatusBannerText()
+      statusText: await this.getStatusBannerText(),
+      inSplitView,
+      proofContent
     };
   }
 
