@@ -135,6 +135,31 @@ test.describe('WASM SDK Query Execution Tests', () => {
       console.log('Identity keys result:', result.result.substring(0, 200) + '...');
     });
 
+    test('should execute getIdentitiesContractKeys query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentitiesContractKeys');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentitiesContractKeys', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain contract keys data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const contractKeysData = JSON.parse(result.result);
+      expect(contractKeysData).toBeDefined();
+      
+      console.log('Identities contract keys result:', result.result.substring(0, 200) + '...');
+    });
+
     test('should execute getIdentityNonce query', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityNonce');
       
@@ -627,25 +652,45 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Fill with invalid ID
       await wasmSdkPage.fillQueryParameters({ id: 'invalid_identity_id' });
       
-      const result = await wasmSdkPage.executeQueryAndGetResult(false);
+      // Click execute button directly
+      const executeButton = wasmSdkPage.page.locator('#executeQuery');
+      await executeButton.click();
+      
+      // Wait a bit for the error to appear
+      await wasmSdkPage.page.waitForTimeout(1000);
+      
+      // Check for error status
+      const statusBanner = wasmSdkPage.page.locator('#statusBanner');
+      const statusClass = await statusBanner.getAttribute('class');
+      const statusText = await wasmSdkPage.getStatusBannerText();
       
       // Should show error
-      expect(result.hasError || !result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      expect(statusClass).toContain('error');
+      expect(statusText).toBeTruthy();
       
-      console.log('Error handling result:', result.statusText);
+      console.log('Error handling result:', statusText);
     });
 
     test('should handle empty required fields', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentity');
       
       // Don't fill any parameters, try to execute
-      const result = await wasmSdkPage.executeQueryAndGetResult(false);
+      const executeButton = wasmSdkPage.page.locator('#executeQuery');
+      await executeButton.click();
+      
+      // Wait a bit for the error to appear
+      await wasmSdkPage.page.waitForTimeout(1000);
+      
+      // Check for error status
+      const statusBanner = wasmSdkPage.page.locator('#statusBanner');
+      const statusClass = await statusBanner.getAttribute('class');
+      const statusText = await wasmSdkPage.getStatusBannerText();
       
       // Should show error or validation message
-      expect(result.hasError || !result.success).toBe(true);
+      expect(statusClass).toContain('error');
+      expect(statusText).toContain('required');
       
-      console.log('Empty fields handling:', result.statusText);
+      console.log('Empty fields handling:', statusText);
     });
   });
 
