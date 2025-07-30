@@ -98,6 +98,34 @@ const testData = {
         testnet: [
           { publicKeyHash: "b7e904ce25ed97594e72f7af0e66f298031c1754" }
         ]
+      },
+      getIdentityNonce: {
+        testnet: [
+          { identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk" }
+        ]
+      },
+      getIdentityContractNonce: {
+        testnet: [
+          { 
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            contractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+          }
+        ]
+      },
+      getIdentitiesBalances: {
+        testnet: [
+          {
+            identityIds: [
+              "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+              "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX"
+            ]
+          }
+        ]
+      },
+      getIdentityBalanceAndRevision: {
+        testnet: [
+          { id: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk" }
+        ]
       }
     },
 

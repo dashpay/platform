@@ -41,7 +41,8 @@ class ParameterInjector {
       // Identity parameters
       'id': ['#id', '[name="id"]', 'input[placeholder*="Identity ID"]'],
       'identityId': ['#identityId', '[name="identityId"]', 'input[placeholder*="Identity ID"]'],
-      'identityIds': ['#identityIds', '[name="identityIds"]', 'input[placeholder*="Identity IDs"]'],
+      'identityIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="identityIds"] input[type="text"]', '.array-input-container[data-array-name="identityIds"] input', '#identityIds', '[name="identityIds"]', 'input[placeholder*="Identity IDs"]'],
+      'identitiesIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="identitiesIds"] input[type="text"]', '.array-input-container[data-array-name="identitiesIds"] input', '#identitiesIds', '[name="identitiesIds"]', 'input[placeholder*="Identity IDs"]'],
       
       // Data contract parameters
       'dataContractId': ['#dataContractId', '[name="dataContractId"]', 'input[placeholder*="Contract ID"]'],
