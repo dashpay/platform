@@ -208,6 +208,15 @@ const testData = {
             ]
           }
         ]
+      },
+      getDataContractHistory: {
+        testnet: [
+          { 
+            id: "HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM",
+            limit: 10,
+            offset: 0
+          }
+        ]
       }
     },
 

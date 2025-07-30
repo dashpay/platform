@@ -115,6 +115,34 @@ function validateSingleView(result) {
 }
 
 /**
+ * Helper function to validate data contract result
+ * @param {string} resultStr - The raw result string containing contract data
+ */
+function validateContractResult(resultStr) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const contractData = JSON.parse(resultStr);
+  expect(contractData).toBeDefined();
+  expect(contractData).toHaveProperty('id');
+  expect(contractData).toHaveProperty('config');
+}
+
+/**
+ * Helper function to validate document result
+ * @param {string} resultStr - The raw result string containing document data
+ */
+function validateDocumentResult(resultStr) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const documentData = JSON.parse(resultStr);
+  expect(documentData).toBeDefined();
+  // Documents can be arrays or single objects
+  if (Array.isArray(documentData)) {
+    expect(documentData.length).toBeGreaterThanOrEqual(0);
+  } else {
+    expect(documentData).toBeInstanceOf(Object);
+  }
+}
+
+/**
  * Helper function to validate numeric results and ensure they're valid
  * @param {string} resultStr - The raw result string
  * @param {string} propertyName - The property name to extract
@@ -1027,20 +1055,12 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      validateContractResult(result.result);
       
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      
-      // Should contain contract data (valid JSON)
-      expect(() => JSON.parse(result.result)).not.toThrow();
-      const contractData = JSON.parse(result.result);
-      expect(contractData).toBeDefined();
-      
+      console.log('✅ getDataContract single view without proof confirmed');
     });
 
     test('should execute getDataContracts query for multiple contracts', async () => {
@@ -1051,15 +1071,114 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
       
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      // Multiple contracts result should be valid JSON
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const contractsData = JSON.parse(result.result);
+      expect(contractsData).toBeDefined();
       
+      console.log('✅ getDataContracts single view without proof confirmed');
+    });
+
+    test('should execute getDataContractHistory query', async () => {
+      await wasmSdkPage.setupQuery('dataContract', 'getDataContractHistory');
+      
+      const success = await parameterInjector.injectParameters('dataContract', 'getDataContractHistory', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      
+      // Contract history should be valid JSON (array of contract versions)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const historyData = JSON.parse(result.result);
+      expect(historyData).toBeDefined();
+      expect(Array.isArray(historyData) || typeof historyData === 'object').toBe(true);
+      
+      console.log('✅ getDataContractHistory single view without proof confirmed');
+    });
+
+    test('should execute getDataContract query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'dataContract', 
+        'getDataContract',
+        'testnet'
+      );
+      
+      // Validate basic result
+      validateBasicQueryResult(result);
+      validateContractResult(result.result);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        validateSplitView(result);
+        console.log('✅ getDataContract split view with proof confirmed');
+      } else {
+        console.log('⚠️ Proof was not enabled for getDataContract query');
+      }
+    });
+
+    // Skip this test - proof support not yet implemented in WASM SDK for getDataContracts
+    test.skip('should execute getDataContracts query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'dataContract', 
+        'getDataContracts',
+        'testnet'
+      );
+      
+      // Validate basic result
+      validateBasicQueryResult(result);
+      
+      // Multiple contracts result should be valid JSON
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const contractsData = JSON.parse(result.result);
+      expect(contractsData).toBeDefined();
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        validateSplitView(result);
+        console.log('✅ getDataContracts split view with proof confirmed');
+      } else {
+        console.log('⚠️ Proof was not enabled for getDataContracts query');
+      }
+    });
+
+    // Skip this test - proof support not yet implemented in WASM SDK for getDataContractHistory
+    test.skip('should execute getDataContractHistory query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'dataContract', 
+        'getDataContractHistory',
+        'testnet'
+      );
+      
+      // Validate basic result
+      validateBasicQueryResult(result);
+      
+      // Contract history should be valid JSON
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const historyData = JSON.parse(result.result);
+      expect(historyData).toBeDefined();
+      expect(Array.isArray(historyData) || typeof historyData === 'object').toBe(true);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        validateSplitView(result);
+        console.log('✅ getDataContractHistory split view with proof confirmed');
+      } else {
+        console.log('⚠️ Proof was not enabled for getDataContractHistory query');
+      }
     });
   });
 
@@ -1072,20 +1191,12 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      validateDocumentResult(result.result);
       
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      
-      // Should contain documents data (valid JSON)
-      expect(() => JSON.parse(result.result)).not.toThrow();
-      const documentsData = JSON.parse(result.result);
-      expect(documentsData).toBeDefined();
-      
+      console.log('✅ getDocuments single view without proof confirmed');
     });
 
     test('should execute getDocument query for specific document', async () => {
@@ -1096,20 +1207,56 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      validateDocumentResult(result.result);
       
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
+      console.log('✅ getDocument single view without proof confirmed');
+    });
+
+    test('should execute getDocuments query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'document', 
+        'getDocuments',
+        'testnet'
+      );
       
-      // Should contain document data (valid JSON)
-      expect(() => JSON.parse(result.result)).not.toThrow();
-      const documentData = JSON.parse(result.result);
-      expect(documentData).toBeDefined();
+      // Validate basic result
+      validateBasicQueryResult(result);
+      validateDocumentResult(result.result);
       
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        validateSplitView(result);
+        console.log('✅ getDocuments split view with proof confirmed');
+      } else {
+        console.log('⚠️ Proof was not enabled for getDocuments query');
+      }
+    });
+
+    test('should execute getDocument query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'document', 
+        'getDocument',
+        'testnet'
+      );
+      
+      // Validate basic result
+      validateBasicQueryResult(result);
+      validateDocumentResult(result.result);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        validateSplitView(result);
+        console.log('✅ getDocument split view with proof confirmed');
+      } else {
+        console.log('⚠️ Proof was not enabled for getDocument query');
+      }
     });
   });
 
