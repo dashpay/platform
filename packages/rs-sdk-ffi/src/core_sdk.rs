@@ -320,12 +320,12 @@ pub unsafe extern "C" fn dash_core_sdk_get_quorum_public_key(
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_core_handle(
     client: *mut FFIDashSpvClient,
-) -> *mut dash_spv_ffi::CoreSDKHandle {
+) -> *mut std::ffi::c_void {
     if client.is_null() {
         return std::ptr::null_mut();
     }
 
-    dash_spv_ffi::ffi_dash_spv_get_core_handle(client)
+    dash_spv_ffi::ffi_dash_spv_get_core_handle(client) as *mut std::ffi::c_void
 }
 
 /// Broadcast a transaction

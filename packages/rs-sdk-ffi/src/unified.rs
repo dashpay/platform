@@ -19,7 +19,7 @@ static UNIFIED_INITIALIZED: AtomicBool = AtomicBool::new(false);
 #[repr(C)]
 pub struct UnifiedSDKConfig {
     /// Core SDK configuration (ignored if core feature disabled)
-    pub core_config: FFIClientConfig,
+    pub core_config: *const FFIClientConfig,
     /// Platform SDK configuration
     pub platform_config: DashSDKConfig,
     /// Whether to enable cross-layer integration
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn dash_unified_sdk_create(
 
     // Create Core SDK client (always enabled in unified SDK)
     let core_client = if crate::core_sdk::dash_core_sdk_is_enabled() {
-        crate::core_sdk::dash_core_sdk_create_client(&config.core_config)
+        crate::core_sdk::dash_core_sdk_create_client(config.core_config)
     } else {
         std::ptr::null_mut()
     };
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn dash_unified_sdk_stop(handle: *mut UnifiedSDKHandle) ->
 #[no_mangle]
 pub unsafe extern "C" fn dash_unified_sdk_get_core_client(
     handle: *mut UnifiedSDKHandle,
-) -> *mut CoreSDKClient {
+) -> *mut FFIDashSpvClient {
     if handle.is_null() {
         return std::ptr::null_mut();
     }
@@ -366,20 +366,14 @@ mod tests {
         let core_config_ptr = dash_spv_ffi::dash_spv_ffi_config_testnet();
         assert!(!core_config_ptr.is_null(), "Failed to create core config");
         
-        // Step 2: Create the UnifiedSDKConfig by reading the value from the pointer
-        // Note: ptr::read transfers ownership, so we don't call destroy on the original pointer
-        let unified_config = unsafe {
-            UnifiedSDKConfig {
-                core_config: ptr::read(core_config_ptr), // Use ptr::read to transfer ownership
-                platform_config,
-                enable_integration: true,
-            }
+        // Step 2: Create the UnifiedSDKConfig using the pointer
+        let unified_config = UnifiedSDKConfig {
+            core_config: core_config_ptr,
+            platform_config,
+            enable_integration: true,
         };
         
-        // Step 3: The original pointer should not be destroyed since ptr::read transferred ownership
-        // The memory will be cleaned up when unified_config goes out of scope
-        
-        // Step 4: Proceed with the test by passing a reference to dash_unified_sdk_create()
+        // Step 3: Proceed with the test by passing a reference to dash_unified_sdk_create()
         let handle = unsafe { dash_unified_sdk_create(&unified_config) };
         assert!(!handle.is_null(), "Failed to create unified SDK handle");
         
@@ -401,6 +395,9 @@ mod tests {
         
         // Clean up the handle
         unsafe { dash_unified_sdk_destroy(handle) };
+        
+        // Clean up the config pointer
+        unsafe { dash_spv_ffi::dash_spv_ffi_config_destroy(core_config_ptr) };
     }
     
     /// Test that unified SDK functions handle null pointers gracefully
