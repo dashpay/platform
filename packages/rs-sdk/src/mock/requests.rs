@@ -7,7 +7,6 @@ use dpp::group::group_action::GroupAction;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::tokens::status::TokenStatus;
-use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::{
     bincode,
