@@ -280,6 +280,189 @@ test.describe('WASM SDK Query Execution Tests', () => {
       
       console.log('Identity balance and revision result:', result.result.substring(0, 200) + '...');
     });
+
+    test('should execute getIdentityByNonUniquePublicKeyHash query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentityByNonUniquePublicKeyHash');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentityByNonUniquePublicKeyHash', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain identity data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const identityData = JSON.parse(result.result);
+      expect(identityData).toBeDefined();
+      
+      // Could be an array of identities (non-unique) or a single identity
+      if (Array.isArray(identityData)) {
+        // If it's an array, each entry should be a valid identity
+        identityData.forEach((identity, index) => {
+          expect(identity).toBeDefined();
+          expect(identity).toHaveProperty('id');
+          console.log(`Identity ${index}:`, identity.id);
+        });
+      } else if (typeof identityData === 'object') {
+        // If it's a single identity object
+        expect(identityData).toHaveProperty('id');
+        console.log('Found identity:', identityData.id);
+      }
+      
+      console.log('Identity by non-unique public key hash result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityByPublicKeyHash query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentityByPublicKeyHash');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentityByPublicKeyHash', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain identity data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const identityData = JSON.parse(result.result);
+      expect(identityData).toBeDefined();
+      
+      // Should be a single identity object (unique public key hash)
+      expect(identityData).toHaveProperty('id');
+      expect(identityData.id).toBeDefined();
+      expect(identityData.publicKeys).toBeDefined();
+      
+      // Log the identity ID for verification
+      console.log('Found identity by unique public key hash:', identityData.id);
+      console.log('Identity by public key hash result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityTokenBalances query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentityTokenBalances');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentityTokenBalances', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token balance data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenBalancesData = JSON.parse(result.result);
+      expect(tokenBalancesData).toBeDefined();
+      
+      // Should be an array or object with token balance information
+      expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
+      
+      console.log('Identity token balances result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesTokenBalances query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentitiesTokenBalances');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentitiesTokenBalances', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token balance data for multiple identities (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenBalancesData = JSON.parse(result.result);
+      expect(tokenBalancesData).toBeDefined();
+      
+      // Should be an array or object with token balance information for multiple identities
+      expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
+      
+      console.log('Identities token balances result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityTokenInfos query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentityTokenInfos');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentityTokenInfos', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token info data (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenInfoData = JSON.parse(result.result);
+      expect(tokenInfoData).toBeDefined();
+      
+      // Should be an array or object with token information
+      expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
+      
+      console.log('Identity token infos result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentitiesTokenInfos query', async () => {
+      await wasmSdkPage.setupQuery('identity', 'getIdentitiesTokenInfos');
+      
+      const success = await parameterInjector.injectParameters('identity', 'getIdentitiesTokenInfos', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain token info data for multiple identities (valid JSON)
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const tokenInfoData = JSON.parse(result.result);
+      expect(tokenInfoData).toBeDefined();
+      
+      // Should be an array or object with token information for multiple identities
+      expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
+      
+      console.log('Identities token infos result:', result.result.substring(0, 200) + '...');
+    });
   });
 
   test.describe('Data Contract Queries', () => {

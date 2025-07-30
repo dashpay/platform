@@ -60,7 +60,7 @@ class ParameterInjector {
       
       // Token parameters
       'tokenId': ['#tokenId', '[name="tokenId"]', 'input[placeholder*="Token ID"]'],
-      'tokenIds': ['#tokenIds', '[name="tokenIds"]', 'input[placeholder*="Token IDs"]'],
+      'tokenIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="tokenIds"] input[type="text"]', '.array-input-container[data-array-name="tokenIds"] input', '#tokenIds', '[name="tokenIds"]', 'input[placeholder*="Token IDs"]'],
       
       // Query modifiers
       'limit': ['#limit', '[name="limit"]', 'input[placeholder*="limit" i]'],

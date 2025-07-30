@@ -111,7 +111,7 @@ class WasmSdkPage extends BaseTest {
    */
   async fillParameterByName(paramName, value) {
     // Special handling for array parameters that use dynamic input fields
-    if (paramName === 'ids' || paramName === 'identitiesIds') {
+    if (paramName === 'ids' || paramName === 'identitiesIds' || paramName === 'identityIds' || paramName === 'tokenIds') {
       const enterValueInput = this.page.locator('input[placeholder="Enter value"]').first();
       const count = await enterValueInput.count();
       

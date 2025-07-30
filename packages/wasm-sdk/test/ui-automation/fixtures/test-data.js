@@ -42,7 +42,8 @@ const testData = {
   tokenIds: {
     testnet: [
       "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
-      "HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa" // Used in docs.html (last claim)
+      "HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa", // Used in docs.html (last claim)
+      "4tyvbA2ZGFLvjXLnJRCacSoMbFfpmBwGRrAZsVwnfYri", // Identity 5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk frozen
     ]
   },
 
@@ -125,6 +126,55 @@ const testData = {
       getIdentityBalanceAndRevision: {
         testnet: [
           { id: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk" }
+        ]
+      },
+      getIdentityByNonUniquePublicKeyHash: {
+        testnet: [
+          { publicKeyHash: "518038dc858461bcee90478fd994bba8057b7531" }
+        ]
+      },
+      getIdentityTokenBalances: {
+        testnet: [
+          {
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            tokenIds: [
+              "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
+              "HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa"
+            ]
+          }
+        ]
+      },
+      getIdentitiesTokenBalances: {
+        testnet: [
+          {
+            identityIds: [
+              "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+              "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX"
+            ],
+            tokenId: "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+          }
+        ]
+      },
+      getIdentityTokenInfos: {
+        testnet: [
+          {
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            tokenIds: [
+              "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
+              "4tyvbA2ZGFLvjXLnJRCacSoMbFfpmBwGRrAZsVwnfYri"
+            ]
+          }
+        ]
+      },
+      getIdentitiesTokenInfos: {
+        testnet: [
+          {
+            identityIds: [
+              "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+              "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX"
+            ],
+            tokenId: "4tyvbA2ZGFLvjXLnJRCacSoMbFfpmBwGRrAZsVwnfYri"
+          }
         ]
       }
     },
