@@ -3,20 +3,20 @@ import Foundation
 // MARK: - Document Models based on DPP
 
 /// Main Document structure
-struct DPPDocument: Identifiable, Codable, Equatable {
-    let id: Identifier
-    let ownerId: Identifier
-    let properties: [String: PlatformValue]
-    let revision: Revision?
-    let createdAt: TimestampMillis?
-    let updatedAt: TimestampMillis?
-    let transferredAt: TimestampMillis?
-    let createdAtBlockHeight: BlockHeight?
-    let updatedAtBlockHeight: BlockHeight?
-    let transferredAtBlockHeight: BlockHeight?
-    let createdAtCoreBlockHeight: CoreBlockHeight?
-    let updatedAtCoreBlockHeight: CoreBlockHeight?
-    let transferredAtCoreBlockHeight: CoreBlockHeight?
+public struct DPPDocument: Identifiable, Codable, Equatable {
+    public let id: Identifier
+    public let ownerId: Identifier
+    public let properties: [String: PlatformValue]
+    public let revision: Revision?
+    public let createdAt: TimestampMillis?
+    public let updatedAt: TimestampMillis?
+    public let transferredAt: TimestampMillis?
+    public let createdAtBlockHeight: BlockHeight?
+    public let updatedAtBlockHeight: BlockHeight?
+    public let transferredAtBlockHeight: BlockHeight?
+    public let createdAtCoreBlockHeight: CoreBlockHeight?
+    public let updatedAtCoreBlockHeight: CoreBlockHeight?
+    public let transferredAtCoreBlockHeight: CoreBlockHeight?
     
     /// Get the document ID as a string
     var idString: String {
@@ -26,6 +26,27 @@ struct DPPDocument: Identifiable, Codable, Equatable {
     /// Get the owner ID as a string
     var ownerIdString: String {
         ownerId.toBase58String()
+    }
+    
+    public init(id: Identifier, ownerId: Identifier, properties: [String: PlatformValue], 
+                revision: Revision? = nil, createdAt: TimestampMillis? = nil, 
+                updatedAt: TimestampMillis? = nil, transferredAt: TimestampMillis? = nil,
+                createdAtBlockHeight: BlockHeight? = nil, updatedAtBlockHeight: BlockHeight? = nil,
+                transferredAtBlockHeight: BlockHeight? = nil, createdAtCoreBlockHeight: CoreBlockHeight? = nil,
+                updatedAtCoreBlockHeight: CoreBlockHeight? = nil, transferredAtCoreBlockHeight: CoreBlockHeight? = nil) {
+        self.id = id
+        self.ownerId = ownerId
+        self.properties = properties
+        self.revision = revision
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.transferredAt = transferredAt
+        self.createdAtBlockHeight = createdAtBlockHeight
+        self.updatedAtBlockHeight = updatedAtBlockHeight
+        self.transferredAtBlockHeight = transferredAtBlockHeight
+        self.createdAtCoreBlockHeight = createdAtCoreBlockHeight
+        self.updatedAtCoreBlockHeight = updatedAtCoreBlockHeight
+        self.transferredAtCoreBlockHeight = transferredAtCoreBlockHeight
     }
     
     /// Get created date

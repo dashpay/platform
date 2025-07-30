@@ -10,26 +10,45 @@ import SwiftData
 
 @main
 struct SwiftExampleAppApp: App {
-    @StateObject private var appState = AppState()
-    
-    let modelContainer: ModelContainer
-    
-    init() {
-        do {
-            self.modelContainer = try ModelContainer.appContainer()
-        } catch {
-            fatalError("Failed to create model container: \(error)")
-        }
-    }
+    @StateObject private var unifiedState = UnifiedAppState()
+    @State private var shouldResetApp = false
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appState)
-                .modelContainer(modelContainer)
-                .onAppear {
-                    appState.initializeSDK(modelContext: modelContainer.mainContext)
+            if shouldResetApp {
+                // Show reset view
+                VStack(spacing: 20) {
+                    ProgressView("Resetting app...")
+                        .scaleEffect(1.5)
+                    Text("The app is being reset to its initial state.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                        await resetAppState()
+                    }
+                }
+            } else {
+                ContentView()
+                    .environmentObject(unifiedState)
+                    .environmentObject(unifiedState.walletService)
+                    .environmentObject(unifiedState.platformState)
+                    .environmentObject(unifiedState.unifiedState)
+                    .environment(\.modelContext, unifiedState.modelContainer.mainContext)
+                    .task {
+                        await unifiedState.initialize()
+                    }
+            }
         }
+    }
+    
+    @MainActor
+    private func resetAppState() async {
+        await unifiedState.reset()
+        await unifiedState.initialize()
+        shouldResetApp = false
     }
 }

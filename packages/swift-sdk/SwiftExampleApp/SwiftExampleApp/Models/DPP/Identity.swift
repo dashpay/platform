@@ -3,11 +3,11 @@ import Foundation
 // MARK: - Identity Models based on DPP
 
 /// Main Identity structure
-struct DPPIdentity: Identifiable, Codable, Equatable {
-    let id: Identifier
-    let publicKeys: [KeyID: IdentityPublicKey]
-    let balance: Credits
-    let revision: Revision
+public struct DPPIdentity: Identifiable, Codable, Equatable {
+    public let id: Identifier
+    public let publicKeys: [KeyID: IdentityPublicKey]
+    public let balance: Credits
+    public let revision: Revision
     
     /// Get the identity ID as a string
     var idString: String {
@@ -24,11 +24,18 @@ struct DPPIdentity: Identifiable, Codable, Equatable {
         let dashAmount = Double(balance) / 100_000_000
         return String(format: "%.8f DASH", dashAmount)
     }
+    
+    public init(id: Identifier, publicKeys: [KeyID: IdentityPublicKey], balance: Credits, revision: Revision) {
+        self.id = id
+        self.publicKeys = publicKeys
+        self.balance = balance
+        self.revision = revision
+    }
 }
 
 // MARK: - Identity Public Key
 
-struct IdentityPublicKey: Codable, Equatable {
+public struct IdentityPublicKey: Codable, Equatable {
     let id: KeyID
     let purpose: KeyPurpose
     let securityLevel: SecurityLevel

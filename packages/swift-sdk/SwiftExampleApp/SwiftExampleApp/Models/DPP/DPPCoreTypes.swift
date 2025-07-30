@@ -3,28 +3,28 @@ import Foundation
 // MARK: - Core Types based on DPP
 
 /// 32-byte identifier used throughout the platform
-typealias Identifier = Data
+public typealias Identifier = Data
 
 /// Revision number for versioning
-typealias Revision = UInt64
+public typealias Revision = UInt64
 
 /// Timestamp in milliseconds since Unix epoch
-typealias TimestampMillis = UInt64
+public typealias TimestampMillis = UInt64
 
 /// Credits amount
-typealias Credits = UInt64
+public typealias Credits = UInt64
 
 /// Key ID for identity public keys
-typealias KeyID = UInt32
+public typealias KeyID = UInt32
 
 /// Key count
 typealias KeyCount = KeyID
 
 /// Block height on the platform chain
-typealias BlockHeight = UInt64
+public typealias BlockHeight = UInt64
 
 /// Block height on the core chain
-typealias CoreBlockHeight = UInt32
+public typealias CoreBlockHeight = UInt32
 
 /// Epoch index
 typealias EpochIndex = UInt16
@@ -185,7 +185,7 @@ extension Data {
 
 // MARK: - Platform Value Type
 /// Represents a value that can be stored in documents or contracts
-enum PlatformValue: Codable, Equatable {
+public enum PlatformValue: Codable, Equatable {
     case null
     case bool(Bool)
     case integer(Int64)
