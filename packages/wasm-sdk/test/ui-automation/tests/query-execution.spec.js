@@ -17,6 +17,13 @@ async function executeQueryWithProof(wasmSdkPage, parameterInjector, category, q
   // Enable proof info if available
   const proofEnabled = await wasmSdkPage.enableProofInfo();
   
+  // If proof was enabled, wait for the toggle to be actually checked
+  if (proofEnabled) {
+    const proofToggle = wasmSdkPage.page.locator('#proofToggle');
+    await expect(proofToggle).toBeChecked();
+    console.log('✅ Proof toggle confirmed as checked');
+  }
+  
   const success = await parameterInjector.injectParameters(category, queryName, network);
   expect(success).toBe(true);
   
@@ -169,8 +176,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       }
     });
 
-    test('should execute getIdentityBalance query', async () => {
+    test('should execute getIdentityBalance query without proof info', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentityBalance');
+      
+      // Ensure proof info is disabled
+      await wasmSdkPage.disableProofInfo();
       
       const success = await parameterInjector.injectParameters('identity', 'getIdentityBalance', 'testnet');
       expect(success).toBe(true);
@@ -186,11 +196,62 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
+      // Should be in single view (no proof)
+      expect(result.inSplitView).toBe(false);
+      expect(result.proofContent).toBeNull();
+      
       // Should contain balance data (should be a number or numeric string)
       const balance = parseNumericResult(result.result, 'balance');
       
       expect(balance).not.toBeNaN();
       expect(balance).toBeGreaterThanOrEqual(0);
+      
+      console.log('✅ getIdentityBalance single view without proof confirmed');
+      console.log('Identity balance result:', result.result.substring(0, 200) + '...');
+    });
+
+    test('should execute getIdentityBalance query with proof info', async () => {
+      const { result, proofEnabled } = await executeQueryWithProof(
+        wasmSdkPage, 
+        parameterInjector, 
+        'identity', 
+        'getIdentityBalance',
+        'testnet'
+      );
+      
+      // Verify query executed successfully
+      expect(result.success).toBe(true);
+      expect(result.result).toBeDefined();
+      
+      // Verify the result is not an error message
+      expect(result.hasError).toBe(false);
+      expect(result.result).not.toContain('Error executing query');
+      expect(result.result).not.toContain('not found');
+      
+      // Should contain balance data in data section
+      const balance = parseNumericResult(result.result, 'balance');
+      expect(balance).not.toBeNaN();
+      expect(balance).toBeGreaterThanOrEqual(0);
+      
+      // If proof was enabled, verify split view
+      if (proofEnabled) {
+        expect(result.inSplitView).toBe(true);
+        expect(result.proofContent).toBeDefined();
+        expect(result.proofContent).not.toBe('');
+        
+        // Verify proof content contains expected fields
+        expect(result.proofContent).toContain('metadata');
+        expect(result.proofContent).toContain('proof');
+        expect(result.proofContent).toContain('grovedbProof');
+        expect(result.proofContent).toContain('quorumHash');
+        expect(result.proofContent).toContain('signature');
+        
+        console.log('✅ getIdentityBalance split view with proof confirmed');
+        console.log('Data section length:', result.result.length);
+        console.log('Proof section length:', result.proofContent.length);
+      } else {
+        console.log('⚠️ Proof was not enabled for getIdentityBalance query');
+      }
       
       console.log('Identity balance result:', result.result.substring(0, 200) + '...');
     });

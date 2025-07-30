@@ -1,4 +1,5 @@
 const { BaseTest } = require('./base-test');
+const { expect } = require('@playwright/test');
 
 /**
  * Page Object Model for WASM SDK index.html interface
@@ -294,17 +295,9 @@ class WasmSdkPage extends BaseTest {
         const toggleLabel = proofContainer.locator('label');
         await toggleLabel.click();
         
-        // Wait a moment for the toggle animation
-        await this.page.waitForTimeout(300);
-        
-        // Verify it's now checked
-        const isNowChecked = await proofToggle.isChecked();
-        if (!isNowChecked) {
-          console.log('⚠️ Toggle click did not work, trying alternative approach');
-          // Try clicking the toggle slider directly
-          const toggleSlider = proofContainer.locator('.toggle-slider');
-          await toggleSlider.click();
-        }
+        // Wait for the toggle to be checked
+        await expect(proofToggle).toBeChecked();
+        console.log('✅ Proof toggle confirmed as checked');
       }
       
       console.log('✅ Proof info enabled');
@@ -358,17 +351,9 @@ class WasmSdkPage extends BaseTest {
         const toggleLabel = proofContainer.locator('label');
         await toggleLabel.click();
         
-        // Wait a moment for the toggle animation
-        await this.page.waitForTimeout(300);
-        
-        // Verify it's now unchecked
-        const isNowUnchecked = await proofToggle.isChecked();
-        if (isNowUnchecked) {
-          console.log('⚠️ Toggle click did not work, trying alternative approach');
-          // Try clicking the toggle slider directly
-          const toggleSlider = proofContainer.locator('.toggle-slider');
-          await toggleSlider.click();
-        }
+        // Wait for the toggle to be unchecked
+        await expect(proofToggle).not.toBeChecked();
+        console.log('✅ Proof toggle confirmed as unchecked');
       }
       
       console.log('✅ Proof info disabled');
