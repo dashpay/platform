@@ -349,12 +349,26 @@ class WasmSdkPage extends BaseTest {
       }
       
       const proofToggle = this.page.locator(this.selectors.proofToggle);
-      await proofToggle.waitFor({ state: 'visible', timeout: 3000 });
       
       // Check if already disabled
       const isChecked = await proofToggle.isChecked();
       if (isChecked) {
-        await proofToggle.uncheck();
+        // Click on the toggle switch container or label to toggle it
+        // Since it's a custom toggle, we need to click the label or toggle-slider
+        const toggleLabel = proofContainer.locator('label');
+        await toggleLabel.click();
+        
+        // Wait a moment for the toggle animation
+        await this.page.waitForTimeout(300);
+        
+        // Verify it's now unchecked
+        const isNowUnchecked = await proofToggle.isChecked();
+        if (isNowUnchecked) {
+          console.log('⚠️ Toggle click did not work, trying alternative approach');
+          // Try clicking the toggle slider directly
+          const toggleSlider = proofContainer.locator('.toggle-slider');
+          await toggleSlider.click();
+        }
       }
       
       console.log('✅ Proof info disabled');
