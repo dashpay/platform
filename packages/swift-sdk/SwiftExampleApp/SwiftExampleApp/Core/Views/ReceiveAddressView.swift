@@ -84,14 +84,16 @@ struct ReceiveAddressView: View {
         isLoadingAddress = true
         
         // Try to get existing receive address or generate new one
-        if let address = wallet.receiveAddress {
-            currentAddress = address
+        if let currentAccount = wallet.accounts.first,
+           let lastAddress = currentAccount.externalAddresses.last {
+            currentAddress = lastAddress.address
         } else {
             do {
                 currentAddress = try await walletService.getNewAddress()
             } catch {
                 // Use a mock address for now
-                currentAddress = "yMockReceiveAddress\(wallet.addresses.count)"
+                let addressCount = wallet.accounts.first?.externalAddresses.count ?? 0
+                currentAddress = "yMockReceiveAddress\(addressCount)"
             }
         }
         

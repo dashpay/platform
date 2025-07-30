@@ -83,18 +83,18 @@ struct GlobalSyncIndicator: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            if let progress = walletService.detailedSyncProgress {
+            if let progress = walletService.detailedSyncProgress as? SyncProgress {
                 HStack {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.caption)
                         .symbolEffect(.pulse)
                     
-                    Text("Syncing: \(progress.formattedPercentage)")
+                    Text("Syncing: \(Int(progress.progress * 100))%")
                         .font(.caption)
                     
                     Spacer()
                     
-                    Text(progress.formattedTimeRemaining)
+                    Text("\(progress.current)/\(progress.total)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     
@@ -114,7 +114,7 @@ struct GlobalSyncIndicator: View {
                 GeometryReader { geometry in
                     Rectangle()
                         .fill(Color.blue)
-                        .frame(width: geometry.size.width * (progress.percentage / 100))
+                        .frame(width: geometry.size.width * progress.progress)
                 }
                 .frame(height: 2)
             }
@@ -170,8 +170,8 @@ struct SettingsView: View {
                     HStack {
                         Text("Core Sync")
                         Spacer()
-                        if let progress = unifiedState.walletService.detailedSyncProgress {
-                            Text("\(Int(progress.percentage))%")
+                        if let progress = unifiedState.walletService.detailedSyncProgress as? SyncProgress {
+                            Text("\(Int(progress.progress * 100))%")
                                 .foregroundColor(.secondary)
                         } else {
                             Text("Not syncing")

@@ -16,6 +16,11 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # Core SDK integration (always included for unified SDK)
 dash-spv-ffi = { path = "../../../rust-dashcore/dash-spv-ffi" }
 
+# Key and wallet management
+key-wallet = { path = "../../../rust-dashcore/key-wallet" }
+dashcore = { path = "../../../rust-dashcore/dash" }
+secp256k1 = "0.30"
+
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

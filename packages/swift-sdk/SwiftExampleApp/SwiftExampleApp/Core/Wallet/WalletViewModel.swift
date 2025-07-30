@@ -1,0 +1,340 @@
+import Foundation
+import SwiftUI
+import Combine
+
+// MARK: - Wallet View Model
+
+@MainActor
+public class WalletViewModel: ObservableObject {
+    // Published properties
+    @Published public var currentWallet: HDWallet?
+    @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
+    @Published public var transactions: [HDTransaction] = []
+    @Published public var addresses: [HDAddress] = []
+    @Published public var isLoading = false
+    @Published public var isSyncing = false
+    @Published public var syncProgress: Double = 0
+    @Published public var error: Error?
+    @Published public var showError = false
+    
+    // Unlock state
+    @Published public var isUnlocked = false
+    @Published public var requiresPIN = false
+    
+    // Services
+    private let walletManager: WalletManager
+    private let spvClient: SPVClient
+    private var cancellables = Set<AnyCancellable>()
+    private var unlockedSeed: Data?
+    
+    public init() throws {
+        self.walletManager = try WalletManager()
+        
+        // Initialize SPV client (placeholder until FFI is ready)
+        self.spvClient = try SPVClient()
+        
+        // Transaction service is initialized by WalletManager internally
+        
+        setupBindings()
+        
+        Task {
+            await loadWallet()
+        }
+    }
+    
+    // MARK: - Setup
+    
+    private func setupBindings() {
+        // Wallet changes
+        walletManager.$currentWallet
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] wallet in
+                self?.currentWallet = wallet
+                Task {
+                    await self?.refreshBalance()
+                    await self?.loadAddresses()
+                }
+            }
+            .store(in: &cancellables)
+        
+        // Transaction changes
+        walletManager.transactionService.$transactions
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$transactions)
+        
+        // Balance changes
+        walletManager.utxoManager.$utxos
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task {
+                    await self?.refreshBalance()
+                }
+            }
+            .store(in: &cancellables)
+        
+        // SPV sync progress
+        spvClient.syncProgressPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] progress in
+                self?.syncProgress = progress.progress
+                self?.isSyncing = progress.stage != .idle
+            }
+            .store(in: &cancellables)
+    }
+    
+    // MARK: - Wallet Management
+    
+    public func createWallet(label: String, pin: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let wallet = try await walletManager.createWallet(
+                label: label,
+                network: .testnet,
+                pin: pin
+            )
+            
+            currentWallet = wallet
+            isUnlocked = true
+            requiresPIN = false
+            
+            // Start sync
+            await startSync()
+        } catch {
+            self.error = error
+            showError = true
+        }
+    }
+    
+    public func importWallet(mnemonic: String, label: String, pin: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let wallet = try await walletManager.importWallet(
+                label: label,
+                network: .testnet,
+                mnemonic: mnemonic,
+                pin: pin
+            )
+            
+            currentWallet = wallet
+            isUnlocked = true
+            requiresPIN = false
+            
+            // Start sync
+            await startSync()
+        } catch {
+            self.error = error
+            showError = true
+        }
+    }
+    
+    public func unlockWallet(pin: String) async {
+        do {
+            unlockedSeed = try await walletManager.unlockWallet(with: pin)
+            isUnlocked = true
+            requiresPIN = false
+            
+            // Start sync after unlock
+            await startSync()
+        } catch {
+            self.error = error
+            showError = true
+        }
+    }
+    
+    // MARK: - Transaction Management
+    
+    public func sendTransaction(to address: String, amount: Double) async {
+        guard isUnlocked else {
+            requiresPIN = true
+            return
+        }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            // Convert Dash to duffs
+            let amountDuffs = UInt64(amount * 100_000_000)
+            
+            // Create transaction
+            let builtTx = try await walletManager.transactionService.createTransaction(
+                to: address,
+                amount: amountDuffs
+            )
+            
+            // Broadcast
+            try await walletManager.transactionService.broadcastTransaction(builtTx)
+            
+            // Refresh balance
+            await refreshBalance()
+        } catch {
+            self.error = error
+            showError = true
+        }
+    }
+    
+    public func estimateFee(for amount: Double) async -> Double {
+        let amountDuffs = UInt64(amount * 100_000_000)
+        
+        do {
+            let feeDuffs = try walletManager.transactionService.estimateFee(for: amountDuffs)
+            return Double(feeDuffs) / 100_000_000
+        } catch {
+            return 0.00002 // Default fee
+        }
+    }
+    
+    // MARK: - Address Management
+    
+    public func generateNewAddress() async {
+        guard let account = currentWallet?.accounts.first else { return }
+        
+        do {
+            let address = try await walletManager.getUnusedAddress(for: account)
+            await loadAddresses()
+            
+            // Watch new address in SPV
+            try await spvClient.watchAddress(address.address)
+        } catch {
+            self.error = error
+            showError = true
+        }
+    }
+    
+    private func loadAddresses() async {
+        guard let account = currentWallet?.accounts.first else { return }
+        
+        // Get recent external addresses
+        addresses = account.externalAddresses
+            .sorted { $0.index > $1.index }
+            .prefix(10)
+            .map { $0 }
+    }
+    
+    // MARK: - Sync Management
+    
+    public func startSync() async {
+        guard let wallet = currentWallet else { return }
+        
+        isSyncing = true
+        
+        do {
+            // Watch all addresses
+            for account in wallet.accounts {
+                let allAddresses = account.externalAddresses + account.internalAddresses
+                
+                for address in allAddresses {
+                    try await spvClient.watchAddress(address.address)
+                }
+            }
+            
+            // Set up callbacks for new transactions
+            await spvClient.onTransaction { [weak self] txInfo in
+                Task { @MainActor in
+                    await self?.processIncomingTransaction(txInfo)
+                }
+            }
+            
+            // Start sync
+            try await spvClient.startSync()
+        } catch {
+            self.error = error
+            showError = true
+            isSyncing = false
+        }
+    }
+    
+    public func stopSync() async {
+        do {
+            try await spvClient.stopSync()
+            isSyncing = false
+        } catch {
+            self.error = error
+            showError = true
+        }
+    }
+    
+    // MARK: - Transaction Processing
+    
+    private func processIncomingTransaction(_ txInfo: TransactionInfo) async {
+        do {
+            // Process transaction
+            try await walletManager.transactionService.processIncomingTransaction(
+                txid: txInfo.txid,
+                rawTx: txInfo.rawTransaction,
+                blockHeight: txInfo.blockHeight,
+                timestamp: Date(timeIntervalSince1970: TimeInterval(txInfo.timestamp))
+            )
+            
+            // Check for UTXOs
+            if let outputs = txInfo.outputs {
+                for (index, output) in outputs.enumerated() {
+                    if let outputAddress = output.address,
+                       let address = findAddress(outputAddress) {
+                        try await walletManager.utxoManager.addUTXO(
+                            txHash: txInfo.txid,
+                            outputIndex: UInt32(index),
+                            amount: output.amount,
+                            scriptPubKey: output.script,
+                            address: address,
+                            blockHeight: txInfo.blockHeight
+                        )
+                    }
+                }
+            }
+            
+            // Refresh balance
+            await refreshBalance()
+        } catch {
+            print("Failed to process transaction: \(error)")
+        }
+    }
+    
+    private func findAddress(_ addressString: String) -> HDAddress? {
+        guard let wallet = currentWallet else { return nil }
+        
+        for account in wallet.accounts {
+            let allAddresses = account.externalAddresses + account.internalAddresses +
+                             account.coinJoinAddresses + account.identityFundingAddresses
+            
+            if let address = allAddresses.first(where: { $0.address == addressString }) {
+                return address
+            }
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Balance Management
+    
+    private func refreshBalance() async {
+        guard let account = currentWallet?.accounts.first else { return }
+        
+        balance = walletManager.utxoManager.calculateBalance(for: account)
+        await walletManager.updateBalance(for: account)
+    }
+    
+    // MARK: - Wallet Loading
+    
+    private func loadWallet() async {
+        // Check if we have existing wallets
+        if !walletManager.wallets.isEmpty {
+            currentWallet = walletManager.wallets.first
+            requiresPIN = true // Require PIN to unlock
+        }
+    }
+}
+
+// MARK: - Transaction Info (from SPV)
+
+public struct TransactionInfo {
+    public let txid: String
+    public let rawTransaction: Data
+    public let blockHeight: Int?
+    public let timestamp: Int64
+    public let outputs: [TransactionOutput]?
+}

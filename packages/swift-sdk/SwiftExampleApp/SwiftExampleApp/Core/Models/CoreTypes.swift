@@ -1,61 +1,14 @@
 import Foundation
 
 // Core SDK Types
-public typealias DashNetwork = String
-public typealias SPVClient = Any
+// Note: These are now defined in their respective files:
+// - DashNetwork is defined in WalletFFIBridge.swift
+// - SPVClient is defined in SPVClient.swift
 public typealias WalletFFI = Any
 
-// Extension for DashNetwork constants
-public extension DashNetwork {
-    static let mainnet = "mainnet"
-    static let testnet = "testnet"
-    static let devnet = "devnet"
-    static let regtest = "regtest"
-}
+// TransactionType is now defined in HDTransaction.swift
 
-// Transaction type enum
-public enum TransactionType: String, CaseIterable {
-    case sent = "sent"
-    case received = "received"
-    case pending = "pending"
-    case assetLock = "assetLock"
-    case instantSend = "instantSend"
-    
-    var displayName: String {
-        switch self {
-        case .sent: return "Sent"
-        case .received: return "Received"
-        case .pending: return "Pending"
-        case .assetLock: return "Asset Lock"
-        case .instantSend: return "InstantSend"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .sent: return "arrow.up.circle"
-        case .received: return "arrow.down.circle"
-        case .pending: return "clock"
-        case .assetLock: return "lock.circle"
-        case .instantSend: return "bolt.circle"
-        }
-    }
-}
-
-// Address type enum
-public enum AddressType: String, CaseIterable {
-    case external = "external"
-    case change = "change"
-    case masternode = "masternode"
-    
-    var displayName: String {
-        switch self {
-        case .external: return "Receiving"
-        case .change: return "Change"
-        case .masternode: return "Masternode"
-        }
-    }
-}
+// AddressType is now defined in HDWallet.swift
 
 // Sync state enum
 public enum SyncState: String {
@@ -104,35 +57,7 @@ public struct InstantLock {
     }
 }
 
-// Errors
-public enum WalletError: LocalizedError {
-    case invalidMnemonic
-    case invalidAddress
-    case insufficientFunds
-    case syncRequired
-    case networkError(String)
-    case ffiError(String)
-    case unknown(String)
-    
-    public var errorDescription: String? {
-        switch self {
-        case .invalidMnemonic:
-            return "Invalid mnemonic phrase"
-        case .invalidAddress:
-            return "Invalid address format"
-        case .insufficientFunds:
-            return "Insufficient funds"
-        case .syncRequired:
-            return "Wallet sync required"
-        case .networkError(let msg):
-            return "Network error: \(msg)"
-        case .ffiError(let msg):
-            return "FFI error: \(msg)"
-        case .unknown(let msg):
-            return "Unknown error: \(msg)"
-        }
-    }
-}
+// WalletError is now defined in WalletManager.swift
 
 // AssetLock errors
 public enum AssetLockError: LocalizedError {

@@ -7,13 +7,13 @@ public class WalletService: ObservableObject {
     public static let shared = WalletService()
     
     // Published properties
-    @Published public var currentWallet: HDWallet?
-    @Published public var balance = Balance()
+    @Published public var currentWallet: HDWallet? // Placeholder - use WalletManager instead
+    @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var isSyncing = false
     @Published public var syncProgress: Double?
-    @Published public var detailedSyncProgress: SyncProgress?
+    @Published public var detailedSyncProgress: Any? // Use SPVClient.SyncProgress
     @Published public var lastSyncError: Error?
-    @Published public var transactions: [Transaction] = []
+    @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
     
     // Internal properties
     private var modelContext: ModelContext?
@@ -38,25 +38,9 @@ public class WalletService: ObservableObject {
     // MARK: - Wallet Management
     
     public func createWallet(label: String, mnemonic: String? = nil) async throws -> HDWallet {
-        guard let modelContext = modelContext else {
-            throw WalletError.unknown("Model context not configured")
-        }
-        
-        // Create wallet
-        let wallet = HDWallet(label: label)
-        wallet.mnemonic = mnemonic ?? generateMnemonic()
-        
-        // Save to SwiftData
-        modelContext.insert(wallet)
-        try modelContext.save()
-        
-        // Set as current wallet
-        currentWallet = wallet
-        
-        // Start initial sync
-        await startSync()
-        
-        return wallet
+        // This is a placeholder implementation
+        // In real usage, use WalletManager instead
+        throw WalletError.notImplemented("Use WalletManager instead")
     }
     
     public func loadWallet(_ wallet: HDWallet) async {
@@ -77,6 +61,7 @@ public class WalletService: ObservableObject {
     private func loadCurrentWallet() {
         guard let modelContext = modelContext else { return }
         
+        // Placeholder - use WalletManager
         let descriptor = FetchDescriptor<HDWallet>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
@@ -114,10 +99,11 @@ public class WalletService: ObservableObject {
                     await MainActor.run {
                         self.syncProgress = progress
                         self.detailedSyncProgress = SyncProgress(
-                            percentage: progress * 100,
-                            currentBlock: Int(1000 * progress),
-                            totalBlocks: 1000,
-                            estimatedTimeRemaining: TimeInterval(100 - i) * 2
+                            current: UInt64(i),
+                            total: 100,
+                            rate: 1,
+                            progress: progress,
+                            stage: .downloading
                         )
                     }
                     
@@ -127,7 +113,7 @@ public class WalletService: ObservableObject {
                 // Update wallet sync status
                 if let wallet = currentWallet {
                     wallet.syncProgress = 1.0
-                    wallet.lastSyncedAt = Date()
+                    // wallet.lastSyncedAt = Date() // Property not available
                     try? modelContext?.save()
                 }
                 
@@ -153,23 +139,19 @@ public class WalletService: ObservableObject {
     
     public func sendTransaction(to address: String, amount: UInt64, memo: String? = nil) async throws -> String {
         guard let wallet = currentWallet else {
-            throw WalletError.unknown("No active wallet")
+            throw WalletError.notImplemented("No active wallet")
         }
         
         guard wallet.confirmedBalance >= amount else {
-            throw WalletError.insufficientFunds
+            throw WalletError.notImplemented("Insufficient funds")
         }
         
         // Mock transaction creation
         let txid = UUID().uuidString
-        let transaction = HDTransaction(
-            txid: txid,
-            amount: -Int64(amount),
-            fee: 1000,
-            timestamp: Date(),
-            type: .sent
-        )
-        transaction.memo = memo
+        let transaction = HDTransaction(txHash: txid, timestamp: Date())
+        transaction.amount = -Int64(amount)
+        transaction.fee = 1000
+        transaction.type = "sent"
         transaction.wallet = wallet
         
         modelContext?.insert(transaction)
@@ -184,19 +166,22 @@ public class WalletService: ObservableObject {
     private func loadTransactions() async {
         guard let wallet = currentWallet else { return }
         
-        // Convert HDTransaction to Transaction
+        // Convert HDTransaction to CoreTransaction  
         transactions = wallet.transactions.map { hdTx in
-            Transaction(
-                id: hdTx.txid,
+            CoreTransaction(
+                id: hdTx.txHash,
                 amount: hdTx.amount,
                 fee: hdTx.fee,
                 timestamp: hdTx.timestamp,
-                blockHeight: hdTx.blockHeight,
+                blockHeight: hdTx.blockHeight != nil ? Int64(hdTx.blockHeight!) : nil,
                 confirmations: hdTx.confirmations,
-                type: TransactionType(rawValue: hdTx.type) ?? .received,
-                memo: hdTx.memo,
+                type: hdTx.type,
+                memo: nil,
+                inputs: [],
+                outputs: [],
                 isInstantSend: hdTx.isInstantSend,
-                isAssetLock: hdTx.isAssetLock
+                isAssetLock: false,
+                rawData: hdTx.rawTransaction
             )
         }.sorted { $0.timestamp > $1.timestamp }
     }
@@ -205,13 +190,14 @@ public class WalletService: ObservableObject {
     
     private func updateBalance() {
         guard let wallet = currentWallet else {
-            balance = Balance()
+            balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
             return
         }
         
         balance = Balance(
             confirmed: wallet.confirmedBalance,
-            unconfirmed: wallet.unconfirmedBalance
+            unconfirmed: 0,
+            immature: 0
         )
     }
     
@@ -219,11 +205,12 @@ public class WalletService: ObservableObject {
     
     public func getNewAddress() async throws -> String {
         guard let wallet = currentWallet else {
-            throw WalletError.unknown("No active wallet")
+            throw WalletError.notImplemented("No active wallet")
         }
         
         // Find next unused address or create new one
-        let existingAddresses = wallet.addresses.filter { $0.type == AddressType.external.rawValue }
+        let currentAccount = wallet.accounts.first ?? wallet.createAccount()
+        let existingAddresses = currentAccount.externalAddresses
         let nextIndex = UInt32(existingAddresses.count)
         
         // Mock address generation
@@ -232,9 +219,10 @@ public class WalletService: ObservableObject {
         let hdAddress = HDAddress(
             address: address,
             index: nextIndex,
-            type: .external
+            derivationPath: "m/44'/5'/0'/0/\(nextIndex)",
+            addressType: .external,
+            account: currentAccount
         )
-        hdAddress.wallet = wallet
         
         modelContext?.insert(hdAddress)
         try? modelContext?.save()
@@ -252,26 +240,4 @@ public class WalletService: ObservableObject {
     }
 }
 
-// MARK: - Sync Progress
-
-public struct SyncProgress {
-    public let percentage: Double
-    public let currentBlock: Int
-    public let totalBlocks: Int
-    public let estimatedTimeRemaining: TimeInterval
-    
-    public var formattedPercentage: String {
-        String(format: "%.1f%%", percentage)
-    }
-    
-    public var formattedTimeRemaining: String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute, .second]
-        formatter.unitsStyle = .abbreviated
-        return formatter.string(from: estimatedTimeRemaining) ?? "Unknown"
-    }
-    
-    public var formattedBlocks: String {
-        "\(currentBlock) / \(totalBlocks)"
-    }
-}
+// SyncProgress is now defined in SPVClient.swift

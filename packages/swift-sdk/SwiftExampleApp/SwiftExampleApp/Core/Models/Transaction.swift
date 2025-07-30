@@ -1,16 +1,16 @@
 import Foundation
 
-public struct Transaction: Identifiable, Equatable {
+public struct CoreTransaction: Identifiable, Equatable {
     public let id: String // txid
     public let amount: Int64 // positive for received, negative for sent
     public let fee: UInt64
     public let timestamp: Date
     public let blockHeight: Int64?
     public let confirmations: Int
-    public let type: TransactionType
+    public let type: String // TransactionType is defined in HDTransaction.swift
     public let memo: String?
-    public let inputs: [TransactionInput]
-    public let outputs: [TransactionOutput]
+    public let inputs: [CoreTransactionInput]
+    public let outputs: [CoreTransactionOutput]
     public let isInstantSend: Bool
     public let isAssetLock: Bool
     public let rawData: Data?
@@ -41,10 +41,10 @@ public struct Transaction: Identifiable, Equatable {
         timestamp: Date,
         blockHeight: Int64? = nil,
         confirmations: Int = 0,
-        type: TransactionType,
+        type: String,
         memo: String? = nil,
-        inputs: [TransactionInput] = [],
-        outputs: [TransactionOutput] = [],
+        inputs: [CoreTransactionInput] = [],
+        outputs: [CoreTransactionOutput] = [],
         isInstantSend: Bool = false,
         isAssetLock: Bool = false,
         rawData: Data? = nil
@@ -65,7 +65,7 @@ public struct Transaction: Identifiable, Equatable {
     }
 }
 
-public struct TransactionInput: Equatable {
+public struct CoreTransactionInput: Equatable {
     public let previousTxid: String
     public let previousOutputIndex: UInt32
     public let address: String?
@@ -87,7 +87,7 @@ public struct TransactionInput: Equatable {
     }
 }
 
-public struct TransactionOutput: Equatable {
+public struct CoreTransactionOutput: Equatable {
     public let index: UInt32
     public let address: String
     public let amount: UInt64
@@ -110,9 +110,9 @@ public struct TransactionOutput: Equatable {
 }
 
 // Transaction builder for creating new transactions
-public struct TransactionBuilder {
-    public var inputs: [TransactionInput] = []
-    public var outputs: [TransactionOutput] = []
+public struct CoreTransactionBuilder {
+    public var inputs: [CoreTransactionInput] = []
+    public var outputs: [CoreTransactionOutput] = []
     public var fee: UInt64 = 0
     public var isInstantSend: Bool = false
     public var isAssetLock: Bool = false
@@ -120,12 +120,12 @@ public struct TransactionBuilder {
     
     public init() {}
     
-    public mutating func addInput(_ input: TransactionInput) {
+    public mutating func addInput(_ input: CoreTransactionInput) {
         inputs.append(input)
     }
     
     public mutating func addOutput(to address: String, amount: UInt64, isChange: Bool = false) {
-        let output = TransactionOutput(
+        let output = CoreTransactionOutput(
             index: UInt32(outputs.count),
             address: address,
             amount: amount,
