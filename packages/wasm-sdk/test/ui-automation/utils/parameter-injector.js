@@ -46,7 +46,7 @@ class ParameterInjector {
       // Data contract parameters
       'dataContractId': ['#dataContractId', '[name="dataContractId"]', 'input[placeholder*="Contract ID"]'],
       'contractId': ['#contractId', '[name="contractId"]', 'input[placeholder*="Contract ID"]'],
-      'ids': ['#ids', '[name="ids"]', 'input[placeholder*="Contract IDs"]'],
+      'ids': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="ids"] input[type="text"]', '.array-input-container[data-array-name="ids"] input', '#ids', '[name="ids"]', 'input[placeholder*="Contract IDs"]', 'input[placeholder*="Data Contract ID"]'],
       
       // Document parameters
       'documentType': ['#documentType', '[name="documentType"]', 'input[placeholder*="Document Type"]'],
@@ -136,14 +136,18 @@ class ParameterInjector {
     for (const selector of possibleSelectors) {
       try {
         const element = this.page.page.locator(selector).first();
+        const count = await element.count();
         
-        if (await element.count() > 0 && await element.isVisible()) {
-          await this.page.fillInputByType(element, value);
-          console.log(`📝 Filled ${paramName} using selector: ${selector}`);
-          return true;
+        if (count > 0) {
+          const isVisible = await element.isVisible();
+          
+          if (isVisible) {
+            await this.page.fillInputByType(element, value);
+            console.log(`📝 Filled ${paramName} using selector: ${selector}`);
+            return true;
+          }
         }
       } catch (error) {
-        // Continue trying other selectors
         continue;
       }
     }

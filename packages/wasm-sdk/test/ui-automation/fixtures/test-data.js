@@ -112,7 +112,7 @@ const testData = {
         testnet: [
           { 
             ids: [
-              "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec", 
+              "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
               "ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A"
             ]
           }

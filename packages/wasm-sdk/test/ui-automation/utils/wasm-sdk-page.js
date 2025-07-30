@@ -110,6 +110,17 @@ class WasmSdkPage extends BaseTest {
    * Fill a specific parameter by name
    */
   async fillParameterByName(paramName, value) {
+    // Special handling for array parameters that use dynamic input fields
+    if (paramName === 'ids') {
+      const enterValueInput = this.page.locator('input[placeholder="Enter value"]').first();
+      const count = await enterValueInput.count();
+      
+      if (count > 0 && await enterValueInput.isVisible()) {
+        await this.fillInputByType(enterValueInput, value);
+        return;
+      }
+    }
+    
     const inputSelector = `input[name="${paramName}"], select[name="${paramName}"], textarea[name="${paramName}"]`;
     const input = this.page.locator(inputSelector).first();
     
@@ -159,14 +170,84 @@ class WasmSdkPage extends BaseTest {
         await inputElement.uncheck();
       }
     } else if (Array.isArray(value)) {
-      // Handle array inputs (like token IDs)
-      await inputElement.fill(JSON.stringify(value));
+      // Handle array inputs - check if there's an "Add items" button nearby
+      const success = await this.handleArrayInput(inputElement, value);
+      if (!success) {
+        // Fallback to JSON string if array handling fails
+        await inputElement.fill(JSON.stringify(value));
+      }
     } else if (typeof value === 'object') {
       // Handle object inputs (JSON)
       await inputElement.fill(JSON.stringify(value));
     } else {
       // Handle text/number inputs
       await inputElement.fill(value.toString());
+    }
+  }
+
+  /**
+   * Handle array inputs with "Add items" button functionality
+   */
+  async handleArrayInput(baseElement, arrayValues) {
+    try {
+      // Look for existing input fields first (prioritize array container inputs)
+      const arrayContainerInputs = this.page.locator('.array-input-container input[type="text"]');
+      const allInputs = this.page.locator('input[type="text"], textarea').filter({
+        hasNot: this.page.locator('[readonly]')
+      });
+      
+      // Use array container inputs if available, otherwise use all inputs
+      const existingInputs = await arrayContainerInputs.count() > 0 ? arrayContainerInputs : allInputs;
+      const existingCount = await existingInputs.count();
+
+      // Fill the first existing field if available
+      if (existingCount > 0 && arrayValues.length > 0) {
+        const firstInput = existingInputs.first();
+        await firstInput.fill(arrayValues[0].toString());
+      }
+
+      // Look for "Add Item" button (specific to WASM SDK array inputs)
+      const addButton = this.page.locator('button:has-text("+ Add Item"), button.add-array-item, button:has-text("Add Item"), button:has-text("Add"), button:has-text("add")').first();
+      
+      if (await addButton.count() === 0) {
+        if (arrayValues.length <= 1) {
+          return true;
+        } else {
+          return false;
+        }
+      }
+
+      // Add remaining items (starting from index 1)
+      for (let i = 1; i < arrayValues.length; i++) {
+        const value = arrayValues[i];
+        
+        // Click "Add items" button to create new field
+        await addButton.click();
+        await this.page.waitForTimeout(500); // Wait for new input to appear
+        
+        // Find all input fields again (should be one more now)
+        const currentArrayInputs = this.page.locator('.array-input-container input[type="text"]');
+        const currentAllInputs = this.page.locator('input[type="text"], textarea').filter({
+          hasNot: this.page.locator('[readonly]')
+        });
+        
+        // Use array container inputs if available
+        const currentInputs = await currentArrayInputs.count() > 0 ? currentArrayInputs : currentAllInputs;
+        const currentCount = await currentInputs.count();
+        
+        if (currentCount > existingCount + (i - 1)) {
+          // Fill the newest input field
+          const newInput = currentInputs.nth(currentCount - 1);
+          await newInput.fill(value.toString());
+        } else {
+          console.warn(`Could not find new input field for item ${i + 1}`);
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.warn(`Array input handling failed: ${error.message}`);
+      return false;
     }
   }
 
