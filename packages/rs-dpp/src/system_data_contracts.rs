@@ -4,8 +4,67 @@ use crate::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::accessors::v0::DataContractV0Setters;
+use crate::data_contract::config::v1::DataContractConfigSettersV1;
+use crate::data_contract::config::DataContractConfig;
 pub use data_contracts::*;
 use platform_version::version::PlatformVersion;
+
+pub trait ConfigurationForSystemContract {
+    fn configuration_in_platform_version(
+        &self,
+        version: &PlatformVersion,
+    ) -> Result<DataContractConfig, ProtocolError>;
+}
+
+impl ConfigurationForSystemContract for SystemDataContract {
+    fn configuration_in_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractConfig, ProtocolError> {
+        match self {
+            SystemDataContract::Withdrawals => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::MasternodeRewards => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::FeatureFlags => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::DPNS => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::Dashpay => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::WalletUtils => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::TokenHistory => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            SystemDataContract::KeywordSearch => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+        }
+    }
+}
 
 fn create_data_contract(
     factory: &DataContractFactory,
@@ -25,11 +84,11 @@ fn create_data_contract(
     let id = Identifier::from(id_bytes);
     let owner_id = Identifier::from(owner_id_bytes);
 
-    let mut data_contract = factory.create_with_value_config(
+    let mut data_contract = factory.create(
         owner_id,
         0,
         document_schemas.into(),
-        None,
+        Some(system_contract.configuration_in_platform_version(platform_version)?),
         definitions.map(|def| def.into()),
     )?;
 

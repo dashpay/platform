@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Test Serialization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Serialization</h1>
+    
+    <button onclick="testSimpleObject()">Test Simple Object</button>
+    <button onclick="testComplexObject()">Test Complex Object</button>
+    <button onclick="testDocumentStructure()">Test Document Structure</button>
+    
+    <div id="result"></div>
+
+    <script type="module">
+        import init, { WasmSdkBuilder } from '../pkg/wasm_sdk.js';
+        
+        let sdk = null;
+        
+        async function initSDK() {
+            await init();
+            const builder = new WasmSdkBuilder();
+            builder.set_testnet_mode();
+            sdk = await builder.build();
+            window.sdk = sdk;
+            console.log('SDK initialized');
+        }
+        
+        window.testSimpleObject = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Testing simple object serialization...\n\n';
+            
+            try {
+                // This will call a test method we'll add to the WASM SDK
+                const result = await sdk.testSerialization('simple');
+                resultDiv.textContent += 'Result: ' + JSON.stringify(result, null, 2) + '\n';
+                resultDiv.textContent += 'Type: ' + typeof result + '\n';
+                resultDiv.textContent += 'Keys: ' + Object.keys(result).join(', ') + '\n';
+            } catch (error) {
+                resultDiv.textContent += 'Error: ' + error + '\n';
+            }
+        };
+        
+        window.testComplexObject = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Testing complex object serialization...\n\n';
+            
+            try {
+                const result = await sdk.testSerialization('complex');
+                resultDiv.textContent += 'Result: ' + JSON.stringify(result, null, 2) + '\n';
+                resultDiv.textContent += 'Type: ' + typeof result + '\n';
+            } catch (error) {
+                resultDiv.textContent += 'Error: ' + error + '\n';
+            }
+        };
+        
+        window.testDocumentStructure = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Testing document structure serialization...\n\n';
+            
+            try {
+                const result = await sdk.testSerialization('document');
+                resultDiv.textContent += 'Result: ' + JSON.stringify(result, null, 2) + '\n';
+                resultDiv.textContent += 'Type: ' + typeof result + '\n';
+            } catch (error) {
+                resultDiv.textContent += 'Error: ' + error + '\n';
+            }
+        };
+        
+        // Initialize on load
+        initSDK().catch(console.error);
+    </script>
+</body>
+</html>

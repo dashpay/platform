@@ -21,6 +21,8 @@ members = [
     "packages/dpns-contract",
     "packages/data-contracts",
     "packages/rs-drive-proof-verifier",
+    "packages/rs-context-provider",
+    "packages/rs-sdk-trusted-context-provider",
     "packages/wasm-dpp",
     "packages/rs-dapi-client",
     "packages/rs-sdk",
@@ -31,7 +33,9 @@ members = [
     "packages/wallet-utils-contract",
     "packages/token-history-contract",
     "packages/keyword-search-contract",
-    "packages/rs-sdk-ffi"
+    "packages/rs-sdk-ffi",
+    "packages/wasm-drive-verify",
+    "packages/dash-platform-balance-checker"
 ]
 
 exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
@@ -39,3 +43,4 @@ exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
 [workspace.package]
 
 rust-version = "1.85"
+

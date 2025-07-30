@@ -1,0 +1,14 @@
+{
+  "name": "wasm-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "./build.sh",
+    "build:release": "./build-optimized.sh",
+    "test": "echo 'Tests run from web interface at index.html'",
+    "prepublishOnly": "echo 'Publishing handled by pkg/package.json'"
+  },
+  "ultra": {
+    "concurrent": ["test"]
+  }
+}

@@ -67,6 +67,27 @@ Each user has:
 - `whitelist`: List of allowed RPC methods (null means all methods)
 - `lowPriority`: Whether the user's requests have low priority and processed in a separate low priority RPC queue
 
+## ZMQ
+
+The `core.zmq` section configures the ZeroMQ notification interface, which provides real-time notifications for blockchain events.
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `core.zmq.port` | Port for ZMQ notifications | `29998` | `30998` |
+| `core.zmq.host` | Host binding for Docker port mapping | `127.0.0.1` | `0.0.0.0` |
+
+ZMQ settings control real-time blockchain event notifications:
+- ZMQ provides low-latency notifications for blocks, transactions, and other blockchain events
+- **host**: Controls Docker port exposure:
+  - `127.0.0.1`: ZMQ port exposed only on localhost (local machine access)
+  - `0.0.0.0`: ZMQ port exposed on all interfaces (public internet access - use with caution)
+- **port**: The port number for ZMQ notifications
+- DAPI uses ZMQ to receive real-time blockchain data for streaming to clients
+- ZMQ notifications include raw transactions, blocks, instantlocks, and chainlocks
+- ZMQ is always enabled in Dash Core as it's used by internal components
+
+**Security Note**: Be cautious when setting `host` to `0.0.0.0` as it makes ZMQ publicly accessible.
+
 ## Sporks
 
 The `core.spork` section configures spork functionality. Sporks are a governance mechanism in Dash that allow network parameters to be changed without requiring a node software update.

@@ -36,6 +36,7 @@ services:
     ports:
       - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err}
       - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err}
+      - ${CORE_ZMQ_HOST:?err}:${CORE_ZMQ_PORT:?err}:${CORE_ZMQ_PORT:?err}
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
@@ -146,7 +147,7 @@ services:
       - DASHCORE_RPC_USER=dapi
       - DASHCORE_RPC_PASS=${CORE_RPC_USERS_DAPI_PASSWORD:?err}
       - DASHCORE_ZMQ_HOST=core
-      - DASHCORE_ZMQ_PORT=29998
+      - DASHCORE_ZMQ_PORT=${CORE_ZMQ_PORT:?err}
       - NETWORK=${NETWORK:?err}
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
@@ -178,7 +179,7 @@ services:
       - DASHCORE_RPC_USER=dapi
       - DASHCORE_RPC_PASS=${CORE_RPC_USERS_DAPI_PASSWORD:?err}
       - DASHCORE_ZMQ_HOST=core
-      - DASHCORE_ZMQ_PORT=29998
+      - DASHCORE_ZMQ_PORT=${CORE_ZMQ_PORT:?err}
       - NETWORK=${NETWORK:?err}
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657

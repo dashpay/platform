@@ -97,6 +97,8 @@ yarn configure:tests:network
 
 **SDK** (`packages/js-dash-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform.
 
+**WASM SDK** (`packages/wasm-sdk`): WebAssembly bindings for browser-based applications. See [AI_REFERENCE.md](packages/wasm-sdk/AI_REFERENCE.md) for comprehensive API documentation.
+
 **Dashmate** (`packages/dashmate`): Node management tool for setting up and managing Dash Platform nodes.
 
 ### Data Contracts
@@ -114,6 +116,10 @@ Platform uses data contracts to define application data schemas:
 2. **Cross-language Integration**: WASM bindings connect Rust and JavaScript code
 3. **Local Development**: Docker Compose environment managed by dashmate
 4. **Testing**: Comprehensive test suites at unit, integration, and e2e levels
+5. **WASM SDK Development**: 
+   - Build with `./build.sh` in `packages/wasm-sdk`
+   - Test with web interface at `index.html`
+   - Keep docs in sync: `python3 generate_docs.py`
 
 ### Important Patterns
 

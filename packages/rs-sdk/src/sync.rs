@@ -5,7 +5,7 @@
 //! using a channel.
 
 use arc_swap::ArcSwap;
-use drive_proof_verifier::error::ContextProviderError;
+use dash_context_provider::ContextProviderError;
 use rs_dapi_client::{
     update_address_ban_status, AddressList, CanRetry, ExecutionResult, RequestSettings,
 };
@@ -95,6 +95,7 @@ where
 }
 
 /// Worker function that runs the provided future and sends the result back to the caller using oneshot channel.
+#[cfg(not(target_arch = "wasm32"))]
 async fn worker<F: Future>(
     fut: F,
     // response: oneshot::Sender<F::Output>,

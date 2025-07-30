@@ -100,7 +100,7 @@ pub trait DataContractConfigSettersV0 {
     );
 }
 
-impl std::default::Default for DataContractConfigV0 {
+impl Default for DataContractConfigV0 {
     fn default() -> Self {
         DataContractConfigV0 {
             can_be_deleted: DEFAULT_CONTRACT_CAN_BE_DELETED,

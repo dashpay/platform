@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "2.0.0-rc.16"
+version = "2.0.0"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -20,7 +20,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 rand = "0.8.5"
 hex = "0.4.3"
 serde_json = "1.0"
-dpp = { path = "../rs-dpp", features = [
+dpp = { path = "../rs-dpp", default-features = false, features = [
   "abci",
   "bls-signatures",
   "client",
@@ -35,7 +35,7 @@ dpp = { path = "../rs-dpp", features = [
   "data-contract-json-conversion",
   "data-contract-cbor-conversion",
 ] }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 platform-version = { path = "../rs-platform-version" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }

@@ -1,0 +1,19 @@
+{
+  "name": "wasm-sdk-tests",
+  "version": "1.0.0",
+  "description": "Tests for WASM SDK",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:verbose": "jest --verbose"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/*.test.js"
+    ]
+  }
+}

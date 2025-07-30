@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Base58 Identity IDs</title>
+</head>
+<body>
+    <h1>Testing Base58 Identity IDs in DashPay Keys</h1>
+    <div id="result"></div>
+    <script type="module">
+        import init, * as wasmSdk from './pkg/wasm_sdk.js';
+        
+        async function test() {
+            await init();
+            
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                console.log('Testing base58 identity IDs...');
+                const result = await wasmSdk.derive_dashpay_contact_key(
+                    'birth kingdom trash renew flavor utility donkey gasp regular alert pave layer',
+                    null,
+                    '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk',
+                    'HBH8dqHJ7XB9Y1eCV5Ye29V6WGfBx5bKdEhNYvzdQqRi',
+                    0,
+                    0,
+                    'testnet'
+                );
+                
+                console.log('Success! Result:', result);
+                resultDiv.innerHTML = '<pre style="color: green;">Success!\n\n' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = '<pre style="color: red;">Error: ' + error.message + '</pre>';
+            }
+        }
+        
+        test();
+    </script>
+</body>
+</html>

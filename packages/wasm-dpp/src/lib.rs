@@ -10,13 +10,13 @@ pub use metadata::*;
 // pub use state_transition::*;
 
 mod dash_platform_protocol;
-mod data_contract;
+pub mod data_contract;
 mod data_contract_factory;
 // mod data_trigger;
-mod document;
+pub mod document;
 pub mod errors;
-mod identifier;
-mod identity;
+pub mod identifier;
+pub mod identity;
 mod metadata;
 // mod state_repository;
 /// State transitions

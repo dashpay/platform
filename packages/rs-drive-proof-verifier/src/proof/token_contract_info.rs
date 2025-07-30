@@ -1,10 +1,9 @@
 use crate::error::MapGroveDbError;
-use crate::types::token_contract_info::TokenContractInfoResult;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
-    get_token_contract_info_request, get_token_contract_info_response, GetTokenContractInfoRequest,
-    GetTokenContractInfoResponse, Proof, ResponseMetadata,
+    get_token_contract_info_request, GetTokenContractInfoRequest, GetTokenContractInfoResponse,
+    Proof, ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
@@ -29,29 +28,31 @@ impl FromProof<GetTokenContractInfoRequest> for TokenContractInfo {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        // Parse response to read proof and metadata
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
         let token_id = match request.version.ok_or(Error::EmptyVersion)? {
             get_token_contract_info_request::Version::V0(v0) => {
-                v0.token_id.try_into().map_err(|_| Error::RequestError {
-                    error: "token_id must be exactly 32 bytes".to_string(),
+                <[u8; 32]>::try_from(v0.token_id).map_err(|_| Error::RequestError {
+                    error: "can't convert token_id to [u8; 32]".to_string(),
                 })?
             }
         };
 
-        // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_token_contract_info) = Drive::verify_token_contract_info(
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, result) = Drive::verify_token_contract_info(
             &proof.grovedb_proof,
             token_id,
             false,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
-        Ok((maybe_token_contract_info, mtd.clone(), proof.clone()))
+        Ok((result, metadata, proof))
     }
 }

@@ -10,6 +10,7 @@ use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetC
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
 use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorumsInfoRequestV0;
+use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::GetEvonodesProposedEpochBlocksByIdsRequestV0;
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
@@ -19,7 +20,7 @@ use dapi_grpc::platform::v0::{
     get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request,
     get_total_credits_in_platform_request, AllKeys, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetCurrentQuorumsInfoRequest, GetEpochsInfoRequest,
+    GetCurrentQuorumsInfoRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
     GetTotalCreditsInPlatformRequest, KeyRequestType,
@@ -730,5 +731,53 @@ impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuer
         };
 
         Ok(request)
+    }
+}
+
+/// Query for fetching proposed block counts by specific evonode IDs
+#[derive(Debug, Clone)]
+pub struct ProposerBlockCountByIdsQuery {
+    /// The epoch to query
+    pub epoch: Option<EpochIndex>,
+    /// The ProTxHashes to query for
+    pub pro_tx_hashes: Vec<ProTxHash>,
+}
+
+impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCountByIdsQuery {
+    fn query(self, prove: bool) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        // Convert ProTxHash to bytes
+        let ids: Vec<Vec<u8>> = self
+            .pro_tx_hashes
+            .into_iter()
+            .map(|hash| hash.to_byte_array().to_vec())
+            .collect();
+
+        Ok(GetEvonodesProposedEpochBlocksByIdsRequest {
+            version: Some(
+                proto::get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(
+                    GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+                        epoch: self.epoch.map(|e| e as u32),
+                        ids,
+                        prove,
+                    },
+                ),
+            ),
+        })
+    }
+}
+
+// Convenience implementation for tuple of (epoch, Vec<ProTxHash>)
+impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for (EpochIndex, Vec<ProTxHash>) {
+    fn query(self, prove: bool) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
+        let (epoch, pro_tx_hashes) = self;
+        ProposerBlockCountByIdsQuery {
+            epoch: Some(epoch),
+            pro_tx_hashes,
+        }
+        .query(prove)
     }
 }

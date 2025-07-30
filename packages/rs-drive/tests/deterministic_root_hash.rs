@@ -302,7 +302,7 @@ mod tests {
         // We expect a different app hash because data contract is not serialized the same way
         let expected_app_hash = match platform_version.protocol_version {
             0..=8 => "1b80f4a9f00597b3f1ddca904b3cee67576868adcdd802c0a3f91e14209bb402",
-            _ => "76e3af331ff60aea3006671d048ce16871369da4ec562bdc9966837bb49ee92c",
+            _ => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
         };
 
         assert_eq!(

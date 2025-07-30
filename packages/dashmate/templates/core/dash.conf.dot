@@ -70,13 +70,13 @@ spentindex=1
 {{?}}
 
 # ZeroMQ notifications
-zmqpubrawtx=tcp://0.0.0.0:29998
-zmqpubrawtxlock=tcp://0.0.0.0:29998
-zmqpubrawblock=tcp://0.0.0.0:29998
-zmqpubhashblock=tcp://0.0.0.0:29998
-zmqpubrawchainlocksig=tcp://0.0.0.0:29998
-zmqpubrawchainlock=tcp://0.0.0.0:29998
-zmqpubrawtxlocksig=tcp://0.0.0.0:29998
+zmqpubrawtx=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawtxlock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawblock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubhashblock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawchainlocksig=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawchainlock=tcp://0.0.0.0:{{=it.core.zmq.port}}
+zmqpubrawtxlocksig=tcp://0.0.0.0:{{=it.core.zmq.port}}
 
 {{? it.core.masternode.enable === true}}
 masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}

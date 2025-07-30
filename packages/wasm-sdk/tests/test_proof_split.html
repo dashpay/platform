@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Proof Split View</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .mock-result {
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        
+        .split-container {
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .result-data-section,
+        .result-proof-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .result-proof-section {
+            border-bottom: none;
+            background-color: #f8f9fa;
+        }
+        
+        .section-header {
+            padding: 10px 20px;
+            background-color: #e3f2fd;
+            border-bottom: 1px solid #ccc;
+            font-weight: 600;
+            color: #1976d2;
+            font-size: 14px;
+        }
+        
+        .result-proof-section .section-header {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+        }
+        
+        .result-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        pre {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Proof Split View</h1>
+    
+    <div class="test-section">
+        <h2>Mock Proof Response Display</h2>
+        <p>This shows how a proof response should be displayed with the split view:</p>
+        
+        <div class="split-container">
+            <div class="result-data-section">
+                <div class="section-header">Data</div>
+                <div class="result-content">
+                    <pre>{
+  "id": "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF",
+  "balance": "1000000000",
+  "publicKeys": [
+    {
+      "id": 0,
+      "purpose": 0,
+      "securityLevel": 0,
+      "keyType": 0,
+      "data": "AkVZTLXFDp3H8QVQV6p+XJpTXEJxDHSpP16hbWFqUt7g"
+    }
+  ],
+  "revision": 0
+}</pre>
+                </div>
+            </div>
+            <div class="result-proof-section">
+                <div class="section-header">Proof & Metadata</div>
+                <div class="result-content">
+                    <pre>{
+  "metadata": {
+    "height": 12456,
+    "coreChainLockedHeight": 987654,
+    "epoch": 1234,
+    "timeMs": 1738594800000,
+    "protocolVersion": 1,
+    "chainId": "dash-testnet-44"
+  },
+  "proof": {
+    "grovedbProof": "0x0123456789abcdef...",
+    "quorumHash": "0xfedcba9876543210...",
+    "signature": "0xabcdef0123456789...",
+    "round": 1,
+    "blockIdHash": "0x1234567890abcdef...",
+    "quorumType": 6
+  }
+}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Expected Behavior</h2>
+        <ul>
+            <li>When proof toggle is OFF: Shows normal single view with just the data</li>
+            <li>When proof toggle is ON and response has proof: Shows split view with data on top, proof/metadata on bottom</li>
+            <li>The split view divides the available space equally between data and proof sections</li>
+            <li>Each section has its own scroll if content overflows</li>
+            <li>Proof bytes should be displayed in hex format</li>
+        </ul>
+    </div>
+</body>
+</html>

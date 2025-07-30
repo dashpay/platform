@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "2.0.0-rc.16"
+version = "2.0.0"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -43,7 +43,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "extended-document",
     "document-value-conversion",
     "document-json-conversion",
-    "system_contracts",
+    "data-contracts",
 ] }
 itertools = { version = "0.13" }
 log = { version = "0.4.6" }
@@ -56,8 +56,10 @@ anyhow = { version = "1.0.75" }
 wasm-bindgen-futures = "0.4.49"
 async-trait = "0.1.59"
 bincode = { version = "=2.0.0-rc.3" }
+
 [profile.release]
 lto = true
 opt-level = 'z'
+
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]

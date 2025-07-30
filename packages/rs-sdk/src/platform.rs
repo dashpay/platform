@@ -17,10 +17,14 @@ pub mod transition;
 pub mod types;
 
 pub mod documents;
+pub mod dpns_usernames;
 pub mod group_actions;
 pub mod tokens;
 
 pub use dapi_grpc::platform::v0 as proto;
+pub use dash_context_provider::ContextProvider;
+#[cfg(feature = "mocks")]
+pub use dash_context_provider::MockContextProvider;
 pub use documents::document_query::DocumentQuery;
 pub use dpp::{
     self as dpp,
@@ -28,13 +32,12 @@ pub use dpp::{
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
 pub use drive::query::DriveDocumentQuery;
-pub use drive_proof_verifier::ContextProvider;
-#[cfg(feature = "mocks")]
-pub use drive_proof_verifier::MockContextProvider;
 pub use rs_dapi_client as dapi;
 pub use {
     fetch::Fetch,
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,
-    query::{LimitQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT},
+    query::{
+        LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT,
+    },
 };

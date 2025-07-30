@@ -66,8 +66,9 @@ use crate::consensus::basic::identity::{
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
-    MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -587,6 +588,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     GroupHasTooFewMembersError(GroupHasTooFewMembersError),
+
+    #[error(transparent)]
+    InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -1,21 +1,36 @@
 [package]
 name = "data-contracts"
 description = "Dash Platform system data contracts"
-version = "2.0.0-rc.16"
+version = "2.0.0"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
+
+[features]
+default = ["all-contracts"]
+# Include all contracts
+all-contracts = ["withdrawals", "masternode-rewards", "dpns", "dashpay", "feature-flags", "wallet-utils", "token-history", "keyword-search"]
+
+# Individual contract features
+withdrawals = ["dep:withdrawals-contract"]
+masternode-rewards = ["dep:masternode-reward-shares-contract"]
+dpns = ["dep:dpns-contract"]
+dashpay = ["dep:dashpay-contract"]
+feature-flags = ["dep:feature-flags-contract"]
+wallet-utils = ["dep:wallet-utils-contract"]
+token-history = ["dep:token-history-contract"]
+keyword-search = ["dep:keyword-search-contract"]
 
 [dependencies]
 thiserror = "2.0.12"
 platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
-withdrawals-contract = { path = "../withdrawals-contract" }
-masternode-reward-shares-contract = { path = "../masternode-reward-shares-contract" }
-dpns-contract = { path = "../dpns-contract" }
-dashpay-contract = { path = "../dashpay-contract" }
-feature-flags-contract = { path = "../feature-flags-contract" }
+withdrawals-contract = { path = "../withdrawals-contract", optional = true }
+masternode-reward-shares-contract = { path = "../masternode-reward-shares-contract", optional = true }
+dpns-contract = { path = "../dpns-contract", optional = true }
+dashpay-contract = { path = "../dashpay-contract", optional = true }
+feature-flags-contract = { path = "../feature-flags-contract", optional = true }
 platform-value = { path = "../rs-platform-value" }
-wallet-utils-contract = { path = "../wallet-utils-contract" }
-token-history-contract = { path = "../token-history-contract" }
-keyword-search-contract = { path = "../keyword-search-contract" }
+wallet-utils-contract = { path = "../wallet-utils-contract", optional = true }
+token-history-contract = { path = "../token-history-contract", optional = true }
+keyword-search-contract = { path = "../keyword-search-contract", optional = true }

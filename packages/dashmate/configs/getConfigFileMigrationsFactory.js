@@ -1086,6 +1086,26 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.core.miner.mediantime;
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
+          });
+        return configFile;
+      },
+      '2.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Add ZMQ configuration if it doesn't exist
+            if (!options.core.zmq) {
+              options.core.zmq = base.get('core.zmq');
+            }
+          });
+        return configFile;
+      },
     };
   }
 

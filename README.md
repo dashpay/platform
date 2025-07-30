@@ -11,7 +11,6 @@
 
 <p align="center">
   <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="GitHub CI Status" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="https://chat.dashdevs.org/"><img alt="Devs Chat" src="https://img.shields.io/badge/discord-Dev_chat-738adb"></a>
   <a href="https://discordapp.com/invite/PXbUxJB"><img alt="General Chat" src="https://img.shields.io/badge/discord-General_chat-738adb"></a>
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
 </p>
@@ -22,8 +21,8 @@ the Dash P2P network into a cloud that developers can integrate with their
 applications.
 
 If you are looking for how to contribute to the project or need any help with
-building an app on the Dash Platform - message us on the [Devs
-Discord](https://chat.dashdevs.org/)!
+building an app on the Dash Platform - message us on the [Dash
+Discord](https://discordapp.com/invite/PXbUxJB)!
 
 ## Intro
 
@@ -81,8 +80,7 @@ this repository may be used on the following networks:
 
 ### Looking for support?
 
-For questions and support, please join our [Devs
-Discord](https://chat.dashdevs.org/)
+For questions and support, please join our [Dash Discord](https://discordapp.com/invite/PXbUxJB)
 
 ### Where are the docs?
 
@@ -100,7 +98,7 @@ issue template at [platform/issues](https://github.com/dashpay/platform/issues)!
 
 Check out:
 
-- Our [Developers Discord](https://chat.dashdevs.org/)
+- Our [Dash Discord](https://discordapp.com/invite/PXbUxJB)
 - Our [CONTRIBUTING.md](CONTRIBUTING.md) to get started with setting up the
   repo.
 - Our [news](https://www.dash.org/news/) and [blog](https://www.dash.org/blog/) which contains release posts and

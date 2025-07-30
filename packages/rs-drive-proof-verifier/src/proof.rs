@@ -8,9 +8,8 @@ pub mod token_status;
 pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
-use crate::provider::DataContractProvider;
 use crate::verify::verify_tenderdash_proof;
-use crate::{types::*, ContextProvider, Error};
+use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;

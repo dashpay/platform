@@ -1,15 +1,35 @@
 [package]
 name = "wasm-sdk"
 edition = "2021"
-# rust-version.workspace = true
 publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["dpns-contract", "dashpay-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
+
+mocks = ["dash-sdk/mocks"]
+
+# All system contracts
+all-system-contracts = ["dash-sdk/all-system-contracts", "rs-sdk-trusted-context-provider/all-system-contracts"]
+
+# Individual contract features
+withdrawals-contract = ["dash-sdk/withdrawals-contract", "rs-sdk-trusted-context-provider/withdrawals-contract"]
+dpns-contract = ["dash-sdk/dpns-contract", "rs-sdk-trusted-context-provider/dpns-contract"]
+dashpay-contract = ["dash-sdk/dashpay-contract", "rs-sdk-trusted-context-provider/dashpay-contract"]
+wallet-utils-contract = ["dash-sdk/wallet-utils-contract", "rs-sdk-trusted-context-provider/wallet-utils-contract"]
+token-history-contract = ["dash-sdk/token-history-contract", "rs-sdk-trusted-context-provider/token-history-contract"]
+keywords-contract = ["dash-sdk/keywords-contract", "rs-sdk-trusted-context-provider/keywords-contract"]
+
+token_reward_explanations = ["dash-sdk/token_reward_explanations"]
+
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false }
+simple-signer = { path = "../simple-signer" }
+drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.40-dev", features = ["std", "secp-recovery"] }
 web-sys = { version = "0.3.4", features = [
     'console',
     'Document',
@@ -17,30 +37,38 @@ web-sys = { version = "0.3.4", features = [
     'HtmlElement',
     'Node',
     'Window',
+    'Crypto',
 ] }
 wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think it's not needed (LKl)
-# tonic = { version = "*", features = ["transport"], default-features = false }
-# client = [
-#   "tonic/channel", FAIL
-#   "tonic/transport", FAIL
-#   "tonic/tls",
-#   "tonic/tls-roots",
-#   "tonic/tls-webpki-roots",
-#   "platform",
-# ]
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
+tracing = { version = "0.1" }
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = { version = "0.6.5" }
+serde_json = "1.0"
+hex = "0.4"
+base64 = "0.22"
+bs58 = "0.5"
+getrandom = { version = "0.2", features = ["js"] }
+bip39 = { version = "2.0", features = ["rand", "all-languages"] }
+rand = { version = "0.8", features = ["std"] }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
+once_cell = "1.19"
+js-sys = "0.3"
+dapi-grpc = { path = "../dapi-grpc" }
+rs-dapi-client = { path = "../rs-dapi-client" }
+hmac = { version = "0.12" }
+sha2 = { version = "0.10" }
 
 [profile.release]
-lto = "fat"
 opt-level = "z"
 panic = "abort"
 debug = false
+lto = "fat"
 
-#[package.metadata.wasm-pack.profile.release]
-#wasm-opt = ['-g', '-O'] # -g for profiling
-#  -Oz -Oz -g
+[package.metadata.wasm-pack]
+wasm-opt = false
+

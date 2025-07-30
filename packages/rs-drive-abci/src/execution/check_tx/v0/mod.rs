@@ -3528,7 +3528,7 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let (identity, signer, key) =
+        let (identity, signer, _, key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
         let mut rng = StdRng::seed_from_u64(1);

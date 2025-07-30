@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Group Queries</title>
+</head>
+<body>
+    <h1>Test Group Queries</h1>
+    <button onclick="testGroupQueries()">Test Group Queries</button>
+    <pre id="output"></pre>
+
+    <script type="module">
+        import init, { 
+            WasmSdkBuilder, 
+            get_group_info,
+            get_group_members,
+            get_identity_groups,
+            get_groups_data_contracts
+        } from './pkg/wasm_sdk.js';
+
+        let sdk = null;
+
+        async function initSdk() {
+            await init();
+            const builder = new WasmSdkBuilder();
+            builder.with_core("127.0.0.1", 20002, "regtest", "");
+            sdk = await builder.build();
+            console.log('SDK initialized');
+        }
+
+        window.testGroupQueries = async function() {
+            const output = document.getElementById('output');
+            output.textContent = 'Testing group queries...\n\n';
+
+            try {
+                // Test get_group_info with a dummy contract ID and position
+                output.textContent += '1. Testing get_group_info:\n';
+                try {
+                    const groupInfo = await get_group_info(
+                        sdk, 
+                        '11111111111111111111111111111111', // dummy contract ID
+                        0 // group position
+                    );
+                    output.textContent += JSON.stringify(groupInfo, null, 2) + '\n\n';
+                } catch (e) {
+                    output.textContent += `Error: ${e.message}\n\n`;
+                }
+
+                // Test get_group_members
+                output.textContent += '2. Testing get_group_members:\n';
+                try {
+                    const members = await get_group_members(
+                        sdk,
+                        '11111111111111111111111111111111', // dummy contract ID
+                        0, // group position
+                        null, // no specific member IDs
+                        null, // no start_at
+                        10 // limit
+                    );
+                    output.textContent += JSON.stringify(members, null, 2) + '\n\n';
+                } catch (e) {
+                    output.textContent += `Error: ${e.message}\n\n`;
+                }
+
+                // Test get_identity_groups
+                output.textContent += '3. Testing get_identity_groups:\n';
+                try {
+                    const identityGroups = await get_identity_groups(
+                        sdk,
+                        '11111111111111111111111111111111', // dummy identity ID
+                        ['11111111111111111111111111111111'], // member contracts
+                        null, // owner contracts
+                        null  // moderator contracts
+                    );
+                    output.textContent += JSON.stringify(identityGroups, null, 2) + '\n\n';
+                } catch (e) {
+                    output.textContent += `Error: ${e.message}\n\n`;
+                }
+
+                // Test get_groups_data_contracts
+                output.textContent += '4. Testing get_groups_data_contracts:\n';
+                try {
+                    const contractGroups = await get_groups_data_contracts(
+                        sdk,
+                        ['11111111111111111111111111111111', '22222222222222222222222222222222']
+                    );
+                    output.textContent += JSON.stringify(contractGroups, null, 2) + '\n\n';
+                } catch (e) {
+                    output.textContent += `Error: ${e.message}\n\n`;
+                }
+
+            } catch (error) {
+                output.textContent += `\nUnexpected error: ${error.message}`;
+                console.error(error);
+            }
+        };
+
+        // Initialize SDK on page load
+        initSdk().catch(console.error);
+    </script>
+</body>
+</html>

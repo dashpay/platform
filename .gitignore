@@ -60,3 +60,26 @@ packages/swift-sdk/**/*.xcframework/
 
 # rs-sdk-ffi build directory
 packages/rs-sdk-ffi/build/
+
+# wasm-drive-verify build artifacts
+packages/wasm-drive-verify/target/
+packages/wasm-drive-verify/wasm/
+packages/wasm-drive-verify/pkg/
+packages/wasm-drive-verify/dist/
+packages/wasm-drive-verify/analysis-results/
+packages/wasm-drive-verify/size-analysis/
+packages/wasm-drive-verify/test-tree-shaking/
+
+# wasm-sdk build artifacts
+packages/wasm-sdk/target/
+packages/wasm-sdk/.cargo/
+packages/wasm-sdk/pkg/
+packages/wasm-sdk/dist/
+packages/wasm-sdk/*.bak
+packages/wasm-sdk/wasm_sdk.js
+packages/wasm-sdk/wasm_sdk_bg.wasm
+packages/wasm-sdk/documentation-check-report.txt
+packages/wasm-sdk/extracted_definitions.json
+
+# gRPC coverage report
+grpc-coverage-report.txt
