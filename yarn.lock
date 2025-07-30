@@ -2018,6 +2018,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/wasm-sdk@file:../wasm-sdk/pkg::locator=dash%40workspace%3Apackages%2Fjs-dash-sdk":
+  version: 0.0.0
+  resolution: "@dashevo/wasm-sdk@file:../wasm-sdk/pkg#../wasm-sdk/pkg::hash=944b57&locator=dash%40workspace%3Apackages%2Fjs-dash-sdk"
+  checksum: 1ccf5cd50c317664b6921a32813de629000dfdf8da07153442f9647cf8d17853bbbcceb46faeca7d360cf8b2e3d8f09c8cd1ee92b30cf50237547feb1b05a9c0
+  languageName: node
+  linkType: hard
+
 "@dashevo/withdrawals-contract@workspace:*, @dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
@@ -6534,6 +6541,7 @@ __metadata:
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
+    "@dashevo/wasm-sdk": "file:../wasm-sdk/pkg"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@types/chai": "npm:^4.2.12"
     "@types/dirty-chai": "npm:^2.0.2"
@@ -6592,6 +6600,9 @@ __metadata:
     webpack: "npm:^5.94.0"
     webpack-cli: "npm:^4.9.1"
     winston: "npm:^3.2.1"
+  dependenciesMeta:
+    "@dashevo/wasm-sdk":
+      optional: true
   languageName: unknown
   linkType: soft
 

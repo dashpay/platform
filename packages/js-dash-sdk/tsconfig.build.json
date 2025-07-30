@@ -10,5 +10,6 @@
     "src/test/**",
     "src/**/*.spec.ts",
     "test",
+    "src/SDK/Client/Platform/adapters/wasm-sdk-loader.js"
   ]
 }

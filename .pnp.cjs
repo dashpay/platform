@@ -3064,6 +3064,15 @@ const RAW_RUNTIME_STATE =
         "linkType": "SOFT"\
       }]\
     ]],\
+    ["@dashevo/wasm-sdk", [\
+      ["file:../wasm-sdk/pkg#../wasm-sdk/pkg::hash=944b57&locator=dash%40workspace%3Apackages%2Fjs-dash-sdk", {\
+        "packageLocation": "./.yarn/cache/@dashevo-wasm-sdk-file-7f6fe61b82-1ccf5cd50c.zip/node_modules/@dashevo/wasm-sdk/",\
+        "packageDependencies": [\
+          ["@dashevo/wasm-sdk", "file:../wasm-sdk/pkg#../wasm-sdk/pkg::hash=944b57&locator=dash%40workspace%3Apackages%2Fjs-dash-sdk"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["@dashevo/withdrawals-contract", [\
       ["workspace:packages/withdrawals-contract", {\
         "packageLocation": "./packages/withdrawals-contract/",\
@@ -8572,6 +8581,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["@dashevo/wasm-sdk", "file:../wasm-sdk/pkg#../wasm-sdk/pkg::hash=944b57&locator=dash%40workspace%3Apackages%2Fjs-dash-sdk"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["@types/chai", "npm:4.2.22"],\
           ["@types/dirty-chai", "npm:2.0.2"],\

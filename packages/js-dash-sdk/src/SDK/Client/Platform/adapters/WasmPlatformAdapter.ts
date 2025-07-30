@@ -6,7 +6,9 @@ import { DAPIClient } from '@dashevo/dapi-client';
 // Type definitions for wasm-sdk module
 interface WasmSdkModule {
   default: () => Promise<void>;
+  initSync?: (buffer: Buffer) => void;
   WasmSdk: any; // Will be properly typed when wasm-sdk is available
+  WasmSdkBuilder: any; // Builder class for creating SDK instances
 }
 
 export class WasmPlatformAdapter {
@@ -23,6 +25,12 @@ export class WasmPlatformAdapter {
   private cacheTTL = 60000; // 60 seconds default TTL
 
   constructor(dapiClient: DAPIClient, network: string, proofs: boolean = true) {
+    console.log('WasmPlatformAdapter constructor:', {
+      dapiClient: dapiClient ? 'present' : 'missing',
+      hasDapiAddresses: dapiClient ? dapiClient.dapiAddresses : 'N/A',
+      network,
+      proofs
+    });
     this.dapiClient = dapiClient;
     this.network = network;
     this.proofs = proofs;
@@ -50,10 +58,37 @@ export class WasmPlatformAdapter {
       const wasmModule = await loadWasmSdk() as WasmSdkModule;
       
       // Initialize WASM module
-      await wasmModule.default();
+      console.log('WasmPlatformAdapter: Initializing WASM module...');
+      try {
+        // In Node.js environments, we need to handle the WASM file path
+        if (typeof window === 'undefined' && typeof global !== 'undefined') {
+          // Node.js environment - use initSync with buffer
+          const fs = require('fs');
+          const path = require('path');
+          const wasmPath = path.join(__dirname, '..', '..', '..', '..', '..', '..', '..', '.yarn', 'cache', '@dashevo-wasm-sdk-file-7f6fe61b82-1ccf5cd50c.zip', 'node_modules', '@dashevo', 'wasm-sdk', 'wasm_sdk_bg.wasm');
+          console.log('WasmPlatformAdapter: Loading WASM from:', wasmPath);
+          const wasmBuffer = fs.readFileSync(wasmPath);
+          
+          // Use initSync for synchronous initialization in Node.js
+          if (wasmModule.initSync) {
+            wasmModule.initSync(wasmBuffer);
+          } else {
+            // Fallback to default init
+            await wasmModule.default();
+          }
+        } else {
+          // Browser environment
+          await wasmModule.default();
+        }
+      } catch (initError) {
+        console.error('WasmPlatformAdapter: WASM module initialization error:', initError);
+        throw new Error(`Failed to initialize WASM module: ${initError.message}`);
+      }
       
       this.wasmSdk = wasmModule;
       this.initialized = true;
+      console.log('WasmPlatformAdapter: WASM module initialized successfully');
+      console.log('WasmPlatformAdapter: Available exports:', Object.keys(wasmModule));
     } catch (error) {
       throw new Error(`Failed to initialize wasm-sdk: ${error.message}`);
     }
@@ -68,12 +103,27 @@ export class WasmPlatformAdapter {
     }
 
     if (!this.sdkInstance) {
-      const transport: any = {
-        url: this.dapiClient.dapiAddresses[0].toString(),
-        network: this.network,
-      };
-
-      this.sdkInstance = await this.wasmSdk!.WasmSdk.new(transport, this.proofs);
+      try {
+        // Use WasmSdkBuilder to create SDK instance
+        let builder;
+        if (this.network === 'mainnet') {
+          builder = this.wasmSdk!.WasmSdkBuilder.new_mainnet();
+        } else if (this.network === 'testnet') {
+          builder = this.wasmSdk!.WasmSdkBuilder.new_testnet();
+        } else {
+          // For regtest/local, use testnet configuration
+          // TODO: For local/regtest networks, we need to configure custom URL
+          console.log('WasmPlatformAdapter: Using testnet builder for regtest network');
+          builder = this.wasmSdk!.WasmSdkBuilder.new_testnet();
+        }
+        
+        // Build the SDK instance
+        this.sdkInstance = builder.build();
+        console.log('WasmPlatformAdapter: SDK instance created successfully');
+      } catch (error) {
+        console.error('WasmPlatformAdapter: Failed to create SDK instance:', error);
+        throw error;
+      }
     }
 
     return this.sdkInstance;
