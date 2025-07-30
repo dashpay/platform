@@ -110,7 +110,7 @@ class ParameterInjector {
       }
     }
 
-    console.log(`✅ Successfully filled fields: ${filledFields.join(', ')}`);
+    console.log(`Successfully filled fields: ${filledFields.join(', ')}`);
     if (failedFields.length > 0) {
       console.warn(`⚠️  Failed to fill fields: ${failedFields.join(', ')}`);
     }

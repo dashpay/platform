@@ -21,7 +21,7 @@ async function executeQueryWithProof(wasmSdkPage, parameterInjector, category, q
   if (proofEnabled) {
     const proofToggle = wasmSdkPage.page.locator('#proofToggle');
     await expect(proofToggle).toBeChecked();
-    console.log('✅ Proof toggle confirmed as checked');
+    console.log('Proof toggle confirmed as checked');
   }
   
   const success = await parameterInjector.injectParameters(category, queryName, network);
@@ -40,7 +40,6 @@ async function executeQueryWithProof(wasmSdkPage, parameterInjector, category, q
  */
 function parseNumericResult(resultStr, propertyName = 'balance') {
   const trimmedStr = resultStr.trim();
-  console.log(`Raw ${propertyName} result:`, JSON.stringify(trimmedStr));
   
   // Try to parse as JSON first (in case it's a JSON response)
   let numericValue;
@@ -50,18 +49,14 @@ function parseNumericResult(resultStr, propertyName = 'balance') {
     // Check if it's a JSON object with the expected property
     if (typeof parsed === 'object' && parsed[propertyName] !== undefined) {
       numericValue = Number(parsed[propertyName]);
-      console.log(`Parsed as JSON object with ${propertyName} property:`, parsed[propertyName], 'converted to:', numericValue);
     } else if (typeof parsed === 'number') {
       numericValue = parsed;
-      console.log(`Parsed as JSON number:`, numericValue);
     } else {
       numericValue = Number(parsed);
-      console.log(`Parsed as JSON and converted to number:`, numericValue);
     }
   } catch {
     // If not JSON, try parsing directly as number
     numericValue = Number(trimmedStr);
-    console.log(`Parsed as direct number:`, numericValue);
     
     // If Number() fails, log the issue
     if (isNaN(numericValue)) {
@@ -170,8 +165,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(identityData).toHaveProperty('publicKeys');
       expect(identityData).toHaveProperty('balance');
       
-      console.log('✅ getIdentity single view without proof confirmed');
-      console.log('Identity query result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentity single view without proof confirmed');
     });
 
     test('should execute getIdentity query with proof info', async () => {
@@ -198,9 +192,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(identityData).toHaveProperty('publicKeys');
         expect(identityData).toHaveProperty('balance');
         
-        console.log('✅ getIdentity split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentity split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentity query');
         // Should still contain identity data (valid JSON with expected fields)
@@ -232,8 +224,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain balance data (should be a number or numeric string)
       validateNumericResult(result.result, 'balance');
       
-      console.log('✅ getIdentityBalance single view without proof confirmed');
-      console.log('Identity balance result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityBalance single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityBalance
@@ -256,14 +247,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentityBalance split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityBalance split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityBalance query');
       }
       
-      console.log('Identity balance result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityKeys query without proof info', async () => {
@@ -288,8 +276,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const keysData = JSON.parse(result.result);
       expect(keysData).toBeDefined();
       
-      console.log('✅ getIdentityKeys single view without proof confirmed');
-      console.log('Identity keys result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityKeys single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityKeys
@@ -314,14 +301,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentityKeys split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityKeys split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityKeys query');
       }
       
-      console.log('Identity keys result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentitiesContractKeys query without proof info', async () => {
@@ -346,8 +330,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const contractKeysData = JSON.parse(result.result);
       expect(contractKeysData).toBeDefined();
       
-      console.log('✅ getIdentitiesContractKeys single view without proof confirmed');
-      console.log('Identities contract keys result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentitiesContractKeys single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentitiesContractKeys
@@ -372,14 +355,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentitiesContractKeys split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentitiesContractKeys split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentitiesContractKeys query');
       }
       
-      console.log('Identities contract keys result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityNonce query without proof info', async () => {
@@ -402,8 +382,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain nonce data (should be a number)
       validateNumericResult(result.result, 'nonce');
       
-      console.log('✅ getIdentityNonce single view without proof confirmed');
-      console.log('Identity nonce result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityNonce single view without proof confirmed');
     });
 
     test('should execute getIdentityNonce query with proof info', async () => {
@@ -425,14 +404,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentityNonce split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityNonce split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityNonce query');
       }
       
-      console.log('Identity nonce result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityContractNonce query without proof info', async () => {
@@ -455,8 +431,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain contract nonce data (should be a number)
       validateNumericResult(result.result, 'nonce');
       
-      console.log('✅ getIdentityContractNonce single view without proof confirmed');
-      console.log('Identity contract nonce result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityContractNonce single view without proof confirmed');
     });
 
     test('should execute getIdentityContractNonce query with proof info', async () => {
@@ -478,14 +453,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentityContractNonce split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityContractNonce split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityContractNonce query');
       }
       
-      console.log('Identity contract nonce result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentitiesBalances query without proof info', async () => {
@@ -513,8 +485,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should be an array or object with balance information
       expect(Array.isArray(balancesData) || typeof balancesData === 'object').toBe(true);
       
-      console.log('✅ getIdentitiesBalances single view without proof confirmed');
-      console.log('Identities balances result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentitiesBalances single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentitiesBalances
@@ -540,14 +511,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentitiesBalances split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentitiesBalances split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentitiesBalances query');
       }
       
-      console.log('Identities balances result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityBalanceAndRevision query without proof info', async () => {
@@ -584,8 +552,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(revision).not.toBeNaN();
       expect(revision).toBeGreaterThanOrEqual(0);
       
-      console.log('✅ getIdentityBalanceAndRevision single view without proof confirmed');
-      console.log('Identity balance and revision result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityBalanceAndRevision single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityBalanceAndRevision
@@ -629,14 +596,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(result.proofContent).toContain('quorumHash');
         expect(result.proofContent).toContain('signature');
         
-        console.log('✅ getIdentityBalanceAndRevision split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityBalanceAndRevision split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityBalanceAndRevision query');
       }
       
-      console.log('Identity balance and revision result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityByNonUniquePublicKeyHash query without proof info', async () => {
@@ -661,8 +625,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const identityData = JSON.parse(result.result);
       expect(identityData).toBeDefined();
       
-      console.log('✅ getIdentityByNonUniquePublicKeyHash single view without proof confirmed');
-      console.log('Identity by non-unique public key hash result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityByNonUniquePublicKeyHash single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityByNonUniquePublicKeyHash
@@ -702,14 +665,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(result.proofContent).toContain('quorumHash');
         expect(result.proofContent).toContain('signature');
         
-        console.log('✅ getIdentityByNonUniquePublicKeyHash split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityByNonUniquePublicKeyHash split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityByNonUniquePublicKeyHash query');
       }
       
-      console.log('Identity by non-unique public key hash result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityByPublicKeyHash query without proof info', async () => {
@@ -739,8 +699,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(identityData.id).toBeDefined();
       expect(identityData.publicKeys).toBeDefined();
       
-      console.log('✅ getIdentityByPublicKeyHash single view without proof confirmed');
-      console.log('Identity by public key hash result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityByPublicKeyHash single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityByPublicKeyHash
@@ -783,14 +742,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(result.proofContent).toContain('quorumHash');
         expect(result.proofContent).toContain('signature');
         
-        console.log('✅ getIdentityByPublicKeyHash split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityByPublicKeyHash split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityByPublicKeyHash query');
       }
       
-      console.log('Identity by public key hash result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityTokenBalances query without proof info', async () => {
@@ -816,8 +772,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(tokenBalancesData).toBeDefined();
       expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
       
-      console.log('✅ getIdentityTokenBalances single view without proof confirmed');
-      console.log('Identity token balances result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityTokenBalances single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityTokenBalances
@@ -858,14 +813,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(result.proofContent).toContain('quorumHash');
         expect(result.proofContent).toContain('signature');
         
-        console.log('✅ getIdentityTokenBalances split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityTokenBalances split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityTokenBalances query');
       }
       
-      console.log('Identity token balances result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentitiesTokenBalances query without proof info', async () => {
@@ -891,8 +843,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(tokenBalancesData).toBeDefined();
       expect(Array.isArray(tokenBalancesData) || typeof tokenBalancesData === 'object').toBe(true);
       
-      console.log('✅ getIdentitiesTokenBalances single view without proof confirmed');
-      console.log('Identities token balances result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentitiesTokenBalances single view without proof confirmed');
     });
 
     test('should execute getIdentitiesTokenBalances query with proof info', async () => {
@@ -917,14 +868,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
       if (proofEnabled) {
         validateSplitView(result);
         
-        console.log('✅ getIdentitiesTokenBalances split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentitiesTokenBalances split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentitiesTokenBalances query');
       }
       
-      console.log('Identities token balances result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentityTokenInfos query without proof info', async () => {
@@ -950,8 +898,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(tokenInfoData).toBeDefined();
       expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
       
-      console.log('✅ getIdentityTokenInfos single view without proof confirmed');
-      console.log('Identity token infos result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentityTokenInfos single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityTokenInfos
@@ -992,14 +939,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(result.proofContent).toContain('quorumHash');
         expect(result.proofContent).toContain('signature');
         
-        console.log('✅ getIdentityTokenInfos split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentityTokenInfos split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentityTokenInfos query');
       }
       
-      console.log('Identity token infos result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getIdentitiesTokenInfos query without proof info', async () => {
@@ -1025,8 +969,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(tokenInfoData).toBeDefined();
       expect(Array.isArray(tokenInfoData) || typeof tokenInfoData === 'object').toBe(true);
       
-      console.log('✅ getIdentitiesTokenInfos single view without proof confirmed');
-      console.log('Identities token infos result:', result.result.substring(0, 200) + '...');
+      console.log('getIdentitiesTokenInfos single view without proof confirmed');
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentitiesTokenInfos
@@ -1067,14 +1010,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
         expect(result.proofContent).toContain('quorumHash');
         expect(result.proofContent).toContain('signature');
         
-        console.log('✅ getIdentitiesTokenInfos split view with proof confirmed');
-        console.log('Data section length:', result.result.length);
-        console.log('Proof section length:', result.proofContent.length);
+        console.log('getIdentitiesTokenInfos split view with proof confirmed');
       } else {
         console.log('⚠️ Proof was not enabled for getIdentitiesTokenInfos query');
       }
       
-      console.log('Identities token infos result:', result.result.substring(0, 200) + '...');
     });
   });
 
@@ -1101,7 +1041,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const contractData = JSON.parse(result.result);
       expect(contractData).toBeDefined();
       
-      console.log('Data contract result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getDataContracts query for multiple contracts', async () => {
@@ -1121,7 +1060,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).not.toContain('Error executing query');
       expect(result.result).not.toContain('not found');
       
-      console.log('Multiple data contracts result:', result.result.substring(0, 200) + '...');
     });
   });
 
@@ -1148,7 +1086,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const documentsData = JSON.parse(result.result);
       expect(documentsData).toBeDefined();
       
-      console.log('Documents query result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getDocument query for specific document', async () => {
@@ -1173,7 +1110,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       const documentData = JSON.parse(result.result);
       expect(documentData).toBeDefined();
       
-      console.log('Single document result:', result.result.substring(0, 200) + '...');
     });
   });
 
@@ -1189,7 +1125,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).toBeDefined();
       expect(result.result).toContain('version');
       
-      console.log('Status query result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getCurrentEpoch query', async () => {
@@ -1209,7 +1144,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain epoch data (number or JSON with epoch info)
       expect(result.result).toMatch(/\d+|epoch/i);
       
-      console.log('Current epoch result:', result.result.substring(0, 200) + '...');
     });
 
     test('should execute getTotalCreditsInPlatform query', async () => {
@@ -1229,7 +1163,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain credits data (number or JSON with credits info)
       expect(result.result).toMatch(/\d+|credits|balance/i);
       
-      console.log('Total credits result:', result.result.substring(0, 200) + '...');
     });
   });
 
@@ -1304,7 +1237,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain status data with version info
       expect(result.result).toContain('version');
       
-      console.log('Mainnet status result:', result.result.substring(0, 200) + '...');
     });
   });
 });

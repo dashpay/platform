@@ -297,10 +297,10 @@ class WasmSdkPage extends BaseTest {
         
         // Wait for the toggle to be checked
         await expect(proofToggle).toBeChecked();
-        console.log('✅ Proof toggle confirmed as checked');
+        console.log('Proof toggle confirmed as checked');
       }
       
-      console.log('✅ Proof info enabled');
+      console.log('Proof info enabled');
       return true;
     } catch (error) {
       console.log(`⚠️ Proof toggle not available for this query type: ${error.message}`);
@@ -353,10 +353,10 @@ class WasmSdkPage extends BaseTest {
         
         // Wait for the toggle to be unchecked
         await expect(proofToggle).not.toBeChecked();
-        console.log('✅ Proof toggle confirmed as unchecked');
+        console.log('Proof toggle confirmed as unchecked');
       }
       
-      console.log('✅ Proof info disabled');
+      console.log('Proof info disabled');
       return true;
     } catch (error) {
       console.log(`⚠️ Proof toggle not available for this query type: ${error.message}`);
@@ -397,7 +397,7 @@ class WasmSdkPage extends BaseTest {
       if (assetLockProof) {
         await this.fillInput(this.selectors.assetLockProof, assetLockProof);
       }
-      console.log('✅ Authentication filled');
+      console.log('Authentication filled');
     }
   }
 
@@ -516,7 +516,7 @@ class WasmSdkPage extends BaseTest {
     // Apply configuration
     await this.clickButton(this.selectors.applyConfig);
     
-    console.log('✅ Advanced SDK configuration applied');
+    console.log('Advanced SDK configuration applied');
   }
 
   /**
