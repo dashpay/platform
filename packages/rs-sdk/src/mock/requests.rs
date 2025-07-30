@@ -467,4 +467,3 @@ impl_mock_response!(CurrentQuorumsInfo);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
-impl_mock_response!(TokenContractInfo);

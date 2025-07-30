@@ -8,11 +8,8 @@ use dash_spv_ffi::*;
 use std::ffi::{c_char, CStr};
 use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
-/// Core SDK configuration structure (re-export from dash-spv-ffi)
-pub use dash_spv_ffi::FFIClientConfig as CoreSDKConfig;
-
-/// Core SDK client handle (re-export from dash-spv-ffi)
-pub use dash_spv_ffi::FFIDashSpvClient as CoreSDKClient;
+// Note: We use FFIClientConfig and FFIDashSpvClient directly instead of type aliases
+// to avoid C header generation issues with cbindgen
 
 /// Initialize the Core SDK
 /// Returns 0 on success, error code on failure
@@ -28,7 +25,7 @@ pub extern "C" fn dash_core_sdk_init() -> i32 {
 /// # Safety
 /// - Returns null on failure
 #[no_mangle]
-pub unsafe extern "C" fn dash_core_sdk_create_client_testnet() -> *mut CoreSDKClient {
+pub unsafe extern "C" fn dash_core_sdk_create_client_testnet() -> *mut FFIDashSpvClient {
     // Create testnet configuration
     let config = dash_spv_ffi::dash_spv_ffi_config_testnet();
     if config.is_null() {
@@ -41,7 +38,7 @@ pub unsafe extern "C" fn dash_core_sdk_create_client_testnet() -> *mut CoreSDKCl
     // Clean up the config
     dash_spv_ffi::dash_spv_ffi_config_destroy(config);
     
-    client as *mut CoreSDKClient
+    client
 }
 
 /// Create a Core SDK client with mainnet config
@@ -49,7 +46,7 @@ pub unsafe extern "C" fn dash_core_sdk_create_client_testnet() -> *mut CoreSDKCl
 /// # Safety
 /// - Returns null on failure
 #[no_mangle]
-pub unsafe extern "C" fn dash_core_sdk_create_client_mainnet() -> *mut CoreSDKClient {
+pub unsafe extern "C" fn dash_core_sdk_create_client_mainnet() -> *mut FFIDashSpvClient {
     // Create mainnet configuration
     let config = dash_spv_ffi::dash_spv_ffi_config_new(dash_spv_ffi::FFINetwork::Dash);
     if config.is_null() {
@@ -62,7 +59,7 @@ pub unsafe extern "C" fn dash_core_sdk_create_client_mainnet() -> *mut CoreSDKCl
     // Clean up the config
     dash_spv_ffi::dash_spv_ffi_config_destroy(config);
     
-    client as *mut CoreSDKClient
+    client
 }
 
 /// Create a Core SDK client with custom config
@@ -72,15 +69,15 @@ pub unsafe extern "C" fn dash_core_sdk_create_client_mainnet() -> *mut CoreSDKCl
 /// - Returns null on failure
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_create_client(
-    config: *const CoreSDKConfig,
-) -> *mut CoreSDKClient {
+    config: *const FFIClientConfig,
+) -> *mut FFIDashSpvClient {
     if config.is_null() {
         return std::ptr::null_mut();
     }
 
     // Create the actual SPV client using the provided config
-    let client = dash_spv_ffi::dash_spv_ffi_client_new(config as *const dash_spv_ffi::FFIClientConfig);
-    client as *mut CoreSDKClient
+    let client = dash_spv_ffi::dash_spv_ffi_client_new(config);
+    client
 }
 
 /// Destroy a Core SDK client
@@ -88,9 +85,9 @@ pub unsafe extern "C" fn dash_core_sdk_create_client(
 /// # Safety
 /// - `client` must be a valid Core SDK client handle or null
 #[no_mangle]
-pub unsafe extern "C" fn dash_core_sdk_destroy_client(client: *mut CoreSDKClient) {
+pub unsafe extern "C" fn dash_core_sdk_destroy_client(client: *mut FFIDashSpvClient) {
     if !client.is_null() {
-        dash_spv_ffi::dash_spv_ffi_client_destroy(client as *mut dash_spv_ffi::FFIDashSpvClient);
+        dash_spv_ffi::dash_spv_ffi_client_destroy(client);
     }
 }
 
@@ -99,12 +96,12 @@ pub unsafe extern "C" fn dash_core_sdk_destroy_client(client: *mut CoreSDKClient
 /// # Safety
 /// - `client` must be a valid Core SDK client handle
 #[no_mangle]
-pub unsafe extern "C" fn dash_core_sdk_start(client: *mut CoreSDKClient) -> i32 {
+pub unsafe extern "C" fn dash_core_sdk_start(client: *mut FFIDashSpvClient) -> i32 {
     if client.is_null() {
         return -1;
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_start(client as *mut dash_spv_ffi::FFIDashSpvClient)
+    dash_spv_ffi::dash_spv_ffi_client_start(client)
 }
 
 /// Stop the Core SDK client
@@ -112,12 +109,12 @@ pub unsafe extern "C" fn dash_core_sdk_start(client: *mut CoreSDKClient) -> i32 
 /// # Safety
 /// - `client` must be a valid Core SDK client handle
 #[no_mangle]
-pub unsafe extern "C" fn dash_core_sdk_stop(client: *mut CoreSDKClient) -> i32 {
+pub unsafe extern "C" fn dash_core_sdk_stop(client: *mut FFIDashSpvClient) -> i32 {
     if client.is_null() {
         return -1;
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_stop(client as *mut dash_spv_ffi::FFIDashSpvClient)
+    dash_spv_ffi::dash_spv_ffi_client_stop(client)
 }
 
 /// Sync Core SDK client to tip
@@ -125,13 +122,13 @@ pub unsafe extern "C" fn dash_core_sdk_stop(client: *mut CoreSDKClient) -> i32 {
 /// # Safety
 /// - `client` must be a valid Core SDK client handle
 #[no_mangle]
-pub unsafe extern "C" fn dash_core_sdk_sync_to_tip(client: *mut CoreSDKClient) -> i32 {
+pub unsafe extern "C" fn dash_core_sdk_sync_to_tip(client: *mut FFIDashSpvClient) -> i32 {
     if client.is_null() {
         return -1;
     }
 
     dash_spv_ffi::dash_spv_ffi_client_sync_to_tip(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
         None, // completion_callback
         std::ptr::null_mut(), // user_data
     )
@@ -144,14 +141,14 @@ pub unsafe extern "C" fn dash_core_sdk_sync_to_tip(client: *mut CoreSDKClient) -
 /// - Returns pointer to FFISyncProgress structure (caller must free it)
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_sync_progress(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
 ) -> *mut dash_spv_ffi::FFISyncProgress {
     if client.is_null() {
         return std::ptr::null_mut();
     }
 
     dash_spv_ffi::dash_spv_ffi_client_get_sync_progress(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
     )
 }
 
@@ -162,14 +159,14 @@ pub unsafe extern "C" fn dash_core_sdk_get_sync_progress(
 /// - Returns pointer to FFISpvStats structure (caller must free it)
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_stats(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
 ) -> *mut dash_spv_ffi::FFISpvStats {
     if client.is_null() {
         return std::ptr::null_mut();
     }
 
     dash_spv_ffi::dash_spv_ffi_client_get_stats(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
     )
 }
 
@@ -180,7 +177,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_stats(
 /// - `height` must point to a valid u32
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_block_height(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
     height: *mut u32,
 ) -> i32 {
     if client.is_null() || height.is_null() {
@@ -189,7 +186,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_block_height(
 
     // Get stats and extract block height from sync progress
     let stats = dash_spv_ffi::dash_spv_ffi_client_get_stats(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
     );
     
     if stats.is_null() {
@@ -210,7 +207,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_block_height(
 /// - `address` must be a valid null-terminated C string
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_watch_address(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
     address: *const c_char,
 ) -> i32 {
     if client.is_null() || address.is_null() {
@@ -218,7 +215,7 @@ pub unsafe extern "C" fn dash_core_sdk_watch_address(
     }
 
     dash_spv_ffi::dash_spv_ffi_client_watch_address(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
         address,
     )
 }
@@ -230,7 +227,7 @@ pub unsafe extern "C" fn dash_core_sdk_watch_address(
 /// - `address` must be a valid null-terminated C string
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_unwatch_address(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
     address: *const c_char,
 ) -> i32 {
     if client.is_null() || address.is_null() {
@@ -238,7 +235,7 @@ pub unsafe extern "C" fn dash_core_sdk_unwatch_address(
     }
 
     dash_spv_ffi::dash_spv_ffi_client_unwatch_address(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
         address,
     )
 }
@@ -250,14 +247,14 @@ pub unsafe extern "C" fn dash_core_sdk_unwatch_address(
 /// - Returns pointer to FFIBalance structure (caller must free it)
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_total_balance(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
 ) -> *mut dash_spv_ffi::FFIBalance {
     if client.is_null() {
         return std::ptr::null_mut();
     }
 
     dash_spv_ffi::dash_spv_ffi_client_get_total_balance(
-        client as *mut dash_spv_ffi::FFIDashSpvClient
+        client
     )
 }
 
@@ -268,7 +265,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_total_balance(
 /// - `height` must point to a valid u32
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_platform_activation_height(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
     height: *mut u32,
 ) -> i32 {
     if client.is_null() || height.is_null() {
@@ -276,7 +273,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_platform_activation_height(
     }
 
     let result = dash_spv_ffi::ffi_dash_spv_get_platform_activation_height(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
         height,
     );
 
@@ -292,7 +289,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_platform_activation_height(
 /// - `public_key` must point to a valid 48-byte buffer
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_quorum_public_key(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
     quorum_type: u32,
     quorum_hash: *const u8,
     core_chain_locked_height: u32,
@@ -304,7 +301,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_quorum_public_key(
     }
 
     let result = dash_spv_ffi::ffi_dash_spv_get_quorum_public_key(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
         quorum_type,
         quorum_hash,
         core_chain_locked_height,
@@ -322,13 +319,13 @@ pub unsafe extern "C" fn dash_core_sdk_get_quorum_public_key(
 /// - `client` must be a valid Core SDK client handle
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_core_handle(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
 ) -> *mut dash_spv_ffi::CoreSDKHandle {
     if client.is_null() {
         return std::ptr::null_mut();
     }
 
-    dash_spv_ffi::ffi_dash_spv_get_core_handle(client as *mut dash_spv_ffi::FFIDashSpvClient)
+    dash_spv_ffi::ffi_dash_spv_get_core_handle(client)
 }
 
 /// Broadcast a transaction
@@ -338,7 +335,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_core_handle(
 /// - `transaction_hex` must be a valid null-terminated C string
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_broadcast_transaction(
-    client: *mut CoreSDKClient,
+    client: *mut FFIDashSpvClient,
     transaction_hex: *const c_char,
 ) -> i32 {
     if client.is_null() || transaction_hex.is_null() {
@@ -346,7 +343,7 @@ pub unsafe extern "C" fn dash_core_sdk_broadcast_transaction(
     }
 
     dash_spv_ffi::dash_spv_ffi_client_broadcast_transaction(
-        client as *mut dash_spv_ffi::FFIDashSpvClient,
+        client,
         transaction_hex,
     )
 }

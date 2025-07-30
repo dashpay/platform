@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
-use crate::core_sdk::{CoreSDKClient, CoreSDKConfig};
+use dash_spv_ffi::{FFIDashSpvClient, FFIClientConfig};
 use crate::types::{SDKHandle, DashSDKConfig};
 
 /// Static flag to track unified initialization
@@ -19,7 +19,7 @@ static UNIFIED_INITIALIZED: AtomicBool = AtomicBool::new(false);
 #[repr(C)]
 pub struct UnifiedSDKConfig {
     /// Core SDK configuration (ignored if core feature disabled)
-    pub core_config: CoreSDKConfig,
+    pub core_config: FFIClientConfig,
     /// Platform SDK configuration
     pub platform_config: DashSDKConfig,
     /// Whether to enable cross-layer integration
@@ -29,7 +29,7 @@ pub struct UnifiedSDKConfig {
 /// Unified SDK handle containing both Core and Platform SDKs
 #[repr(C)]
 pub struct UnifiedSDKHandle {
-    pub core_client: *mut CoreSDKClient,
+    pub core_client: *mut FFIDashSpvClient,
     pub platform_sdk: *mut SDKHandle,
     pub integration_enabled: bool,
 }
