@@ -145,9 +145,6 @@ const testData = {
       getStatus: {
         testnet: [{}] // No parameters needed
       },
-      getCurrentEpoch: {
-        testnet: [{}]
-      },
       getTotalCreditsInPlatform: {
         testnet: [{}]
       }
@@ -160,6 +157,9 @@ const testData = {
     },
 
     epoch: {
+      getCurrentEpoch: {
+        testnet: [{}]
+      },
       getEpochsInfo: {
         testnet: [
           {

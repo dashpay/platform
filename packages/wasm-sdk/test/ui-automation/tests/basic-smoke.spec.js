@@ -58,6 +58,7 @@ test.describe('WASM SDK Basic Smoke Tests', () => {
       'Data Contract Queries', 
       'Document Queries',
       'DPNS Queries',
+      'Epoch & Block Queries',
       'System & Utility'
     ];
     

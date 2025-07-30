@@ -239,7 +239,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     });
 
     test('should execute getCurrentEpoch query', async () => {
-      await wasmSdkPage.setupQuery('system', 'getCurrentEpoch');
+      await wasmSdkPage.setupQuery('epoch', 'getCurrentEpoch');
       
       const result = await wasmSdkPage.executeQueryAndGetResult();
       
