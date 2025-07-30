@@ -11,7 +11,8 @@ use std::slice;
 use dashcore::{
     Transaction, TxIn, TxOut, OutPoint, Script, ScriptBuf, 
     Txid, consensus, Network, Amount, EcdsaSighashType,
-    sighash::{SighashCache, LegacySighash},
+    sighash::SighashCache, hashes::{Hash, sha256d},
+    Address, PrivateKey, PublicKey,
 };
 use secp256k1::{Secp256k1, SecretKey, Message};
 
@@ -95,7 +96,14 @@ pub extern "C" fn dash_tx_add_input(
     let input = unsafe { &*input };
     
     // Convert txid
-    let txid = Txid::from_raw_hash(input.txid.into());
+    // Convert 32-byte array to Txid
+    let txid = match Txid::from_slice(&input.txid) {
+        Ok(txid) => txid,
+        Err(e) => {
+            set_last_error(&format!("Invalid txid: {}", e));
+            return -1;
+        }
+    };
     
     // Convert script
     let script_sig = if input.script_sig.is_null() || input.script_sig_len == 0 {
@@ -186,7 +194,8 @@ pub extern "C" fn dash_tx_get_txid(
     let txid = tx.inner.txid();
     
     unsafe {
-        ptr::copy_nonoverlapping(txid.as_byte_array(), txid_out, 32);
+        let txid_bytes = txid.as_byte_array();
+        ptr::copy_nonoverlapping(txid_bytes.as_ptr(), txid_out, 32);
     }
     0
 }
@@ -318,14 +327,15 @@ pub extern "C" fn dash_tx_sighash(
     let cache = SighashCache::new(&tx.inner);
     
     match cache.legacy_signature_hash(input_index as usize, script, sighash_type.to_u32()) {
-        Some(hash) => {
+        Ok(hash) => {
             unsafe {
-                ptr::copy_nonoverlapping(hash.as_ref(), hash_out, 32);
+                let hash_bytes: &[u8] = hash.as_ref();
+                ptr::copy_nonoverlapping(hash_bytes.as_ptr(), hash_out, 32);
             }
             0
         }
-        None => {
-            set_last_error("Failed to calculate sighash");
+        Err(e) => {
+            set_last_error(&format!("Failed to calculate sighash: {}", e));
             -1
         }
     }
@@ -391,7 +401,7 @@ pub extern "C" fn dash_tx_sign_input(
 
     // Sign
     let secp = Secp256k1::new();
-    let message = Message::from_slice(&sighash).expect("32 bytes");
+    let message = Message::from_digest(sighash);
     let sig = secp.sign_ecdsa(&message, &privkey);
     
     // Build signature script (simplified P2PKH)
@@ -498,15 +508,16 @@ pub extern "C" fn dash_address_to_pubkey_hash(
     
     match address_str.parse::<dashcore::Address<_>>() {
         Ok(addr) => {
-            if addr.network() != expected_network {
+            if *addr.network() != expected_network {
                 set_last_error("Address network mismatch");
                 return -1;
             }
             
-            match addr.payload {
+            match addr.payload() {
                 dashcore::address::Payload::PubkeyHash(hash) => {
                     unsafe {
-                        ptr::copy_nonoverlapping(hash.as_byte_array(), hash_out, 20);
+                        let hash_bytes = hash.as_byte_array();
+                        ptr::copy_nonoverlapping(hash_bytes.as_ptr(), hash_out, 20);
                     }
                     0
                 }

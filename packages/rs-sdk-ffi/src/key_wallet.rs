@@ -89,7 +89,7 @@ pub extern "C" fn dash_key_mnemonic_from_phrase(phrase: *const c_char) -> *mut F
         }
     };
 
-    match KeyWalletMnemonic::from_phrase(phrase_str) {
+    match KeyWalletMnemonic::from_phrase(phrase_str, key_wallet::mnemonic::Language::English) {
         Ok(mnemonic) => Box::into_raw(Box::new(FFIMnemonic { inner: mnemonic })),
         Err(e) => {
             set_last_error(&format!("Invalid mnemonic: {}", e));
@@ -432,7 +432,8 @@ pub extern "C" fn dash_key_address_from_pubkey(
     let network: Network = network.into();
     
     match secp256k1::PublicKey::from_slice(pubkey_slice) {
-        Ok(pk) => {
+        Ok(secp_pk) => {
+            let pk = dashcore::PublicKey::new(secp_pk);
             let address = Address::p2pkh(&pk, network);
             match CString::new(address.to_string()) {
                 Ok(s) => s.into_raw(),
@@ -476,7 +477,7 @@ pub extern "C" fn dash_key_address_validate(
     
     match address_str.parse::<Address<_>>() {
         Ok(addr) => {
-            if addr.network() == expected_network {
+            if *addr.network() == expected_network {
                 1
             } else {
                 0
