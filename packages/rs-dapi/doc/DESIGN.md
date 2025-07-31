@@ -738,11 +738,13 @@ rs-dapi --log-level debug
 - Performance metrics and timing information
 - Protocol-specific logging (gRPC, REST, JSON-RPC)
 - Log levels:
-  - info - business events
-  - debug - debugging information for non-primary execution path; only added when needed
-  - trace - debugging information for primary execution path; only added when needed
-  - error - errors that break things, need action or posses threat to service
-  - warn - other issues that need attention
+  - info - business events, target audience: users, sysops/devops
+  - error - errors that break things, need action or posses threat to service, target audience: users, sysops/devops
+  - warn - other issues that need attention, target audience: users, sysops/devops
+  - debug - non-verbose debugging information adding much value to understanding of system operations; target audience: developers
+  - trace - other debugging information that is either quite verbose, or adds little value to understanding of system operations;    
+    target audience: developers
+  - Prefer logging information about whole logical blocks of code, not individual operations, to limit verbosity (even on trace level)
 
 #### Built-in Metrics
 - **Request Metrics**: Counts, latency histograms per protocol
