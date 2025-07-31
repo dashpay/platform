@@ -109,7 +109,7 @@ ui-automation/
 
 The `playwright.config.js` file is configured for:
 
-- **Base URL**: `http://localhost:8888` (auto-started Python server)
+- **Base URL**: `http://localhost:8888` (server managed via Playwright config's `webServer`)
 - **Browsers**: Chromium (headless by default)
 - **Timeouts**: 30s for actions, 120s for tests
 - **Reporters**: HTML, JSON, and console output
@@ -215,7 +215,7 @@ npm run test:ci
 ### Common Issues
 
 1. **Dependencies missing**: Run `sudo npx playwright install-deps`
-2. **Port 8888 in use**: The script handles server startup automatically
+2. **Port 8888 in use**: Playwright config's `webServer` starts the server automatically; ensure the port is free or update the config
 3. **WASM build issues**: The script rebuilds WASM if needed
 4. **Test timeouts**: Use `DEBUG=true ./run-ui-tests.sh` for details
 
