@@ -15,8 +15,6 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" 
 WASM_SDK_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 UI_TEST_DIR="$SCRIPT_DIR"
-SERVER_PORT=8888
-SERVER_PID=""
 
 # Debug mode flag
 DEBUG=${DEBUG:-false}
@@ -40,17 +38,6 @@ print_debug() {
     fi
 }
 
-# Function to cleanup on exit
-cleanup() {
-    if [ ! -z "$SERVER_PID" ]; then
-        print_status "Stopping web server (PID: $SERVER_PID)..."
-        kill $SERVER_PID 2>/dev/null || true
-        wait $SERVER_PID 2>/dev/null || true
-    fi
-}
-
-# Set trap to cleanup on exit
-trap cleanup EXIT
 
 # Function to validate paths
 validate_paths() {
@@ -171,31 +158,6 @@ install_dependencies() {
     print_status "Dependencies installed ✓"
 }
 
-# Function to start web server
-start_web_server() {
-    print_status "Starting web server on port $SERVER_PORT..."
-    
-    # Check if port is already in use
-    if lsof -Pi :$SERVER_PORT -sTCP:LISTEN -t &> /dev/null; then
-        print_warning "Port $SERVER_PORT is already in use. Assuming server is running."
-        return 0
-    fi
-    
-    cd "$WASM_SDK_DIR"
-    python3 -m http.server $SERVER_PORT &> /dev/null &
-    SERVER_PID=$!
-    
-    # Wait for server to start
-    sleep 2
-    
-    # Verify server is running
-    if ! curl -s "http://localhost:$SERVER_PORT" &> /dev/null; then
-        print_error "Failed to start web server"
-        exit 1
-    fi
-    
-    print_status "Web server started (PID: $SERVER_PID) ✓"
-}
 
 # Function to run tests
 run_tests() {
@@ -309,7 +271,6 @@ main() {
     
     check_prerequisites
     install_dependencies
-    start_web_server
     
     # Run tests and capture exit code
     if run_tests "$@"; then
