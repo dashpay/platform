@@ -12,33 +12,58 @@ public class WalletFFIBridge {
         // Note: FFI functions will be linked at runtime from DashSDK.xcframework
     }
     
+    // Helper to get last error from FFI
+    private func getLastError() -> String? {
+        guard let errorPtr = dash_spv_ffi_get_last_error() else {
+            return nil
+        }
+        // Note: dash_spv_ffi_get_last_error returns a const char* that doesn't need to be freed
+        return String(cString: errorPtr)
+    }
+    
     // MARK: - Mnemonic Operations
     
     public func generateMnemonic(wordCount: UInt8 = 12) -> String? {
+        print("WalletFFIBridge.generateMnemonic called with wordCount: \(wordCount)")
+        
         guard let mnemonicPtr = dash_key_mnemonic_generate(wordCount) else {
+            let error = getLastError() ?? "Unknown error"
+            print("dash_key_mnemonic_generate returned nil. Error: \(error)")
             return nil
         }
         defer { dash_key_mnemonic_destroy(mnemonicPtr) }
         
         guard let phrasePtr = dash_key_mnemonic_phrase(mnemonicPtr) else {
+            let error = getLastError() ?? "Unknown error"
+            print("dash_key_mnemonic_phrase returned nil. Error: \(error)")
             return nil
         }
-        defer { dash_sdk_string_free(phrasePtr) }
         
-        return String(cString: phrasePtr)
+        let phrase = String(cString: phrasePtr)
+        dash_sdk_string_free(UnsafeMutablePointer(mutating: phrasePtr))
+        
+        print("Generated mnemonic: \(phrase)")
+        return phrase
     }
     
     public func validateMnemonic(_ phrase: String) -> Bool {
+        print("WalletFFIBridge.validateMnemonic called with phrase: \(phrase)")
+        
         guard let mnemonicPtr = dash_key_mnemonic_from_phrase(phrase) else {
+            print("dash_key_mnemonic_from_phrase returned nil")
             return false
         }
         defer { dash_key_mnemonic_destroy(mnemonicPtr) }
         
+        print("Mnemonic validation successful")
         return true
     }
     
     public func mnemonicToSeed(_ mnemonic: String, passphrase: String = "") -> Data? {
+        print("WalletFFIBridge.mnemonicToSeed called with mnemonic: \(mnemonic)")
+        
         guard let mnemonicPtr = dash_key_mnemonic_from_phrase(mnemonic) else {
+            print("dash_key_mnemonic_from_phrase returned nil in mnemonicToSeed")
             return nil
         }
         defer { dash_key_mnemonic_destroy(mnemonicPtr) }
@@ -50,6 +75,12 @@ public class WalletFFIBridge {
                 passphrase.isEmpty ? nil : passphrase,
                 seedBytes.bindMemory(to: UInt8.self).baseAddress
             )
+        }
+        
+        if result == 0 {
+            print("Seed generated successfully, length: \(seed.count)")
+        } else {
+            print("dash_key_mnemonic_to_seed failed with result: \(result)")
         }
         
         return result == 0 ? seed : nil

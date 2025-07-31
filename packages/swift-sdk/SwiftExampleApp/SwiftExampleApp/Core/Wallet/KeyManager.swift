@@ -52,6 +52,7 @@ public class KeyManager {
     
     // Generate fallback mnemonic if FFI fails
     private func generateFallbackMnemonic() -> String {
+        print("WARNING: Using fallback mnemonic generation - FFI failed")
         // Simple fallback mnemonic generation
         let words = [
             "abandon", "ability", "able", "about", "above", "absent",
