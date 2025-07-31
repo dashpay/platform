@@ -175,7 +175,7 @@ mod tests {
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
 
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config);
+        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
 
         let request = Request::new(BlockHeadersWithChainLocksRequest {
             from_block: Some(
@@ -196,7 +196,7 @@ mod tests {
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
 
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config);
+        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
 
         let request = Request::new(BlockHeadersWithChainLocksRequest {
             from_block: Some(
@@ -217,7 +217,7 @@ mod tests {
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
 
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config);
+        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
 
         let request = Request::new(BlockHeadersWithChainLocksRequest {
             from_block: None, // No from_block specified

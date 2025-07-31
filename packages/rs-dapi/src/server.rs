@@ -1,4 +1,3 @@
-use anyhow::Result;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -6,7 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use futures::stream;
+
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -17,13 +16,16 @@ use tracing::{error, info};
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 
-use crate::clients::{DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 use crate::{
     clients::traits::{DriveClientTrait, TenderdashClientTrait},
     services::StreamingServiceImpl,
+};
+use crate::{
+    clients::{DriveClient, TenderdashClient},
+    error::DAPIResult,
 };
 
 pub struct DapiServer {
@@ -35,7 +37,7 @@ pub struct DapiServer {
 }
 
 impl DapiServer {
-    pub async fn new(config: Arc<Config>) -> Result<Self> {
+    pub async fn new(config: Arc<Config>) -> DAPIResult<Self> {
         // Create clients based on configuration
         // For now, let's use real clients by default
         let drive_client: Arc<dyn DriveClientTrait> =
@@ -51,7 +53,7 @@ impl DapiServer {
             drive_client.clone(),
             tenderdash_client.clone(),
             config.clone(),
-        ));
+        )?);
 
         let platform_service = PlatformServiceImpl::new(
             drive_client.clone(),
@@ -72,14 +74,13 @@ impl DapiServer {
             jsonrpc_translator,
         })
     }
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> DAPIResult<()> {
         tracing::info!("Starting DAPI server...");
 
         // Start WebSocket listener in background if available
         self.start_websocket_listener().await?;
 
-        // Initialize streaming service
-        self.start_streaming_service().await?;
+        // Streaming service auto-starts when created, no need to start it manually
 
         // Start both gRPC servers concurrently
         let platform_server = self.start_grpc_platform_server();
@@ -91,7 +92,7 @@ impl DapiServer {
         Ok(())
     }
 
-    async fn start_websocket_listener(&self) -> Result<()> {
+    async fn start_websocket_listener(&self) -> DAPIResult<()> {
         // Get WebSocket client if available
         if let Some(ws_client) = self.get_websocket_client().await {
             info!("Starting Tenderdash WebSocket listener");
@@ -117,16 +118,7 @@ impl DapiServer {
         None // For now, return None - WebSocket functionality is optional
     }
 
-    async fn start_streaming_service(&self) -> Result<()> {
-        info!("Starting streaming service...");
-        self.core_service
-            .start_streaming()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to start streaming service: {}", e))?;
-        Ok(())
-    }
-
-    async fn start_grpc_platform_server(&self) -> Result<()> {
+    async fn start_grpc_platform_server(&self) -> DAPIResult<()> {
         let addr = self.config.grpc_api_addr();
         info!("Starting gRPC Platform API server on {}", addr);
 
@@ -140,7 +132,7 @@ impl DapiServer {
         Ok(())
     }
 
-    async fn start_grpc_core_server(&self) -> Result<()> {
+    async fn start_grpc_core_server(&self) -> DAPIResult<()> {
         let addr = self.config.grpc_streams_addr();
         info!("Starting gRPC Core API server on {}", addr);
 
@@ -154,7 +146,7 @@ impl DapiServer {
         Ok(())
     }
 
-    async fn start_grpc_api_server(&self) -> Result<()> {
+    async fn start_grpc_api_server(&self) -> DAPIResult<()> {
         let addr = self.config.grpc_api_addr();
         info!("Starting gRPC API server on {}", addr);
 
@@ -168,7 +160,7 @@ impl DapiServer {
         Ok(())
     }
 
-    async fn start_rest_server(&self) -> Result<()> {
+    async fn start_rest_server(&self) -> DAPIResult<()> {
         let addr = self.config.rest_gateway_addr();
         info!("Starting REST gateway server on {}", addr);
 
@@ -188,7 +180,7 @@ impl DapiServer {
         Ok(())
     }
 
-    async fn start_jsonrpc_server(&self) -> Result<()> {
+    async fn start_jsonrpc_server(&self) -> DAPIResult<()> {
         let addr = self.config.json_rpc_addr();
         info!("Starting JSON-RPC server on {}", addr);
 
@@ -208,7 +200,7 @@ impl DapiServer {
         Ok(())
     }
 
-    async fn start_health_server(&self) -> Result<()> {
+    async fn start_health_server(&self) -> DAPIResult<()> {
         let addr = self.config.health_check_addr();
         info!("Starting health check server on {}", addr);
 

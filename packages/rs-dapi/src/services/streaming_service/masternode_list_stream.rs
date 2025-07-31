@@ -87,7 +87,7 @@ mod tests {
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
 
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config);
+        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
 
         let request = Request::new(MasternodeListRequest::default());
 

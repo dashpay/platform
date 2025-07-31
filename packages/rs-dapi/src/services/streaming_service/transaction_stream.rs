@@ -211,7 +211,7 @@ mod tests {
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
 
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config);
+        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
 
         let bloom_filter = dapi_grpc::core::v0::BloomFilter {
             v_data: vec![0xFF, 0x00, 0xFF],
@@ -243,7 +243,7 @@ mod tests {
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
 
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config);
+        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
 
         let request = Request::new(TransactionsWithProofsRequest {
             bloom_filter: None, // Missing bloom filter

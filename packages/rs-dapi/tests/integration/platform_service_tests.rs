@@ -2,7 +2,7 @@
  * Platform service integration tests
  *
  * These tests validate the platform service gRPC endpoints using mock clients.
- * Each test uses the shared setup infrastructure for consistent test execution.
+ * Each test uses the shared TestEnvironment for consistent test execution.
  */
 
 use super::setup;
@@ -15,7 +15,7 @@ use tracing::info;
 /// Test the basic getStatus endpoint functionality
 #[tokio::test]
 async fn test_get_status_endpoint() {
-    let server = setup::setup().await;
+    let env = setup::TestEnvironment::new().await;
 
     // Create the request
     let request = tonic::Request::new(GetStatusRequest {
@@ -25,7 +25,7 @@ async fn test_get_status_endpoint() {
     });
 
     // Call the getStatus endpoint
-    let response = server.client.clone().get_status(request).await;
+    let response = env.client.clone().get_status(request).await;
     assert!(response.is_ok(), "getStatus should succeed");
 
     let status_response = response.unwrap().into_inner();
@@ -49,13 +49,13 @@ async fn test_get_status_endpoint() {
         }
     }
 
-    // Server will be automatically cleaned up when `server` is dropped
+    // TestEnvironment will be automatically cleaned up when `env` is dropped
 }
 
 /// Test that mock clients provide the expected test data
 #[tokio::test]
 async fn test_mock_data_injection() {
-    let server = setup::setup().await;
+    let env = setup::TestEnvironment::new().await;
 
     let request = tonic::Request::new(GetStatusRequest {
         version: Some(get_status_request::Version::V0(
@@ -63,7 +63,7 @@ async fn test_mock_data_injection() {
         )),
     });
 
-    let response = server.client.clone().get_status(request).await.unwrap();
+    let response = env.client.clone().get_status(request).await.unwrap();
     let status_response = response.into_inner();
 
     // Verify we're getting the expected mock data
@@ -114,16 +114,16 @@ async fn test_mock_data_injection() {
     }
 
     info!("✓ Mock clients are providing expected test data");
-    // Server will be automatically cleaned up when `server` is dropped
+    // TestEnvironment will be automatically cleaned up when `env` is dropped
 }
 
 /// Test server lifecycle management
 #[tokio::test]
 async fn test_server_lifecycle() {
-    let server = setup::setup().await;
+    let env = setup::TestEnvironment::new().await;
 
     // Server should be ready immediately after setup
-    let addr = server.addr;
+    let addr = env.addr;
     info!("✓ Server started successfully on {}", addr);
 
     // Server should be responsive
@@ -133,17 +133,17 @@ async fn test_server_lifecycle() {
         )),
     });
 
-    let response = server.client.clone().get_status(request).await;
+    let response = env.client.clone().get_status(request).await;
     assert!(response.is_ok(), "Server should be responsive");
 
     info!("✓ Server is responsive and will be cleaned up automatically");
-    // Server will be automatically cleaned up when `server` is dropped
+    // TestEnvironment will be automatically cleaned up when `env` is dropped
 }
 
 /// Test broadcastStateTransition with valid state transition
 #[tokio::test]
 async fn test_broadcast_state_transition_success() {
-    let server = setup::setup().await;
+    let env = setup::TestEnvironment::new().await;
 
     // Create a mock state transition (just some bytes for testing)
     let mock_state_transition = vec![1, 2, 3, 4, 5, 6, 7, 8];
@@ -152,34 +152,26 @@ async fn test_broadcast_state_transition_success() {
         state_transition: mock_state_transition,
     });
 
-    let response = server
-        .client
-        .clone()
-        .broadcast_state_transition(request)
-        .await;
+    let response = env.client.clone().broadcast_state_transition(request).await;
     assert!(
         response.is_ok(),
         "broadcastStateTransition should succeed with valid data"
     );
 
     info!("✓ broadcastStateTransition endpoint working correctly");
-    // Server will be automatically cleaned up when `server` is dropped
+    // TestEnvironment will be automatically cleaned up when `env` is dropped
 }
 
 /// Test broadcastStateTransition with empty state transition
 #[tokio::test]
 async fn test_broadcast_state_transition_empty() {
-    let server = setup::setup().await;
+    let env = setup::TestEnvironment::new().await;
 
     let request = tonic::Request::new(BroadcastStateTransitionRequest {
         state_transition: vec![], // Empty state transition
     });
 
-    let response = server
-        .client
-        .clone()
-        .broadcast_state_transition(request)
-        .await;
+    let response = env.client.clone().broadcast_state_transition(request).await;
     assert!(
         response.is_err(),
         "broadcastStateTransition should fail with empty state transition"
@@ -193,5 +185,5 @@ async fn test_broadcast_state_transition_empty() {
     }
 
     info!("✓ broadcastStateTransition correctly rejects empty state transitions");
-    // Server will be automatically cleaned up when `server` is dropped
+    // TestEnvironment will be automatically cleaned up when `env` is dropped
 }

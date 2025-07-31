@@ -20,7 +20,7 @@ pub(crate) use subscriber_manager::{
     FilterType, StreamingMessage, SubscriberManager, SubscriptionType,
 };
 pub(crate) use transaction_filter::TransactionFilter;
-pub(crate) use zmq_listener::{ZmqEvent, ZmqListener};
+pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
 
 /// Cache expiration time for streaming responses
 const CACHE_EXPIRATION_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
@@ -31,7 +31,7 @@ pub struct StreamingServiceImpl {
     pub drive_client: Arc<dyn DriveClientTrait>,
     pub tenderdash_client: Arc<dyn TenderdashClientTrait>,
     pub config: Arc<Config>,
-    pub zmq_listener: Arc<ZmqListener>,
+    pub zmq_listener: Arc<dyn ZmqListenerTrait>,
     pub subscriber_manager: Arc<SubscriberManager>,
     pub cache: Arc<RwLock<HashMap<String, (Vec<u8>, Instant)>>>,
 }
@@ -41,32 +41,74 @@ impl StreamingServiceImpl {
         drive_client: Arc<dyn DriveClientTrait>,
         tenderdash_client: Arc<dyn TenderdashClientTrait>,
         config: Arc<Config>,
-    ) -> Self {
-        let zmq_listener = Arc::new(ZmqListener::new(&config.dapi.core.zmq_url));
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let zmq_listener: Arc<dyn ZmqListenerTrait> =
+            Arc::new(ZmqListener::new(&config.dapi.core.zmq_url));
+
+        Self::new_with_zmq_listener(drive_client, tenderdash_client, config, zmq_listener)
+    }
+
+    /// Create a new streaming service with a custom ZMQ listener (useful for testing)
+    pub fn new_with_zmq_listener(
+        drive_client: Arc<dyn DriveClientTrait>,
+        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        config: Arc<Config>,
+        zmq_listener: Arc<dyn ZmqListenerTrait>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let subscriber_manager = Arc::new(SubscriberManager::new());
 
-        Self {
+        let service = Self {
             drive_client,
             tenderdash_client,
             config,
             zmq_listener,
             subscriber_manager,
             cache: Arc::new(RwLock::new(HashMap::new())),
-        }
+        };
+        service.start_internal();
+
+        Ok(service)
     }
 
-    /// Start the streaming service background tasks
-    pub async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// Create a new streaming service with a mock ZMQ listener for testing
+    #[cfg(test)]
+    pub async fn new_with_mock_zmq(
+        drive_client: Arc<dyn DriveClientTrait>,
+        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        config: Arc<Config>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        use crate::clients::MockZmqListener;
+
+        let zmq_listener: Arc<dyn ZmqListenerTrait> = Arc::new(MockZmqListener::new());
+
+        let service =
+            Self::new_with_zmq_listener(drive_client, tenderdash_client, config, zmq_listener)?;
+
+        // Start the streaming service background tasks automatically
+        service.start_internal();
+
+        Ok(service)
+    }
+
+    /// Start the streaming service background tasks (now private)
+    fn start_internal(&self) {
         // Start ZMQ listener
-        let zmq_events = self.zmq_listener.start().await?;
+        let zmq_listener = self.zmq_listener.clone();
 
         // Start event processing task
         let subscriber_manager = self.subscriber_manager.clone();
         tokio::spawn(async move {
-            Self::process_zmq_events(zmq_events, subscriber_manager).await;
-        });
+            let zmq_events = match zmq_listener.start().await {
+                Ok(zmq) => zmq,
+                Err(e) => {
+                    tracing::error!("ZMQ listener error: {}", e);
+                    panic!("Failed to start ZMQ listener: {}", e);
+                }
+            };
 
-        Ok(())
+            Self::process_zmq_events(zmq_events, subscriber_manager).await;
+            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+        });
     }
 
     /// Process ZMQ events and forward to matching subscribers

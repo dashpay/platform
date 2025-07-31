@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::ParseIntError};
+
+use crate::{DAPIResult, DapiError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -24,6 +26,19 @@ pub struct ServerConfig {
     pub health_check_port: u16,
     /// IP address to bind all servers to
     pub bind_address: String,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            grpc_api_port: 3005,
+            grpc_streams_port: 3006,
+            json_rpc_port: 3004,
+            rest_gateway_port: 8080,
+            health_check_port: 9090,
+            bind_address: "127.0.0.1".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,14 +78,7 @@ pub struct CoreConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            server: ServerConfig {
-                grpc_api_port: 3005,
-                grpc_streams_port: 3006,
-                json_rpc_port: 3004,
-                rest_gateway_port: 8080,
-                health_check_port: 9090,
-                bind_address: "127.0.0.1".to_string(),
-            },
+            server: ServerConfig::default(),
             dapi: DapiConfig {
                 enable_rest: false,
                 drive: DriveConfig {
@@ -90,24 +98,34 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
+    pub fn load() -> DAPIResult<Self> {
         let mut config = Self::default();
 
         // Override with environment variables
         if let Ok(port) = std::env::var("DAPI_GRPC_SERVER_PORT") {
-            config.server.grpc_api_port = port.parse()?;
+            config.server.grpc_api_port = port
+                .parse()
+                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_GRPC_STREAMS_PORT") {
-            config.server.grpc_streams_port = port.parse()?;
+            config.server.grpc_streams_port = port
+                .parse()
+                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_JSON_RPC_PORT") {
-            config.server.json_rpc_port = port.parse()?;
+            config.server.json_rpc_port = port
+                .parse()
+                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_REST_GATEWAY_PORT") {
-            config.server.rest_gateway_port = port.parse()?;
+            config.server.rest_gateway_port = port
+                .parse()
+                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_HEALTH_CHECK_PORT") {
-            config.server.health_check_port = port.parse()?;
+            config.server.health_check_port = port
+                .parse()
+                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(addr) = std::env::var("DAPI_BIND_ADDRESS") {
             config.server.bind_address = addr;

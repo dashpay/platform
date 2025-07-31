@@ -1,4 +1,5 @@
-use anyhow::Result;
+use crate::error::{DAPIResult, DapiError};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
@@ -51,6 +52,16 @@ pub enum ZmqEvent {
     HashBlock { hash: Vec<u8> },
 }
 
+/// Trait for ZMQ listeners that can start streaming events asynchronously
+#[async_trait]
+pub trait ZmqListenerTrait: Send + Sync {
+    /// Start the ZMQ listener and return a receiver for events
+    async fn start(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>>;
+
+    /// Check if the ZMQ listener is connected
+    fn is_connected(&self) -> bool;
+}
+
 /// ZMQ listener that connects to Dash Core and streams events
 pub struct ZmqListener {
     zmq_uri: String,
@@ -70,9 +81,12 @@ impl ZmqListener {
             _event_receiver: event_receiver,
         }
     }
+}
 
+#[async_trait]
+impl ZmqListenerTrait for ZmqListener {
     /// Start the ZMQ listener and return a receiver for events
-    pub async fn start(&self) -> Result<broadcast::Receiver<ZmqEvent>> {
+    async fn start(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
         let receiver = self.event_sender.subscribe();
 
         // Start the ZMQ listener in a background thread
@@ -92,12 +106,20 @@ impl ZmqListener {
         Ok(receiver)
     }
 
+    /// Check if the ZMQ listener is connected (placeholder)
+    fn is_connected(&self) -> bool {
+        // In a real implementation, this would check the socket state
+        true
+    }
+}
+
+impl ZmqListener {
     /// ZMQ listener thread that runs in a blocking context
     fn zmq_listener_thread(
         zmq_uri: String,
         topics: ZmqTopics,
         sender: broadcast::Sender<ZmqEvent>,
-    ) -> Result<()> {
+    ) -> DAPIResult<()> {
         info!("Starting ZMQ listener on {}", zmq_uri);
 
         let context = Context::new();
@@ -139,7 +161,7 @@ impl ZmqListener {
     }
 
     /// Receive and parse a ZMQ message
-    fn receive_zmq_message(socket: &Socket, topics: &ZmqTopics) -> Result<Option<ZmqEvent>> {
+    fn receive_zmq_message(socket: &Socket, topics: &ZmqTopics) -> DAPIResult<Option<ZmqEvent>> {
         // Receive multipart message (topic + data)
         let parts = socket.recv_multipart(zmq::DONTWAIT)?;
 

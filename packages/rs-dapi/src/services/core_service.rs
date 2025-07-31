@@ -32,13 +32,6 @@ impl CoreServiceImpl {
             config,
         }
     }
-
-    /// Start the streaming service
-    pub async fn start_streaming(&self) -> Result<(), dapi_grpc::tonic::Status> {
-        self.streaming_service.start().await.map_err(|e| {
-            dapi_grpc::tonic::Status::internal(format!("Failed to start streaming service: {}", e))
-        })
-    }
 }
 
 #[dapi_grpc::tonic::async_trait]
@@ -152,7 +145,7 @@ mod tests {
     use super::*;
     use crate::{
         clients::mock::{MockDriveClient, MockTenderdashClient},
-        services::streaming_service,
+        services::streaming_service::StreamingServiceImpl,
     };
 
     #[tokio::test]
@@ -160,11 +153,14 @@ mod tests {
         let config = Arc::new(Config::default());
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
-        let streaming_service = Arc::new(StreamingServiceImpl::new(
-            drive_client.clone(),
-            tenderdash_client.clone(),
-            config.clone(),
-        ));
+        let streaming_service = Arc::new(
+            StreamingServiceImpl::new(
+                drive_client.clone(),
+                tenderdash_client.clone(),
+                config.clone(),
+            )
+            .unwrap(),
+        );
         let service = CoreServiceImpl::new(streaming_service, config);
         assert!(!service.config.dapi.core.zmq_url.is_empty());
     }
@@ -174,11 +170,14 @@ mod tests {
         let config = Arc::new(Config::default());
         let drive_client = Arc::new(MockDriveClient::new());
         let tenderdash_client = Arc::new(MockTenderdashClient::new());
-        let streaming_service = Arc::new(StreamingServiceImpl::new(
-            drive_client.clone(),
-            tenderdash_client.clone(),
-            config.clone(),
-        ));
+        let streaming_service = Arc::new(
+            StreamingServiceImpl::new(
+                drive_client.clone(),
+                tenderdash_client.clone(),
+                config.clone(),
+            )
+            .unwrap(),
+        );
         let service = CoreServiceImpl::new(streaming_service, config);
 
         // Test that streaming service is properly initialized

@@ -1,11 +1,12 @@
 use anyhow::Result;
+use rs_dapi::DAPIResult;
 use tracing::{error, info};
 
 use rs_dapi::config::Config;
 use rs_dapi::server::DapiServer;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> DAPIResult<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
