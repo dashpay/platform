@@ -256,7 +256,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     });
 
     // Skip this test - proof support not yet implemented in WASM SDK for getIdentityBalance
-    test.skip('should execute getIdentityBalance query with proof info', async () => {
+    test('should execute getIdentityBalance query with proof info', async () => {
       const { result, proofEnabled } = await executeQueryWithProof(
         wasmSdkPage, 
         parameterInjector, 
