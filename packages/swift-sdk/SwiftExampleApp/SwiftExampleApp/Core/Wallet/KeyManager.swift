@@ -34,8 +34,10 @@ public class KeyManager {
     
     // Decrypt seed with password
     public func decryptSeed(_ encryptedData: Data, password: String = "") -> Data? {
+        print("KeyManager.decryptSeed called with encryptedData length: \(encryptedData.count)")
         // For now, return the encrypted data as-is since we don't have access to the PIN
         // In a real implementation, this would decrypt using the provided password
+        // Since we're storing the actual seed in encryptedSeed for testing, just return it
         return encryptedData
     }
     

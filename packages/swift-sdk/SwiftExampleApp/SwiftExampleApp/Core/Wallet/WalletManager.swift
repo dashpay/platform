@@ -75,6 +75,9 @@ public class WalletManager: ObservableObject {
         let encryptedSeed = try storage.storeSeed(seed, pin: pin)
         wallet.encryptedSeed = encryptedSeed
         
+        // Insert wallet into context first
+        modelContainer.mainContext.insert(wallet)
+        
         // Create default account
         let account = wallet.createAccount(at: 0)
         
@@ -96,7 +99,6 @@ public class WalletManager: ObservableObject {
         try await generateAddresses(for: account, count: 10, type: .internal)
         
         // Save to database
-        modelContainer.mainContext.insert(wallet)
         try modelContainer.mainContext.save()
         
         await loadWallets()
@@ -211,9 +213,12 @@ public class WalletManager: ObservableObject {
     // MARK: - Address Management
     
     public func generateAddresses(for account: HDAccount, count: Int, type: AddressType) async throws {
+        print("WalletManager.generateAddresses called for type: \(type), count: \(count)")
+        
         guard let wallet = account.wallet,
               !wallet.isWatchOnly,
               let seed = keyManager.decryptSeed(wallet.encryptedSeed ?? Data()) else {
+            print("generateAddresses failed: wallet=\(account.wallet != nil), isWatchOnly=\(account.wallet?.isWatchOnly ?? false)")
             throw WalletError.seedNotAvailable
         }
         
@@ -276,6 +281,8 @@ public class WalletManager: ObservableObject {
                 network: wallet.dashNetwork
             ) {
                 
+                print("Creating HDAddress: index=\(index), address=\(address), type=\(type)")
+                
                 let hdAddress = HDAddress(
                     address: address,
                     index: index,
@@ -283,6 +290,11 @@ public class WalletManager: ObservableObject {
                     addressType: type,
                     account: account
                 )
+                
+                print("HDAddress created with id=\(hdAddress.id), all properties set")
+                
+                // Insert address into context
+                modelContainer.mainContext.insert(hdAddress)
                 
                 switch type {
                 case .external:
