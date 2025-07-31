@@ -65,7 +65,7 @@ url = "2.5"
 # ZMQ for real-time blockchain events
 zeromq = { version = "0.4.1", default-features = false, features = [
     "tokio-runtime",
-    "all-transport",
+    "tcp-transport",
 ] }
 
 

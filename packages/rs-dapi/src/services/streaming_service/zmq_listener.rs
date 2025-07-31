@@ -134,7 +134,7 @@ impl ZmqListener {
         socket_store: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
         connected: Arc<AtomicBool>,
     ) -> DAPIResult<()> {
-        info!("Starting ZMQ listener on {}", zmq_uri);
+        info!("Connecting to ZMQ on {}", zmq_uri);
 
         let socket_arc = socket_store.clone();
         let mut socket = socket_arc.lock().await;
