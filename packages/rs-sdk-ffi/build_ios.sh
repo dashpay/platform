@@ -180,6 +180,7 @@ EOF
         -e '/typedef struct CoreSDKHandle {/,/} CoreSDKHandle;/d' \
         -e 's/None = 0,/NoValidation = 0,/g' \
         -e 's/Testnet = 1,/FFITestnet = 1,/g' \
+        -e 's/Regtest = 2,/FFIRegtest = 2,/g' \
         -e 's/Devnet = 3,/FFIDevnet = 3,/g' \
         "$SPV_HEADER_PATH" >> "$MERGED_HEADER"
     
