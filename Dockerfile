@@ -373,6 +373,7 @@ COPY --parents \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
+    packages/rs-dapi \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
@@ -768,3 +769,140 @@ RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
 USER node
+
+#
+# STAGE: BUILD RS-DAPI
+#
+FROM deps AS build-rs-dapi
+
+SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+
+WORKDIR /platform
+
+COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+    mv .cargo/config-release.toml .cargo/config.toml; \
+    fi && \
+    cargo chef cook \
+    --recipe-path recipe.json \
+    --profile "$CARGO_BUILD_PROFILE" \
+    --package rs-dapi \
+    --locked && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/dapi-grpc \
+    packages/rs-dapi-grpc-macros \
+    packages/rs-dpp \
+    packages/rs-drive \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-drive-abci \
+    packages/rs-dapi \
+    packages/dashpay-contract \
+    packages/wallet-utils-contract \
+    packages/token-history-contract \
+    packages/keyword-search-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/strategy-tests \
+    # These packages are part of workspace and must be here otherwise it builds from scratch
+    packages/simple-signer \
+    packages/rs-json-schema-compatibility-validator \
+    packages/rs-drive-proof-verifier \
+    packages/rs-context-provider \
+    packages/rs-sdk-trusted-context-provider \
+    packages/wasm-dpp \
+    packages/wasm-drive-verify \
+    packages/rs-dapi-client \
+    packages/rs-sdk \
+    packages/check-features \
+    packages/dash-platform-balance-checker \
+    /platform/
+
+RUN mkdir /artifacts
+
+# Build rs-dapi
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+    mv .cargo/config-release.toml .cargo/config.toml; \
+    export OUT_DIRECTORY=release; \
+    else \
+    export OUT_DIRECTORY=debug; \
+    fi && \
+    # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+    echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
+    cargo build \
+    --profile "${CARGO_BUILD_PROFILE}" \
+    --package rs-dapi \
+    --locked && \
+    cp target/${OUT_DIRECTORY}/rs-dapi /artifacts/ && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    # Remove /platform to reduce layer size
+    rm -rf /platform
+
+#
+# STAGE: RS-DAPI RUNTIME
+#
+FROM alpine:${ALPINE_VERSION} AS rs-dapi
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="Dash Platform API (DAPI) - Rust Implementation"
+
+RUN apk add --no-cache libgcc libstdc++
+
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+
+COPY --from=build-rs-dapi /artifacts/rs-dapi /usr/bin/rs-dapi
+
+# Create example .env file
+RUN mkdir -p /app
+COPY packages/rs-dapi/.env.example /app/.env
+
+# Double-check that we don't have missing deps
+RUN ldd /usr/bin/rs-dapi
+
+#
+# Create new non-root user
+#
+ARG USERNAME=dapi
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+RUN addgroup -g $USER_GID $USERNAME && \
+    adduser -D -u $USER_UID -G $USERNAME -h /app $USERNAME && \
+    chown -R $USER_UID:$USER_GID /app
+
+USER $USERNAME
+
+WORKDIR /app
+ENTRYPOINT ["/usr/bin/rs-dapi"]
+
+# Default gRPC port
+EXPOSE 3010
+# Optional HTTP/REST port (if implemented)
+EXPOSE 3000

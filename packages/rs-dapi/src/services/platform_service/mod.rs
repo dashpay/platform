@@ -390,184 +390,280 @@ impl Platform for PlatformServiceImpl {
 
     async fn get_contested_resources(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetContestedResourcesRequest>,
+        request: Request<dapi_grpc::platform::v0::GetContestedResourcesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourcesResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_contested_resources not implemented",
-        ))
+        match self
+            .drive_client
+            .get_contested_resources(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_prefunded_specialized_balance(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceRequest>,
+        request: Request<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceResponse>, Status>
     {
-        Err(Status::unimplemented(
-            "get_prefunded_specialized_balance not implemented",
-        ))
+        match self
+            .drive_client
+            .get_prefunded_specialized_balance(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_contested_resource_vote_state(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetContestedResourceVoteStateRequest>,
+        request: Request<dapi_grpc::platform::v0::GetContestedResourceVoteStateRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourceVoteStateResponse>, Status>
     {
-        Err(Status::unimplemented(
-            "get_contested_resource_vote_state not implemented",
-        ))
+        match self
+            .drive_client
+            .get_contested_resource_vote_state(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_contested_resource_voters_for_identity(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityRequest>,
+        request: Request<dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityRequest>,
     ) -> Result<
         Response<dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityResponse>,
         Status,
     > {
-        Err(Status::unimplemented(
-            "get_contested_resource_voters_for_identity not implemented",
-        ))
+        match self
+            .drive_client
+            .get_contested_resource_voters_for_identity(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_contested_resource_identity_votes(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesRequest>,
+        request: Request<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesResponse>, Status>
     {
-        Err(Status::unimplemented(
-            "get_contested_resource_identity_votes not implemented",
-        ))
+        match self
+            .drive_client
+            .get_contested_resource_identity_votes(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_vote_polls_by_end_date(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetVotePollsByEndDateRequest>,
+        request: Request<dapi_grpc::platform::v0::GetVotePollsByEndDateRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetVotePollsByEndDateResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_vote_polls_by_end_date not implemented",
-        ))
+        match self
+            .drive_client
+            .get_vote_polls_by_end_date(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_identity_token_balances(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetIdentityTokenBalancesRequest>,
+        request: Request<dapi_grpc::platform::v0::GetIdentityTokenBalancesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityTokenBalancesResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_identity_token_balances not implemented",
-        ))
+        match self
+            .drive_client
+            .get_identity_token_balances(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_identities_token_balances(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesRequest>,
+        request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_identities_token_balances not implemented",
-        ))
+        match self
+            .drive_client
+            .get_identities_token_balances(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_identity_token_infos(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetIdentityTokenInfosRequest>,
+        request: Request<dapi_grpc::platform::v0::GetIdentityTokenInfosRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityTokenInfosResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_identity_token_infos not implemented",
-        ))
+        match self
+            .drive_client
+            .get_identity_token_infos(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_identities_token_infos(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenInfosRequest>,
+        request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenInfosRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesTokenInfosResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_identities_token_infos not implemented",
-        ))
+        match self
+            .drive_client
+            .get_identities_token_infos(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_token_statuses(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetTokenStatusesRequest>,
+        request: Request<dapi_grpc::platform::v0::GetTokenStatusesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenStatusesResponse>, Status> {
-        Err(Status::unimplemented("get_token_statuses not implemented"))
+        match self
+            .drive_client
+            .get_token_statuses(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_token_direct_purchase_prices(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesRequest>,
+        request: Request<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesResponse>, Status>
     {
-        Err(Status::unimplemented(
-            "get_token_direct_purchase_prices not implemented",
-        ))
+        match self
+            .drive_client
+            .get_token_direct_purchase_prices(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_token_contract_info(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetTokenContractInfoRequest>,
+        request: Request<dapi_grpc::platform::v0::GetTokenContractInfoRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenContractInfoResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_token_contract_info not implemented",
-        ))
+        match self
+            .drive_client
+            .get_token_contract_info(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_token_pre_programmed_distributions(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsRequest>,
+        request: Request<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsResponse>, Status>
     {
-        Err(Status::unimplemented(
-            "get_token_pre_programmed_distributions not implemented",
-        ))
+        match self
+            .drive_client
+            .get_token_pre_programmed_distributions(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_token_perpetual_distribution_last_claim(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest>,
+        request: Request<dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest>,
     ) -> Result<
         Response<dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimResponse>,
         Status,
     > {
-        Err(Status::unimplemented(
-            "get_token_perpetual_distribution_last_claim not implemented",
-        ))
+        match self
+            .drive_client
+            .get_token_perpetual_distribution_last_claim(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_token_total_supply(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetTokenTotalSupplyRequest>,
+        request: Request<dapi_grpc::platform::v0::GetTokenTotalSupplyRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenTotalSupplyResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_token_total_supply not implemented",
-        ))
+        match self
+            .drive_client
+            .get_token_total_supply(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_group_info(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetGroupInfoRequest>,
+        request: Request<dapi_grpc::platform::v0::GetGroupInfoRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupInfoResponse>, Status> {
-        Err(Status::unimplemented("get_group_info not implemented"))
+        match self.drive_client.get_group_info(request.get_ref()).await {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_group_infos(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetGroupInfosRequest>,
+        request: Request<dapi_grpc::platform::v0::GetGroupInfosRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupInfosResponse>, Status> {
-        Err(Status::unimplemented("get_group_infos not implemented"))
+        match self.drive_client.get_group_infos(request.get_ref()).await {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_group_actions(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetGroupActionsRequest>,
+        request: Request<dapi_grpc::platform::v0::GetGroupActionsRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupActionsResponse>, Status> {
-        Err(Status::unimplemented("get_group_actions not implemented"))
+        match self.drive_client.get_group_actions(request.get_ref()).await {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 
     async fn get_group_action_signers(
         &self,
-        _request: Request<dapi_grpc::platform::v0::GetGroupActionSignersRequest>,
+        request: Request<dapi_grpc::platform::v0::GetGroupActionSignersRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupActionSignersResponse>, Status> {
-        Err(Status::unimplemented(
-            "get_group_action_signers not implemented",
-        ))
+        match self
+            .drive_client
+            .get_group_action_signers(request.get_ref())
+            .await
+        {
+            Ok(response) => Ok(Response::new(response)),
+            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
+        }
     }
 }

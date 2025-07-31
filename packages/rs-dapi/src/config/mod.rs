@@ -1,30 +1,55 @@
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, num::ParseIntError};
-use tracing::{debug, trace};
+use std::{net::SocketAddr, path::PathBuf};
+use tracing::{debug, trace, warn};
 
 use crate::{DAPIResult, DapiError};
 
+mod utils;
+use utils::{from_str_or_bool, from_str_or_number};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
     /// Server configuration for ports and network binding
+    #[serde(flatten)]
     pub server: ServerConfig,
     /// DAPI-specific configuration for blockchain integration
+    #[serde(flatten)]
     pub dapi: DapiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerConfig {
     /// Port for the main gRPC API server
+    #[serde(
+        rename = "dapi_grpc_server_port",
+        deserialize_with = "from_str_or_number"
+    )]
     pub grpc_api_port: u16,
     /// Port for gRPC streaming endpoints
+    #[serde(
+        rename = "dapi_grpc_streams_port",
+        deserialize_with = "from_str_or_number"
+    )]
     pub grpc_streams_port: u16,
     /// Port for JSON-RPC API server
+    #[serde(rename = "dapi_json_rpc_port", deserialize_with = "from_str_or_number")]
     pub json_rpc_port: u16,
     /// Port for REST gateway server
+    #[serde(
+        rename = "dapi_rest_gateway_port",
+        deserialize_with = "from_str_or_number"
+    )]
     pub rest_gateway_port: u16,
     /// Port for health check endpoints
+    #[serde(
+        rename = "dapi_health_check_port",
+        deserialize_with = "from_str_or_number"
+    )]
     pub health_check_port: u16,
     /// IP address to bind all servers to
+    #[serde(rename = "dapi_bind_address")]
     pub bind_address: String,
 }
 
@@ -41,139 +66,149 @@ impl Default for ServerConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DapiConfig {
-    /// Whether to enable REST API endpoints
-    pub enable_rest: bool,
-    /// Drive (storage layer) client configuration
-    pub drive: DriveConfig,
-    /// Tenderdash (consensus layer) client configuration
-    pub tenderdash: TenderdashConfig,
-    /// Dash Core configuration for blockchain data
-    pub core: CoreConfig,
-    /// Timeout for waiting for state transition results (in milliseconds)
-    pub state_transition_wait_timeout: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DriveConfig {
-    /// URI for connecting to the Drive service
-    pub uri: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TenderdashConfig {
-    /// URI for connecting to the Tenderdash consensus service (HTTP RPC)
-    pub uri: String,
-    /// WebSocket URI for real-time events from Tenderdash
-    pub websocket_uri: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CoreConfig {
-    /// ZMQ URI for receiving real-time blockchain events from Dash Core
-    pub zmq_url: String,
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            dapi: DapiConfig {
-                enable_rest: false,
-                drive: DriveConfig {
-                    uri: "http://127.0.0.1:6000".to_string(),
-                },
-                tenderdash: TenderdashConfig {
-                    uri: "http://127.0.0.1:26657".to_string(),
-                    websocket_uri: "ws://127.0.0.1:26657/websocket".to_string(),
-                },
-                core: CoreConfig {
-                    zmq_url: "tcp://127.0.0.1:29998".to_string(),
-                },
-                state_transition_wait_timeout: 30000, // 30 seconds default
-            },
+            dapi: DapiConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DapiConfig {
+    /// Whether to enable REST API endpoints
+    #[serde(rename = "dapi_enable_rest", deserialize_with = "from_str_or_bool")]
+    pub enable_rest: bool,
+    /// Drive (storage layer) client configuration
+    #[serde(flatten)]
+    pub drive: DriveConfig,
+    /// Tenderdash (consensus layer) client configuration
+    #[serde(flatten)]
+    pub tenderdash: TenderdashConfig,
+    /// Dash Core configuration for blockchain data
+    #[serde(flatten)]
+    pub core: CoreConfig,
+    /// Timeout for waiting for state transition results (in milliseconds)
+    #[serde(
+        rename = "dapi_state_transition_wait_timeout",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub state_transition_wait_timeout: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DriveConfig {
+    /// URI for connecting to the Drive service
+    #[serde(rename = "dapi_drive_uri")]
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TenderdashConfig {
+    /// URI for connecting to the Tenderdash consensus service (HTTP RPC)
+    #[serde(rename = "dapi_tenderdash_uri")]
+    pub uri: String,
+    /// WebSocket URI for real-time events from Tenderdash
+    #[serde(rename = "dapi_tenderdash_websocket_uri")]
+    pub websocket_uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CoreConfig {
+    /// ZMQ URI for receiving real-time blockchain events from Dash Core
+    #[serde(rename = "dapi_core_zmq_url")]
+    pub zmq_url: String,
+}
+
+impl Default for DapiConfig {
+    fn default() -> Self {
+        Self {
+            enable_rest: false,
+            drive: DriveConfig::default(),
+            tenderdash: TenderdashConfig::default(),
+            core: CoreConfig::default(),
+            state_transition_wait_timeout: 30000, // 30 seconds default
+        }
+    }
+}
+
+impl Default for DriveConfig {
+    fn default() -> Self {
+        Self {
+            uri: "http://127.0.0.1:6000".to_string(),
+        }
+    }
+}
+
+impl Default for TenderdashConfig {
+    fn default() -> Self {
+        Self {
+            uri: "http://127.0.0.1:26657".to_string(),
+            websocket_uri: "ws://127.0.0.1:26657/websocket".to_string(),
+        }
+    }
+}
+
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self {
+            zmq_url: "tcp://127.0.0.1:29998".to_string(),
         }
     }
 }
 
 impl Config {
+    /// Load configuration from environment variables and .env file
     pub fn load() -> DAPIResult<Self> {
-        trace!("Loading DAPI configuration");
-        let mut config = Self::default();
-        debug!("Using default configuration: {:#?}", config);
+        Self::from_env()
+            .map_err(|e| DapiError::Configuration(format!("Failed to load configuration: {}", e)))
+    }
 
-        // Override with environment variables
-        if let Ok(port) = std::env::var("DAPI_GRPC_SERVER_PORT") {
-            trace!("Overriding GRPC server port from environment: {}", port);
-            config.server.grpc_api_port = port
-                .parse()
-                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
-        }
-        if let Ok(port) = std::env::var("DAPI_GRPC_STREAMS_PORT") {
-            trace!("Overriding GRPC streams port from environment: {}", port);
-            config.server.grpc_streams_port = port
-                .parse()
-                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
-        }
-        if let Ok(port) = std::env::var("DAPI_JSON_RPC_PORT") {
-            trace!("Overriding JSON RPC port from environment: {}", port);
-            config.server.json_rpc_port = port
-                .parse()
-                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
-        }
-        if let Ok(port) = std::env::var("DAPI_REST_GATEWAY_PORT") {
-            trace!("Overriding REST gateway port from environment: {}", port);
-            config.server.rest_gateway_port = port
-                .parse()
-                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
-        }
-        if let Ok(port) = std::env::var("DAPI_HEALTH_CHECK_PORT") {
-            trace!("Overriding health check port from environment: {}", port);
-            config.server.health_check_port = port
-                .parse()
-                .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
-        }
-        if let Ok(addr) = std::env::var("DAPI_BIND_ADDRESS") {
-            trace!("Overriding bind address from environment: {}", addr);
-            config.server.bind_address = addr;
-        }
-        if let Ok(enable_rest) = std::env::var("DAPI_ENABLE_REST") {
-            trace!("Overriding REST enabled from environment: {}", enable_rest);
-            config.dapi.enable_rest = enable_rest.parse().unwrap_or(false);
-        }
-        if let Ok(drive_uri) = std::env::var("DAPI_DRIVE_URI") {
-            trace!("Overriding Drive URI from environment: {}", drive_uri);
-            config.dapi.drive.uri = drive_uri;
-        }
-        if let Ok(tenderdash_uri) = std::env::var("DAPI_TENDERDASH_URI") {
-            trace!(
-                "Overriding Tenderdash URI from environment: {}",
-                tenderdash_uri
-            );
-            config.dapi.tenderdash.uri = tenderdash_uri;
-        }
-        if let Ok(websocket_uri) = std::env::var("DAPI_TENDERDASH_WEBSOCKET_URI") {
-            trace!(
-                "Overriding Tenderdash WebSocket URI from environment: {}",
-                websocket_uri
-            );
-            config.dapi.tenderdash.websocket_uri = websocket_uri;
-        }
-        if let Ok(zmq_url) = std::env::var("DAPI_CORE_ZMQ_URL") {
-            trace!("Overriding Core ZMQ URL from environment: {}", zmq_url);
-            config.dapi.core.zmq_url = zmq_url;
-        }
-        if let Ok(timeout) = std::env::var("DAPI_STATE_TRANSITION_WAIT_TIMEOUT") {
-            trace!(
-                "Overriding state transition wait timeout from environment: {}",
-                timeout
-            );
-            config.dapi.state_transition_wait_timeout = timeout.parse().unwrap_or(30000);
+    fn from_env() -> Result<Self, envy::Error> {
+        envy::from_env()
+    }
+
+    /// Load configuration from specific .env file and environment variables
+    pub fn load_from_dotenv(config_path: Option<PathBuf>) -> DAPIResult<Self> {
+        trace!("Loading configuration from .env file and environment");
+
+        // Load .env file first
+        if let Some(path) = config_path {
+            if let Err(e) = dotenvy::from_path(&path) {
+                return Err(DapiError::Configuration(format!(
+                    "Cannot load config file {:?}: {}",
+                    path, e
+                )));
+            }
+            debug!("Loaded .env file from: {:?}", path);
+        } else if let Err(e) = dotenvy::dotenv() {
+            if e.not_found() {
+                warn!("Cannot find any matching .env file");
+            } else {
+                return Err(DapiError::Configuration(format!(
+                    "Cannot load config file: {}",
+                    e
+                )));
+            }
         }
 
-        trace!("Configuration loading completed successfully");
-        Ok(config)
+        // Try loading from environment with envy
+        match Self::from_env() {
+            Ok(config) => {
+                debug!("Configuration loaded successfully from environment");
+                Ok(config)
+            }
+            Err(e) => {
+                // Fall back to manual loading if envy fails
+                debug!("Falling back to manual configuration loading: {}", e);
+                Self::load()
+            }
+        }
     }
 
     pub fn grpc_api_addr(&self) -> SocketAddr {

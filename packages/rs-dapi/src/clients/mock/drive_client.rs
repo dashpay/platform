@@ -199,6 +199,146 @@ impl DriveClientTrait for MockDriveClient {
         Ok(GetCurrentQuorumsInfoResponse::default())
     }
 
+    // Contested resource methods
+    async fn get_contested_resources(
+        &self,
+        _request: &GetContestedResourcesRequest,
+    ) -> Result<GetContestedResourcesResponse> {
+        Ok(GetContestedResourcesResponse::default())
+    }
+
+    async fn get_contested_resource_vote_state(
+        &self,
+        _request: &GetContestedResourceVoteStateRequest,
+    ) -> Result<GetContestedResourceVoteStateResponse> {
+        Ok(GetContestedResourceVoteStateResponse::default())
+    }
+
+    async fn get_contested_resource_voters_for_identity(
+        &self,
+        _request: &GetContestedResourceVotersForIdentityRequest,
+    ) -> Result<GetContestedResourceVotersForIdentityResponse> {
+        Ok(GetContestedResourceVotersForIdentityResponse::default())
+    }
+
+    async fn get_contested_resource_identity_votes(
+        &self,
+        _request: &GetContestedResourceIdentityVotesRequest,
+    ) -> Result<GetContestedResourceIdentityVotesResponse> {
+        Ok(GetContestedResourceIdentityVotesResponse::default())
+    }
+
+    async fn get_vote_polls_by_end_date(
+        &self,
+        _request: &GetVotePollsByEndDateRequest,
+    ) -> Result<GetVotePollsByEndDateResponse> {
+        Ok(GetVotePollsByEndDateResponse::default())
+    }
+
+    // Token methods
+    async fn get_identity_token_balances(
+        &self,
+        _request: &GetIdentityTokenBalancesRequest,
+    ) -> Result<GetIdentityTokenBalancesResponse> {
+        Ok(GetIdentityTokenBalancesResponse::default())
+    }
+
+    async fn get_identities_token_balances(
+        &self,
+        _request: &GetIdentitiesTokenBalancesRequest,
+    ) -> Result<GetIdentitiesTokenBalancesResponse> {
+        Ok(GetIdentitiesTokenBalancesResponse::default())
+    }
+
+    async fn get_identity_token_infos(
+        &self,
+        _request: &GetIdentityTokenInfosRequest,
+    ) -> Result<GetIdentityTokenInfosResponse> {
+        Ok(GetIdentityTokenInfosResponse::default())
+    }
+
+    async fn get_identities_token_infos(
+        &self,
+        _request: &GetIdentitiesTokenInfosRequest,
+    ) -> Result<GetIdentitiesTokenInfosResponse> {
+        Ok(GetIdentitiesTokenInfosResponse::default())
+    }
+
+    async fn get_token_statuses(
+        &self,
+        _request: &GetTokenStatusesRequest,
+    ) -> Result<GetTokenStatusesResponse> {
+        Ok(GetTokenStatusesResponse::default())
+    }
+
+    async fn get_token_direct_purchase_prices(
+        &self,
+        _request: &GetTokenDirectPurchasePricesRequest,
+    ) -> Result<GetTokenDirectPurchasePricesResponse> {
+        Ok(GetTokenDirectPurchasePricesResponse::default())
+    }
+
+    async fn get_token_contract_info(
+        &self,
+        _request: &GetTokenContractInfoRequest,
+    ) -> Result<GetTokenContractInfoResponse> {
+        Ok(GetTokenContractInfoResponse::default())
+    }
+
+    async fn get_token_pre_programmed_distributions(
+        &self,
+        _request: &GetTokenPreProgrammedDistributionsRequest,
+    ) -> Result<GetTokenPreProgrammedDistributionsResponse> {
+        Ok(GetTokenPreProgrammedDistributionsResponse::default())
+    }
+
+    async fn get_token_perpetual_distribution_last_claim(
+        &self,
+        _request: &GetTokenPerpetualDistributionLastClaimRequest,
+    ) -> Result<GetTokenPerpetualDistributionLastClaimResponse> {
+        Ok(GetTokenPerpetualDistributionLastClaimResponse::default())
+    }
+
+    async fn get_token_total_supply(
+        &self,
+        _request: &GetTokenTotalSupplyRequest,
+    ) -> Result<GetTokenTotalSupplyResponse> {
+        Ok(GetTokenTotalSupplyResponse::default())
+    }
+
+    async fn get_prefunded_specialized_balance(
+        &self,
+        _request: &GetPrefundedSpecializedBalanceRequest,
+    ) -> Result<GetPrefundedSpecializedBalanceResponse> {
+        Ok(GetPrefundedSpecializedBalanceResponse::default())
+    }
+
+    // Group methods
+    async fn get_group_info(&self, _request: &GetGroupInfoRequest) -> Result<GetGroupInfoResponse> {
+        Ok(GetGroupInfoResponse::default())
+    }
+
+    async fn get_group_infos(
+        &self,
+        _request: &GetGroupInfosRequest,
+    ) -> Result<GetGroupInfosResponse> {
+        Ok(GetGroupInfosResponse::default())
+    }
+
+    async fn get_group_actions(
+        &self,
+        _request: &GetGroupActionsRequest,
+    ) -> Result<GetGroupActionsResponse> {
+        Ok(GetGroupActionsResponse::default())
+    }
+
+    async fn get_group_action_signers(
+        &self,
+        _request: &GetGroupActionSignersRequest,
+    ) -> Result<GetGroupActionSignersResponse> {
+        Ok(GetGroupActionSignersResponse::default())
+    }
+
     // State transition methods
     async fn broadcast_state_transition(
         &self,

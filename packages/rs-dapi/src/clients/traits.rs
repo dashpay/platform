@@ -107,6 +107,89 @@ pub trait DriveClientTrait: Send + Sync + Debug {
         request: &GetCurrentQuorumsInfoRequest,
     ) -> Result<GetCurrentQuorumsInfoResponse>;
 
+    // Contested resource methods
+    async fn get_contested_resources(
+        &self,
+        request: &GetContestedResourcesRequest,
+    ) -> Result<GetContestedResourcesResponse>;
+    async fn get_contested_resource_vote_state(
+        &self,
+        request: &GetContestedResourceVoteStateRequest,
+    ) -> Result<GetContestedResourceVoteStateResponse>;
+    async fn get_contested_resource_voters_for_identity(
+        &self,
+        request: &GetContestedResourceVotersForIdentityRequest,
+    ) -> Result<GetContestedResourceVotersForIdentityResponse>;
+    async fn get_contested_resource_identity_votes(
+        &self,
+        request: &GetContestedResourceIdentityVotesRequest,
+    ) -> Result<GetContestedResourceIdentityVotesResponse>;
+    async fn get_vote_polls_by_end_date(
+        &self,
+        request: &GetVotePollsByEndDateRequest,
+    ) -> Result<GetVotePollsByEndDateResponse>;
+
+    // Token methods
+    async fn get_identity_token_balances(
+        &self,
+        request: &GetIdentityTokenBalancesRequest,
+    ) -> Result<GetIdentityTokenBalancesResponse>;
+    async fn get_identities_token_balances(
+        &self,
+        request: &GetIdentitiesTokenBalancesRequest,
+    ) -> Result<GetIdentitiesTokenBalancesResponse>;
+    async fn get_identity_token_infos(
+        &self,
+        request: &GetIdentityTokenInfosRequest,
+    ) -> Result<GetIdentityTokenInfosResponse>;
+    async fn get_identities_token_infos(
+        &self,
+        request: &GetIdentitiesTokenInfosRequest,
+    ) -> Result<GetIdentitiesTokenInfosResponse>;
+    async fn get_token_statuses(
+        &self,
+        request: &GetTokenStatusesRequest,
+    ) -> Result<GetTokenStatusesResponse>;
+    async fn get_token_direct_purchase_prices(
+        &self,
+        request: &GetTokenDirectPurchasePricesRequest,
+    ) -> Result<GetTokenDirectPurchasePricesResponse>;
+    async fn get_token_contract_info(
+        &self,
+        request: &GetTokenContractInfoRequest,
+    ) -> Result<GetTokenContractInfoResponse>;
+    async fn get_token_pre_programmed_distributions(
+        &self,
+        request: &GetTokenPreProgrammedDistributionsRequest,
+    ) -> Result<GetTokenPreProgrammedDistributionsResponse>;
+    async fn get_token_perpetual_distribution_last_claim(
+        &self,
+        request: &GetTokenPerpetualDistributionLastClaimRequest,
+    ) -> Result<GetTokenPerpetualDistributionLastClaimResponse>;
+    async fn get_token_total_supply(
+        &self,
+        request: &GetTokenTotalSupplyRequest,
+    ) -> Result<GetTokenTotalSupplyResponse>;
+    async fn get_prefunded_specialized_balance(
+        &self,
+        request: &GetPrefundedSpecializedBalanceRequest,
+    ) -> Result<GetPrefundedSpecializedBalanceResponse>;
+
+    // Group methods
+    async fn get_group_info(&self, request: &GetGroupInfoRequest) -> Result<GetGroupInfoResponse>;
+    async fn get_group_infos(
+        &self,
+        request: &GetGroupInfosRequest,
+    ) -> Result<GetGroupInfosResponse>;
+    async fn get_group_actions(
+        &self,
+        request: &GetGroupActionsRequest,
+    ) -> Result<GetGroupActionsResponse>;
+    async fn get_group_action_signers(
+        &self,
+        request: &GetGroupActionSignersRequest,
+    ) -> Result<GetGroupActionSignersResponse>;
+
     // State transition methods
     async fn broadcast_state_transition(
         &self,

@@ -1,57 +1,41 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::{
-    platform_client::PlatformClient,
-    BroadcastStateTransitionRequest,
-    BroadcastStateTransitionResponse,
-    GetConsensusParamsRequest,
-    GetConsensusParamsResponse,
-    GetCurrentQuorumsInfoRequest,
-    GetCurrentQuorumsInfoResponse,
-    GetDataContractHistoryRequest,
-    GetDataContractHistoryResponse,
-    GetDataContractRequest,
-    GetDataContractResponse,
-    GetDataContractsRequest,
-    GetDataContractsResponse,
-    GetDocumentsRequest,
-    GetDocumentsResponse,
-    GetEpochsInfoRequest,
-    GetEpochsInfoResponse,
-    GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse,
-    GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse,
-    GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse,
-    GetIdentityBalanceAndRevisionRequest,
-    GetIdentityBalanceAndRevisionResponse,
-    GetIdentityBalanceRequest,
-    GetIdentityBalanceResponse,
-    GetIdentityByNonUniquePublicKeyHashRequest,
-    GetIdentityByNonUniquePublicKeyHashResponse,
-    GetIdentityByPublicKeyHashRequest,
-    GetIdentityByPublicKeyHashResponse,
-    GetIdentityContractNonceRequest,
-    GetIdentityContractNonceResponse,
-    GetIdentityKeysRequest,
-    GetIdentityKeysResponse,
-    GetIdentityNonceRequest,
-    GetIdentityNonceResponse,
-    // Import all necessary request/response types
-    GetIdentityRequest,
-    GetIdentityResponse,
-    GetPathElementsRequest,
-    GetPathElementsResponse,
-    GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse,
-    GetStatusRequest,
-    GetTotalCreditsInPlatformRequest,
-    GetTotalCreditsInPlatformResponse,
-    WaitForStateTransitionResultRequest,
-    WaitForStateTransitionResultResponse,
+    platform_client::PlatformClient, BroadcastStateTransitionRequest,
+    BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
+    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse,
+    GetGroupActionSignersRequest, GetGroupActionSignersResponse, GetGroupActionsRequest,
+    GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest,
+    GetGroupInfosResponse, GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse,
+    GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetIdentitiesTokenBalancesRequest, GetIdentitiesTokenBalancesResponse,
+    GetIdentitiesTokenInfosRequest, GetIdentitiesTokenInfosResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
+    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
+    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
+    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetTokenContractInfoRequest,
+    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
+    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
+    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, trace};
@@ -124,9 +108,12 @@ impl DriveClient {
             Ok(client) => {
                 trace!("Successfully connected to Drive service");
                 client
-            },
+            }
             Err(e) => {
-                error!("Failed to connect to Drive service at {}: {}", self.base_url, e);
+                error!(
+                    "Failed to connect to Drive service at {}: {}",
+                    self.base_url, e
+                );
                 return Err(anyhow::anyhow!(
                     "Failed to connect to Drive service at {}: {}",
                     self.base_url,
@@ -442,6 +429,230 @@ impl DriveClientTrait for DriveClient {
         let mut client = self.get_client().await?;
         let response = client
             .get_current_quorums_info(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    // Contested resource methods
+    async fn get_contested_resources(
+        &self,
+        request: &GetContestedResourcesRequest,
+    ) -> Result<GetContestedResourcesResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_contested_resources(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_contested_resource_vote_state(
+        &self,
+        request: &GetContestedResourceVoteStateRequest,
+    ) -> Result<GetContestedResourceVoteStateResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_contested_resource_vote_state(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_contested_resource_voters_for_identity(
+        &self,
+        request: &GetContestedResourceVotersForIdentityRequest,
+    ) -> Result<GetContestedResourceVotersForIdentityResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_contested_resource_voters_for_identity(dapi_grpc::tonic::Request::new(
+                request.clone(),
+            ))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_contested_resource_identity_votes(
+        &self,
+        request: &GetContestedResourceIdentityVotesRequest,
+    ) -> Result<GetContestedResourceIdentityVotesResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_contested_resource_identity_votes(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_vote_polls_by_end_date(
+        &self,
+        request: &GetVotePollsByEndDateRequest,
+    ) -> Result<GetVotePollsByEndDateResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_vote_polls_by_end_date(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    // Token methods
+    async fn get_identity_token_balances(
+        &self,
+        request: &GetIdentityTokenBalancesRequest,
+    ) -> Result<GetIdentityTokenBalancesResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_identity_token_balances(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_identities_token_balances(
+        &self,
+        request: &GetIdentitiesTokenBalancesRequest,
+    ) -> Result<GetIdentitiesTokenBalancesResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_identities_token_balances(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_identity_token_infos(
+        &self,
+        request: &GetIdentityTokenInfosRequest,
+    ) -> Result<GetIdentityTokenInfosResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_identity_token_infos(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_identities_token_infos(
+        &self,
+        request: &GetIdentitiesTokenInfosRequest,
+    ) -> Result<GetIdentitiesTokenInfosResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_identities_token_infos(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_token_statuses(
+        &self,
+        request: &GetTokenStatusesRequest,
+    ) -> Result<GetTokenStatusesResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_token_statuses(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_token_direct_purchase_prices(
+        &self,
+        request: &GetTokenDirectPurchasePricesRequest,
+    ) -> Result<GetTokenDirectPurchasePricesResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_token_direct_purchase_prices(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_token_contract_info(
+        &self,
+        request: &GetTokenContractInfoRequest,
+    ) -> Result<GetTokenContractInfoResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_token_contract_info(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_token_pre_programmed_distributions(
+        &self,
+        request: &GetTokenPreProgrammedDistributionsRequest,
+    ) -> Result<GetTokenPreProgrammedDistributionsResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_token_pre_programmed_distributions(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_token_perpetual_distribution_last_claim(
+        &self,
+        request: &GetTokenPerpetualDistributionLastClaimRequest,
+    ) -> Result<GetTokenPerpetualDistributionLastClaimResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_token_perpetual_distribution_last_claim(dapi_grpc::tonic::Request::new(
+                request.clone(),
+            ))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_token_total_supply(
+        &self,
+        request: &GetTokenTotalSupplyRequest,
+    ) -> Result<GetTokenTotalSupplyResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_token_total_supply(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_prefunded_specialized_balance(
+        &self,
+        request: &GetPrefundedSpecializedBalanceRequest,
+    ) -> Result<GetPrefundedSpecializedBalanceResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_prefunded_specialized_balance(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    // Group methods
+    async fn get_group_info(&self, request: &GetGroupInfoRequest) -> Result<GetGroupInfoResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_group_info(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_group_infos(
+        &self,
+        request: &GetGroupInfosRequest,
+    ) -> Result<GetGroupInfosResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_group_infos(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_group_actions(
+        &self,
+        request: &GetGroupActionsRequest,
+    ) -> Result<GetGroupActionsResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_group_actions(dapi_grpc::tonic::Request::new(request.clone()))
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_group_action_signers(
+        &self,
+        request: &GetGroupActionSignersRequest,
+    ) -> Result<GetGroupActionSignersResponse> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_group_action_signers(dapi_grpc::tonic::Request::new(request.clone()))
             .await?;
         Ok(response.into_inner())
     }
