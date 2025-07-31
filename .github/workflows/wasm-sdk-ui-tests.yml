@@ -2,13 +2,14 @@ name: WASM SDK UI Automation Tests
 
 on:
   # Trigger after wasm-sdk-build workflow completes successfully
-  workflow_run:
-    workflows: ["Build WASM SDK"]
-    types:
-      - completed
-    branches:
-      - master
-      - 'v[0-9]+.[0-9]+-dev'
+  # TODO: Temporarily disabled - uncomment to re-enable automatic triggering
+  # workflow_run:
+  #   workflows: ["Build WASM SDK"]
+  #   types:
+  #     - completed
+  #   branches:
+  #     - master
+  #     - 'v[0-9]+.[0-9]+-dev'
   
   # Manual trigger for standalone testing
   workflow_dispatch:
