@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::Instant;
+use tracing::error;
 
 use crate::clients::traits::{DriveClientTrait, TenderdashClientTrait};
 use crate::config::Config;
@@ -101,7 +102,7 @@ impl StreamingServiceImpl {
             let zmq_events = match zmq_listener.start().await {
                 Ok(zmq) => zmq,
                 Err(e) => {
-                    tracing::error!("ZMQ listener error: {}", e);
+                    error!("ZMQ listener error: {}", e);
                     panic!("Failed to start ZMQ listener: {}", e);
                 }
             };

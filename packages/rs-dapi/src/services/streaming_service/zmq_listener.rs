@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use zeromq::prelude::*;
 
 /// ZMQ topics that we subscribe to from Dash Core
@@ -140,6 +140,9 @@ impl ZmqListener {
         let mut socket = socket_arc.lock().await;
 
         // Subscribe to all topics
+        trace!(
+            "Subscribing to ZMQ topics: rawtx, rawblock, rawtxlocksig, rawchainlocksig, hashblock"
+        );
         socket.subscribe(&topics.rawtx).await?;
         socket.subscribe(&topics.rawblock).await?;
         socket.subscribe(&topics.rawtxlocksig).await?;
@@ -156,14 +159,14 @@ impl ZmqListener {
         let connected_clone = connected.clone();
         tokio::spawn(async move {
             Self::zmq_monitor_task(monitor_socket, connected_clone).await;
-            tracing::info!("ZMQ monitor task terminated");
+            info!("ZMQ monitor task terminated");
         });
 
         let mut backoff = Duration::from_millis(100);
         loop {
             match Self::receive_zmq_message(socket_store.clone(), &topics).await {
                 Ok(Some(event)) => {
-                    debug!("Received ZMQ event: {:?}", event);
+                    trace!("Received ZMQ event: {:?}", event);
                     if let Err(e) = sender.send(event) {
                         warn!("Failed to send ZMQ event to subscribers: {}", e);
                     }
@@ -250,7 +253,7 @@ impl ZmqListener {
                     connected.store(false, Ordering::SeqCst);
                 }
                 _ => {
-                    debug!("ZMQ socket event: {:?}", event);
+                    trace!("ZMQ socket event: {:?}", event);
                 }
             }
         }

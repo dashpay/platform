@@ -75,7 +75,7 @@ impl DapiServer {
         })
     }
     pub async fn run(self) -> DAPIResult<()> {
-        tracing::info!("Starting DAPI server...");
+        info!("Starting DAPI server...");
 
         // Start WebSocket listener in background if available
         self.start_websocket_listener().await?;

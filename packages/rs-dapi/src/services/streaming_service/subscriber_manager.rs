@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 /// Unique identifier for a subscription
 pub type SubscriptionId = String;
@@ -113,6 +113,7 @@ impl SubscriberManager {
     /// Notify transaction subscribers with matching filters
     pub async fn notify_transaction_subscribers(&self, tx_data: &[u8]) {
         let subscriptions = self.subscriptions.read().await;
+        trace!("Notifying transaction subscribers: {} bytes", tx_data.len());
 
         for subscription in subscriptions.values() {
             if subscription.subscription_type != SubscriptionType::TransactionsWithProofs {

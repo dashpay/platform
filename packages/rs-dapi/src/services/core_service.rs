@@ -12,7 +12,7 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::info;
+use tracing::trace;
 
 use crate::clients::{DriveClientTrait, TenderdashClientTrait};
 use crate::config::Config;
@@ -47,7 +47,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<GetBlockRequest>,
     ) -> Result<Response<GetBlockResponse>, Status> {
-        info!("Received get_block request");
+        trace!("Received get_block request");
         Err(Status::unimplemented("get_block not yet implemented"))
     }
 
@@ -55,7 +55,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<GetTransactionRequest>,
     ) -> Result<Response<GetTransactionResponse>, Status> {
-        info!("Received get_transaction request");
+        trace!("Received get_transaction request");
         Err(Status::unimplemented("get_transaction not yet implemented"))
     }
 
@@ -63,7 +63,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<GetBestBlockHeightRequest>,
     ) -> Result<Response<GetBestBlockHeightResponse>, Status> {
-        info!("Received get_best_block_height request");
+        trace!("Received get_best_block_height request");
         Err(Status::unimplemented(
             "get_best_block_height not yet implemented",
         ))
@@ -73,7 +73,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<BroadcastTransactionRequest>,
     ) -> Result<Response<BroadcastTransactionResponse>, Status> {
-        info!("Received broadcast_transaction request");
+        trace!("Received broadcast_transaction request");
         Err(Status::unimplemented(
             "broadcast_transaction not yet implemented",
         ))
@@ -83,7 +83,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<GetBlockchainStatusRequest>,
     ) -> Result<Response<GetBlockchainStatusResponse>, Status> {
-        info!("Received get_blockchain_status request");
+        trace!("Received get_blockchain_status request");
         Err(Status::unimplemented(
             "get_blockchain_status not yet implemented",
         ))
@@ -93,7 +93,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<GetMasternodeStatusRequest>,
     ) -> Result<Response<GetMasternodeStatusResponse>, Status> {
-        info!("Received get_masternode_status request");
+        trace!("Received get_masternode_status request");
         Err(Status::unimplemented(
             "get_masternode_status not yet implemented",
         ))
@@ -103,7 +103,7 @@ impl Core for CoreServiceImpl {
         &self,
         _request: Request<GetEstimatedTransactionFeeRequest>,
     ) -> Result<Response<GetEstimatedTransactionFeeResponse>, Status> {
-        info!("Received get_estimated_transaction_fee request");
+        trace!("Received get_estimated_transaction_fee request");
         Err(Status::unimplemented(
             "get_estimated_transaction_fee not yet implemented",
         ))
@@ -113,7 +113,7 @@ impl Core for CoreServiceImpl {
         &self,
         request: Request<BlockHeadersWithChainLocksRequest>,
     ) -> Result<Response<<Self as Core>::subscribeToBlockHeadersWithChainLocksStream>, Status> {
-        info!("Received subscribe_to_block_headers_with_chain_locks request");
+        trace!("Received subscribe_to_block_headers_with_chain_locks request");
         self.streaming_service
             .subscribe_to_block_headers_with_chain_locks_impl(request)
             .await
@@ -123,7 +123,7 @@ impl Core for CoreServiceImpl {
         &self,
         request: Request<TransactionsWithProofsRequest>,
     ) -> Result<Response<Self::subscribeToTransactionsWithProofsStream>, Status> {
-        info!("Received subscribe_to_transactions_with_proofs request");
+        trace!("Received subscribe_to_transactions_with_proofs request");
         self.streaming_service
             .subscribe_to_transactions_with_proofs_impl(request)
             .await
@@ -133,7 +133,7 @@ impl Core for CoreServiceImpl {
         &self,
         request: Request<MasternodeListRequest>,
     ) -> Result<Response<Self::subscribeToMasternodeListStream>, Status> {
-        info!("Received subscribe_to_masternode_list request");
+        trace!("Received subscribe_to_masternode_list request");
         self.streaming_service
             .subscribe_to_masternode_list_impl(request)
             .await

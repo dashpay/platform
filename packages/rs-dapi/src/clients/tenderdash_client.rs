@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing::{error, info, trace};
 
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use super::traits::TenderdashClientTrait;
@@ -113,6 +114,7 @@ pub struct TxResult {
 
 impl TenderdashClient {
     pub fn new(uri: &str) -> Self {
+        info!("Creating Tenderdash client for: {}", uri);
         Self {
             client: Client::new(),
             base_url: uri.to_string(),
@@ -121,6 +123,7 @@ impl TenderdashClient {
     }
 
     pub fn with_websocket(uri: &str, ws_uri: &str) -> Self {
+        info!("Creating Tenderdash client for: {} with WebSocket: {}", uri, ws_uri);
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
 
         Self {
@@ -131,6 +134,7 @@ impl TenderdashClient {
     }
 
     pub async fn status(&self) -> Result<TenderdashStatusResponse> {
+        trace!("Making status request to Tenderdash at: {}", self.base_url);
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "status",
@@ -184,6 +188,7 @@ impl TenderdashClient {
 
     /// Broadcast a transaction to the Tenderdash network
     pub async fn broadcast_tx(&self, tx: String) -> Result<BroadcastTxResponse> {
+        trace!("Broadcasting transaction to Tenderdash: {} bytes", tx.len());
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "broadcast_tx_sync",
@@ -203,6 +208,7 @@ impl TenderdashClient {
             .await?;
 
         if let Some(error) = response.error {
+            error!("Tenderdash broadcast_tx RPC error: {}", error);
             return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
         }
 

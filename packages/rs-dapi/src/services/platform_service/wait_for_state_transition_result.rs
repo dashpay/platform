@@ -7,7 +7,7 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 impl PlatformServiceImpl {
     pub async fn wait_for_state_transition_result_impl(
@@ -46,14 +46,14 @@ impl PlatformServiceImpl {
         }
 
         // RACE-FREE IMPLEMENTATION: Subscribe BEFORE checking existing state
-        debug!(
+        trace!(
             "Subscribing to transaction events for hash: {}",
             hash_string
         );
         let mut event_receiver = self.tenderdash_client.subscribe_to_transactions();
 
         // Check if transaction already exists (after subscription is active)
-        debug!("Checking existing transaction for hash: {}", hash_string);
+        trace!("Checking existing transaction for hash: {}", hash_string);
         match self.tenderdash_client.tx(hash_string.clone()).await {
             Ok(existing_tx) => {
                 info!("Found existing transaction for hash: {}", hash_string);
@@ -71,7 +71,7 @@ impl PlatformServiceImpl {
         let timeout_duration =
             Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
 
-        debug!(
+        trace!(
             "Waiting for transaction event with timeout: {:?}",
             timeout_duration
         );
@@ -89,9 +89,10 @@ impl PlatformServiceImpl {
                             .build_response_from_event(transaction_event, v0.prove)
                             .await;
                     } else {
-                        debug!(
+                        trace!(
                             "Received non-matching transaction event: {} (waiting for: {})",
-                            transaction_event.hash, hash_string
+                            transaction_event.hash,
+                            hash_string
                         );
                         // Continue waiting for the right transaction
                         continue;

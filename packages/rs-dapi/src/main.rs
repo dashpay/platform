@@ -1,5 +1,5 @@
 use rs_dapi::DAPIResult;
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 use rs_dapi::config::Config;
 use rs_dapi::server::DapiServer;
@@ -12,19 +12,23 @@ async fn main() -> DAPIResult<()> {
 
     info!("Starting rs-dapi server...");
 
+    trace!("Loading configuration...");
     // Load configuration
     let config = Config::load()?;
-    info!("Configuration loaded: {:?}", config);
+    trace!("Configuration loaded successfully");
 
+    trace!("Creating DAPI server instance...");
     // Create and start the server
     let server = DapiServer::new(std::sync::Arc::new(config)).await?;
 
     info!("rs-dapi server starting on configured ports");
 
+    trace!("Starting server main loop...");
     if let Err(e) = server.run().await {
         error!("Server error: {}", e);
         return Err(e);
     }
 
+    info!("rs-dapi server shutdown complete");
     Ok(())
 }

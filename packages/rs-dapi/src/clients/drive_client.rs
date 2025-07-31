@@ -54,6 +54,7 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{error, info, trace};
 
 use super::traits::DriveClientTrait;
 
@@ -106,20 +107,26 @@ pub struct DriveTime {
 
 impl DriveClient {
     pub fn new(uri: &str) -> Self {
+        info!("Creating Drive client for: {}", uri);
         Self {
             base_url: uri.to_string(),
         }
     }
 
     pub async fn get_status(&self, request: &GetStatusRequest) -> Result<DriveStatusResponse> {
+        trace!("Connecting to Drive service at: {}", self.base_url);
         // Attempt to connect to Drive gRPC service
         let mut client = match dapi_grpc::platform::v0::platform_client::PlatformClient::connect(
             self.base_url.clone(),
         )
         .await
         {
-            Ok(client) => client,
+            Ok(client) => {
+                trace!("Successfully connected to Drive service");
+                client
+            },
             Err(e) => {
+                error!("Failed to connect to Drive service at {}: {}", self.base_url, e);
                 return Err(anyhow::anyhow!(
                     "Failed to connect to Drive service at {}: {}",
                     self.base_url,
@@ -128,9 +135,10 @@ impl DriveClient {
             }
         };
 
+        trace!("Making get_status gRPC call to Drive");
         // Make gRPC call to Drive
         let response = client
-            .get_status(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_status(dapi_grpc::tonic::Request::new(*request))
             .await?;
         let drive_response = response.into_inner();
 

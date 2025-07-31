@@ -1,6 +1,6 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, num::ParseIntError};
+use tracing::{debug, trace};
 
 use crate::{DAPIResult, DapiError};
 
@@ -99,56 +99,80 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> DAPIResult<Self> {
+        trace!("Loading DAPI configuration");
         let mut config = Self::default();
+        debug!("Using default configuration: {:#?}", config);
 
         // Override with environment variables
         if let Ok(port) = std::env::var("DAPI_GRPC_SERVER_PORT") {
+            trace!("Overriding GRPC server port from environment: {}", port);
             config.server.grpc_api_port = port
                 .parse()
                 .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_GRPC_STREAMS_PORT") {
+            trace!("Overriding GRPC streams port from environment: {}", port);
             config.server.grpc_streams_port = port
                 .parse()
                 .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_JSON_RPC_PORT") {
+            trace!("Overriding JSON RPC port from environment: {}", port);
             config.server.json_rpc_port = port
                 .parse()
                 .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_REST_GATEWAY_PORT") {
+            trace!("Overriding REST gateway port from environment: {}", port);
             config.server.rest_gateway_port = port
                 .parse()
                 .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(port) = std::env::var("DAPI_HEALTH_CHECK_PORT") {
+            trace!("Overriding health check port from environment: {}", port);
             config.server.health_check_port = port
                 .parse()
                 .map_err(|e: ParseIntError| DapiError::Configuration(e.to_string()))?;
         }
         if let Ok(addr) = std::env::var("DAPI_BIND_ADDRESS") {
+            trace!("Overriding bind address from environment: {}", addr);
             config.server.bind_address = addr;
         }
         if let Ok(enable_rest) = std::env::var("DAPI_ENABLE_REST") {
+            trace!("Overriding REST enabled from environment: {}", enable_rest);
             config.dapi.enable_rest = enable_rest.parse().unwrap_or(false);
         }
         if let Ok(drive_uri) = std::env::var("DAPI_DRIVE_URI") {
+            trace!("Overriding Drive URI from environment: {}", drive_uri);
             config.dapi.drive.uri = drive_uri;
         }
         if let Ok(tenderdash_uri) = std::env::var("DAPI_TENDERDASH_URI") {
+            trace!(
+                "Overriding Tenderdash URI from environment: {}",
+                tenderdash_uri
+            );
             config.dapi.tenderdash.uri = tenderdash_uri;
         }
         if let Ok(websocket_uri) = std::env::var("DAPI_TENDERDASH_WEBSOCKET_URI") {
+            trace!(
+                "Overriding Tenderdash WebSocket URI from environment: {}",
+                websocket_uri
+            );
             config.dapi.tenderdash.websocket_uri = websocket_uri;
         }
         if let Ok(zmq_url) = std::env::var("DAPI_CORE_ZMQ_URL") {
+            trace!("Overriding Core ZMQ URL from environment: {}", zmq_url);
             config.dapi.core.zmq_url = zmq_url;
         }
         if let Ok(timeout) = std::env::var("DAPI_STATE_TRANSITION_WAIT_TIMEOUT") {
+            trace!(
+                "Overriding state transition wait timeout from environment: {}",
+                timeout
+            );
             config.dapi.state_transition_wait_timeout = timeout.parse().unwrap_or(30000);
         }
 
+        trace!("Configuration loading completed successfully");
         Ok(config)
     }
 
