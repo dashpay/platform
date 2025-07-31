@@ -94,4 +94,16 @@ impl TenderdashClientTrait for MockTenderdashClient {
             tx: None,
         })
     }
+
+    fn subscribe_to_transactions(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<crate::clients::TransactionEvent> {
+        // Return a receiver that will never receive messages for testing
+        let (_, rx) = tokio::sync::broadcast::channel(1);
+        rx
+    }
+
+    fn is_websocket_connected(&self) -> bool {
+        true // Mock always connected
+    }
 }

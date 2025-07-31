@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     info!("Configuration loaded: {:?}", config);
 
     // Create and start the server
-    let server = DapiServer::new(config).await?;
+    let server = DapiServer::new(std::sync::Arc::new(config)).await?;
 
     info!("rs-dapi server starting on configured ports");
 

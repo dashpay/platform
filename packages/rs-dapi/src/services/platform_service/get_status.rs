@@ -20,34 +20,9 @@ impl PlatformServiceImpl {
         &self,
         _request: Request<GetStatusRequest>,
     ) -> Result<Response<GetStatusResponse>, Status> {
-        // Check cache first
-        let cache_key = "get_status".to_string();
-
-        if let Some((cached_response, cached_time)) = self.cache.get(&cache_key).await {
-            // If cache is still fresh (less than 10 seconds old), return it with updated local time
-            if cached_time.elapsed() < Duration::from_secs(10) {
-                let mut response = cached_response;
-                // Update local time to current time
-                if let Some(dapi_grpc::platform::v0::get_status_response::Version::V0(ref mut v0)) =
-                    response.version
-                {
-                    if let Some(ref mut time) = v0.time {
-                        time.local = chrono::Utc::now().timestamp() as u64;
-                    }
-                }
-                return Ok(Response::new(response));
-            }
-        }
-
         // Build fresh response
         match self.build_status_response().await {
-            Ok(response) => {
-                // Cache the response
-                let cache_entry = (response.clone(), Instant::now());
-                self.cache.insert(cache_key, cache_entry).await;
-
-                Ok(Response::new(response))
-            }
+            Ok(response) => Ok(Response::new(response)),
             Err(status) => Err(status),
         }
     }

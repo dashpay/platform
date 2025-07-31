@@ -1,66 +1,75 @@
-// Platform service implementation (protocol-agnostic)
+// Platform service modular implementation
+// This file contains the core PlatformServiceImpl struct and delegates to individual modules
 
-use crate::clients::traits::{DriveClientTrait, TenderdashClientTrait};
-use crate::config::Config;
-use dapi_grpc::platform::v0::{platform_server::Platform, GetStatusRequest, GetStatusResponse};
-use dapi_grpc::tonic::{Request, Response, Status};
-use moka::future::Cache;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::Instant;
-
-// Import complex method implementations
 mod broadcast_state_transition;
 mod get_status;
+mod wait_for_state_transition_result;
 
+use dapi_grpc::platform::v0::platform_server::Platform;
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetStatusRequest,
+    GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+};
+use dapi_grpc::tonic::{Request, Response, Status};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio::time::Instant;
+
+use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
+use crate::config::Config;
+
+/// Platform service implementation with modular method delegation
 #[derive(Clone)]
 pub struct PlatformServiceImpl {
-    pub(crate) drive_client: Arc<dyn DriveClientTrait>,
-    pub(crate) tenderdash_client: Arc<dyn TenderdashClientTrait>,
-    pub(crate) cache: Arc<Cache<String, (GetStatusResponse, Instant)>>,
-    pub(crate) config: Config,
+    pub drive_client: Arc<dyn crate::clients::traits::DriveClientTrait>,
+    pub tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
+    pub websocket_client: Arc<TenderdashWebSocketClient>,
+    pub config: Arc<Config>,
 }
 
 impl PlatformServiceImpl {
     pub fn new(
-        drive_client: Arc<dyn DriveClientTrait>,
-        tenderdash_client: Arc<dyn TenderdashClientTrait>,
-        config: Config,
+        drive_client: Arc<dyn crate::clients::traits::DriveClientTrait>,
+        tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
+        config: Arc<Config>,
     ) -> Self {
-        // Create cache with 5 minute TTL
-        let cache = Arc::new(
-            Cache::builder()
-                .max_capacity(100)
-                .time_to_live(Duration::from_secs(300))
-                .build(),
-        );
+        // Create WebSocket client
+        let websocket_client = Arc::new(TenderdashWebSocketClient::new(
+            config.dapi.tenderdash.websocket_uri.clone(),
+            1000,
+        ));
 
         Self {
             drive_client,
             tenderdash_client,
-            cache,
+            websocket_client,
             config,
         }
     }
 }
 
-#[tonic::async_trait]
+#[dapi_grpc::tonic::async_trait]
 impl Platform for PlatformServiceImpl {
+    async fn broadcast_state_transition(
+        &self,
+        request: Request<BroadcastStateTransitionRequest>,
+    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
+        self.broadcast_state_transition_impl(request).await
+    }
+
     async fn get_status(
         &self,
         request: Request<GetStatusRequest>,
     ) -> Result<Response<GetStatusResponse>, Status> {
-        // Delegate to the complex method implementation
         self.get_status_impl(request).await
     }
 
-    // State transition methods
-    async fn broadcast_state_transition(
+    async fn wait_for_state_transition_result(
         &self,
-        request: Request<dapi_grpc::platform::v0::BroadcastStateTransitionRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::BroadcastStateTransitionResponse>, Status> {
-        // Delegate to complex implementation
-        self.broadcast_state_transition_impl(request).await
+        request: Request<WaitForStateTransitionResultRequest>,
+    ) -> Result<Response<WaitForStateTransitionResultResponse>, Status> {
+        self.wait_for_state_transition_result_impl(request).await
     }
 
     // Identity-related methods
@@ -267,21 +276,6 @@ impl Platform for PlatformServiceImpl {
         }
     }
 
-    async fn wait_for_state_transition_result(
-        &self,
-        request: Request<dapi_grpc::platform::v0::WaitForStateTransitionResultRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::WaitForStateTransitionResultResponse>, Status>
-    {
-        match self
-            .drive_client
-            .wait_for_state_transition_result(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
-
     // Consensus and protocol methods
     async fn get_consensus_params(
         &self,
@@ -392,12 +386,25 @@ impl Platform for PlatformServiceImpl {
         }
     }
 
-    // Unimplemented methods (not yet supported)
+    // All other methods return unimplemented for now
+
     async fn get_contested_resources(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetContestedResourcesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourcesResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_contested_resources not implemented",
+        ))
+    }
+
+    async fn get_prefunded_specialized_balance(
+        &self,
+        _request: Request<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceRequest>,
+    ) -> Result<Response<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceResponse>, Status>
+    {
+        Err(Status::unimplemented(
+            "get_prefunded_specialized_balance not implemented",
+        ))
     }
 
     async fn get_contested_resource_vote_state(
@@ -405,7 +412,9 @@ impl Platform for PlatformServiceImpl {
         _request: Request<dapi_grpc::platform::v0::GetContestedResourceVoteStateRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourceVoteStateResponse>, Status>
     {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_contested_resource_vote_state not implemented",
+        ))
     }
 
     async fn get_contested_resource_voters_for_identity(
@@ -415,7 +424,9 @@ impl Platform for PlatformServiceImpl {
         Response<dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityResponse>,
         Status,
     > {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_contested_resource_voters_for_identity not implemented",
+        ))
     }
 
     async fn get_contested_resource_identity_votes(
@@ -423,58 +434,61 @@ impl Platform for PlatformServiceImpl {
         _request: Request<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesResponse>, Status>
     {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_contested_resource_identity_votes not implemented",
+        ))
     }
 
     async fn get_vote_polls_by_end_date(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetVotePollsByEndDateRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetVotePollsByEndDateResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_vote_polls_by_end_date not implemented",
+        ))
     }
 
-    async fn get_prefunded_specialized_balance(
-        &self,
-        _request: Request<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceResponse>, Status>
-    {
-        Err(Status::unimplemented("not implemented"))
-    }
-
-    // Token-related methods (not yet supported)
     async fn get_identity_token_balances(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetIdentityTokenBalancesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityTokenBalancesResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_identity_token_balances not implemented",
+        ))
     }
 
     async fn get_identities_token_balances(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_identities_token_balances not implemented",
+        ))
     }
 
     async fn get_identity_token_infos(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetIdentityTokenInfosRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityTokenInfosResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_identity_token_infos not implemented",
+        ))
     }
 
     async fn get_identities_token_infos(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenInfosRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesTokenInfosResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_identities_token_infos not implemented",
+        ))
     }
 
     async fn get_token_statuses(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetTokenStatusesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenStatusesResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented("get_token_statuses not implemented"))
     }
 
     async fn get_token_direct_purchase_prices(
@@ -482,14 +496,18 @@ impl Platform for PlatformServiceImpl {
         _request: Request<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesResponse>, Status>
     {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_token_direct_purchase_prices not implemented",
+        ))
     }
 
     async fn get_token_contract_info(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetTokenContractInfoRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenContractInfoResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_token_contract_info not implemented",
+        ))
     }
 
     async fn get_token_pre_programmed_distributions(
@@ -497,7 +515,9 @@ impl Platform for PlatformServiceImpl {
         _request: Request<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsResponse>, Status>
     {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_token_pre_programmed_distributions not implemented",
+        ))
     }
 
     async fn get_token_perpetual_distribution_last_claim(
@@ -507,42 +527,47 @@ impl Platform for PlatformServiceImpl {
         Response<dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimResponse>,
         Status,
     > {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_token_perpetual_distribution_last_claim not implemented",
+        ))
     }
 
     async fn get_token_total_supply(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetTokenTotalSupplyRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetTokenTotalSupplyResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_token_total_supply not implemented",
+        ))
     }
 
-    // Group-related methods (not yet supported)
     async fn get_group_info(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetGroupInfoRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupInfoResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented("get_group_info not implemented"))
     }
 
     async fn get_group_infos(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetGroupInfosRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupInfosResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented("get_group_infos not implemented"))
     }
 
     async fn get_group_actions(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetGroupActionsRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupActionsResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented("get_group_actions not implemented"))
     }
 
     async fn get_group_action_signers(
         &self,
         _request: Request<dapi_grpc::platform::v0::GetGroupActionSignersRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::GetGroupActionSignersResponse>, Status> {
-        Err(Status::unimplemented("not implemented"))
+        Err(Status::unimplemented(
+            "get_group_action_signers not implemented",
+        ))
     }
 }

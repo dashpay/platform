@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use futures::stream;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -13,36 +14,52 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
+use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 
-use crate::clients::traits::{DriveClientTrait, TenderdashClientTrait};
 use crate::clients::{DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
-use crate::services::PlatformServiceImpl;
+use crate::services::{CoreServiceImpl, PlatformServiceImpl};
+use crate::{
+    clients::traits::{DriveClientTrait, TenderdashClientTrait},
+    services::StreamingServiceImpl,
+};
 
 pub struct DapiServer {
-    config: Config,
-    platform_service: Arc<PlatformServiceImpl>,
+    config: Arc<Config>,
+    platform_service: PlatformServiceImpl,
+    core_service: CoreServiceImpl,
     rest_translator: Arc<RestTranslator>,
     jsonrpc_translator: Arc<JsonRpcTranslator>,
 }
 
 impl DapiServer {
-    pub async fn new(config: Config) -> Result<Self> {
+    pub async fn new(config: Arc<Config>) -> Result<Self> {
         // Create clients based on configuration
         // For now, let's use real clients by default
         let drive_client: Arc<dyn DriveClientTrait> =
             Arc::new(DriveClient::new(&config.dapi.drive.uri));
 
         let tenderdash_client: Arc<dyn TenderdashClientTrait> =
-            Arc::new(TenderdashClient::new(&config.dapi.tenderdash.uri));
+            Arc::new(TenderdashClient::with_websocket(
+                &config.dapi.tenderdash.uri,
+                &config.dapi.tenderdash.websocket_uri,
+            ));
 
-        let platform_service = Arc::new(PlatformServiceImpl::new(
-            drive_client,
-            tenderdash_client,
+        let streaming_service = Arc::new(StreamingServiceImpl::new(
+            drive_client.clone(),
+            tenderdash_client.clone(),
             config.clone(),
         ));
+
+        let platform_service = PlatformServiceImpl::new(
+            drive_client.clone(),
+            tenderdash_client.clone(),
+            config.clone(),
+        );
+
+        let core_service = CoreServiceImpl::new(streaming_service, config.clone());
 
         let rest_translator = Arc::new(RestTranslator::new());
         let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());
@@ -50,14 +67,91 @@ impl DapiServer {
         Ok(Self {
             config,
             platform_service,
+            core_service,
             rest_translator,
             jsonrpc_translator,
         })
     }
     pub async fn run(self) -> Result<()> {
-        // For minimal proof-of-concept, just start the gRPC server
         tracing::info!("Starting DAPI server...");
-        self.start_grpc_api_server().await
+
+        // Start WebSocket listener in background if available
+        self.start_websocket_listener().await?;
+
+        // Initialize streaming service
+        self.start_streaming_service().await?;
+
+        // Start both gRPC servers concurrently
+        let platform_server = self.start_grpc_platform_server();
+        let core_server = self.start_grpc_core_server();
+
+        // Wait for both servers (they should run indefinitely)
+        tokio::try_join!(platform_server, core_server)?;
+
+        Ok(())
+    }
+
+    async fn start_websocket_listener(&self) -> Result<()> {
+        // Get WebSocket client if available
+        if let Some(ws_client) = self.get_websocket_client().await {
+            info!("Starting Tenderdash WebSocket listener");
+
+            let ws_client_clone = ws_client.clone();
+            tokio::spawn(async move {
+                if let Err(e) = ws_client_clone.connect_and_listen().await {
+                    error!("WebSocket connection error: {}", e);
+                }
+            });
+
+            // Give WebSocket a moment to establish connection
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        Ok(())
+    }
+
+    async fn get_websocket_client(&self) -> Option<Arc<crate::clients::TenderdashWebSocketClient>> {
+        // Try to get WebSocket client from the Tenderdash client
+        // This is a bit of a hack since we need to access the internal WebSocket client
+        // In a production system, this would be better architected
+        None // For now, return None - WebSocket functionality is optional
+    }
+
+    async fn start_streaming_service(&self) -> Result<()> {
+        info!("Starting streaming service...");
+        self.core_service
+            .start_streaming()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start streaming service: {}", e))?;
+        Ok(())
+    }
+
+    async fn start_grpc_platform_server(&self) -> Result<()> {
+        let addr = self.config.grpc_api_addr();
+        info!("Starting gRPC Platform API server on {}", addr);
+
+        let platform_service = self.platform_service.clone();
+
+        dapi_grpc::tonic::transport::Server::builder()
+            .add_service(PlatformServer::new(platform_service))
+            .serve(addr)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn start_grpc_core_server(&self) -> Result<()> {
+        let addr = self.config.grpc_streams_addr();
+        info!("Starting gRPC Core API server on {}", addr);
+
+        let core_service = self.core_service.clone();
+
+        dapi_grpc::tonic::transport::Server::builder()
+            .add_service(CoreServer::new(core_service))
+            .serve(addr)
+            .await?;
+
+        Ok(())
     }
 
     async fn start_grpc_api_server(&self) -> Result<()> {
@@ -67,7 +161,7 @@ impl DapiServer {
         let platform_service = self.platform_service.clone();
 
         dapi_grpc::tonic::transport::Server::builder()
-            .add_service(PlatformServer::new((*platform_service).clone()))
+            .add_service(PlatformServer::new(platform_service.clone()))
             .serve(addr)
             .await?;
 
@@ -133,13 +227,13 @@ impl DapiServer {
 
 #[derive(Clone)]
 struct RestAppState {
-    platform_service: Arc<PlatformServiceImpl>,
+    platform_service: PlatformServiceImpl,
     translator: Arc<RestTranslator>,
 }
 
 #[derive(Clone)]
 struct JsonRpcAppState {
-    platform_service: Arc<PlatformServiceImpl>,
+    platform_service: PlatformServiceImpl,
     translator: Arc<JsonRpcTranslator>,
 }
 

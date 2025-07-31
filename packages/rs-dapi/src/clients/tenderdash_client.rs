@@ -3,13 +3,17 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::sync::broadcast;
 
+use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use super::traits::TenderdashClientTrait;
 
 #[derive(Debug, Clone)]
 pub struct TenderdashClient {
     client: Client,
     base_url: String,
+    websocket_client: Option<Arc<TenderdashWebSocketClient>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,6 +116,17 @@ impl TenderdashClient {
         Self {
             client: Client::new(),
             base_url: uri.to_string(),
+            websocket_client: None,
+        }
+    }
+
+    pub fn with_websocket(uri: &str, ws_uri: &str) -> Self {
+        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
+
+        Self {
+            client: Client::new(),
+            base_url: uri.to_string(),
+            websocket_client: Some(websocket_client),
         }
     }
 
@@ -311,5 +326,23 @@ impl TenderdashClientTrait for TenderdashClient {
 
     async fn tx(&self, hash: String) -> Result<TxResponse> {
         self.tx(hash).await
+    }
+
+    fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
+        if let Some(ws_client) = &self.websocket_client {
+            ws_client.subscribe()
+        } else {
+            // Return a receiver that will never receive messages
+            let (_, rx) = broadcast::channel(1);
+            rx
+        }
+    }
+
+    fn is_websocket_connected(&self) -> bool {
+        if let Some(ws_client) = &self.websocket_client {
+            ws_client.is_connected()
+        } else {
+            false
+        }
     }
 }

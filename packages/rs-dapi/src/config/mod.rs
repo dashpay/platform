@@ -34,6 +34,10 @@ pub struct DapiConfig {
     pub drive: DriveConfig,
     /// Tenderdash (consensus layer) client configuration
     pub tenderdash: TenderdashConfig,
+    /// Dash Core configuration for blockchain data
+    pub core: CoreConfig,
+    /// Timeout for waiting for state transition results (in milliseconds)
+    pub state_transition_wait_timeout: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,8 +48,16 @@ pub struct DriveConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TenderdashConfig {
-    /// URI for connecting to the Tenderdash consensus service
+    /// URI for connecting to the Tenderdash consensus service (HTTP RPC)
     pub uri: String,
+    /// WebSocket URI for real-time events from Tenderdash
+    pub websocket_uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoreConfig {
+    /// ZMQ URI for receiving real-time blockchain events from Dash Core
+    pub zmq_url: String,
 }
 
 impl Default for Config {
@@ -66,7 +78,12 @@ impl Default for Config {
                 },
                 tenderdash: TenderdashConfig {
                     uri: "http://127.0.0.1:26657".to_string(),
+                    websocket_uri: "ws://127.0.0.1:26657/websocket".to_string(),
                 },
+                core: CoreConfig {
+                    zmq_url: "tcp://127.0.0.1:29998".to_string(),
+                },
+                state_transition_wait_timeout: 30000, // 30 seconds default
             },
         }
     }
@@ -103,6 +120,15 @@ impl Config {
         }
         if let Ok(tenderdash_uri) = std::env::var("DAPI_TENDERDASH_URI") {
             config.dapi.tenderdash.uri = tenderdash_uri;
+        }
+        if let Ok(websocket_uri) = std::env::var("DAPI_TENDERDASH_WEBSOCKET_URI") {
+            config.dapi.tenderdash.websocket_uri = websocket_uri;
+        }
+        if let Ok(zmq_url) = std::env::var("DAPI_CORE_ZMQ_URL") {
+            config.dapi.core.zmq_url = zmq_url;
+        }
+        if let Ok(timeout) = std::env::var("DAPI_STATE_TRANSITION_WAIT_TIMEOUT") {
+            config.dapi.state_transition_wait_timeout = timeout.parse().unwrap_or(30000);
         }
 
         Ok(config)
