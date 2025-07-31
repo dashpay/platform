@@ -1,7 +1,13 @@
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
 use crate::error::DAPIResult;
 use async_trait::async_trait;
 use tokio::sync::broadcast;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
+use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 use zeromq::prelude::*;
 
@@ -66,6 +72,8 @@ pub struct ZmqListener {
     topics: ZmqTopics,
     event_sender: broadcast::Sender<ZmqEvent>,
     _event_receiver: broadcast::Receiver<ZmqEvent>,
+    socket: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
+    connected: Arc<AtomicBool>,
 }
 
 impl ZmqListener {
@@ -77,6 +85,8 @@ impl ZmqListener {
             topics: ZmqTopics::default(),
             event_sender,
             _event_receiver: event_receiver,
+            connected: Arc::new(AtomicBool::new(false)),
+            socket: Arc::new(tokio::sync::Mutex::new(zeromq::SubSocket::new())),
         }
     }
 }
@@ -92,8 +102,13 @@ impl ZmqListenerTrait for ZmqListener {
         let topics = self.topics.clone();
         let sender = self.event_sender.clone();
 
+        let socket = self.socket.clone();
+        let connected = self.connected.clone();
+
         tokio::task::spawn(async move {
-            if let Err(e) = Self::zmq_listener_task(zmq_uri, topics, sender).await {
+            if let Err(e) =
+                Self::zmq_listener_task(zmq_uri, topics, sender, socket, connected).await
+            {
                 error!("ZMQ listener task error: {}", e);
             }
         });
@@ -106,8 +121,7 @@ impl ZmqListenerTrait for ZmqListener {
 
     /// Check if the ZMQ listener is connected (placeholder)
     fn is_connected(&self) -> bool {
-        // In a real implementation, this would check the socket state
-        true
+        self.connected.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -117,11 +131,13 @@ impl ZmqListener {
         zmq_uri: String,
         topics: ZmqTopics,
         sender: broadcast::Sender<ZmqEvent>,
+        socket_store: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
+        connected: Arc<AtomicBool>,
     ) -> DAPIResult<()> {
         info!("Starting ZMQ listener on {}", zmq_uri);
 
-        // Create SUB socket
-        let mut socket = zeromq::SubSocket::new();
+        let socket_arc = socket_store.clone();
+        let mut socket = socket_arc.lock().await;
 
         // Subscribe to all topics
         socket.subscribe(&topics.rawtx).await?;
@@ -133,10 +149,19 @@ impl ZmqListener {
         // Connect to Dash Core ZMQ
         socket.connect(&zmq_uri).await?;
         info!("Connected to ZMQ at {}", zmq_uri);
+        drop(socket); // release the lock before starting the monitor
+
+        // Start the ZMQ monitor task
+        let monitor_socket = socket_store.clone();
+        let connected_clone = connected.clone();
+        tokio::spawn(async move {
+            Self::zmq_monitor_task(monitor_socket, connected_clone).await;
+            tracing::info!("ZMQ monitor task terminated");
+        });
 
         let mut backoff = Duration::from_millis(100);
         loop {
-            match Self::receive_zmq_message(&mut socket, &topics).await {
+            match Self::receive_zmq_message(socket_store.clone(), &topics).await {
                 Ok(Some(event)) => {
                     debug!("Received ZMQ event: {:?}", event);
                     if let Err(e) = sender.send(event) {
@@ -166,11 +191,13 @@ impl ZmqListener {
 
     /// Receive and parse a ZMQ message
     async fn receive_zmq_message(
-        socket: &mut zeromq::SubSocket,
+        socket: Arc<Mutex<zeromq::SubSocket>>,
         topics: &ZmqTopics,
     ) -> DAPIResult<Option<ZmqEvent>> {
         // Receive message
-        let message = socket.recv().await?;
+        let mut socket_guard = socket.lock().await;
+        let message = socket_guard.recv().await?;
+        drop(socket_guard); // Release the lock before processing
 
         // Convert ZmqMessage to multipart frames
         let frames = message.into_vec();
@@ -198,10 +225,37 @@ impl ZmqListener {
         Ok(event)
     }
 
-    /// Check if the ZMQ listener is connected (placeholder)
-    pub fn is_connected(&self) -> bool {
-        // In a real implementation, this would check the socket state
-        true
+    /// ZMQ monitor task that runs in the background and updates the connection status
+    async fn zmq_monitor_task(
+        socket_store: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
+        connected: Arc<AtomicBool>,
+    ) {
+        info!("Starting ZMQ monitor task");
+        let mut socket = socket_store.lock().await;
+        let mut monitor = socket.monitor();
+        drop(socket);
+
+        while let Some(event) = monitor.next().await {
+            match event {
+                zeromq::SocketEvent::Connected(endpoint, peer) => {
+                    info!(?endpoint, ?peer, "ZMQ socket connected");
+                    connected.store(true, Ordering::SeqCst);
+                }
+                zeromq::SocketEvent::Disconnected(peer) => {
+                    warn!(?peer, "ZMQ socket disconnected");
+                    connected.store(false, Ordering::SeqCst);
+                }
+                zeromq::SocketEvent::Closed => {
+                    error!("ZMQ socket closed");
+                    connected.store(false, Ordering::SeqCst);
+                }
+                _ => {
+                    debug!("ZMQ socket event: {:?}", event);
+                }
+            }
+        }
+
+        info!("ZMQ monitor channel closed");
     }
 }
 
