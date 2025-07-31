@@ -116,7 +116,7 @@ class BaseTest {
     
     if (options.waitForResponse) {
       await this.page.waitForResponse(response => 
-        response.url().includes('dapi') || response.status() !== 200
+        response.url().includes('dapi')
       );
     }
     

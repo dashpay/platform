@@ -1,7 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { WasmSdkPage } = require('../utils/wasm-sdk-page');
 const { ParameterInjector } = require('../utils/parameter-injector');
-const { testData } = require('../fixtures/test-data');
 
 test.describe('WASM SDK Parameterized Query Tests', () => {
   let wasmSdkPage;

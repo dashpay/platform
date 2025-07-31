@@ -1,6 +1,14 @@
 const { BaseTest } = require('./base-test');
 const { expect } = require('@playwright/test');
 
+// Configuration for dynamic array parameters that require special handling
+const DYNAMIC_ARRAY_PARAMETERS = {
+  'ids': true,
+  'identityIds': true,
+  'identitiesIds': true,
+  'tokenIds': true
+};
+
 /**
  * Page Object Model for WASM SDK index.html interface
  */
@@ -112,7 +120,7 @@ class WasmSdkPage extends BaseTest {
    */
   async fillParameterByName(paramName, value) {
     // Special handling for array parameters that use dynamic input fields
-    if (paramName === 'ids' || paramName === 'identitiesIds' || paramName === 'identityIds' || paramName === 'tokenIds') {
+    if (DYNAMIC_ARRAY_PARAMETERS[paramName]) {
       const enterValueInput = this.page.locator('input[placeholder="Enter value"]').first();
       const count = await enterValueInput.count();
       
