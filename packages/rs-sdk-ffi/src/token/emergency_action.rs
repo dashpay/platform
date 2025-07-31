@@ -198,7 +198,7 @@ mod tests {
     // Helper function to create a mock SDK handle
     fn create_mock_sdk_handle() -> *mut SDKHandle {
         let config = DashSDKConfig {
-            network: crate::types::DashSDKNetwork::Local,
+            network: crate::types::DashSDKNetwork::SDKLocal,
             dapi_addresses: ptr::null(), // Use mock SDK
             skip_asset_lock_proof_verification: false,
             request_retry_count: 3,

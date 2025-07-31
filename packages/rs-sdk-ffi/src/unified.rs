@@ -355,7 +355,7 @@ mod tests {
         
         // Create a testnet configuration for the unified SDK
         let platform_config = DashSDKConfig {
-            network: DashSDKNetwork::Testnet,
+            network: DashSDKNetwork::SDKTestnet,
             dapi_addresses: ptr::null(), // Use mock SDK
             skip_asset_lock_proof_verification: true,
             request_retry_count: 3,

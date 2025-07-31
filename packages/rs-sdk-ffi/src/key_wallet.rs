@@ -23,23 +23,23 @@ use crate::error::FFIError;
 
 // MARK: - Network Type
 
-/// FFI-compatible network enum
+/// FFI-compatible network enum for key wallet operations
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum FFIKeyNetwork {
-    Mainnet = 0,
-    Testnet = 1,
-    Regtest = 2,
-    Devnet = 3,
+    KeyMainnet = 0,
+    KeyTestnet = 1,
+    KeyRegtest = 2,
+    KeyDevnet = 3,
 }
 
 impl From<FFIKeyNetwork> for KeyWalletNetwork {
     fn from(network: FFIKeyNetwork) -> Self {
         match network {
-            FFIKeyNetwork::Mainnet => KeyWalletNetwork::Dash,
-            FFIKeyNetwork::Testnet => KeyWalletNetwork::Testnet,
-            FFIKeyNetwork::Regtest => KeyWalletNetwork::Regtest,
-            FFIKeyNetwork::Devnet => KeyWalletNetwork::Devnet,
+            FFIKeyNetwork::KeyMainnet => KeyWalletNetwork::Dash,
+            FFIKeyNetwork::KeyTestnet => KeyWalletNetwork::Testnet,
+            FFIKeyNetwork::KeyRegtest => KeyWalletNetwork::Regtest,
+            FFIKeyNetwork::KeyDevnet => KeyWalletNetwork::Devnet,
         }
     }
 }

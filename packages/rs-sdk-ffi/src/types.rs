@@ -37,13 +37,15 @@ pub struct IdentityPublicKeyHandle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashSDKNetwork {
     /// Mainnet
-    Mainnet = 0,
+    SDKMainnet = 0,
     /// Testnet
-    Testnet = 1,
+    SDKTestnet = 1,
+    /// Regtest
+    SDKRegtest = 2,
     /// Devnet
-    Devnet = 2,
+    SDKDevnet = 3,
     /// Local development network
-    Local = 3,
+    SDKLocal = 4,
 }
 
 /// SDK configuration

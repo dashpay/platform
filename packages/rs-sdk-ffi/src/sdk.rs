@@ -63,10 +63,11 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
     // Parse configuration
     let network = match config.network {
-        DashSDKNetwork::Mainnet => Network::Dash,
-        DashSDKNetwork::Testnet => Network::Testnet,
-        DashSDKNetwork::Devnet => Network::Devnet,
-        DashSDKNetwork::Local => Network::Regtest,
+        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKTestnet => Network::Testnet,
+        DashSDKNetwork::SDKRegtest => Network::Regtest,
+        DashSDKNetwork::SDKDevnet => Network::Devnet,
+        DashSDKNetwork::SDKLocal => Network::Regtest,
     };
 
     // Create runtime
@@ -148,10 +149,11 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
     // Parse configuration
     let network = match base_config.network {
-        DashSDKNetwork::Mainnet => Network::Dash,
-        DashSDKNetwork::Testnet => Network::Testnet,
-        DashSDKNetwork::Devnet => Network::Devnet,
-        DashSDKNetwork::Local => Network::Regtest,
+        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKTestnet => Network::Testnet,
+        DashSDKNetwork::SDKRegtest => Network::Regtest,
+        DashSDKNetwork::SDKDevnet => Network::Devnet,
+        DashSDKNetwork::SDKLocal => Network::Regtest,
     };
 
     // Create runtime
@@ -339,16 +341,16 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashSDKNetwork {
     if handle.is_null() {
-        return DashSDKNetwork::Mainnet;
+        return DashSDKNetwork::SDKMainnet;
     }
 
     let wrapper = &*(handle as *const SDKWrapper);
     match wrapper.sdk.network {
-        Network::Dash => DashSDKNetwork::Mainnet,
-        Network::Testnet => DashSDKNetwork::Testnet,
-        Network::Devnet => DashSDKNetwork::Devnet,
-        Network::Regtest => DashSDKNetwork::Local,
-        _ => DashSDKNetwork::Local, // Fallback for any other network types
+        Network::Dash => DashSDKNetwork::SDKMainnet,
+        Network::Testnet => DashSDKNetwork::SDKTestnet,
+        Network::Regtest => DashSDKNetwork::SDKRegtest,
+        Network::Devnet => DashSDKNetwork::SDKDevnet,
+        _ => DashSDKNetwork::SDKLocal, // Fallback for any other network types
     }
 }
 
