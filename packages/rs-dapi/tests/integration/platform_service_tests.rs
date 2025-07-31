@@ -6,7 +6,9 @@
  */
 
 use super::setup;
-use dapi_grpc::platform::v0::{get_status_request, get_status_response, GetStatusRequest};
+use dapi_grpc::platform::v0::{
+    get_status_request, get_status_response, BroadcastStateTransitionRequest, GetStatusRequest,
+};
 use dapi_grpc::tonic;
 use tracing::info;
 
@@ -135,5 +137,61 @@ async fn test_server_lifecycle() {
     assert!(response.is_ok(), "Server should be responsive");
 
     info!("✓ Server is responsive and will be cleaned up automatically");
+    // Server will be automatically cleaned up when `server` is dropped
+}
+
+/// Test broadcastStateTransition with valid state transition
+#[tokio::test]
+async fn test_broadcast_state_transition_success() {
+    let server = setup::setup().await;
+
+    // Create a mock state transition (just some bytes for testing)
+    let mock_state_transition = vec![1, 2, 3, 4, 5, 6, 7, 8];
+
+    let request = tonic::Request::new(BroadcastStateTransitionRequest {
+        state_transition: mock_state_transition,
+    });
+
+    let response = server
+        .client
+        .clone()
+        .broadcast_state_transition(request)
+        .await;
+    assert!(
+        response.is_ok(),
+        "broadcastStateTransition should succeed with valid data"
+    );
+
+    info!("✓ broadcastStateTransition endpoint working correctly");
+    // Server will be automatically cleaned up when `server` is dropped
+}
+
+/// Test broadcastStateTransition with empty state transition
+#[tokio::test]
+async fn test_broadcast_state_transition_empty() {
+    let server = setup::setup().await;
+
+    let request = tonic::Request::new(BroadcastStateTransitionRequest {
+        state_transition: vec![], // Empty state transition
+    });
+
+    let response = server
+        .client
+        .clone()
+        .broadcast_state_transition(request)
+        .await;
+    assert!(
+        response.is_err(),
+        "broadcastStateTransition should fail with empty state transition"
+    );
+
+    if let Err(status) = response {
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status
+            .message()
+            .contains("State Transition is not specified"));
+    }
+
+    info!("✓ broadcastStateTransition correctly rejects empty state transitions");
     // Server will be automatically cleaned up when `server` is dropped
 }

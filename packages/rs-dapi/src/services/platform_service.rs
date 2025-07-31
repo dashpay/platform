@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 // Import complex method implementations
+mod broadcast_state_transition;
 mod get_status;
 
 #[derive(Clone)]
@@ -58,14 +59,8 @@ impl Platform for PlatformServiceImpl {
         &self,
         request: Request<dapi_grpc::platform::v0::BroadcastStateTransitionRequest>,
     ) -> Result<Response<dapi_grpc::platform::v0::BroadcastStateTransitionResponse>, Status> {
-        match self
-            .drive_client
-            .broadcast_state_transition(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
+        // Delegate to complex implementation
+        self.broadcast_state_transition_impl(request).await
     }
 
     // Identity-related methods

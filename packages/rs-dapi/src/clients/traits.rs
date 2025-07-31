@@ -4,7 +4,10 @@ use dapi_grpc::platform::v0::*;
 use std::fmt::Debug;
 
 use super::drive_client::DriveStatusResponse;
-use super::tenderdash_client::{NetInfoResponse, TenderdashStatusResponse};
+use super::tenderdash_client::{
+    BroadcastTxResponse, CheckTxResponse, NetInfoResponse, TenderdashStatusResponse, TxResponse,
+    UnconfirmedTxsResponse,
+};
 
 #[async_trait]
 pub trait DriveClientTrait: Send + Sync + Debug {
@@ -117,4 +120,10 @@ pub trait DriveClientTrait: Send + Sync + Debug {
 pub trait TenderdashClientTrait: Send + Sync + Debug {
     async fn status(&self) -> Result<TenderdashStatusResponse>;
     async fn net_info(&self) -> Result<NetInfoResponse>;
+
+    // State transition broadcasting methods
+    async fn broadcast_tx(&self, tx: String) -> Result<BroadcastTxResponse>;
+    async fn check_tx(&self, tx: String) -> Result<CheckTxResponse>;
+    async fn unconfirmed_txs(&self, limit: Option<u32>) -> Result<UnconfirmedTxsResponse>;
+    async fn tx(&self, hash: String) -> Result<TxResponse>;
 }

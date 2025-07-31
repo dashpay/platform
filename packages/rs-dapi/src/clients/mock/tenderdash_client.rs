@@ -3,7 +3,8 @@ use async_trait::async_trait;
 
 use crate::clients::{
     tenderdash_client::{
-        NetInfoResponse, NodeInfo, ProtocolVersion, SyncInfo, TenderdashStatusResponse,
+        BroadcastTxResponse, CheckTxResponse, NetInfoResponse, NodeInfo, ProtocolVersion, SyncInfo,
+        TenderdashStatusResponse, TxResponse, UnconfirmedTxsResponse,
     },
     traits::TenderdashClientTrait,
 };
@@ -60,6 +61,37 @@ impl TenderdashClientTrait for MockTenderdashClient {
         Ok(NetInfoResponse {
             listening: Some(true),
             n_peers: Some("8".to_string()),
+        })
+    }
+
+    async fn broadcast_tx(&self, _tx: String) -> Result<BroadcastTxResponse> {
+        Ok(BroadcastTxResponse {
+            code: 0,
+            data: None,
+            info: None,
+            hash: Some("mock_tx_hash".to_string()),
+        })
+    }
+
+    async fn check_tx(&self, _tx: String) -> Result<CheckTxResponse> {
+        Ok(CheckTxResponse {
+            code: 0,
+            info: None,
+            data: None,
+        })
+    }
+
+    async fn unconfirmed_txs(&self, _limit: Option<u32>) -> Result<UnconfirmedTxsResponse> {
+        Ok(UnconfirmedTxsResponse {
+            txs: Some(vec![]),
+            total: Some("0".to_string()),
+        })
+    }
+
+    async fn tx(&self, _hash: String) -> Result<TxResponse> {
+        Ok(TxResponse {
+            tx_result: None,
+            tx: None,
         })
     }
 }

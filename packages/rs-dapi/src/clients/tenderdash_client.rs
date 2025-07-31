@@ -71,6 +71,42 @@ pub struct NetInfoResponse {
     pub n_peers: Option<String>,
 }
 
+// New response types for broadcast_state_transition
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BroadcastTxResponse {
+    pub code: u32,
+    pub data: Option<String>,
+    pub info: Option<String>,
+    pub hash: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckTxResponse {
+    pub code: u32,
+    pub info: Option<String>,
+    pub data: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UnconfirmedTxsResponse {
+    pub txs: Option<Vec<String>>,
+    pub total: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TxResponse {
+    pub tx_result: Option<TxResult>,
+    pub tx: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TxResult {
+    pub code: u32,
+    pub data: Option<String>,
+    pub info: Option<String>,
+    pub log: Option<String>,
+}
+
 impl TenderdashClient {
     pub fn new(uri: &str) -> Self {
         Self {
@@ -130,6 +166,125 @@ impl TenderdashClient {
             .result
             .ok_or_else(|| anyhow::anyhow!("Tenderdash net_info response missing result field"))
     }
+
+    /// Broadcast a transaction to the Tenderdash network
+    pub async fn broadcast_tx(&self, tx: String) -> Result<BroadcastTxResponse> {
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "method": "broadcast_tx_sync",
+            "params": {
+                "tx": tx
+            },
+            "id": 3
+        });
+
+        let response: TenderdashResponse<BroadcastTxResponse> = self
+            .client
+            .post(&self.base_url)
+            .json(&request_body)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+        }
+
+        response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("Tenderdash broadcast_tx response missing result field"))
+    }
+
+    /// Check a transaction without adding it to the mempool
+    pub async fn check_tx(&self, tx: String) -> Result<CheckTxResponse> {
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "method": "check_tx",
+            "params": {
+                "tx": tx
+            },
+            "id": 4
+        });
+
+        let response: TenderdashResponse<CheckTxResponse> = self
+            .client
+            .post(&self.base_url)
+            .json(&request_body)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+        }
+
+        response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("Tenderdash check_tx response missing result field"))
+    }
+
+    /// Get unconfirmed transactions from the mempool
+    pub async fn unconfirmed_txs(&self, limit: Option<u32>) -> Result<UnconfirmedTxsResponse> {
+        let mut params = json!({});
+        if let Some(limit) = limit {
+            params["limit"] = json!(limit.to_string());
+        }
+
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "method": "unconfirmed_txs",
+            "params": params,
+            "id": 5
+        });
+
+        let response: TenderdashResponse<UnconfirmedTxsResponse> = self
+            .client
+            .post(&self.base_url)
+            .json(&request_body)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+        }
+
+        response.result.ok_or_else(|| {
+            anyhow::anyhow!("Tenderdash unconfirmed_txs response missing result field")
+        })
+    }
+
+    /// Get transaction by hash
+    pub async fn tx(&self, hash: String) -> Result<TxResponse> {
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "method": "tx",
+            "params": {
+                "hash": hash
+            },
+            "id": 6
+        });
+
+        let response: TenderdashResponse<TxResponse> = self
+            .client
+            .post(&self.base_url)
+            .json(&request_body)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+        }
+
+        response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("Tenderdash tx response missing result field"))
+    }
 }
 
 #[async_trait]
@@ -140,5 +295,21 @@ impl TenderdashClientTrait for TenderdashClient {
 
     async fn net_info(&self) -> Result<NetInfoResponse> {
         self.net_info().await
+    }
+
+    async fn broadcast_tx(&self, tx: String) -> Result<BroadcastTxResponse> {
+        self.broadcast_tx(tx).await
+    }
+
+    async fn check_tx(&self, tx: String) -> Result<CheckTxResponse> {
+        self.check_tx(tx).await
+    }
+
+    async fn unconfirmed_txs(&self, limit: Option<u32>) -> Result<UnconfirmedTxsResponse> {
+        self.unconfirmed_txs(limit).await
+    }
+
+    async fn tx(&self, hash: String) -> Result<TxResponse> {
+        self.tx(hash).await
     }
 }

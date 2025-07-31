@@ -48,6 +48,12 @@ moka = { version = "0.12", features = ["future"] }
 # Hex encoding/decoding
 hex = "0.4"
 
+# Base64 encoding/decoding
+base64 = "0.22"
+
+# Cryptographic hashing
+sha2 = "0.10"
+
 # Async traits
 async-trait = "0.1"
 
