@@ -250,7 +250,7 @@ class ParameterInjector {
       const baseParams = getTestParameters(category, queryType, 'testnet');
       const randomized = { ...baseParams };
 
-      for (const [key, value] of Object.entries(randomized)) {
+      for (const [key] of Object.entries(randomized)) {
         if (generators[key]) {
           randomized[key] = generators[key]();
         }

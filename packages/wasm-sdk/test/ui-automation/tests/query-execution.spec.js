@@ -1317,8 +1317,8 @@ test.describe('WASM SDK Query Execution Tests', () => {
     test('should handle invalid identity ID gracefully', async () => {
       await wasmSdkPage.setupQuery('identity', 'getIdentity');
       
-      // Fill with invalid ID
-      await wasmSdkPage.fillQueryParameters({ id: 'invalid_identity_id' });
+      // Fill with invalid ID (contains invalid base58 characters '0', 'O', 'I', 'l')
+      await wasmSdkPage.fillQueryParameters({ id: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4SOIl0' });
       
       // Click execute button directly
       const executeButton = wasmSdkPage.page.locator('#executeQuery');

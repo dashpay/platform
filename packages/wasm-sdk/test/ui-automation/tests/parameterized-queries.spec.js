@@ -174,7 +174,13 @@ test.describe('WASM SDK Parameterized Query Tests', () => {
         {
           category: 'identity',
           queryType: 'getIdentity', 
-          parameters: { id: 'too_short' },
+          parameters: { id: '1234567890' }, // Too short for base58 ID
+          expectedValid: false
+        },
+        {
+          category: 'identity',
+          queryType: 'getIdentity', 
+          parameters: { id: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S0Il' }, // Contains invalid base58 chars
           expectedValid: false
         }
       ];
