@@ -19,6 +19,7 @@ public class WalletService: ObservableObject {
     private var modelContext: ModelContext?
     private var syncTask: Task<Void, Never>?
     private var balanceUpdateTask: Task<Void, Never>?
+    private var walletManager: WalletManager?
     
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
@@ -27,6 +28,14 @@ public class WalletService: ObservableObject {
     
     public func configure(modelContext: ModelContext) {
         self.modelContext = modelContext
+        
+        // Initialize WalletManager
+        do {
+            self.walletManager = try WalletManager()
+        } catch {
+            print("Failed to initialize WalletManager: \(error)")
+        }
+        
         loadCurrentWallet()
     }
     
@@ -37,10 +46,23 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
     
-    public func createWallet(label: String, mnemonic: String? = nil) async throws -> HDWallet {
-        // This is a placeholder implementation
-        // In real usage, use WalletManager instead
-        throw WalletError.notImplemented("Use WalletManager instead")
+    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234") async throws -> HDWallet {
+        guard let walletManager = walletManager else {
+            throw WalletError.notImplemented("WalletManager not initialized")
+        }
+        
+        // Create wallet using WalletManager
+        let wallet = try await walletManager.createWallet(
+            label: label,
+            network: .testnet,
+            mnemonic: mnemonic,
+            pin: pin
+        )
+        
+        // Load the newly created wallet
+        await loadWallet(wallet)
+        
+        return wallet
     }
     
     public func loadWallet(_ wallet: HDWallet) async {

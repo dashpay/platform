@@ -7,6 +7,8 @@ struct CreateWalletView: View {
     @State private var walletLabel = ""
     @State private var showImportOption = false
     @State private var importMnemonic = ""
+    @State private var walletPin = ""
+    @State private var confirmPin = ""
     @State private var isCreating = false
     @State private var error: Error?
     
@@ -18,6 +20,17 @@ struct CreateWalletView: View {
                         .textInputAutocapitalization(.words)
                 } header: {
                     Text("Wallet Information")
+                }
+                
+                Section {
+                    SecureField("PIN (4-6 digits)", text: $walletPin)
+                        .keyboardType(.numberPad)
+                    SecureField("Confirm PIN", text: $confirmPin)
+                        .keyboardType(.numberPad)
+                } header: {
+                    Text("Security")
+                } footer: {
+                    Text("Choose a PIN to secure your wallet")
                 }
                 
                 Section {
@@ -52,7 +65,7 @@ struct CreateWalletView: View {
                     Button("Create") {
                         createWallet()
                     }
-                    .disabled(walletLabel.isEmpty || isCreating)
+                    .disabled(walletLabel.isEmpty || walletPin.isEmpty || walletPin != confirmPin || isCreating)
                 }
             }
             .disabled(isCreating)
@@ -82,7 +95,7 @@ struct CreateWalletView: View {
         Task {
             do {
                 let mnemonic = showImportOption && !importMnemonic.isEmpty ? importMnemonic : nil
-                _ = try await walletService.createWallet(label: walletLabel, mnemonic: mnemonic)
+                _ = try await walletService.createWallet(label: walletLabel, mnemonic: mnemonic, pin: walletPin)
                 await MainActor.run {
                     dismiss()
                 }

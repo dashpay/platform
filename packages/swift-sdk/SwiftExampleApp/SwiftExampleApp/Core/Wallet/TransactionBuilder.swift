@@ -1,11 +1,12 @@
 import Foundation
 import SwiftData
+import DashSDKFFI
 
 // MARK: - Transaction Builder
 
 public class TransactionBuilder {
     private let ffi = WalletFFIBridge.shared
-    private var transaction: OpaquePointer?
+    private var transaction: UnsafeMutablePointer<FFITransaction>?
     private var inputs: [(utxo: HDUTXO, address: HDAddress, privateKey: Data)] = []
     private var outputs: [(address: String, amount: UInt64)] = []
     private var changeAddress: String?

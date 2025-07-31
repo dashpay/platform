@@ -1,5 +1,5 @@
 import Foundation
-// import DashSDK // Temporarily disabled until FFI linking is fixed
+import DashSDKFFI
 
 // MARK: - Wallet FFI Bridge
 
@@ -15,21 +15,44 @@ public class WalletFFIBridge {
     // MARK: - Mnemonic Operations
     
     public func generateMnemonic(wordCount: UInt8 = 12) -> String? {
-        // Placeholder implementation
-        // Real implementation requires FFI functions from DashSDK
-        let words = ["abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract", "absurd", "abuse", "access", "accident"]
-        return words.joined(separator: " ")
+        guard let mnemonicPtr = dash_key_mnemonic_generate(wordCount) else {
+            return nil
+        }
+        defer { dash_key_mnemonic_destroy(mnemonicPtr) }
+        
+        guard let phrasePtr = dash_key_mnemonic_phrase(mnemonicPtr) else {
+            return nil
+        }
+        defer { dash_sdk_string_free(phrasePtr) }
+        
+        return String(cString: phrasePtr)
     }
     
     public func validateMnemonic(_ phrase: String) -> Bool {
-        // Placeholder - check word count
-        let words = phrase.split(separator: " ")
-        return words.count == 12 || words.count == 24
+        guard let mnemonicPtr = dash_key_mnemonic_from_phrase(phrase) else {
+            return false
+        }
+        defer { dash_key_mnemonic_destroy(mnemonicPtr) }
+        
+        return true
     }
     
     public func mnemonicToSeed(_ mnemonic: String, passphrase: String = "") -> Data? {
-        // Placeholder - return dummy seed
-        return Data(repeating: 0x01, count: 64)
+        guard let mnemonicPtr = dash_key_mnemonic_from_phrase(mnemonic) else {
+            return nil
+        }
+        defer { dash_key_mnemonic_destroy(mnemonicPtr) }
+        
+        var seed = Data(count: 64)
+        let result = seed.withUnsafeMutableBytes { seedBytes in
+            dash_key_mnemonic_to_seed(
+                mnemonicPtr,
+                passphrase.isEmpty ? nil : passphrase,
+                seedBytes.bindMemory(to: UInt8.self).baseAddress
+            )
+        }
+        
+        return result == 0 ? seed : nil
     }
     
     // MARK: - Key Derivation
@@ -59,38 +82,103 @@ public class WalletFFIBridge {
     
     // MARK: - Transaction Operations
     
-    public func createTransaction() -> OpaquePointer? {
-        // Placeholder - return nil
-        return nil
+    public func createTransaction() -> UnsafeMutablePointer<FFITransaction>? {
+        return dash_tx_create()
     }
     
-    public func destroyTransaction(_ tx: OpaquePointer) {
-        // Placeholder
+    public func destroyTransaction(_ tx: UnsafeMutablePointer<FFITransaction>) {
+        dash_tx_destroy(tx)
     }
     
-    public func addInput(to tx: OpaquePointer, txid: Data, vout: UInt32, scriptSig: Data = Data(), sequence: UInt32 = 0xFFFFFFFF) -> Bool {
-        // Placeholder
-        return false
+    public func addInput(to tx: UnsafeMutablePointer<FFITransaction>, txid: Data, vout: UInt32, scriptSig: Data = Data(), sequence: UInt32 = 0xFFFFFFFF) -> Bool {
+        guard txid.count == 32 else { return false }
+        
+        var input = FFITxIn()
+        txid.withUnsafeBytes { bytes in
+            withUnsafeMutableBytes(of: &input.txid) { txidBytes in
+                txidBytes.copyMemory(from: bytes)
+            }
+        }
+        input.vout = vout
+        input.sequence = sequence
+        
+        if scriptSig.isEmpty {
+            input.script_sig_len = 0
+            input.script_sig = nil
+        } else {
+            input.script_sig_len = UInt32(scriptSig.count)
+            input.script_sig = scriptSig.withUnsafeBytes { $0.bindMemory(to: UInt8.self).baseAddress }
+        }
+        
+        return dash_tx_add_input(tx, &input) == 0
     }
     
-    public func addOutput(to tx: OpaquePointer, address: String, amount: UInt64, network: DashNetwork) -> Bool {
-        // Placeholder
-        return false
+    public func addOutput(to tx: UnsafeMutablePointer<FFITransaction>, address: String, amount: UInt64, network: DashNetwork) -> Bool {
+        let ffiNetwork = networkToFFI(network)
+        
+        // Convert address to pubkey hash
+        var pubkeyHash = Data(count: 20)
+        let hashResult = pubkeyHash.withUnsafeMutableBytes { hashBytes in
+            dash_address_to_pubkey_hash(
+                address,
+                ffiNetwork,
+                hashBytes.bindMemory(to: UInt8.self).baseAddress
+            )
+        }
+        
+        guard hashResult == 0 else { return false }
+        
+        // Create P2PKH script
+        var scriptPubkey = Data(count: 25)  // Typical P2PKH script size
+        var scriptLen: UInt32 = 25
+        
+        let scriptResult = scriptPubkey.withUnsafeMutableBytes { scriptBytes in
+            pubkeyHash.withUnsafeBytes { hashBytes in
+                dash_script_p2pkh(
+                    hashBytes.bindMemory(to: UInt8.self).baseAddress,
+                    scriptBytes.bindMemory(to: UInt8.self).baseAddress,
+                    &scriptLen
+                )
+            }
+        }
+        
+        guard scriptResult == 0 else { return false }
+        scriptPubkey = scriptPubkey.prefix(Int(scriptLen))
+        
+        var output = FFITxOut()
+        output.amount = amount
+        output.script_pubkey_len = scriptLen
+        output.script_pubkey = scriptPubkey.withUnsafeBytes { $0.bindMemory(to: UInt8.self).baseAddress }
+        
+        return dash_tx_add_output(tx, &output) == 0
     }
     
-    public func getTransactionId(_ tx: OpaquePointer) -> Data? {
+    public func getTransactionId(_ tx: UnsafeMutablePointer<FFITransaction>) -> Data? {
         // Placeholder
         return Data(repeating: 0xFF, count: 32)
     }
     
-    public func serializeTransaction(_ tx: OpaquePointer) -> Data? {
+    public func serializeTransaction(_ tx: UnsafeMutablePointer<FFITransaction>) -> Data? {
         // Placeholder
         return Data()
     }
     
-    public func signInput(tx: OpaquePointer, inputIndex: UInt32, privateKey: Data, scriptPubkey: Data, sighashType: UInt32 = 1) -> Bool {
+    public func signInput(tx: UnsafeMutablePointer<FFITransaction>, inputIndex: UInt32, privateKey: Data, scriptPubkey: Data, sighashType: UInt32 = 1) -> Bool {
         // Placeholder
         return false
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func networkToFFI(_ network: DashNetwork) -> FFIKeyNetwork {
+        switch network {
+        case .mainnet:
+            return FFIKeyNetwork(0) // KeyMainnet
+        case .testnet:
+            return FFIKeyNetwork(1) // KeyTestnet
+        case .devnet:
+            return FFIKeyNetwork(3) // KeyDevnet
+        }
     }
 }
 
@@ -105,6 +193,7 @@ public struct DerivedKey {
 public enum DashNetwork: String {
     case mainnet = "mainnet"
     case testnet = "testnet"
+    case devnet = "devnet"
 }
 
 // FFI types will be added when DashSDK import is fixed
