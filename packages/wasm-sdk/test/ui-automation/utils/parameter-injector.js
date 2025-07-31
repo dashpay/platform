@@ -193,16 +193,40 @@ class ParameterInjector {
         validation.warnings.push(`Array parameter '${key}' is empty`);
       }
 
-      // Validate ID format (basic check)
+      // Validate ID format (base58 compliance for Dash IDs)
       if (key.toLowerCase().includes('id') && typeof value === 'string') {
-        if (value.length < 10) {
-          validation.errors.push(`Parameter '${key}' appears to be too short for an ID: ${value}`);
+        if (!this.isValidBase58DashId(value)) {
+          validation.errors.push(`Parameter '${key}' is not a valid base58-encoded Dash ID: ${value}`);
           validation.valid = false;
         }
       }
     }
 
     return validation;
+  }
+
+  /**
+   * Validate if a string is a valid base58-encoded Dash ID
+   * @param {string} id - The ID string to validate
+   * @returns {boolean} - true if valid base58 Dash ID format
+   */
+  isValidBase58DashId(id) {
+    // Dash IDs are typically 44 characters long when base58 encoded
+    // Base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+    // (excludes 0, O, I, l to avoid confusion)
+    const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
+    
+    if (!base58Regex.test(id)) {
+      return false;
+    }
+    
+    // Additional check: ensure it doesn't contain invalid base58 characters
+    const invalidChars = /[0OIl]/;
+    if (invalidChars.test(id)) {
+      return false;
+    }
+    
+    return true;
   }
 
   /**

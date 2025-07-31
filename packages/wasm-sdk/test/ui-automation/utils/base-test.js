@@ -1,4 +1,5 @@
 const { expect } = require('@playwright/test');
+const fs = require('fs');
 
 /**
  * Base test utilities for WASM SDK UI automation
@@ -50,8 +51,15 @@ class BaseTest {
    * Take a screenshot with a descriptive name
    */
   async takeScreenshot(name) {
+    const screenshotDir = 'test-results/screenshots/';
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(screenshotDir)) {
+      fs.mkdirSync(screenshotDir, { recursive: true });
+    }
+    
     await this.page.screenshot({ 
-      path: `test-results/screenshots/${name}-${Date.now()}.png`,
+      path: `${screenshotDir}${name}-${Date.now()}.png`,
       fullPage: true 
     });
   }

@@ -195,42 +195,42 @@ jobs:
         if: always()
         working-directory: packages/wasm-sdk/test/ui-automation
         run: |
-          echo "## WASM SDK UI Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## WASM SDK UI Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           
           if [ "${{ github.event_name }}" == "workflow_run" ]; then
-            echo "- **Triggered by**: WASM SDK Build (workflow_run)" >> $GITHUB_STEP_SUMMARY
-            echo "- **Build Workflow**: ${{ github.event.workflow_run.html_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Triggered by**: WASM SDK Build (workflow_run)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Build Workflow**: ${{ github.event.workflow_run.html_url }}" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- **Triggered by**: Manual dispatch" >> $GITHUB_STEP_SUMMARY
-            echo "- **Test Type**: ${{ inputs.test_type }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **Browser**: ${{ inputs.browser }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **Headed Mode**: ${{ inputs.headed }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Triggered by**: Manual dispatch" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Test Type**: ${{ inputs.test_type }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Browser**: ${{ inputs.browser }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Headed Mode**: ${{ inputs.headed }}" >> "$GITHUB_STEP_SUMMARY"
           fi
           
-          echo "- **Debug**: ${{ env.DEBUG }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Debug**: ${{ env.DEBUG }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           
           # Show test results if available
           if [ -f "test-results.json" ]; then
-            echo "### Test Results" >> $GITHUB_STEP_SUMMARY
-            echo '```json' >> $GITHUB_STEP_SUMMARY
-            jq '.stats' test-results.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Test results available in artifacts" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "### Test Results" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            jq '.stats' test-results.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "Test results available in artifacts" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
           
           # List available artifacts
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Available Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- **Playwright Report**: Detailed HTML report with test results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Test Results**: JSON results and raw output files" >> $GITHUB_STEP_SUMMARY
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Available Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Playwright Report**: Detailed HTML report with test results" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Test Results**: JSON results and raw output files" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ job.status }}" == "failure" ]; then
-            echo "- **Test Failures**: Screenshots and videos of failed tests" >> $GITHUB_STEP_SUMMARY
+            echo "- **Test Failures**: Screenshots and videos of failed tests" >> "$GITHUB_STEP_SUMMARY"
           fi
           
           # Add quick links
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Quick Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [WASM SDK](https://github.com/${{ github.repository }}/tree/${{ github.sha }}/packages/wasm-sdk)" >> $GITHUB_STEP_SUMMARY
-          echo "- [UI Tests](https://github.com/${{ github.repository }}/tree/${{ github.sha }}/packages/wasm-sdk/test/ui-automation)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Quick Links" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [WASM SDK](https://github.com/${{ github.repository }}/tree/${{ github.sha }}/packages/wasm-sdk)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [UI Tests](https://github.com/${{ github.repository }}/tree/${{ github.sha }}/packages/wasm-sdk/test/ui-automation)" >> "$GITHUB_STEP_SUMMARY"
           

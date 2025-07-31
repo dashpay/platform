@@ -253,9 +253,11 @@ class WasmSdkPage extends BaseTest {
   }
 
   /**
-   * Enable proof information toggle
+   * Helper method to toggle proof information
+   * @param {boolean} enable - true to enable, false to disable
+   * @returns {boolean} - true if successful, false if proof toggle not available
    */
-  async enableProofInfo() {
+  async _toggleProofInfo(enable) {
     // Wait a moment for the UI to fully load after query setup
     await this.page.waitForTimeout(1000);
     
@@ -287,20 +289,27 @@ class WasmSdkPage extends BaseTest {
       
       const proofToggle = this.page.locator(this.selectors.proofToggle);
       
-      // Check if already enabled
+      // Check current state and toggle if needed
       const isChecked = await proofToggle.isChecked();
-      if (!isChecked) {
+      const needsToggle = enable ? !isChecked : isChecked;
+      
+      if (needsToggle) {
         // Click on the toggle switch container or label to toggle it
         // Since it's a custom toggle, we need to click the label or toggle-slider
         const toggleLabel = proofContainer.locator('label');
         await toggleLabel.click();
         
-        // Wait for the toggle to be checked
-        await expect(proofToggle).toBeChecked();
-        console.log('Proof toggle confirmed as checked');
+        // Wait for the toggle to reach the expected state
+        if (enable) {
+          await expect(proofToggle).toBeChecked();
+          console.log('Proof toggle confirmed as checked');
+        } else {
+          await expect(proofToggle).not.toBeChecked();
+          console.log('Proof toggle confirmed as unchecked');
+        }
       }
       
-      console.log('Proof info enabled');
+      console.log(`Proof info ${enable ? 'enabled' : 'disabled'}`);
       return true;
     } catch (error) {
       console.log(`⚠️ Proof toggle not available for this query type: ${error.message}`);
@@ -309,59 +318,17 @@ class WasmSdkPage extends BaseTest {
   }
 
   /**
+   * Enable proof information toggle
+   */
+  async enableProofInfo() {
+    return this._toggleProofInfo(true);
+  }
+
+  /**
    * Disable proof information toggle
    */
   async disableProofInfo() {
-    // Wait a moment for the UI to fully load after query setup
-    await this.page.waitForTimeout(1000);
-    
-    const proofContainer = this.page.locator(this.selectors.proofToggleContainer);
-    
-    // Check if proof container exists and becomes visible
-    try {
-      // Wait longer and check if container becomes visible or is already attached
-      await proofContainer.waitFor({ state: 'attached', timeout: 10000 });
-      
-      // Check if it's visible or can be made visible
-      const isVisible = await proofContainer.isVisible();
-      if (!isVisible) {
-        // It might be hidden by display:none, check if it exists in the DOM
-        const count = await proofContainer.count();
-        if (count === 0) {
-          console.log('⚠️ Proof toggle container not found in DOM');
-          return false;
-        }
-        
-        // Try to wait a bit more for it to become visible
-        try {
-          await proofContainer.waitFor({ state: 'visible', timeout: 3000 });
-        } catch {
-          console.log('⚠️ Proof toggle container exists but remains hidden - may not be available for this query type');
-          return false;
-        }
-      }
-      
-      const proofToggle = this.page.locator(this.selectors.proofToggle);
-      
-      // Check if already disabled
-      const isChecked = await proofToggle.isChecked();
-      if (isChecked) {
-        // Click on the toggle switch container or label to toggle it
-        // Since it's a custom toggle, we need to click the label or toggle-slider
-        const toggleLabel = proofContainer.locator('label');
-        await toggleLabel.click();
-        
-        // Wait for the toggle to be unchecked
-        await expect(proofToggle).not.toBeChecked();
-        console.log('Proof toggle confirmed as unchecked');
-      }
-      
-      console.log('Proof info disabled');
-      return true;
-    } catch (error) {
-      console.log(`⚠️ Proof toggle not available for this query type: ${error.message}`);
-      return false;
-    }
+    return this._toggleProofInfo(false);
   }
 
   /**
