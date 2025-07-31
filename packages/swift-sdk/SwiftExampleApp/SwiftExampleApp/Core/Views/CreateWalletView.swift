@@ -23,14 +23,16 @@ struct CreateWalletView: View {
                 }
                 
                 Section {
-                    SecureField("PIN (4-6 digits)", text: $walletPin)
+                    TextField("PIN (4-6 digits)", text: $walletPin)
                         .keyboardType(.numberPad)
-                    SecureField("Confirm PIN", text: $confirmPin)
+                        .textContentType(.oneTimeCode)
+                    TextField("Confirm PIN", text: $confirmPin)
                         .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
                 } header: {
                     Text("Security")
                 } footer: {
-                    Text("Choose a PIN to secure your wallet")
+                    Text("Choose a PIN to secure your wallet (4-6 digits)")
                 }
                 
                 Section {
@@ -90,16 +92,40 @@ struct CreateWalletView: View {
     }
     
     private func createWallet() {
+        // Validate inputs first
+        guard !walletLabel.isEmpty else {
+            error = WalletError.notImplemented("Wallet name is required")
+            return
+        }
+        
+        guard !walletPin.isEmpty else {
+            error = WalletError.notImplemented("PIN is required")
+            return
+        }
+        
+        guard walletPin == confirmPin else {
+            error = WalletError.notImplemented("PINs do not match")
+            return
+        }
+        
+        guard walletPin.count >= 4 && walletPin.count <= 6 else {
+            error = WalletError.notImplemented("PIN must be 4-6 digits")
+            return
+        }
+        
         isCreating = true
         
         Task {
             do {
                 let mnemonic = showImportOption && !importMnemonic.isEmpty ? importMnemonic : nil
+                print("Creating wallet with label: \(walletLabel), has mnemonic: \(mnemonic != nil), PIN length: \(walletPin.count)")
+                
                 _ = try await walletService.createWallet(label: walletLabel, mnemonic: mnemonic, pin: walletPin)
                 await MainActor.run {
                     dismiss()
                 }
             } catch {
+                print("Wallet creation failed: \(error)")
                 await MainActor.run {
                     self.error = error
                     self.isCreating = false

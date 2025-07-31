@@ -41,24 +41,32 @@ public class WalletManager: ObservableObject {
     // MARK: - Wallet Management
     
     public func createWallet(label: String, network: DashNetwork, mnemonic: String? = nil, pin: String) async throws -> HDWallet {
+        print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
         
         // Generate or validate mnemonic
         let finalMnemonic: String
         if let mnemonic = mnemonic {
+            print("Validating provided mnemonic...")
             guard keyManager.validateMnemonic(mnemonic) else {
+                print("Mnemonic validation failed")
                 throw WalletError.invalidMnemonic
             }
             finalMnemonic = mnemonic
         } else {
+            print("Generating new mnemonic...")
             finalMnemonic = keyManager.generateMnemonic()
+            print("Generated mnemonic: \(finalMnemonic)")
         }
         
         // Derive seed from mnemonic
+        print("Deriving seed from mnemonic...")
         guard let seed = keyManager.mnemonicToSeed(finalMnemonic) else {
+            print("Seed generation failed")
             throw WalletError.seedGenerationFailed
         }
+        print("Seed generated successfully, length: \(seed.count)")
         
         // Create wallet
         let wallet = HDWallet(label: label, network: network)

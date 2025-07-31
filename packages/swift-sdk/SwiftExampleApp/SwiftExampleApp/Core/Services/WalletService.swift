@@ -47,22 +47,32 @@ public class WalletService: ObservableObject {
     // MARK: - Wallet Management
     
     public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234") async throws -> HDWallet {
+        print("WalletService.createWallet called with label: \(label), has mnemonic: \(mnemonic != nil), pin length: \(pin.count)")
+        
         guard let walletManager = walletManager else {
+            print("WalletManager not initialized")
             throw WalletError.notImplemented("WalletManager not initialized")
         }
         
-        // Create wallet using WalletManager
-        let wallet = try await walletManager.createWallet(
-            label: label,
-            network: .testnet,
-            mnemonic: mnemonic,
-            pin: pin
-        )
-        
-        // Load the newly created wallet
-        await loadWallet(wallet)
-        
-        return wallet
+        do {
+            // Create wallet using WalletManager
+            print("Creating wallet with WalletManager...")
+            let wallet = try await walletManager.createWallet(
+                label: label,
+                network: .testnet,
+                mnemonic: mnemonic,
+                pin: pin
+            )
+            
+            print("Wallet created successfully, loading...")
+            // Load the newly created wallet
+            await loadWallet(wallet)
+            
+            return wallet
+        } catch {
+            print("WalletManager.createWallet failed: \(error)")
+            throw error
+        }
     }
     
     public func loadWallet(_ wallet: HDWallet) async {
