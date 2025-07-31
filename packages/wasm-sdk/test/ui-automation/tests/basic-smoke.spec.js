@@ -24,7 +24,6 @@ test.describe('WASM SDK Basic Smoke Tests', () => {
       
       if (statusState === 'loading') {
         // Wait for loading to complete
-        console.log(`⏳ SDK still loading (attempt ${attempts + 1}/${maxAttempts}), waiting...`);
         await wasmSdkPage.waitForSdkReady();
         statusState = await wasmSdkPage.getStatusBannerState();
         
@@ -162,13 +161,10 @@ test.describe('WASM SDK Basic Smoke Tests', () => {
           await expect(proofToggle).not.toBeChecked();
         }
         
-        console.log('✅ Proof toggle functionality verified');
       } else {
-        console.log('⚠️ Proof toggle not available - test skipped');
       }
     } catch (error) {
       // Proof toggle not available for this query type - that's OK
-      console.log('⚠️ Proof toggle not available for getIdentity query - test passed');
     }
   });
 

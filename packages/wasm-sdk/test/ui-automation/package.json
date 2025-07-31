@@ -20,7 +20,7 @@
     "posttest": "echo 'Tests completed. Check playwright-report/ for results.'"
   },
   "devDependencies": {
-    "@playwright/test": "^1.41.0"
+    "@playwright/test": "^1.54.1"
   },
   "engines": {
     "node": ">=18"
