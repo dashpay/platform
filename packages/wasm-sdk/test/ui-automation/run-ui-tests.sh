@@ -160,7 +160,7 @@ install_dependencies() {
     fi
     
     # Install browsers if needed
-    if [ ! -d "$HOME/.cache/ms-playwright/chromium-"* ] 2>/dev/null; then
+    if ! find "$HOME/.cache/ms-playwright" -maxdepth 1 -name "chromium-*" -type d -print -quit 2>/dev/null | grep -q .; then
         print_status "Installing Playwright browsers..."
         if ! npx playwright install chromium; then
             print_error "Failed to install Playwright browsers"
