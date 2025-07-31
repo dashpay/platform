@@ -1,11 +1,9 @@
-use crate::error::{DAPIResult, DapiError};
+use crate::error::DAPIResult;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::sync::broadcast;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
-use zmq::{Context, Socket, SocketType};
+use zeromq::prelude::*;
 
 /// ZMQ topics that we subscribe to from Dash Core
 #[derive(Debug, Clone)]
@@ -89,14 +87,14 @@ impl ZmqListenerTrait for ZmqListener {
     async fn start(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
         let receiver = self.event_sender.subscribe();
 
-        // Start the ZMQ listener in a background thread
+        // Start the ZMQ listener in a background task
         let zmq_uri = self.zmq_uri.clone();
         let topics = self.topics.clone();
         let sender = self.event_sender.clone();
 
-        tokio::task::spawn_blocking(move || {
-            if let Err(e) = Self::zmq_listener_thread(zmq_uri, topics, sender) {
-                error!("ZMQ listener thread error: {}", e);
+        tokio::task::spawn(async move {
+            if let Err(e) = Self::zmq_listener_task(zmq_uri, topics, sender).await {
+                error!("ZMQ listener task error: {}", e);
             }
         });
 
@@ -114,63 +112,76 @@ impl ZmqListenerTrait for ZmqListener {
 }
 
 impl ZmqListener {
-    /// ZMQ listener thread that runs in a blocking context
-    fn zmq_listener_thread(
+    /// ZMQ listener task that runs asynchronously
+    async fn zmq_listener_task(
         zmq_uri: String,
         topics: ZmqTopics,
         sender: broadcast::Sender<ZmqEvent>,
     ) -> DAPIResult<()> {
         info!("Starting ZMQ listener on {}", zmq_uri);
 
-        let context = Context::new();
-        let socket = context.socket(SocketType::SUB)?;
+        // Create SUB socket
+        let mut socket = zeromq::SubSocket::new();
 
         // Subscribe to all topics
-        socket.set_subscribe(topics.rawtx.as_bytes())?;
-        socket.set_subscribe(topics.rawblock.as_bytes())?;
-        socket.set_subscribe(topics.rawtxlocksig.as_bytes())?;
-        socket.set_subscribe(topics.rawchainlocksig.as_bytes())?;
-        socket.set_subscribe(topics.hashblock.as_bytes())?;
-
-        // Set socket options
-        socket.set_rcvhwm(1000)?;
-        socket.set_linger(0)?;
+        socket.subscribe(&topics.rawtx).await?;
+        socket.subscribe(&topics.rawblock).await?;
+        socket.subscribe(&topics.rawtxlocksig).await?;
+        socket.subscribe(&topics.rawchainlocksig).await?;
+        socket.subscribe(&topics.hashblock).await?;
 
         // Connect to Dash Core ZMQ
-        socket.connect(&zmq_uri)?;
+        socket.connect(&zmq_uri).await?;
         info!("Connected to ZMQ at {}", zmq_uri);
 
+        let mut backoff = Duration::from_millis(100);
         loop {
-            match Self::receive_zmq_message(&socket, &topics) {
+            match Self::receive_zmq_message(&mut socket, &topics).await {
                 Ok(Some(event)) => {
                     debug!("Received ZMQ event: {:?}", event);
                     if let Err(e) = sender.send(event) {
                         warn!("Failed to send ZMQ event to subscribers: {}", e);
                     }
+
+                    backoff = Duration::from_millis(100); // Reset backoff on successful receive
                 }
                 Ok(None) => {
                     // No message or unknown topic, continue
+                    backoff = Duration::from_millis(100); // Reset backoff on successful receive
                 }
                 Err(e) => {
                     error!("Error receiving ZMQ message: {}", e);
-                    // Sleep briefly before retrying
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    // sleep with backoff to avoid busy loop
+                    sleep(backoff).await;
+
+                    if backoff < Duration::from_secs(5) {
+                        backoff *= 2; // Exponential backoff
+                    } else {
+                        backoff = Duration::from_secs(5); // Cap backoff at 5 seconds
+                    }
                 }
             }
         }
     }
 
     /// Receive and parse a ZMQ message
-    fn receive_zmq_message(socket: &Socket, topics: &ZmqTopics) -> DAPIResult<Option<ZmqEvent>> {
-        // Receive multipart message (topic + data)
-        let parts = socket.recv_multipart(zmq::DONTWAIT)?;
+    async fn receive_zmq_message(
+        socket: &mut zeromq::SubSocket,
+        topics: &ZmqTopics,
+    ) -> DAPIResult<Option<ZmqEvent>> {
+        // Receive message
+        let message = socket.recv().await?;
 
-        if parts.len() < 2 {
+        // Convert ZmqMessage to multipart frames
+        let frames = message.into_vec();
+
+        // ZeroMQ messages are multipart: [topic, data]
+        if frames.len() < 2 {
             return Ok(None);
         }
 
-        let topic = String::from_utf8_lossy(&parts[0]);
-        let data = parts[1].clone();
+        let topic = String::from_utf8_lossy(&frames[0]);
+        let data = frames[1].to_vec(); // Convert to Vec<u8>
 
         let event = match topic.as_ref() {
             topic if topic == topics.rawtx => Some(ZmqEvent::RawTransaction { data }),

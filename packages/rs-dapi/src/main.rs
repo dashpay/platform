@@ -1,4 +1,3 @@
-use anyhow::Result;
 use rs_dapi::DAPIResult;
 use tracing::{error, info};
 
@@ -7,10 +6,9 @@ use rs_dapi::server::DapiServer;
 
 #[tokio::main]
 async fn main() -> DAPIResult<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Initialize tracing; by default, we log rs_dapi at debug level, others at info
+    let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "rs_dapi=debug,info".to_string());
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     info!("Starting rs-dapi server...");
 

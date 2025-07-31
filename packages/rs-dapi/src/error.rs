@@ -6,7 +6,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum DapiError {
     #[error("ZMQ connection error: {0}")]
-    ZmqConnection(#[from] zmq::Error),
+    ZmqConnection(#[from] zeromq::ZmqError),
 
     #[error("Configuration error: {0}")]
     Configuration(String),
