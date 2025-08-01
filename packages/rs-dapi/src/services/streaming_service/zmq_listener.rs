@@ -2,14 +2,14 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use crate::error::DAPIResult;
+use crate::error::{DAPIResult, DapiError};
 use async_trait::async_trait;
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
-use tokio_stream::StreamExt;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, warn};
 use zeromq::prelude::*;
+use zeromq::SubSocket;
 
 /// ZMQ topics that we subscribe to from Dash Core
 
@@ -39,6 +39,19 @@ impl Default for ZmqTopics {
             rawchainlock: "rawchainlock".to_string(),
             rawchainlocksig: "rawchainlocksig".to_string(),
         }
+    }
+}
+
+impl ZmqTopics {
+    /// Convert to a vector of topic strings
+    pub fn to_vec(&self) -> Vec<String> {
+        vec![
+            self.rawtx.clone(),
+            self.rawblock.clone(),
+            self.rawtxlocksig.clone(),
+            self.rawchainlocksig.clone(),
+            self.hashblock.clone(),
+        ]
     }
 }
 
@@ -75,6 +88,8 @@ pub struct ZmqListener {
     _event_receiver: broadcast::Receiver<ZmqEvent>,
     socket: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
     connected: Arc<AtomicBool>,
+    max_retry_count: usize,
+    connection_timeout: Duration,
 }
 
 impl ZmqListener {
@@ -87,7 +102,17 @@ impl ZmqListener {
             event_sender,
             _event_receiver: event_receiver,
             connected: Arc::new(AtomicBool::new(false)),
-            socket: Arc::new(tokio::sync::Mutex::new(zeromq::SubSocket::new())),
+            socket: Arc::new(tokio::sync::Mutex::new(SubSocket::new())),
+            max_retry_count: 20,
+            connection_timeout: Duration::from_secs(30),
+        }
+    }
+
+    pub fn with_retry_config(zmq_uri: &str, max_retries: usize, timeout: Duration) -> Self {
+        Self {
+            max_retry_count: max_retries,
+            connection_timeout: timeout,
+            ..Self::new(zmq_uri)
         }
     }
 }
@@ -98,24 +123,47 @@ impl ZmqListenerTrait for ZmqListener {
     async fn start(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
         let receiver = self.event_sender.subscribe();
 
+        // Start the ZMQ monitor task to track connection status
+        let monitor_socket = self.socket.clone();
+        let monitor_connected = self.connected.clone();
+        tokio::spawn(async move {
+            if let Err(e) = Self::zmq_monitor_task(monitor_socket, monitor_connected).await {
+                error!("ZMQ monitor task error: {}", e);
+            }
+        });
+
         // Start the ZMQ listener in a background task
         let zmq_uri = self.zmq_uri.clone();
-        let topics = self.topics.clone();
+        let topics = self.topics.to_vec();
         let sender = self.event_sender.clone();
-
         let socket = self.socket.clone();
-        let connected = self.connected.clone();
+        let max_retry_count = self.max_retry_count;
+        let connection_timeout = self.connection_timeout;
 
         tokio::task::spawn(async move {
-            if let Err(e) =
-                Self::zmq_listener_task(zmq_uri, topics, sender, socket, connected).await
+            if let Err(e) = Self::zmq_listener_task(
+                zmq_uri,
+                topics,
+                sender,
+                socket,
+                max_retry_count,
+                connection_timeout,
+            )
+            .await
             {
                 error!("ZMQ listener task error: {}", e);
             }
         });
 
-        // Give the ZMQ connection a moment to establish
-        sleep(Duration::from_millis(100)).await;
+        // Wait for initial connection attempt with timeout
+        let start_time = tokio::time::Instant::now();
+        while !self.is_connected() && start_time.elapsed() < self.connection_timeout {
+            sleep(Duration::from_millis(100)).await;
+        }
+
+        if !self.is_connected() {
+            warn!("ZMQ connection not established within timeout, but continuing with background retries");
+        }
 
         Ok(receiver)
     }
@@ -130,115 +178,150 @@ impl ZmqListener {
     /// ZMQ listener task that runs asynchronously
     async fn zmq_listener_task(
         zmq_uri: String,
-        topics: ZmqTopics,
+        topics: Vec<String>,
         sender: broadcast::Sender<ZmqEvent>,
         socket_store: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
-        connected: Arc<AtomicBool>,
+        max_retry_count: usize,
+        connection_timeout: Duration,
     ) -> DAPIResult<()> {
-        info!("Connecting to ZMQ on {}", zmq_uri);
+        let mut retry_count = 0;
+        let mut delay = Duration::from_millis(1000); // Start with 1 second delay
 
-        let socket_arc = socket_store.clone();
-        let mut socket = socket_arc.lock().await;
-
-        // Subscribe to all topics
-        trace!(
-            "Subscribing to ZMQ topics: rawtx, rawblock, rawtxlocksig, rawchainlocksig, hashblock"
-        );
-        socket.subscribe(&topics.rawtx).await?;
-        socket.subscribe(&topics.rawblock).await?;
-        socket.subscribe(&topics.rawtxlocksig).await?;
-        socket.subscribe(&topics.rawchainlocksig).await?;
-        socket.subscribe(&topics.hashblock).await?;
-
-        // Connect to Dash Core ZMQ
-        socket.connect(&zmq_uri).await?;
-        info!("Connected to ZMQ at {}", zmq_uri);
-        drop(socket); // release the lock before starting the monitor
-
-        // Start the ZMQ monitor task
-        let monitor_socket = socket_store.clone();
-        let connected_clone = connected.clone();
-        tokio::spawn(async move {
-            Self::zmq_monitor_task(monitor_socket, connected_clone).await;
-            info!("ZMQ monitor task terminated");
-        });
-
-        let mut backoff = Duration::from_millis(100);
         loop {
-            match Self::receive_zmq_message(socket_store.clone(), &topics).await {
-                Ok(Some(event)) => {
-                    trace!("Received ZMQ event: {:?}", event);
-                    if let Err(e) = sender.send(event) {
-                        warn!("Failed to send ZMQ event to subscribers: {}", e);
+            // Try to establish connection
+            match Self::connect_zmq(&zmq_uri, &topics, &socket_store, connection_timeout).await {
+                Ok(_) => {
+                    retry_count = 0; // Reset retry count on successful connection
+                    delay = Duration::from_millis(1000); // Reset delay
+                    info!("ZMQ connected to {}", zmq_uri);
+
+                    // Listen for messages
+                    if let Err(e) = Self::listen_for_messages(&socket_store, &sender).await {
+                        error!("Error listening for ZMQ messages: {}", e);
+                    }
+                }
+                Err(e) => {
+                    retry_count += 1;
+
+                    if retry_count >= max_retry_count {
+                        error!(
+                            "Failed to connect to ZMQ after {} attempts: {}",
+                            max_retry_count, e
+                        );
+                        return Err(e);
                     }
 
-                    backoff = Duration::from_millis(100); // Reset backoff on successful receive
+                    warn!(
+                        "ZMQ connection attempt {} failed: {}. Retrying in {:?}",
+                        retry_count, e, delay
+                    );
+                    sleep(delay).await;
+
+                    // Exponential backoff with jitter, capped at 30 seconds
+                    delay = std::cmp::min(delay * 2, Duration::from_secs(30));
                 }
-                Ok(None) => {
-                    // No message or unknown topic, continue
-                    backoff = Duration::from_millis(100); // Reset backoff on successful receive
+            }
+        }
+    }
+
+    /// Helper method to establish ZMQ connection
+    async fn connect_zmq(
+        zmq_uri: &str,
+        topics: &[String],
+        socket_store: &Arc<Mutex<zeromq::SubSocket>>,
+        connection_timeout: Duration,
+    ) -> DAPIResult<()> {
+        let mut socket_guard = socket_store.lock().await;
+
+        // Set connection timeout
+        tokio::time::timeout(connection_timeout, async {
+            socket_guard.connect(zmq_uri).await
+        })
+        .await
+        .map_err(|_| DapiError::Configuration("Connection timeout".to_string()))?
+        .map_err(|e| DapiError::ZmqConnection(e))?;
+
+        // Subscribe to topics
+        for topic in topics {
+            socket_guard
+                .subscribe(topic)
+                .await
+                .map_err(|e| DapiError::ZmqConnection(e))?;
+        }
+
+        Ok(())
+    }
+
+    /// Helper method to listen for ZMQ messages
+    async fn listen_for_messages(
+        socket_store: &Arc<Mutex<zeromq::SubSocket>>,
+        sender: &broadcast::Sender<ZmqEvent>,
+    ) -> DAPIResult<()> {
+        loop {
+            let message = {
+                let mut socket_guard = socket_store.lock().await;
+                socket_guard.recv().await
+            };
+
+            match message {
+                Ok(msg) => {
+                    let frames: Vec<Vec<u8>> = msg
+                        .into_vec()
+                        .into_iter()
+                        .map(|bytes| bytes.to_vec())
+                        .collect();
+                    if let Some(event) = Self::parse_zmq_message(frames) {
+                        if let Err(e) = sender.send(event) {
+                            warn!("Failed to send ZMQ event: {}", e);
+                        }
+                    }
                 }
                 Err(e) => {
                     error!("Error receiving ZMQ message: {}", e);
-                    // sleep with backoff to avoid busy loop
-                    sleep(backoff).await;
 
-                    if backoff < Duration::from_secs(5) {
-                        backoff *= 2; // Exponential backoff
-                    } else {
-                        backoff = Duration::from_secs(5); // Cap backoff at 5 seconds
-                    }
+                    return Err(DapiError::ZmqConnection(e));
                 }
             }
         }
     }
 
-    /// Receive and parse a ZMQ message
-    async fn receive_zmq_message(
-        socket: Arc<Mutex<zeromq::SubSocket>>,
-        topics: &ZmqTopics,
-    ) -> DAPIResult<Option<ZmqEvent>> {
-        // Receive message
-        let mut socket_guard = socket.lock().await;
-        let message = socket_guard.recv().await?;
-        drop(socket_guard); // Release the lock before processing
-
-        // Convert ZmqMessage to multipart frames
-        let frames = message.into_vec();
-
-        // ZeroMQ messages are multipart: [topic, data]
+    /// Parse ZMQ message frames into events
+    fn parse_zmq_message(frames: Vec<Vec<u8>>) -> Option<ZmqEvent> {
         if frames.len() < 2 {
-            return Ok(None);
+            return None;
         }
 
         let topic = String::from_utf8_lossy(&frames[0]);
-        let data = frames[1].to_vec(); // Convert to Vec<u8>
+        let data = frames[1].clone();
 
-        let event = match topic.as_ref() {
-            topic if topic == topics.rawtx => Some(ZmqEvent::RawTransaction { data }),
-            topic if topic == topics.rawblock => Some(ZmqEvent::RawBlock { data }),
-            topic if topic == topics.rawtxlocksig => Some(ZmqEvent::RawTransactionLock { data }),
-            topic if topic == topics.rawchainlocksig => Some(ZmqEvent::RawChainLock { data }),
-            topic if topic == topics.hashblock => Some(ZmqEvent::HashBlock { hash: data }),
+        match topic.as_ref() {
+            "rawtx" => Some(ZmqEvent::RawTransaction { data }),
+            "rawblock" => Some(ZmqEvent::RawBlock { data }),
+            "rawtxlocksig" => Some(ZmqEvent::RawTransactionLock { data }),
+            "rawchainlocksig" => Some(ZmqEvent::RawChainLock { data }),
+            "hashblock" => Some(ZmqEvent::HashBlock { hash: data }),
             _ => {
-                debug!("Unknown ZMQ topic: {}", topic);
+                warn!("Unknown ZMQ topic: {}", topic);
                 None
             }
-        };
-
-        Ok(event)
+        }
     }
 
-    /// ZMQ monitor task that runs in the background and updates the connection status
+    /// ZMQ monitor task that tracks connection status changes
     async fn zmq_monitor_task(
-        socket_store: Arc<tokio::sync::Mutex<zeromq::SubSocket>>,
+        socket_store: Arc<Mutex<zeromq::SubSocket>>,
         connected: Arc<AtomicBool>,
-    ) {
+    ) -> DAPIResult<()> {
         info!("Starting ZMQ monitor task");
-        let mut socket = socket_store.lock().await;
-        let mut monitor = socket.monitor();
-        drop(socket);
 
+        // Get a monitor from the socket
+        let mut monitor = {
+            let mut socket_guard = socket_store.lock().await;
+            socket_guard.monitor()
+        };
+
+        // Monitor socket events
+        use tokio_stream::StreamExt;
         while let Some(event) = monitor.next().await {
             match event {
                 zeromq::SocketEvent::Connected(endpoint, peer) => {
@@ -252,14 +335,17 @@ impl ZmqListener {
                 zeromq::SocketEvent::Closed => {
                     error!("ZMQ socket closed");
                     connected.store(false, Ordering::SeqCst);
+                    break; // Exit monitor loop when socket is closed
                 }
                 _ => {
-                    trace!("ZMQ socket event: {:?}", event);
+                    // Log other events for debugging
+                    tracing::trace!("Unsupported ZMQ socket event: {:?}", event);
                 }
             }
         }
 
-        info!("ZMQ monitor channel closed");
+        info!("ZMQ monitor task terminated");
+        Ok(())
     }
 }
 
