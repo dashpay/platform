@@ -137,8 +137,10 @@ fn configure_logging(cli: &Cli) -> Result<(), String> {
     let env_filter = if cli.debug || cli.verbose > 0 {
         match cli.verbose.max(if cli.debug { 2 } else { 0 }) {
             1 => "rs_dapi=debug,info", // -v: debug from rs-dapi, info from others
-            2 => "rs_dapi=trace,h2=info,debug", // -vv or --debug: trace from rs-dapi, debug from others
-            _ => "h2=info,trace",               // -vvv+: trace from everything
+            2 => "rs_dapi=trace,info", // -vv or --debug: trace from rs-dapi, debug from others
+            3 => "rs_dapi=trace,h2=info,tower=info,hyper_util=info,debug", // -vvv
+            4 => "rs_dapi=trace,debug", // -vvvv
+            _ => "rs_dapi=trace,trace", // -vvvvv+
         }
     } else {
         // Use RUST_LOG if set, otherwise default
