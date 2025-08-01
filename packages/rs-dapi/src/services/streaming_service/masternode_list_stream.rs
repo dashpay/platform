@@ -38,8 +38,9 @@ impl StreamingServiceImpl {
             while let Some(message) = message_rx.recv().await {
                 let response = match message {
                     StreamingMessage::MasternodeListDiff { data } => {
-                        let mut response = MasternodeListResponse::default();
-                        response.masternode_list_diff = data;
+                        let response = MasternodeListResponse {
+                            masternode_list_diff: data,
+                        };
 
                         Ok(response)
                     }
@@ -49,7 +50,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if let Err(_) = tx.send(response) {
+                if tx.send(response).is_err() {
                     debug!(
                         "Client disconnected from masternode list subscription: {}",
                         sub_id

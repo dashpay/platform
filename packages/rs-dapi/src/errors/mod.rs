@@ -4,25 +4,25 @@ use thiserror::Error;
 pub enum DapiError {
     #[error("Configuration error: {0}")]
     Config(#[from] config::ConfigError),
-    
+
     #[error("gRPC error: {0}")]
     Grpc(#[from] tonic::Status),
-    
+
     #[error("HTTP error: {0}")]
     Http(#[from] axum::Error),
-    
+
     #[error("JSON parsing error: {0}")]
     Json(#[from] serde_json::Error),
-    
+
     #[error("Internal error: {0}")]
     Internal(String),
-    
+
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
-    
+
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
-    
+
     #[error("Not found: {0}")]
     NotFound(String),
 }

@@ -59,21 +59,24 @@ impl StreamingServiceImpl {
             while let Some(message) = message_rx.recv().await {
                 let response = match message {
                     StreamingMessage::BlockHeader { data } => {
-                        let mut block_headers = BlockHeaders::default();
-                        block_headers.headers = vec![data];
+                        let block_headers = BlockHeaders {
+                            headers: vec![data],
+                        };
 
-                        let mut response = BlockHeadersWithChainLocksResponse::default();
-                        response.responses = Some(
-                            dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers)
-                        );
+                        let response = BlockHeadersWithChainLocksResponse {
+                            responses: Some(
+                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers)
+                            ),
+                        };
 
                         Ok(response)
                     }
                     StreamingMessage::ChainLock { data } => {
-                        let mut response = BlockHeadersWithChainLocksResponse::default();
-                        response.responses = Some(
-                            dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data)
-                        );
+                        let response = BlockHeadersWithChainLocksResponse {
+                            responses: Some(
+                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data)
+                            ),
+                        };
 
                         Ok(response)
                     }
@@ -83,7 +86,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if let Err(_) = tx.send(response) {
+                if tx.send(response).is_err() {
                     debug!(
                         "Client disconnected from block header subscription: {}",
                         sub_id

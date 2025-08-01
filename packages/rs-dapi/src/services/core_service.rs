@@ -14,7 +14,6 @@ use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::trace;
 
-use crate::clients::{DriveClientTrait, TenderdashClientTrait};
 use crate::config::Config;
 use crate::services::streaming_service::StreamingServiceImpl;
 

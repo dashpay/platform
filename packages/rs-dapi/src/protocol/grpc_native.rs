@@ -3,7 +3,7 @@
 use crate::errors::DapiResult;
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GrpcNativeHandler;
 
 impl GrpcNativeHandler {
@@ -12,7 +12,10 @@ impl GrpcNativeHandler {
     }
 
     // For native gRPC, we just pass through the requests directly
-    pub async fn handle_get_status(&self, request: GetStatusRequest) -> DapiResult<GetStatusResponse> {
+    pub async fn handle_get_status(
+        &self,
+        _request: GetStatusRequest,
+    ) -> DapiResult<GetStatusResponse> {
         // This would normally call the actual service implementation
         // For now, we'll create a dummy implementation
         let response = create_dummy_status_response();
@@ -21,16 +24,16 @@ impl GrpcNativeHandler {
 }
 
 fn create_dummy_status_response() -> GetStatusResponse {
-    use dapi_grpc::platform::v0::get_status_response::GetStatusResponseV0;
-    use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::{
-        Version, Time, Node, Chain, Network, StateSync
+    use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::version::protocol::{
+        Drive, Tenderdash,
     };
     use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::version::{
-        Software, Protocol
+        Protocol, Software,
     };
-    use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::version::protocol::{
-        Tenderdash, Drive
+    use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::{
+        Chain, Network, Node, StateSync, Time, Version,
     };
+    use dapi_grpc::platform::v0::get_status_response::GetStatusResponseV0;
 
     let software = Software {
         dapi: "rs-dapi-0.1.0".to_string(),
@@ -39,10 +42,7 @@ fn create_dummy_status_response() -> GetStatusResponse {
     };
 
     let protocol = Protocol {
-        tenderdash: Some(Tenderdash {
-            p2p: 8,
-            block: 11,
-        }),
+        tenderdash: Some(Tenderdash { p2p: 8, block: 11 }),
         drive: Some(Drive {
             latest: 1,
             current: 1,
@@ -105,6 +105,8 @@ fn create_dummy_status_response() -> GetStatusResponse {
     };
 
     GetStatusResponse {
-        version: Some(dapi_grpc::platform::v0::get_status_response::Version::V0(response_v0)),
+        version: Some(dapi_grpc::platform::v0::get_status_response::Version::V0(
+            response_v0,
+        )),
     }
 }

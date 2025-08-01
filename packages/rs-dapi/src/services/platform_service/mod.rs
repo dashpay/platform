@@ -11,10 +11,7 @@ use dapi_grpc::platform::v0::{
     GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::time::Instant;
 
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;

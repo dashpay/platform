@@ -10,7 +10,7 @@ use crate::clients::{
     traits::DriveClientTrait,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MockDriveClient;
 
 impl MockDriveClient {

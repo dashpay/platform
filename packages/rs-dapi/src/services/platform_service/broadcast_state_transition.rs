@@ -138,11 +138,11 @@ impl PlatformServiceImpl {
         let mut hasher = Sha256::new();
         hasher.update(st_bytes);
         let st_hash = hasher.finalize();
-        let st_hash_base64 = BASE64_STANDARD.encode(&st_hash);
+        let st_hash_base64 = BASE64_STANDARD.encode(st_hash);
 
         debug!(
             "Checking duplicate state transition with hash: {}",
-            hex::encode(&st_hash)
+            hex::encode(st_hash)
         );
 
         // Check if the ST is in the mempool
@@ -191,17 +191,17 @@ impl PlatformServiceImpl {
                     // CheckTx passes but ST was removed from block - this is a bug
                     warn!(
                         "State transition {} is passing CheckTx but removed from the block by proposer",
-                        hex::encode(&st_hash)
+                        hex::encode(st_hash)
                     );
 
-                    return Err(Status::internal(
+                    Err(Status::internal(
                         "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround."
-                    ));
+                    ))
                 }
             }
             Err(e) => {
                 error!("Failed to check transaction validation: {}", e);
-                return Err(Status::internal("Failed to validate state transition"));
+                Err(Status::internal("Failed to validate state transition"))
             }
         }
     }

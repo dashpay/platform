@@ -348,7 +348,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetEpochsInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_epochs_info(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_epochs_info(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }
@@ -359,7 +359,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetFinalizedEpochInfosResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_finalized_epoch_infos(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_finalized_epoch_infos(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }
@@ -370,7 +370,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetConsensusParamsResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_consensus_params(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_consensus_params(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }
@@ -381,7 +381,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetProtocolVersionUpgradeStateResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_protocol_version_upgrade_state(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_protocol_version_upgrade_state(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }
@@ -417,7 +417,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetTotalCreditsInPlatformResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_total_credits_in_platform(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_total_credits_in_platform(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }
@@ -428,7 +428,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetCurrentQuorumsInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_current_quorums_info(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_current_quorums_info(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }
@@ -486,7 +486,7 @@ impl DriveClientTrait for DriveClient {
     ) -> Result<GetVotePollsByEndDateResponse> {
         let mut client = self.get_client().await?;
         let response = client
-            .get_vote_polls_by_end_date(dapi_grpc::tonic::Request::new(request.clone()))
+            .get_vote_polls_by_end_date(dapi_grpc::tonic::Request::new(*request))
             .await?;
         Ok(response.into_inner())
     }

@@ -123,7 +123,10 @@ impl TenderdashClient {
     }
 
     pub fn with_websocket(uri: &str, ws_uri: &str) -> Self {
-        info!("Creating Tenderdash client for: {} with WebSocket: {}", uri, ws_uri);
+        info!(
+            "Creating Tenderdash client for: {} with WebSocket: {}",
+            uri, ws_uri
+        );
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
 
         Self {

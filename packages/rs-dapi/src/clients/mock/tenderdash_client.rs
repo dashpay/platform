@@ -9,7 +9,7 @@ use crate::clients::{
     traits::TenderdashClientTrait,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MockTenderdashClient;
 
 impl MockTenderdashClient {

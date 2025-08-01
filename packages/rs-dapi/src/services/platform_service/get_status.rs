@@ -4,8 +4,6 @@ use dapi_grpc::platform::v0::{
     GetStatusRequest, GetStatusResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use std::time::Duration;
-use tokio::time::Instant;
 
 use crate::clients::{
     drive_client::DriveStatusResponse,
@@ -59,15 +57,14 @@ fn build_status_response(
     tenderdash_status: TenderdashStatusResponse,
     tenderdash_netinfo: NetInfoResponse,
 ) -> Result<GetStatusResponse, Status> {
-    let mut v0 = GetStatusResponseV0::default();
-
-    // Build each section using separate functions
-    v0.version = Some(build_version_info(&drive_status, &tenderdash_status));
-    v0.node = build_node_info(&tenderdash_status);
-    v0.chain = build_chain_info(&drive_status, &tenderdash_status);
-    v0.state_sync = build_state_sync_info(&tenderdash_status);
-    v0.network = build_network_info(&tenderdash_status, &tenderdash_netinfo);
-    v0.time = Some(build_time_info(&drive_status));
+    let v0 = GetStatusResponseV0 {
+        version: Some(build_version_info(&drive_status, &tenderdash_status)),
+        node: build_node_info(&tenderdash_status),
+        chain: build_chain_info(&drive_status, &tenderdash_status),
+        state_sync: build_state_sync_info(&tenderdash_status),
+        network: build_network_info(&tenderdash_status, &tenderdash_netinfo),
+        time: Some(build_time_info(&drive_status)),
+    };
 
     let response = GetStatusResponse {
         version: Some(get_status_response::Version::V0(v0)),
@@ -106,11 +103,10 @@ fn build_version_info(
     if let Some(version_info) = &drive_status.version {
         if let Some(protocol_info) = &version_info.protocol {
             if let Some(drive_protocol) = &protocol_info.drive {
-                let mut drive_protocol_version =
-                    get_status_response_v0::version::protocol::Drive::default();
-
-                drive_protocol_version.current = drive_protocol.current.unwrap_or(0) as u32;
-                drive_protocol_version.latest = drive_protocol.latest.unwrap_or(0) as u32;
+                let drive_protocol_version = get_status_response_v0::version::protocol::Drive {
+                    current: drive_protocol.current.unwrap_or(0) as u32,
+                    latest: drive_protocol.latest.unwrap_or(0) as u32,
+                };
 
                 protocol.drive = Some(drive_protocol_version);
             }
@@ -120,23 +116,24 @@ fn build_version_info(
     version.protocol = Some(protocol);
 
     // Software version
-    let mut software = get_status_response_v0::version::Software::default();
+    let drive_version = drive_status
+        .version
+        .as_ref()
+        .and_then(|v| v.software.as_ref())
+        .and_then(|s| s.drive.as_ref())
+        .cloned();
 
-    software.dapi = env!("CARGO_PKG_VERSION").to_string();
+    let tenderdash_version = tenderdash_status
+        .node_info
+        .as_ref()
+        .and_then(|n| n.version.as_ref())
+        .cloned();
 
-    if let Some(version_info) = &drive_status.version {
-        if let Some(software_info) = &version_info.software {
-            if let Some(drive_version) = &software_info.drive {
-                software.drive = Some(drive_version.clone());
-            }
-        }
-    }
-
-    if let Some(node_info) = &tenderdash_status.node_info {
-        if let Some(tenderdash_version) = &node_info.version {
-            software.tenderdash = Some(tenderdash_version.clone());
-        }
-    }
+    let software = get_status_response_v0::version::Software {
+        dapi: env!("CARGO_PKG_VERSION").to_string(),
+        drive: drive_version,
+        tenderdash: tenderdash_version,
+    };
 
     version.software = Some(software);
     version
@@ -171,51 +168,67 @@ fn build_chain_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::Chain> {
     if let Some(sync_info) = &tenderdash_status.sync_info {
-        let mut chain = get_status_response_v0::Chain::default();
+        let catching_up = sync_info.catching_up.unwrap_or(false);
 
-        chain.catching_up = sync_info.catching_up.unwrap_or(false);
+        let latest_block_hash = sync_info
+            .latest_block_hash
+            .as_ref()
+            .and_then(|hash| hex::decode(hash).ok())
+            .unwrap_or_default();
 
-        if let Some(latest_block_hash) = &sync_info.latest_block_hash {
-            if let Ok(hash_bytes) = hex::decode(latest_block_hash) {
-                chain.latest_block_hash = hash_bytes;
-            }
-        }
+        let latest_app_hash = sync_info
+            .latest_app_hash
+            .as_ref()
+            .and_then(|hash| hex::decode(hash).ok())
+            .unwrap_or_default();
 
-        if let Some(latest_app_hash) = &sync_info.latest_app_hash {
-            if let Ok(hash_bytes) = hex::decode(latest_app_hash) {
-                chain.latest_app_hash = hash_bytes;
-            }
-        }
+        let latest_block_height = sync_info
+            .latest_block_height
+            .as_ref()
+            .and_then(|h| h.parse().ok())
+            .unwrap_or(0);
 
-        if let Some(latest_block_height) = &sync_info.latest_block_height {
-            chain.latest_block_height = latest_block_height.parse().unwrap_or(0);
-        }
+        let earliest_block_hash = sync_info
+            .earliest_block_hash
+            .as_ref()
+            .and_then(|hash| hex::decode(hash).ok())
+            .unwrap_or_default();
 
-        if let Some(earliest_block_hash) = &sync_info.earliest_block_hash {
-            if let Ok(hash_bytes) = hex::decode(earliest_block_hash) {
-                chain.earliest_block_hash = hash_bytes;
-            }
-        }
+        let earliest_app_hash = sync_info
+            .earliest_app_hash
+            .as_ref()
+            .and_then(|hash| hex::decode(hash).ok())
+            .unwrap_or_default();
 
-        if let Some(earliest_app_hash) = &sync_info.earliest_app_hash {
-            if let Ok(hash_bytes) = hex::decode(earliest_app_hash) {
-                chain.earliest_app_hash = hash_bytes;
-            }
-        }
+        let earliest_block_height = sync_info
+            .earliest_block_height
+            .as_ref()
+            .and_then(|h| h.parse().ok())
+            .unwrap_or(0);
 
-        if let Some(earliest_block_height) = &sync_info.earliest_block_height {
-            chain.earliest_block_height = earliest_block_height.parse().unwrap_or(0);
-        }
+        let max_peer_block_height = sync_info
+            .max_peer_block_height
+            .as_ref()
+            .and_then(|h| h.parse().ok())
+            .unwrap_or(0);
 
-        if let Some(max_peer_block_height) = &sync_info.max_peer_block_height {
-            chain.max_peer_block_height = max_peer_block_height.parse().unwrap_or(0);
-        }
+        let core_chain_locked_height = drive_status
+            .chain
+            .as_ref()
+            .and_then(|c| c.core_chain_locked_height)
+            .map(|h| h as u32);
 
-        if let Some(drive_chain) = &drive_status.chain {
-            if let Some(core_chain_locked_height) = drive_chain.core_chain_locked_height {
-                chain.core_chain_locked_height = Some(core_chain_locked_height as u32);
-            }
-        }
+        let chain = get_status_response_v0::Chain {
+            catching_up,
+            latest_block_hash,
+            latest_app_hash,
+            latest_block_height,
+            earliest_block_hash,
+            earliest_app_hash,
+            earliest_block_height,
+            max_peer_block_height,
+            core_chain_locked_height,
+        };
 
         Some(chain)
     } else {
@@ -227,56 +240,20 @@ fn build_state_sync_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::StateSync> {
     if let Some(sync_info) = &tenderdash_status.sync_info {
-        let mut state_sync = get_status_response_v0::StateSync::default();
+        let parse_or_default = |opt_str: Option<&String>| -> u64 {
+            opt_str.unwrap_or(&"0".to_string()).parse().unwrap_or(0)
+        };
 
-        state_sync.total_synced_time = sync_info
-            .total_synced_time
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.remaining_time = sync_info
-            .remaining_time
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.total_snapshots = sync_info
-            .total_snapshots
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.chunk_process_avg_time = sync_info
-            .chunk_process_avg_time
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.snapshot_height = sync_info
-            .snapshot_height
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.snapshot_chunks_count = sync_info
-            .snapshot_chunks_count
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.backfilled_blocks = sync_info
-            .backfilled_blocks
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
-        state_sync.backfill_blocks_total = sync_info
-            .backfill_blocks_total
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
+        let state_sync = get_status_response_v0::StateSync {
+            total_synced_time: parse_or_default(sync_info.total_synced_time.as_ref()),
+            remaining_time: parse_or_default(sync_info.remaining_time.as_ref()),
+            total_snapshots: parse_or_default(sync_info.total_snapshots.as_ref()) as u32,
+            chunk_process_avg_time: parse_or_default(sync_info.chunk_process_avg_time.as_ref()),
+            snapshot_height: parse_or_default(sync_info.snapshot_height.as_ref()),
+            snapshot_chunks_count: parse_or_default(sync_info.snapshot_chunks_count.as_ref()),
+            backfilled_blocks: parse_or_default(sync_info.backfilled_blocks.as_ref()),
+            backfill_blocks_total: parse_or_default(sync_info.backfill_blocks_total.as_ref()),
+        };
 
         Some(state_sync)
     } else {
@@ -289,21 +266,26 @@ fn build_network_info(
     tenderdash_netinfo: &NetInfoResponse,
 ) -> Option<get_status_response_v0::Network> {
     if tenderdash_netinfo.listening.is_some() {
-        let mut network = get_status_response_v0::Network::default();
-
-        network.listening = tenderdash_netinfo.listening.unwrap_or(false);
-        network.peers_count = tenderdash_netinfo
+        let listening = tenderdash_netinfo.listening.unwrap_or(false);
+        let peers_count = tenderdash_netinfo
             .n_peers
             .as_ref()
             .unwrap_or(&"0".to_string())
             .parse()
             .unwrap_or(0);
 
-        if let Some(node_info) = &tenderdash_status.node_info {
-            if let Some(network_name) = &node_info.network {
-                network.chain_id = network_name.clone();
-            }
-        }
+        let chain_id = tenderdash_status
+            .node_info
+            .as_ref()
+            .and_then(|n| n.network.as_ref())
+            .cloned()
+            .unwrap_or_default();
+
+        let network = get_status_response_v0::Network {
+            listening,
+            peers_count,
+            chain_id,
+        };
 
         Some(network)
     } else {

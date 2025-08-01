@@ -100,7 +100,7 @@ impl SubscriberManager {
 
     /// Remove a subscription
     pub async fn remove_subscription(&self, id: &SubscriptionId) {
-        if let Some(_) = self.subscriptions.write().await.remove(id) {
+        if self.subscriptions.write().await.remove(id).is_some() {
             debug!("Removed subscription: {}", id);
         }
     }
@@ -224,13 +224,13 @@ impl SubscriberManager {
     }
 
     /// Check if data matches the subscription filter
-    fn matches_filter(&self, filter: &FilterType, data: &[u8]) -> bool {
+    fn matches_filter(&self, filter: &FilterType, _data: &[u8]) -> bool {
         match filter {
             FilterType::BloomFilter {
-                data: filter_data,
-                hash_funcs,
-                tweak,
-                flags,
+                data: _filter_data,
+                hash_funcs: _,
+                tweak: _,
+                flags: _,
             } => {
                 // TODO: Implement proper bloom filter matching
                 // For now, always match to test the pipeline

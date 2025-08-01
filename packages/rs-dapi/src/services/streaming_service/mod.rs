@@ -20,11 +20,15 @@ use crate::config::Config;
 pub(crate) use subscriber_manager::{
     FilterType, StreamingMessage, SubscriberManager, SubscriptionType,
 };
-pub(crate) use transaction_filter::TransactionFilter;
 pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
 
 /// Cache expiration time for streaming responses
 const CACHE_EXPIRATION_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Type alias for cache data: (data, timestamp)
+type CacheData = (Vec<u8>, Instant);
+/// Type alias for the cache store
+type CacheStore = Arc<RwLock<HashMap<String, CacheData>>>;
 
 /// Streaming service implementation with ZMQ integration
 #[derive(Clone)]
@@ -34,7 +38,7 @@ pub struct StreamingServiceImpl {
     pub config: Arc<Config>,
     pub zmq_listener: Arc<dyn ZmqListenerTrait>,
     pub subscriber_manager: Arc<SubscriberManager>,
-    pub cache: Arc<RwLock<HashMap<String, (Vec<u8>, Instant)>>>,
+    pub cache: CacheStore,
 }
 
 impl StreamingServiceImpl {

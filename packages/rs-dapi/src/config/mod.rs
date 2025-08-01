@@ -7,7 +7,7 @@ use crate::{DAPIResult, DapiError};
 mod utils;
 use utils::{from_str_or_bool, from_str_or_number};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     /// Server configuration for ports and network binding
@@ -62,15 +62,6 @@ impl Default for ServerConfig {
             rest_gateway_port: 8080,
             health_check_port: 9090,
             bind_address: "127.0.0.1".to_string(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            dapi: DapiConfig::default(),
         }
     }
 }

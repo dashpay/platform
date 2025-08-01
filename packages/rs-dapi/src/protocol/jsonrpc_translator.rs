@@ -28,7 +28,7 @@ pub struct JsonRpcError {
     pub data: Option<Value>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct JsonRpcTranslator;
 
 impl JsonRpcTranslator {
@@ -37,24 +37,36 @@ impl JsonRpcTranslator {
     }
 
     // Convert JSON-RPC request to gRPC request
-    pub async fn translate_request(&self, json_rpc: JsonRpcRequest) -> DapiResult<(GetStatusRequest, Option<Value>)> {
+    pub async fn translate_request(
+        &self,
+        json_rpc: JsonRpcRequest,
+    ) -> DapiResult<(GetStatusRequest, Option<Value>)> {
         match json_rpc.method.as_str() {
             "getStatus" => {
                 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
-                
+
                 let request_v0 = GetStatusRequestV0 {};
                 let grpc_request = GetStatusRequest {
-                    version: Some(dapi_grpc::platform::v0::get_status_request::Version::V0(request_v0)),
+                    version: Some(dapi_grpc::platform::v0::get_status_request::Version::V0(
+                        request_v0,
+                    )),
                 };
-                
+
                 Ok((grpc_request, json_rpc.id))
             }
-            _ => Err(DapiError::InvalidArgument(format!("Unknown method: {}", json_rpc.method)))
+            _ => Err(DapiError::InvalidArgument(format!(
+                "Unknown method: {}",
+                json_rpc.method
+            ))),
         }
     }
 
     // Convert gRPC response back to JSON-RPC response
-    pub async fn translate_response(&self, response: GetStatusResponse, id: Option<Value>) -> DapiResult<JsonRpcResponse> {
+    pub async fn translate_response(
+        &self,
+        response: GetStatusResponse,
+        id: Option<Value>,
+    ) -> DapiResult<JsonRpcResponse> {
         let result = serde_json::to_value(&response)
             .map_err(|e| DapiError::Internal(format!("Failed to serialize response: {}", e)))?;
 

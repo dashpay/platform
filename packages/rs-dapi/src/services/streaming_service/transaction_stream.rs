@@ -74,32 +74,37 @@ impl StreamingServiceImpl {
                         tx_data,
                         merkle_proof: _,
                     } => {
-                        let mut raw_transactions = RawTransactions::default();
-                        raw_transactions.transactions = vec![tx_data];
+                        let raw_transactions = RawTransactions {
+                            transactions: vec![tx_data],
+                        };
 
-                        let mut response = TransactionsWithProofsResponse::default();
-                        response.responses = Some(
-                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions)
-                        );
+                        let response = TransactionsWithProofsResponse {
+                            responses: Some(
+                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions)
+                            ),
+                        };
 
                         Ok(response)
                     }
                     StreamingMessage::MerkleBlock { data } => {
-                        let mut response = TransactionsWithProofsResponse::default();
-                        response.responses = Some(
-                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data)
-                        );
+                        let response = TransactionsWithProofsResponse {
+                            responses: Some(
+                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data)
+                            ),
+                        };
 
                         Ok(response)
                     }
                     StreamingMessage::InstantLock { data } => {
-                        let mut instant_lock_messages = InstantSendLockMessages::default();
-                        instant_lock_messages.messages = vec![data];
+                        let instant_lock_messages = InstantSendLockMessages {
+                            messages: vec![data],
+                        };
 
-                        let mut response = TransactionsWithProofsResponse::default();
-                        response.responses = Some(
-                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::InstantSendLockMessages(instant_lock_messages)
-                        );
+                        let response = TransactionsWithProofsResponse {
+                            responses: Some(
+                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::InstantSendLockMessages(instant_lock_messages)
+                            ),
+                        };
 
                         Ok(response)
                     }
@@ -109,7 +114,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if let Err(_) = tx.send(response) {
+                if tx.send(response).is_err() {
                     debug!(
                         "Client disconnected from transaction subscription: {}",
                         sub_id
