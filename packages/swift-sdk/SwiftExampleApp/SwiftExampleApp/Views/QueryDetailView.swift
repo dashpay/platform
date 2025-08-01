@@ -58,7 +58,10 @@ struct QueryDetailView: View {
                 .padding()
                 
                 // Execute Button
-                Button(action: executeQuery) {
+                Button(action: {
+                    print("🔵 QueryDetailView: Execute Query button tapped")
+                    executeQuery()
+                }) {
                     HStack {
                         if isLoading {
                             ProgressView()
@@ -77,6 +80,9 @@ struct QueryDetailView: View {
                     .cornerRadius(10)
                 }
                 .disabled(isLoading || !hasRequiredInputs())
+                .onAppear {
+                    print("🔵 QueryDetailView: Button appeared, disabled: \(isLoading || !hasRequiredInputs()), hasRequiredInputs: \(hasRequiredInputs())")
+                }
                 .padding(.horizontal)
                 
                 // Result Section
@@ -117,6 +123,10 @@ struct QueryDetailView: View {
         }
         .navigationTitle(query.label)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            print("🔵 QueryDetailView: View appeared for query: \(query.name)")
+            print("🔵 QueryDetailView: appState.platformState.sdk is \(appState.platformState.sdk != nil ? "initialized" : "nil")")
+        }
     }
     
     private func binding(for key: String) -> Binding<String> {
@@ -137,10 +147,16 @@ struct QueryDetailView: View {
     }
     
     private func executeQuery() {
+        print("🔵 QueryDetailView: executeQuery() called for query: \(query.name)")
+        
         guard let sdk = appState.platformState.sdk else {
+            print("❌ QueryDetailView: SDK not initialized")
             error = "SDK not initialized"
             return
         }
+        
+        print("🔵 QueryDetailView: SDK is initialized, preparing to execute query")
+        print("🔵 QueryDetailView: Query inputs: \(queryInputs)")
         
         isLoading = true
         error = ""
@@ -149,13 +165,19 @@ struct QueryDetailView: View {
         
         Task {
             do {
+                print("🔵 QueryDetailView: Calling performQuery...")
                 let queryResult = try await performQuery(sdk: sdk)
+                print("✅ QueryDetailView: performQuery returned successfully")
+                print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
+                
                 await MainActor.run {
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
+                    print("✅ QueryDetailView: Result displayed, showResult: \(showResult)")
                 }
             } catch let sdkError as SDKError {
+                print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
                     // Handle SDK errors with more detail
                     switch sdkError {
@@ -183,12 +205,16 @@ struct QueryDetailView: View {
                         self.error = "Unknown Error: \(message)"
                     }
                     isLoading = false
+                    print("❌ QueryDetailView: Error set to: \(self.error)")
                 }
             } catch {
+                print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
+                    
+                    print("❌ QueryDetailView: NSError domain: \(nsError.domain), code: \(nsError.code)")
                     
                     // Try to get the most descriptive error message
                     if let failureReason = nsError.localizedFailureReason {
@@ -213,16 +239,20 @@ struct QueryDetailView: View {
                     
                     self.error = errorMessage
                     isLoading = false
+                    print("❌ QueryDetailView: Final error message: \(errorMessage)")
                 }
             }
         }
     }
     
     private func performQuery(sdk: SDK) async throws -> Any {
+        print("🔵 QueryDetailView: performQuery called with query name: \(query.name)")
+        
         switch query.name {
         // Identity Queries
         case "getIdentity":
             let id = queryInputs["id"] ?? ""
+            print("🔵 QueryDetailView: Executing getIdentity with ID: \(id)")
             return try await sdk.identityGet(identityId: id)
             
         case "getIdentityKeys":

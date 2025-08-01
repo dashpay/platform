@@ -9,24 +9,37 @@ extension SDK {
     
     /// Process DashSDKResult and extract JSON
     private func processJSONResult(_ result: DashSDKResult) throws -> [String: Any] {
+        print("🔵 processJSONResult: Processing result...")
+        
         if let error = result.error {
             let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            print("❌ processJSONResult: FFI returned error: \(errorMessage)")
             dash_sdk_error_free(error)
             throw SDKError.internalError(errorMessage)
         }
         
         guard let dataPtr = result.data else {
+            print("❌ processJSONResult: No data returned from FFI")
             throw SDKError.notFound("No data returned")
         }
         
+        // Check if the pointer is null (identity not found)
+        if dataPtr == UnsafeMutableRawPointer(bitPattern: 0) {
+            print("🔵 processJSONResult: Null pointer returned (identity not found)")
+            throw SDKError.notFound("Identity not found")
+        }
+        
         let jsonString: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        print("🔵 processJSONResult: JSON string: \(jsonString)")
         dash_sdk_string_free(dataPtr)
         
         guard let data = jsonString.data(using: String.Encoding.utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("❌ processJSONResult: Failed to parse JSON")
             throw SDKError.serializationError("Failed to parse JSON data")
         }
         
+        print("✅ processJSONResult: Successfully parsed JSON")
         return json
     }
     
@@ -84,12 +97,20 @@ extension SDK {
     
     /// Get an identity by ID
     public func identityGet(identityId: String) async throws -> [String: Any] {
+        print("🔵 SDK.identityGet: Called with ID: \(identityId)")
+        
         guard let handle = handle else {
+            print("❌ SDK.identityGet: SDK handle is nil")
             throw SDKError.invalidState("SDK not initialized")
         }
         
+        print("🔵 SDK.identityGet: Calling dash_sdk_identity_fetch...")
         let result = dash_sdk_identity_fetch(handle, identityId)
-        return try processJSONResult(result)
+        print("🔵 SDK.identityGet: FFI call returned, processing result...")
+        
+        let jsonResult = try processJSONResult(result)
+        print("✅ SDK.identityGet: Successfully processed result")
+        return jsonResult
     }
     
     /// Get identity keys
