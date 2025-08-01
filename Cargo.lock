@@ -5034,7 +5034,6 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
- "rs-sdk-trusted-context-provider",
  "secp256k1",
  "serde",
  "serde_json",

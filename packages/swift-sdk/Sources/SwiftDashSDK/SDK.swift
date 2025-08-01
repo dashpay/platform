@@ -92,7 +92,7 @@ public class SDK {
     ].joined(separator: ",")
     
     /// Create a new SDK instance
-    public init(network: Network, useTrustedSetup: Bool = true) throws {
+    public init(network: Network) throws {
         var config = DashSDKConfig()
         
         // Map network - in C enums, Swift imports them as raw values
@@ -123,18 +123,10 @@ public class SDK {
             result = Self.testnetDAPIAddresses.withCString { addressesCStr -> DashSDKResult in
                 var mutableConfig = config
                 mutableConfig.dapi_addresses = addressesCStr
-                if useTrustedSetup {
-                    return dash_sdk_create_trusted(&mutableConfig)
-                } else {
-                    return dash_sdk_create(&mutableConfig)
-                }
+                return dash_sdk_create(&mutableConfig)
             }
         } else {
-            if useTrustedSetup {
-                result = dash_sdk_create_trusted(&config)
-            } else {
-                result = dash_sdk_create(&config)
-            }
+            result = dash_sdk_create(&config)
         }
         
         // Check for errors
