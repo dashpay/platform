@@ -1,5 +1,7 @@
-// System-related modules
-pub mod queries;
+//! System queries module
 
-// Re-export all public functions
-pub use queries::*;
+pub mod queries;
+pub mod status;
+
+// Re-export status function
+pub use status::dash_sdk_get_status;

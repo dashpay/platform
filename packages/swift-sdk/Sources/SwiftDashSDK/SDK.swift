@@ -153,6 +153,46 @@ public class SDK {
         }
     }
     
+    /// Get SDK status including mode and quorum count
+    public func getStatus() throws -> SDKStatus {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_get_status(handle)
+        
+        // Check for error
+        if result.error != nil {
+            let error = result.error!.pointee
+            let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+            defer {
+                dash_sdk_error_free(result.error)
+            }
+            throw SDKError.internalError("Failed to get SDK status: \(errorMessage)")
+        }
+        
+        // Parse the JSON result
+        guard let jsonString = result.string else {
+            throw SDKError.internalError("No status data returned")
+        }
+        
+        let jsonStr = String(cString: jsonString)
+        defer {
+            dash_sdk_string_free(jsonString)
+        }
+        
+        guard let data = jsonStr.data(using: .utf8) else {
+            throw SDKError.serializationError("Invalid JSON data")
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            return try decoder.decode(SDKStatus.self, from: data)
+        } catch {
+            throw SDKError.serializationError("Failed to decode status: \(error)")
+        }
+    }
+    
     // TODO: Re-enable when CDashSDKFFI module is working
     // /// Test the new FFI connection
     // public func testNewFFI() -> Bool {
@@ -182,6 +222,14 @@ public class SDK {
         // For now, return nil as placeholder
         return nil
     }
+}
+
+/// SDK Status information
+public struct SDKStatus: Codable {
+    public let version: String
+    public let network: String
+    public let mode: String
+    public let quorumCount: Int
 }
 
 /// SDK Error handling

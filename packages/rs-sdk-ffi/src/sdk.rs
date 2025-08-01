@@ -28,6 +28,7 @@ pub struct DashSDKConfigExtended {
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
     pub runtime: Arc<Runtime>,
+    pub trusted_provider: Option<Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>>,
 }
 
 impl SDKWrapper {
@@ -35,6 +36,19 @@ impl SDKWrapper {
         SDKWrapper {
             sdk,
             runtime: Arc::new(runtime),
+            trusted_provider: None,
+        }
+    }
+
+    fn new_with_trusted_provider(
+        sdk: Sdk,
+        runtime: Runtime,
+        provider: Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>,
+    ) -> Self {
+        SDKWrapper {
+            sdk,
+            runtime: Arc::new(runtime),
+            trusted_provider: Some(provider),
         }
     }
 
@@ -306,7 +320,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     ) {
         Ok(provider) => {
             eprintln!("✅ dash_sdk_create_trusted: Trusted context provider created successfully");
-            provider
+            Arc::new(provider)
         },
         Err(e) => {
             eprintln!("❌ dash_sdk_create_trusted: Failed to create trusted context provider: {}", e);
@@ -419,16 +433,31 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
+    // Clone trusted provider for prefetching quorums
+    let provider_for_prefetch = Arc::clone(&trusted_provider);
+    let provider_for_wrapper = Arc::clone(&trusted_provider);
+    
     // Add trusted context provider
     eprintln!("🔵 dash_sdk_create_trusted: Adding trusted context provider to builder");
-    let builder = builder.with_context_provider(trusted_provider);
+    let builder = builder.with_context_provider(Arc::clone(&trusted_provider));
 
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
 
     match sdk_result {
         Ok(sdk) => {
-            let wrapper = Box::new(SDKWrapper::new(sdk, runtime));
+            // Prefetch quorums for trusted setup
+            eprintln!("🔵 dash_sdk_create_trusted: SDK built, prefetching quorums...");
+            
+            let runtime_clone = runtime.handle().clone();
+            runtime_clone.spawn(async move {
+                match provider_for_prefetch.update_quorum_caches().await {
+                    Ok(_) => eprintln!("✅ dash_sdk_create_trusted: Successfully prefetched quorums"),
+                    Err(e) => eprintln!("⚠️ dash_sdk_create_trusted: Failed to prefetch quorums: {}. Continuing anyway.", e),
+                }
+            });
+            
+            let wrapper = Box::new(SDKWrapper::new_with_trusted_provider(sdk, runtime, provider_for_wrapper));
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
         }

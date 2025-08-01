@@ -190,6 +190,19 @@ impl TrustedHttpContextProvider {
         Ok(())
     }
 
+    /// Get the total number of quorums in both caches
+    pub fn get_cached_quorum_count(&self) -> usize {
+        let current_count = self.current_quorums_cache.lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0);
+        
+        let previous_count = self.previous_quorums_cache.lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0);
+        
+        current_count + previous_count
+    }
+
     /// Fetch current quorums from the HTTP endpoint
     pub async fn fetch_current_quorums(
         &self,
