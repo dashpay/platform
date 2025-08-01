@@ -127,9 +127,11 @@ struct CoreWalletView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     
     var body: some View {
-        CoreContentView()
-            .environmentObject(unifiedState.walletService)
-            .environment(\.modelContext, unifiedState.modelContainer.mainContext)
+        NavigationStack {
+            CoreContentView()
+                .environmentObject(unifiedState.walletService)
+                .environment(\.modelContext, unifiedState.modelContainer.mainContext)
+        }
     }
 }
 

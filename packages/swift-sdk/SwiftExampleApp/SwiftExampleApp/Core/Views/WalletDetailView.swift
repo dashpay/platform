@@ -7,6 +7,7 @@ struct WalletDetailView: View {
     @State private var selectedTab = 0
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
+    @State private var showAddressManagement = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -58,11 +59,34 @@ struct WalletDetailView: View {
         }
         .navigationTitle(wallet.label)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showAddressManagement = true
+                } label: {
+                    Image(systemName: "key.fill")
+                }
+            }
+        }
         .sheet(isPresented: $showReceiveAddress) {
             ReceiveAddressView(wallet: wallet)
         }
         .sheet(isPresented: $showSendTransaction) {
             SendTransactionView(wallet: wallet)
+        }
+        .sheet(isPresented: $showAddressManagement) {
+            if let account = wallet.accounts.first {
+                NavigationStack {
+                    AddressManagementView(account: account)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") {
+                                    showAddressManagement = false
+                                }
+                            }
+                        }
+                }
+            }
         }
         .task {
             await walletService.loadWallet(wallet)

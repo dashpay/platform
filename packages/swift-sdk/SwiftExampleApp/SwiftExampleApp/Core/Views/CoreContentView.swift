@@ -5,21 +5,41 @@ struct CoreContentView: View {
     @EnvironmentObject var walletService: WalletService
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
-    @State private var showCreateWallet = false
+    @State private var showingCreateWallet = false
     
     var body: some View {
-        NavigationStack {
+        VStack {
             if wallets.isEmpty {
-                ContentUnavailableView {
-                    Label("No Wallets", systemImage: "wallet.pass")
-                } description: {
+                VStack(spacing: 20) {
+                    Spacer()
+                    
+                    Image(systemName: "wallet.pass")
+                        .font(.system(size: 60))
+                        .foregroundColor(.gray)
+                    
+                    Text("No Wallets")
+                        .font(.title)
+                        .fontWeight(.semibold)
+                    
                     Text("Create a wallet to get started")
-                } actions: {
-                    Button("Create Wallet") {
-                        showCreateWallet = true
+                        .foregroundColor(.secondary)
+                    
+                    Button {
+                        showingCreateWallet = true
+                    } label: {
+                        Text("Create Wallet")
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.blue)
+                            .cornerRadius(8)
                     }
-                    .buttonStyle(.borderedProminent)
+                    
+                    Spacer()
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Wallets")
+                .navigationBarTitleDisplayMode(.large)
             } else {
                 List(wallets) { wallet in
                     NavigationLink {
@@ -32,7 +52,7 @@ struct CoreContentView: View {
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
-                            showCreateWallet = true
+                            showingCreateWallet = true
                         } label: {
                             Image(systemName: "plus")
                         }
@@ -40,8 +60,12 @@ struct CoreContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showCreateWallet) {
-            CreateWalletView()
+        .sheet(isPresented: $showingCreateWallet) {
+            NavigationStack {
+                CreateWalletView()
+                    .environmentObject(walletService)
+                    .environment(\.modelContext, modelContext)
+            }
         }
     }
 }

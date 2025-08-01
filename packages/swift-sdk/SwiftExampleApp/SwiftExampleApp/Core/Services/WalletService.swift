@@ -167,6 +167,17 @@ public class WalletService: ObservableObject {
         detailedSyncProgress = nil
     }
     
+    // MARK: - Address Management
+    
+    public func generateAddresses(for account: HDAccount, count: Int, type: AddressType) async throws {
+        guard let walletManager = self.walletManager else {
+            throw WalletError.notImplemented("WalletManager not available")
+        }
+        
+        try await walletManager.generateAddresses(for: account, count: count, type: type)
+        try? modelContext?.save()
+    }
+    
     // MARK: - Transaction Management
     
     public func sendTransaction(to address: String, amount: UInt64, memo: String? = nil) async throws -> String {
