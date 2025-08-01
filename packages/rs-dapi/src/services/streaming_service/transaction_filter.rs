@@ -2,7 +2,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 /// Bloom filter implementation for efficient transaction filtering
-#[derive(Debug, Clone)]
+
+#[derive(Clone, Debug)]
 pub struct TransactionFilter {
     /// Filter data (bit array)
     data: Vec<u8>,
@@ -144,6 +145,7 @@ impl TransactionFilter {
 }
 
 /// Statistics about a bloom filter
+
 #[derive(Debug, Clone)]
 pub struct FilterStats {
     pub total_bits: usize,
@@ -154,7 +156,8 @@ pub struct FilterStats {
     pub false_positive_rate: f64,
 }
 
-/// Extract relevant data from a transaction for bloom filter testing
+/// Extract elements from a transaction for bloom filter testing
+
 pub fn extract_transaction_elements(tx_data: &[u8]) -> Vec<Vec<u8>> {
     // TODO: Implement proper transaction parsing
     // This should extract:
@@ -169,6 +172,7 @@ pub fn extract_transaction_elements(tx_data: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// Test multiple elements against a bloom filter
+/// Test elements against a bloom filter
 pub fn test_elements_against_filter(filter: &TransactionFilter, elements: &[Vec<u8>]) -> bool {
     elements.iter().any(|element| filter.contains(element))
 }

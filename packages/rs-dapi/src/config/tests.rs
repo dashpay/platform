@@ -97,8 +97,7 @@ DAPI_STATE_TRANSITION_WAIT_TIMEOUT=45000
         .expect("Config should load from dotenv file");
 
     // Verify all values were loaded correctly
-    assert_eq!(config.server.grpc_api_port, 4005);
-    assert_eq!(config.server.grpc_streams_port, 4006);
+    assert_eq!(config.server.grpc_server_port, 4005);
     assert_eq!(config.server.json_rpc_port, 4004);
     assert_eq!(config.server.rest_gateway_port, 9080);
     assert_eq!(config.server.health_check_port, 9091);
@@ -139,12 +138,11 @@ DAPI_ENABLE_REST=true
         .expect("Config should load from dotenv file");
 
     // Verify specified values were loaded
-    assert_eq!(config.server.grpc_api_port, 5005);
+    assert_eq!(config.server.grpc_server_port, 5005);
     assert_eq!(config.dapi.drive.uri, "http://partial-drive:8000");
     assert!(config.dapi.enable_rest);
 
     // Verify defaults are used for unspecified values
-    assert_eq!(config.server.grpc_streams_port, 3006); // default
     assert_eq!(config.dapi.tenderdash.uri, "http://127.0.0.1:26657"); // default
     assert_eq!(config.dapi.state_transition_wait_timeout, 30000); // default
 
@@ -189,7 +187,7 @@ DAPI_DRIVE_URI=http://dotenv-drive:9000
         .expect("Config should load from dotenv file");
 
     // Environment variables should override .env file values
-    assert_eq!(config.server.grpc_api_port, 7005); // from env, not .env file
+    assert_eq!(config.server.grpc_server_port, 7005); // from env, not .env file
     assert_eq!(config.dapi.tenderdash.uri, "http://env-tenderdash:10000"); // from env
 
     // Values only in .env file should still be loaded
@@ -222,7 +220,7 @@ DAPI_DRIVE_URI=http://test-drive:8000
     match result {
         Ok(config) => {
             // If it succeeds, the invalid port should fallback to default
-            assert_eq!(config.server.grpc_api_port, 3005); // default
+            assert_eq!(config.server.grpc_server_port, 3005); // default
             assert_eq!(config.dapi.drive.uri, "http://test-drive:8000"); // valid value should load
         }
         Err(_) => {
@@ -239,8 +237,7 @@ fn test_config_socket_addresses() {
     let config = Config::default();
 
     // Test that socket addresses are properly formatted
-    assert_eq!(config.grpc_api_addr().to_string(), "127.0.0.1:3005");
-    assert_eq!(config.grpc_streams_addr().to_string(), "127.0.0.1:3006");
+    assert_eq!(config.grpc_server_addr().to_string(), "127.0.0.1:3005");
     assert_eq!(config.json_rpc_addr().to_string(), "127.0.0.1:3004");
     assert_eq!(config.rest_gateway_addr().to_string(), "127.0.0.1:8080");
     assert_eq!(config.health_check_addr().to_string(), "127.0.0.1:9090");
@@ -250,8 +247,8 @@ fn test_config_socket_addresses() {
 fn test_config_socket_addresses_custom_bind() {
     let mut config = Config::default();
     config.server.bind_address = "0.0.0.0".to_string();
-    config.server.grpc_api_port = 4000;
+    config.server.grpc_server_port = 4000;
 
     // Test that custom bind address and port work
-    assert_eq!(config.grpc_api_addr().to_string(), "0.0.0.0:4000");
+    assert_eq!(config.grpc_server_addr().to_string(), "0.0.0.0:4000");
 }

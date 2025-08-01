@@ -21,18 +21,12 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
-    /// Port for the main gRPC API server
+    /// Port for the unified gRPC server (all services: Core, Platform, Streams)
     #[serde(
         rename = "dapi_grpc_server_port",
         deserialize_with = "from_str_or_number"
     )]
-    pub grpc_api_port: u16,
-    /// Port for gRPC streaming endpoints
-    #[serde(
-        rename = "dapi_grpc_streams_port",
-        deserialize_with = "from_str_or_number"
-    )]
-    pub grpc_streams_port: u16,
+    pub grpc_server_port: u16,
     /// Port for JSON-RPC API server
     #[serde(rename = "dapi_json_rpc_port", deserialize_with = "from_str_or_number")]
     pub json_rpc_port: u16,
@@ -56,8 +50,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            grpc_api_port: 3005,
-            grpc_streams_port: 3006,
+            grpc_server_port: 3005,
             json_rpc_port: 3004,
             rest_gateway_port: 8080,
             health_check_port: 9090,
@@ -202,19 +195,10 @@ impl Config {
         }
     }
 
-    pub fn grpc_api_addr(&self) -> SocketAddr {
-        format!("{}:{}", self.server.bind_address, self.server.grpc_api_port)
+    pub fn grpc_server_addr(&self) -> SocketAddr {
+        format!("{}:{}", self.server.bind_address, self.server.grpc_server_port)
             .parse()
-            .expect("Invalid gRPC API address")
-    }
-
-    pub fn grpc_streams_addr(&self) -> SocketAddr {
-        format!(
-            "{}:{}",
-            self.server.bind_address, self.server.grpc_streams_port
-        )
-        .parse()
-        .expect("Invalid gRPC streams address")
+            .expect("Invalid gRPC server address")
     }
 
     pub fn json_rpc_addr(&self) -> SocketAddr {

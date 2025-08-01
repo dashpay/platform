@@ -127,7 +127,7 @@ impl TestEnvironment {
 
         // Create config with test-specific settings
         let mut config = Config::default();
-        config.server.grpc_api_port = port;
+        config.server.grpc_server_port = port;
         let config = Arc::new(config);
 
         // Create platform service with mock clients
@@ -137,7 +137,7 @@ impl TestEnvironment {
             config.clone(),
         ));
 
-        let addr = config.grpc_api_addr();
+        let addr = config.grpc_server_addr();
 
         // Start the server in a background task
         let server_handle = tokio::spawn(async move {

@@ -12,6 +12,7 @@ use tracing::{debug, error, info, trace, warn};
 use zeromq::prelude::*;
 
 /// ZMQ topics that we subscribe to from Dash Core
+
 #[derive(Debug, Clone)]
 pub struct ZmqTopics {
     pub hashtx: String,

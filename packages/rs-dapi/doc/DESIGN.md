@@ -182,13 +182,6 @@ impl ServiceImpl {
 }
 ```
 
-#### Benefits
-- **Clean Separation**: Simple methods stay in main file, complex logic isolated
-- **Full Context Access**: Complex methods have access to all service state
-- **Easy Testing**: Each complex method can be tested independently
-- **Code Navigation**: Developers can quickly find specific functionality
-- **Reduced File Size**: Main service files remain manageable
-- **Parallel Development**: Different developers can work on different complex methods
 
 ### 3. External Dependencies
 
@@ -197,25 +190,7 @@ The implementation leverages existing Dash Platform crates and external librarie
 #### Platform Crates
 - `dapi-grpc` - gRPC service definitions and generated code
 - `rs-dpp` - Data Platform Protocol types and validation
-- `rs-drive` - Drive client and proof operations
 
-#### External Libraries
-- `tokio` - Async runtime
-- `tonic` - gRPC framework
-- `tonic-web` - gRPC-Web support for browsers
-- `tower` - Service framework and middleware
-- `tower-http` - HTTP middleware and services
-- `axum` - Modern HTTP framework for REST API
-- `serde` - Serialization/deserialization
-- `jsonrpc-core` + `jsonrpc-http-server` - JSON-RPC server
-- `config` - Configuration management
-- `tracing` - Structured logging
-- `anyhow` + `thiserror` - Error handling
-- `zmq` - ZeroMQ client for Dash Core
-- `reqwest` - HTTP client for Tenderdash RPC
-- `tokio-tungstenite` - WebSocket client for Tenderdash
-- `prometheus` - Metrics collection
-- `hyper` - HTTP implementation
 
 ## Service Implementations
 
@@ -241,18 +216,7 @@ Implements blockchain-related gRPC endpoints (protocol-agnostic via translation 
 Implements Dash Platform gRPC endpoints (protocol-agnostic via translation layer) with a modular architecture for complex method implementations:
 
 #### Modular Architecture
-The Platform Service uses a modular structure where complex methods are separated into dedicated modules:
-
-```
-services/
-├── platform_service.rs          # Main service implementation
-│   ├── Struct definition (PlatformServiceImpl)
-│   ├── Simple proxy methods (most Platform trait methods)
-│   ├── Service initialization and configuration
-│   └── Delegation to complex method modules
-├── platform_service/            # Complex method implementations
-│   └── get_status.rs            # Complex get_status implementation with integrated status building
-```
+The Platform Service uses a modular structure where complex methods are separated into dedicated modules.
 
 #### Main Service (`platform_service.rs`)
 - **Service Definition**: Contains `PlatformServiceImpl` struct with all necessary context
@@ -348,12 +312,9 @@ Built-in observability and monitoring capabilities:
 
 #### Health Check Endpoints
 - `GET /health` - Basic health status
-- `GET /health/ready` - Readiness probe (all dependencies available)
-- `GET /health/live` - Liveness probe (service is running)
 
 #### Metrics Endpoints
 - `GET /metrics` - Prometheus metrics
-- `GET /metrics/json` - JSON format metrics
 
 #### Status Information
 - Service uptime and version
@@ -382,7 +343,7 @@ External Client → Envoy Gateway → Protocol Translation → gRPC Services →
    HTTPS/WSS    SSL termination    ┌─────────────────┐   Core Service   Dash Core
    gRPC-Web  →  Protocol xlat   →  │ REST→gRPC xlat  │→  Platform Svc →  Drive    
    REST API     Rate limiting      │ JSON→gRPC xlat  │   Streams Svc    Tenderdash
-                Auth/CORS          │ Native gRPC     │   
+                Auth/CORS          │ Native gRPC     │   (unified port)
                                    └─────────────────┘   
                                    Protocol Translation Layer
 ```
@@ -456,63 +417,6 @@ The protocol translation layer is the key architectural component that enables u
 - **Streaming Support**: Full bidirectional streaming support
 - **Compression**: Native gRPC compression and optimization
 
-#### Translation Examples
-
-##### REST to gRPC Translation Example
-```
-# REST Request
-GET /v1/core/transaction/abc123def456
-Accept: application/json
-
-# Translated to gRPC
-service: CoreService
-method: getTransaction  
-message: GetTransactionRequest {
-  hash: "abc123def456"
-}
-
-# gRPC Response translated back to REST
-HTTP/1.1 200 OK
-Content-Type: application/json
-{
-  "transaction": { ... },
-  "blockHash": "...",
-  "confirmations": 42
-}
-```
-
-##### JSON-RPC to gRPC Translation Example
-```
-# JSON-RPC Request
-{
-  "jsonrpc": "2.0",
-  "method": "getBestBlockHeight", 
-  "id": 1
-}
-
-# Translated to gRPC
-service: CoreService
-method: getBestBlockHeight
-message: GetBestBlockHeightRequest {}
-
-# gRPC Response translated back to JSON-RPC
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "height": 850000
-  },
-  "id": 1
-}
-```
-
-#### Benefits of Translation Layer Architecture
-- **Single Business Logic**: All protocols use the same underlying gRPC services
-- **Consistent Behavior**: Identical business logic regardless of client protocol
-- **Easy Testing**: Only need to test gRPC services, translations are simpler
-- **Maintainability**: Changes to business logic automatically apply to all protocols
-- **Performance**: Minimal translation overhead, native gRPC performance
-- **Type Safety**: Strong typing from protobuf definitions enforced across all protocols
-
 ### 11. State Transition Processing
 
 The `waitForStateTransitionResult` endpoint follows this flow:
@@ -571,19 +475,6 @@ The `waitForStateTransitionResult` endpoint follows this flow:
 
 ### 14. Configuration Management
 
-#### Environment Variables
-- `DAPI_GRPC_SERVER_PORT` - gRPC API server port (default: 3005, internal)
-- `DAPI_GRPC_STREAMS_PORT` - gRPC streams server port (default: 3006, internal)  
-- `DAPI_JSON_RPC_PORT` - JSON-RPC server port (default: 3004, internal)
-- `DAPI_REST_GATEWAY_PORT` - REST API gateway port (default: 8080, internal)
-- `DAPI_HEALTH_CHECK_PORT` - Health and metrics port (default: 9090, internal)
-- `DAPI_BIND_ADDRESS` - Bind address for all services (default: 127.0.0.1, internal only)
-- `DAPI_NETWORK` - Network selection (mainnet/testnet/devnet)
-- `DAPI_LIVENET` - Production mode flag
-- `DAPI_ENABLE_REST` - Enable REST API gateway (default: false)
-- Dash Core connection settings (RPC + ZMQ)
-- Drive connection settings (gRPC)
-- Tenderdash connection settings (RPC + WebSocket)
 
 #### Process Architecture
 - **Single Binary**: One process handles all DAPI functionality behind Envoy
@@ -592,9 +483,10 @@ The `waitForStateTransitionResult` endpoint follows this flow:
 - **Service Isolation**: Logical separation of Core, Platform, and Streams services
 - **Internal Network**: All services bind to localhost/internal addresses only
 - **Trusted Backend**: No direct external exposure, operates behind Envoy gateway
+- 
 
 #### Configuration Files
-- TOML-based configuration with environment override
+- .env-based configuration with environment override
 - Network-specific default configurations
 - Validation and error reporting for invalid configs
 
@@ -604,87 +496,22 @@ The rs-dapi binary is designed as a unified server that handles all DAPI functio
 
 #### Single Process Design
 - **Unified Server**: Single process serving all endpoints
-- **Multiple gRPC Services**: Core, Platform, and Streams services on different ports
+- **Unified gRPC Services**: Core, Platform, and Streams services on the same port, distinguished by service path
 - **Integrated JSON-RPC**: HTTP server embedded within the same process
 - **Shared Resources**: Common connection pools and state management
 
-#### Port Configuration (Internal Network Only)
-- **gRPC API Port** (default: 3005): Core + Platform endpoints (localhost binding)
-- **gRPC Streams Port** (default: 3006): Streaming endpoints (localhost binding)
-- **JSON-RPC Port** (default: 3004): Legacy HTTP endpoints (localhost binding)
-- **REST Gateway Port** (default: 8080): REST API for gRPC services (localhost binding)
-- **Health/Metrics Port** (default: 9090): Monitoring endpoints (localhost binding)
+#### Port Configuration (configurable)
+- **gRPC Server Port** (default: 3005): Unified port for Core + Platform + streaming endpoints
+- **JSON-RPC Port** (default: 3004): Legacy HTTP endpoints
+- **REST Gateway Port** (default: 8080): REST API for gRPC services
+- **Health/Metrics Port** (default: 9090): Monitoring endpoints
 
-All ports bind to internal addresses only (127.0.0.1). External access is handled by Envoy.
-- **Health/Metrics Port** (default: 9090): Monitoring and status endpoints
+All ports bind to internal Docker network. External access is handled by Envoy.
 
-#### Service Startup
-```bash
-# Single command starts all services and dependencies
-rs-dapi
+#### Service livecycle management
 
-# Optional configuration override
-rs-dapi --config /path/to/config.toml
-
-# Development mode with verbose logging
-rs-dapi --log-level debug
-```
-
-#### Multi-Protocol Support
-- **gRPC Services**: Core and Platform endpoints on port 3005, Streams on port 3006
-- **JSON-RPC Server**: Legacy HTTP endpoints on port 3004
-- **REST API**: Optional REST gateway for gRPC services (configurable port)
-- **Health/Monitoring Endpoints**: Built-in status and metrics endpoints
-
-#### Protocol Architecture
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        External Network                    │
-│              (Internet clients, HTTPS/WSS/gRPC-Web)        │
-└─────────────────────────┬───────────────────────────────────┘
-                          │ SSL/TLS encrypted
-┌─────────────────────────┼───────────────────────────────────┐
-│                    Envoy Gateway                           │
-│  • SSL termination     • Protocol translation             │
-│  • Rate limiting        • Load balancing                   │
-│  • CORS/Auth           • Health checking                   │
-└─────────────────────────┬───────────────────────────────────┘
-                          │ Internal HTTP/gRPC (unencrypted)
-┌─────────────────────────┼───────────────────────────────────┐
-│               rs-dapi Process (localhost only)             │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              Protocol Translation Layer             │   │
-│  │                                                     │   │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │   │
-│  │  │    REST     │ │  JSON-RPC   │ │    gRPC     │   │   │
-│  │  │:8080 (HTTP) │ │:3004 (HTTP) │ │:3005/:3006  │   │   │
-│  │  │             │ │             │ │             │   │   │
-│  │  │ HTTP→gRPC   │ │ JSON→gRPC   │ │ Pass-through│   │   │
-│  │  │ Translator  │ │ Translator  │ │   Native    │   │   │
-│  │  └─────────────┘ └─────────────┘ └─────────────┘   │   │
-│  │          │               │               │         │   │
-│  │          └───────────────┼───────────────┘         │   │
-│  │                          ▼                         │   │
-│  │  ┌─────────────────────────────────────────────┐   │   │
-│  │  │           gRPC Services Layer               │   │   │
-│  │  │         (Protocol-Agnostic)                 │   │   │
-│  │  │                                             │   │   │
-│  │  │ ┌─────────────┐ ┌─────────────────────────┐ │   │   │
-│  │  │ │ Core Service│ │   Platform & Streams    │ │   │   │
-│  │  │ │             │ │       Services          │ │   │   │
-│  │  │ │ - Blockchain│ │ - State transitions     │ │   │   │
-│  │  │ │ - TX broadcast │ - Block streaming     │ │   │   │
-│  │  │ │ - Status    │ │ - Masternode updates   │ │   │   │
-│  │  │ └─────────────┘ └─────────────────────────┘ │   │   │
-│  │  └─────────────────────────────────────────────┘   │   │
-│  │                                                     │   │
-│  │  ┌─────────────────────────────────────────────┐   │   │
-│  │  │      Health/Metrics :9090 (localhost)      │   │   │
-│  │  └─────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+- **Docker** as primary deployment method
+- **Dashmate** as primary deployment and management tool
 
 #### Dashmate Integration
 - **Drop-in Replacement**: Direct substitution for JavaScript DAPI processes
@@ -789,7 +616,7 @@ rs-dapi operates in a trusted environment behind Envoy Gateway, which handles al
 
 #### Trust Model
 - **Trusted Internal Network**: rs-dapi assumes all requests come from trusted Envoy
-- **No Direct External Exposure**: All services bind to localhost (127.0.0.1) only
+- **No Direct External Exposure**: All services bind to localhost (127.0.0.1) by default
 - **Network Isolation**: External network access only through Envoy gateway
 - **Service Mesh**: Can be integrated with service mesh for additional internal security
 
@@ -854,12 +681,6 @@ rs-dapi operates in a trusted environment behind Envoy Gateway, which handles al
 - **Resource Optimization**: Reduced memory usage and inter-process communication overhead
 - **Security Simplification**: No SSL/certificate management needed in rs-dapi
 
-#### Rollback Strategy
-- Feature flags for easy rollback
-- Traffic routing controls
-- Monitoring and alerting
-- Automated rollback triggers
-
 ## Future Considerations
 
 ### 24. Extensibility
@@ -881,6 +702,15 @@ rs-dapi operates in a trusted environment behind Envoy Gateway, which handles al
 - Comprehensive documentation
 - Automated testing and CI/CD
 - Regular dependency updates
+
+#### Code Style Guidelines
+- Constructor pattern: `new()` methods should create fully operational objects
+- Objects should be ready to use immediately after construction
+- Use builder pattern for complex configuration instead of multi-step initialization
+- Prefer composition over inheritance for extending functionality
+- Follow Rust naming conventions and idiomatic patterns
+- Document public APIs with short examples
+- Use `Result<T, E>` for fallible operations, not panics in constructors
 
 #### Monitoring and Debugging
 - Advanced debugging capabilities

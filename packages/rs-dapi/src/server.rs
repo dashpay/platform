@@ -30,8 +30,8 @@ use crate::{
 
 pub struct DapiServer {
     config: Arc<Config>,
-    platform_service: PlatformServiceImpl,
-    core_service: CoreServiceImpl,
+    core_service: Arc<CoreServiceImpl>,
+    platform_service: Arc<PlatformServiceImpl>,
     rest_translator: Arc<RestTranslator>,
     jsonrpc_translator: Arc<JsonRpcTranslator>,
 }
@@ -68,8 +68,8 @@ impl DapiServer {
 
         Ok(Self {
             config,
-            platform_service,
-            core_service,
+            platform_service: Arc::new(platform_service),
+            core_service: Arc::new(core_service),
             rest_translator,
             jsonrpc_translator,
         })
@@ -82,14 +82,32 @@ impl DapiServer {
 
         // Streaming service auto-starts when created, no need to start it manually
 
-        // Start both gRPC servers concurrently
-        let platform_server = self.start_grpc_platform_server();
-        let core_server = self.start_grpc_core_server();
+        // Start all servers concurrently
+        let grpc_server = self.start_unified_grpc_server();
+        let rest_server = self.start_rest_server();
+        let jsonrpc_server = self.start_jsonrpc_server();
+        let health_server = self.start_health_server();
 
-        // Wait for both servers (they should run indefinitely)
-        tokio::try_join!(platform_server, core_server)?;
-
-        Ok(())
+        // Use tokio::select! to run all servers concurrently
+        // If any server fails, the whole application should shut down
+        tokio::select! {
+            result = grpc_server => {
+                error!("gRPC server stopped: {:?}", result);
+                result
+            },
+            result = rest_server => {
+                error!("REST server stopped: {:?}", result);
+                result
+            },
+            result = jsonrpc_server => {
+                error!("JSON-RPC server stopped: {:?}", result);
+                result
+            },
+            result = health_server => {
+                error!("Health check server stopped: {:?}", result);
+                result
+            },
+        }
     }
 
     async fn start_websocket_listener(&self) -> DAPIResult<()> {
@@ -118,42 +136,23 @@ impl DapiServer {
         None // For now, return None - WebSocket functionality is optional
     }
 
-    async fn start_grpc_platform_server(&self) -> DAPIResult<()> {
-        let addr = self.config.grpc_api_addr();
-        info!("Starting gRPC Platform API server on {}", addr);
+    async fn start_unified_grpc_server(&self) -> DAPIResult<()> {
+        let addr = self.config.grpc_server_addr();
+        info!(
+            "Starting unified gRPC server on {} (Core + Platform services)",
+            addr
+        );
 
         let platform_service = self.platform_service.clone();
-
-        dapi_grpc::tonic::transport::Server::builder()
-            .add_service(PlatformServer::new(platform_service))
-            .serve(addr)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn start_grpc_core_server(&self) -> DAPIResult<()> {
-        let addr = self.config.grpc_streams_addr();
-        info!("Starting gRPC Core API server on {}", addr);
-
         let core_service = self.core_service.clone();
 
         dapi_grpc::tonic::transport::Server::builder()
-            .add_service(CoreServer::new(core_service))
-            .serve(addr)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn start_grpc_api_server(&self) -> DAPIResult<()> {
-        let addr = self.config.grpc_api_addr();
-        info!("Starting gRPC API server on {}", addr);
-
-        let platform_service = self.platform_service.clone();
-
-        dapi_grpc::tonic::transport::Server::builder()
-            .add_service(PlatformServer::new(platform_service.clone()))
+            .add_service(PlatformServer::new(
+                Arc::try_unwrap(platform_service).unwrap_or_else(|arc| (*arc).clone()),
+            ))
+            .add_service(CoreServer::new(
+                Arc::try_unwrap(core_service).unwrap_or_else(|arc| (*arc).clone()),
+            ))
             .serve(addr)
             .await?;
 
@@ -165,7 +164,8 @@ impl DapiServer {
         info!("Starting REST gateway server on {}", addr);
 
         let app_state = RestAppState {
-            platform_service: self.platform_service.clone(),
+            platform_service: Arc::try_unwrap(self.platform_service.clone())
+                .unwrap_or_else(|arc| (*arc).clone()),
             translator: self.rest_translator.clone(),
         };
 
@@ -185,7 +185,8 @@ impl DapiServer {
         info!("Starting JSON-RPC server on {}", addr);
 
         let app_state = JsonRpcAppState {
-            platform_service: self.platform_service.clone(),
+            platform_service: Arc::try_unwrap(self.platform_service.clone())
+                .unwrap_or_else(|arc| (*arc).clone()),
             translator: self.jsonrpc_translator.clone(),
         };
 

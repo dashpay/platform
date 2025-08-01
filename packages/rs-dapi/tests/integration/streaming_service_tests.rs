@@ -34,8 +34,7 @@ async fn test_config_loading() {
     let config = Config::default();
 
     // Test default configuration values
-    assert_eq!(config.server.grpc_api_port, 3005);
-    assert_eq!(config.server.grpc_streams_port, 3006);
+    assert_eq!(config.server.grpc_server_port, 3005);
     assert_eq!(config.dapi.core.zmq_url, "tcp://127.0.0.1:29998");
     assert_eq!(config.server.bind_address, "127.0.0.1");
 }
