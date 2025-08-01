@@ -451,6 +451,21 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
             
             let runtime_clone = runtime.handle().clone();
             runtime_clone.spawn(async move {
+                // First, try a simple HTTP test
+                eprintln!("🔵 Testing basic HTTP connectivity...");
+                match reqwest::get("https://www.google.com").await {
+                    Ok(_) => eprintln!("✅ Basic HTTP test successful (Google)"),
+                    Err(e) => eprintln!("❌ Basic HTTP test failed: {}", e),
+                }
+                
+                // Try the quorums endpoint directly
+                eprintln!("🔵 Testing quorums endpoint directly...");
+                match reqwest::get("https://quorums.testnet.networks.dash.org/quorums").await {
+                    Ok(resp) => eprintln!("✅ Direct quorums endpoint test successful, status: {}", resp.status()),
+                    Err(e) => eprintln!("❌ Direct quorums endpoint test failed: {}", e),
+                }
+                
+                // Now try through the provider
                 match provider_for_prefetch.update_quorum_caches().await {
                     Ok(_) => eprintln!("✅ dash_sdk_create_trusted: Successfully prefetched quorums"),
                     Err(e) => eprintln!("⚠️ dash_sdk_create_trusted: Failed to prefetch quorums: {}. Continuing anyway.", e),

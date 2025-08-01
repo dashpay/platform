@@ -25,6 +25,7 @@ use dpp::version::PlatformVersion;
 use lru::LruCache;
 use reqwest::Client;
 use std::collections::HashMap;
+use std::error::Error as StdError;
 #[cfg(not(target_arch = "wasm32"))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
@@ -118,15 +119,27 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
-        // Verify the domain resolves before proceeding (skip on WASM)
-        #[cfg(not(target_arch = "wasm32"))]
+        // Verify the domain resolves before proceeding (skip on WASM and iOS)
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
 
         #[cfg(target_arch = "wasm32")]
         let client = Client::builder().build()?;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
+        #[cfg(all(not(target_arch = "wasm32"), target_os = "ios"))]
+        let client = {
+            // iOS specific configuration
+            Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent("DashSDK-iOS/1.0")
+                .build()?
+        };
+
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .user_agent("DashSDK/1.0")
+            .build()?;
 
         Ok(Self {
             network,
@@ -210,7 +223,37 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = self.client.get(&url).send().await?;
+        let response = match self.client.get(&url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("🔴 HTTP request failed: {:?}", e);
+                eprintln!("🔴 URL: {}", url);
+                if let Some(source) = e.source() {
+                    eprintln!("🔴 Error source: {:?}", source);
+                    if let Some(inner) = source.source() {
+                        eprintln!("🔴 Inner error: {:?}", inner);
+                    }
+                }
+                
+                // Check for specific error types
+                if e.is_connect() {
+                    eprintln!("🔴 Connection error - unable to connect to host");
+                } else if e.is_timeout() {
+                    eprintln!("🔴 Request timeout");
+                } else if e.is_request() {
+                    eprintln!("🔴 Error building the request");
+                } else if e.is_body() {
+                    eprintln!("🔴 Error reading response body");
+                } else if e.is_decode() {
+                    eprintln!("🔴 Error decoding response");
+                }
+                
+                // Try to get more details
+                eprintln!("🔴 Full error chain: {}", e);
+                
+                return Err(e.into());
+            }
+        };
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
