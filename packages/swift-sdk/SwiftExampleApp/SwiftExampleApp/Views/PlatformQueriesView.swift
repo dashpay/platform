@@ -112,10 +112,6 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getIdentityBalanceAndRevision", label: "Get Identity Balance and Revision", description: "Get both balance and revision number for an identity"),
                 QueryDefinition(name: "getIdentityByPublicKeyHash", label: "Get Identity by Public Key Hash", description: "Find an identity by its unique public key hash"),
                 QueryDefinition(name: "getIdentityByNonUniquePublicKeyHash", label: "Get Identity by Non-Unique Public Key Hash", description: "Find identities by non-unique public key hash"),
-                QueryDefinition(name: "getIdentityTokenBalances", label: "Get Identity Token Balances", description: "Get token balances for an identity"),
-                QueryDefinition(name: "getIdentitiesTokenBalances", label: "Get Identities Token Balances", description: "Get token balance for multiple identities"),
-                QueryDefinition(name: "getIdentityTokenInfos", label: "Get Identity Token Infos", description: "Get token information for an identity's tokens"),
-                QueryDefinition(name: "getIdentitiesTokenInfos", label: "Get Identities Token Infos", description: "Get token information for multiple identities with a specific token")
             ]
             
         case .dataContract:
@@ -135,7 +131,8 @@ struct QueryCategoryDetailView: View {
             return [
                 QueryDefinition(name: "getDpnsUsername", label: "Get DPNS Usernames", description: "Get DPNS usernames for an identity"),
                 QueryDefinition(name: "dpnsCheckAvailability", label: "DPNS Check Availability", description: "Check if a DPNS username is available"),
-                QueryDefinition(name: "dpnsResolve", label: "DPNS Resolve Name", description: "Resolve a DPNS name to an identity ID")
+                QueryDefinition(name: "dpnsResolve", label: "DPNS Resolve Name", description: "Resolve a DPNS name to an identity ID"),
+                QueryDefinition(name: "dpnsSearch", label: "DPNS Search", description: "Search for DPNS names by prefix")
             ]
             
         case .voting:
@@ -164,7 +161,10 @@ struct QueryCategoryDetailView: View {
             
         case .token:
             return [
-                QueryDefinition(name: "getTokenStatuses", label: "Get Token Statuses", description: "Get token statuses"),
+                QueryDefinition(name: "getIdentitiesTokenBalances", label: "Get Identities Token Balances", description: "Get token balance for multiple identities"),
+                QueryDefinition(name: "getIdentityTokenInfos", label: "Get Identity Token Infos", description: "Get token information for an identity's tokens"),
+                QueryDefinition(name: "getIdentitiesTokenInfos", label: "Get Identities Token Infos", description: "Get token information for multiple identities"),
+                QueryDefinition(name: "getTokenStatuses", label: "Get Token Statuses", description: "Get status for multiple tokens"),
                 QueryDefinition(name: "getTokenDirectPurchasePrices", label: "Get Token Direct Purchase Prices", description: "Get direct purchase prices for tokens"),
                 QueryDefinition(name: "getTokenContractInfo", label: "Get Token Contract Info", description: "Get information about a token contract"),
                 QueryDefinition(name: "getTokenPerpetualDistributionLastClaim", label: "Get Token Perpetual Distribution Last Claim", description: "Get last claim information for perpetual distribution"),
@@ -182,10 +182,7 @@ struct QueryCategoryDetailView: View {
         case .system:
             return [
                 QueryDefinition(name: "getStatus", label: "Get Status", description: "Get system status"),
-                QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current quorums"),
-                QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get prefunded specialized balance"),
-                QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform"),
-                QueryDefinition(name: "getPathElements", label: "Get Path Elements", description: "Access any data in the Dash Platform state tree")
+                QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform")
             ]
         }
     }

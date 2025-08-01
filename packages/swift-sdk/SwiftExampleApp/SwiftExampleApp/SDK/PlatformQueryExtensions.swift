@@ -140,17 +140,30 @@ extension SDK {
     }
     
     /// Get identity keys
-    public func identityGetKeys(identityId: String) async throws -> [String: Any] {
+    public func identityGetKeys(
+        identityId: String,
+        keyRequestType: String? = nil,
+        specificKeyIds: [String]? = nil,
+        searchPurposeMap: String? = nil,
+        limit: UInt32? = nil,
+        offset: UInt32? = nil
+    ) async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
+        // For now, use the simple fetch - would need to implement complex key fetching in FFI
         let result = dash_sdk_identity_fetch_public_keys(handle, identityId)
         return try processJSONResult(result)
     }
     
     /// Get identities contract keys
-    public func identityGetContractKeys(identityIds: [String], contractId: String, documentType: String?) async throws -> [String: Any] {
+    public func identityGetContractKeys(
+        identityIds: [String],
+        contractId: String,
+        documentType: String?,
+        purposes: [String]? = nil
+    ) async throws -> [String: Any] {
         // This query might not have a direct FFI function yet
         // We'll need to implement it using available functions or create a new FFI function
         throw SDKError.notImplemented("Get identities contract keys not yet implemented in FFI")
@@ -226,12 +239,12 @@ extension SDK {
     }
     
     /// Get identities by non-unique public key hash
-    public func identityGetByNonUniquePublicKeyHash(publicKeyHash: String) async throws -> [[String: Any]] {
+    public func identityGetByNonUniquePublicKeyHash(publicKeyHash: String, startAfter: String? = nil) async throws -> [[String: Any]] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_identity_fetch_by_non_unique_public_key_hash(handle, publicKeyHash, nil)
+        let result = dash_sdk_identity_fetch_by_non_unique_public_key_hash(handle, publicKeyHash, startAfter)
         return try processJSONArrayResult(result)
     }
     
@@ -248,12 +261,12 @@ extension SDK {
     }
     
     /// Get data contract history
-    public func dataContractGetHistory(id: String, limit: UInt32?, offset: UInt32?) async throws -> [[String: Any]] {
+    public func dataContractGetHistory(id: String, limit: UInt32?, offset: UInt32?, startAtMs: UInt64? = nil) async throws -> [[String: Any]] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_data_contract_fetch_history(handle, id, limit ?? 100, offset ?? 0, 0)
+        let result = dash_sdk_data_contract_fetch_history(handle, id, limit ?? 100, offset ?? 0, startAtMs ?? 0)
         return try processJSONArrayResult(result)
     }
     
@@ -283,7 +296,9 @@ extension SDK {
         documentType: String,
         whereClause: String? = nil,
         orderByClause: String? = nil,
-        limit: UInt32? = nil
+        limit: UInt32? = nil,
+        startAfter: String? = nil,
+        startAt: String? = nil
     ) async throws -> [String: Any] {
         // Document queries typically require a data contract handle
         // This would need a more complex implementation
@@ -364,71 +379,83 @@ extension SDK {
         return try processStringResult(result)
     }
     
+    /// Search DPNS names by prefix
+    public func dpnsSearch(prefix: String, limit: UInt32? = nil) async throws -> [[String: Any]] {
+        // DPNS search requires document query with prefix matching
+        throw SDKError.notImplemented("DPNS search not yet implemented - requires document query")
+    }
+    
     // MARK: - Voting & Contested Resources Queries
     
     /// Get contested resources
-    public func getContestedResources(resourceType: String, limit: UInt32?, offset: UInt32?) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-        
-        // Contested resources are typically tied to a specific contract (like DPNS)
-        // For now, we'll use the DPNS contract ID
-        let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-        
-        let result = dash_sdk_contested_resource_get_resources(handle, dpnsContractId, resourceType, nil, nil, nil, limit ?? 100, true)
-        return try processJSONArrayResult(result)
+    public func getContestedResources(
+        documentTypeName: String,
+        dataContractId: String,
+        indexName: String,
+        resultType: String,
+        allowIncludeLockedAndAbstainingVoteTally: Bool,
+        startAtValue: String?,
+        limit: UInt32?,
+        offset: UInt32?,
+        orderAscending: Bool
+    ) async throws -> [[String: Any]] {
+        // This requires specific FFI implementation for the new parameters
+        throw SDKError.notImplemented("Get contested resources with new parameters not yet implemented")
     }
     
-    /// Get contested resource votes
-    public func getContestedResourceVotes(resourceId: String) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-        
-        // For contested resource votes, we need the contract ID and resource type
-        let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-        let resourceType = "domain" // Assuming DPNS domains
-        
-        // Create JSON array with resourceId as index value
-        let indexValues = "[\"\(resourceId)\"]"
-        let result = dash_sdk_contested_resource_get_vote_state(handle, dpnsContractId, resourceType, nil, indexValues, 1, true, 100)
-        return try processJSONArrayResult(result)
+    /// Get contested resource vote state
+    public func getContestedResourceVoteState(
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        resultType: String,
+        allowIncludeLockedAndAbstainingVoteTally: Bool,
+        startAtIdentifierInfo: String?,
+        count: UInt32?,
+        orderAscending: Bool
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get contested resource vote state not yet implemented")
     }
     
-    /// Get masternode votes
-    public func getMasternodeVotes(masternodeId: String) async throws -> [[String: Any]] {
-        // Masternode votes would typically be retrieved via contested resource votes
-        // where the voter is the masternode
-        throw SDKError.notImplemented("Masternode votes query not yet implemented")
+    /// Get contested resource voters for identity
+    public func getContestedResourceVotersForIdentity(
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        contestantId: String,
+        startAtIdentifierInfo: String?,
+        count: UInt32?,
+        orderAscending: Bool
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get contested resource voters for identity not yet implemented")
     }
     
-    /// Get active proposals
-    public func getActiveProposals() async throws -> [[String: Any]] {
-        // Proposals would be a specific type of document or contested resource
-        throw SDKError.notImplemented("Active proposals query not yet implemented")
+    /// Get contested resource identity votes
+    public func getContestedResourceIdentityVotes(
+        identityId: String,
+        limit: UInt32?,
+        offset: UInt32?,
+        orderAscending: Bool
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get contested resource identity votes not yet implemented")
     }
     
-    /// Get proposal by ID
-    public func getProposal(proposalId: String) async throws -> [String: Any] {
-        // Proposal would be fetched as a document or contested resource
-        throw SDKError.notImplemented("Get proposal query not yet implemented")
+    /// Get vote polls by end date
+    public func getVotePollsByEndDate(
+        startTimeMs: UInt64?,
+        endTimeMs: UInt64?,
+        limit: UInt32?,
+        offset: UInt32?,
+        orderAscending: Bool
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get vote polls by end date not yet implemented")
     }
+    
     
     // MARK: - Protocol & Version Queries
     
-    /// Get protocol version
-    public func getProtocolVersion() async throws -> [String: Any] {
-        // Protocol version is typically part of the network status
-        // For now return static values
-        return [
-            "version": 1,
-            "minVersion": 1
-        ]
-    }
-    
-    /// Get version upgrade state
-    public func getVersionUpgradeState() async throws -> [String: Any] {
+    /// Get protocol version upgrade state
+    public func getProtocolVersionUpgradeState() async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
@@ -437,7 +464,23 @@ extension SDK {
         return try processJSONResult(result)
     }
     
+    /// Get protocol version upgrade vote status
+    public func getProtocolVersionUpgradeVoteStatus(startProTxHash: String?, count: UInt32?) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get protocol version upgrade vote status not yet implemented")
+    }
+    
     // MARK: - Epoch & Block Queries
+    
+    /// Get epochs info
+    public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let startEpochString = startEpoch.map { String($0) }
+        let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+        return try processJSONArrayResult(result)
+    }
     
     /// Get current epoch
     public func getCurrentEpoch() async throws -> [String: Any] {
@@ -456,97 +499,97 @@ extension SDK {
         return currentEpoch
     }
     
-    /// Get epoch by index
-    public func getEpoch(epochIndex: UInt32) async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-        
-        let epochString = String(epochIndex)
-        let result = dash_sdk_system_get_epochs_info(handle, epochString, 1, true)
-        let epochs = try processJSONArrayResult(result)
-        
-        guard let epoch = epochs.first else {
-            throw SDKError.notFound("Epoch not found")
-        }
-        
-        return epoch
+    /// Get finalized epoch infos
+    public func getFinalizedEpochInfos(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get finalized epoch infos not yet implemented")
     }
     
-    /// Get best block height
-    public func getBestBlockHeight() async throws -> UInt64 {
-        // This would typically come from Core chain info, not Platform
-        // For now, return a placeholder
-        throw SDKError.notImplemented("Best block height requires Core chain query")
+    /// Get evonodes proposed epoch blocks by IDs
+    public func getEvonodesProposedEpochBlocksByIds(epoch: UInt32, ids: [String]) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get evonodes proposed epoch blocks by IDs not yet implemented")
     }
     
-    /// Get block by height
-    public func getBlock(height: UInt64) async throws -> [String: Any] {
-        // Block queries are Core chain queries, not Platform
-        throw SDKError.notImplemented("Block queries require Core chain access")
-    }
-    
-    /// Get block by hash
-    public func getBlockByHash(hash: String) async throws -> [String: Any] {
-        // Block queries are Core chain queries, not Platform
-        throw SDKError.notImplemented("Block queries require Core chain access")
+    /// Get evonodes proposed epoch blocks by range
+    public func getEvonodesProposedEpochBlocksByRange(
+        epoch: UInt32,
+        limit: UInt32?,
+        startAfter: String?,
+        orderAscending: Bool
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get evonodes proposed epoch blocks by range not yet implemented")
     }
     
     // MARK: - Token Queries
     
-    /// Get identity token balance
-    public func getIdentityTokenBalance(identityId: String, tokenId: String) async throws -> UInt64 {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
+    /// Get identities token balances
+    public func getIdentitiesTokenBalances(identityIds: [String], tokenId: String) async throws -> [String: UInt64] {
+        // Would need batch FFI function or iterate through identities
+        var balances: [String: UInt64] = [:]
         
-        let tokenIds = "[\"\(tokenId)\"]"
-        let result = dash_sdk_token_get_identity_balances(handle, identityId, tokenIds)
-        let json = try processJSONResult(result)
-        
-        guard let balance = json[tokenId] as? UInt64 else {
-            throw SDKError.serializationError("Failed to parse token balance")
-        }
-        
-        return balance
-    }
-    
-    /// Get all token balances for identity
-    public func getIdentityTokenBalances(identityId: String) async throws -> [String: UInt64] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-        
-        // Pass nil to get all token balances
-        let result = dash_sdk_identity_fetch_token_balances(handle, identityId, nil)
-        let json = try processJSONResult(result)
-        
-        guard let balances = json as? [String: UInt64] else {
-            throw SDKError.serializationError("Failed to parse token balances")
+        for identityId in identityIds {
+            do {
+                guard let handle = handle else {
+                    throw SDKError.invalidState("SDK not initialized")
+                }
+                
+                let tokenIds = "[\"\(tokenId)\"]"
+                let result = dash_sdk_token_get_identity_balances(handle, identityId, tokenIds)
+                let json = try processJSONResult(result)
+                
+                if let balance = json[tokenId] as? UInt64 {
+                    balances[identityId] = balance
+                }
+            } catch {
+                // Skip failed fetches
+                continue
+            }
         }
         
         return balances
     }
     
-    /// Get token info
-    public func getTokenInfo(tokenId: String) async throws -> [String: Any] {
+    /// Get identity token infos
+    public func getIdentityTokenInfos(
+        identityId: String,
+        tokenIds: [String]?,
+        limit: UInt32?,
+        offset: UInt32?
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get identity token infos not yet implemented")
+    }
+    
+    /// Get identities token infos
+    public func getIdentitiesTokenInfos(identityIds: [String], tokenId: String) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get identities token infos not yet implemented")
+    }
+    
+    /// Get token statuses
+    public func getTokenStatuses(tokenIds: [String]) async throws -> [String: Any] {
+        throw SDKError.notImplemented("Get token statuses not yet implemented")
+    }
+    
+    /// Get token direct purchase prices
+    public func getTokenDirectPurchasePrices(tokenIds: [String]) async throws -> [String: Any] {
+        throw SDKError.notImplemented("Get token direct purchase prices not yet implemented")
+    }
+    
+    /// Get token contract info
+    public func getTokenContractInfo(dataContractId: String) async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        // Get token contract info first
-        let result = dash_sdk_token_get_contract_info(handle, tokenId)
+        let result = dash_sdk_token_get_contract_info(handle, dataContractId)
         return try processJSONResult(result)
     }
     
-    /// Get token holders
-    public func getTokenHolders(tokenId: String, limit: UInt32?, offset: UInt32?) async throws -> [[String: Any]] {
-        // Token holders would require querying token balance documents
-        throw SDKError.notImplemented("Token holders query not yet implemented")
+    /// Get token perpetual distribution last claim
+    public func getTokenPerpetualDistributionLastClaim(identityId: String, tokenId: String) async throws -> [String: Any] {
+        throw SDKError.notImplemented("Get token perpetual distribution last claim not yet implemented")
     }
     
-    /// Get total token supply
-    public func getTotalTokenSupply(tokenId: String) async throws -> UInt64 {
+    /// Get token total supply
+    public func getTokenTotalSupply(tokenId: String) async throws -> UInt64 {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
@@ -557,28 +600,41 @@ extension SDK {
     
     // MARK: - Group Queries
     
-    /// Get group members
-    public func getGroupMembers(groupId: String) async throws -> [[String: Any]] {
-        // Groups would be implemented as documents or data contracts
-        throw SDKError.notImplemented("Group members query not yet implemented")
-    }
-    
-    /// Get groups for identity
-    public func getIdentityGroups(identityId: String) async throws -> [[String: Any]] {
-        // Groups would be implemented as documents where member includes identityId
-        throw SDKError.notImplemented("Identity groups query not yet implemented")
-    }
-    
     /// Get group info
-    public func getGroupInfo(groupId: String) async throws -> [String: Any] {
-        // Group info would be fetched as a document
-        throw SDKError.notImplemented("Group info query not yet implemented")
+    public func getGroupInfo(contractId: String, groupContractPosition: UInt32) async throws -> [String: Any] {
+        throw SDKError.notImplemented("Get group info not yet implemented")
     }
     
-    /// Check group membership
-    public func checkGroupMembership(groupId: String, identityId: String) async throws -> Bool {
-        // Would check if identity is in group members document
-        throw SDKError.notImplemented("Group membership check not yet implemented")
+    /// Get group infos
+    public func getGroupInfos(
+        contractId: String,
+        startAtGroupContractPosition: UInt32?,
+        startGroupContractPositionIncluded: Bool,
+        count: UInt32?
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get group infos not yet implemented")
+    }
+    
+    /// Get group actions
+    public func getGroupActions(
+        contractId: String,
+        groupContractPosition: UInt32,
+        status: String,
+        startActionId: String?,
+        startActionIdIncluded: Bool,
+        count: UInt32?
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get group actions not yet implemented")
+    }
+    
+    /// Get group action signers
+    public func getGroupActionSigners(
+        contractId: String,
+        groupContractPosition: UInt32,
+        status: String,
+        actionId: String
+    ) async throws -> [[String: Any]] {
+        throw SDKError.notImplemented("Get group action signers not yet implemented")
     }
     
     // MARK: - System Queries
