@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 @MainActor
 class UnifiedAppState: ObservableObject {
@@ -17,6 +18,11 @@ class UnifiedAppState: ObservableObject {
     
     // SwiftData container
     let modelContainer: ModelContainer
+    
+    // Computed property for easy SDK access
+    var sdk: SDK? {
+        platformState.sdk
+    }
     
     init() {
         // Initialize SwiftData

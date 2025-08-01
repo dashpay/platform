@@ -57,9 +57,9 @@ struct ContentView: View {
                         Label("Identities", systemImage: "person.3")
                     }
                 
-                DocumentsView()
+                PlatformView()
                     .tabItem {
-                        Label("Documents", systemImage: "doc.text")
+                        Label("Platform", systemImage: "network")
                     }
                 
                 // Settings
