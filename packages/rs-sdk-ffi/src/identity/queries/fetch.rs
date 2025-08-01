@@ -3,11 +3,11 @@
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::Fetch;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use crate::sdk::SDKWrapper;
-use crate::types::{DashSDKResultDataType, IdentityHandle, SDKHandle};
+use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Fetch an identity by ID
@@ -57,16 +57,31 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
 
     match result {
         Ok(Some(identity)) => {
-            let handle = Box::into_raw(Box::new(identity)) as *mut IdentityHandle;
-            DashSDKResult::success_handle(
-                handle as *mut std::os::raw::c_void,
-                DashSDKResultDataType::ResultIdentityHandle,
-            )
+            // Convert identity to JSON
+            let json_str = match serde_json::to_string(&identity) {
+                Ok(s) => s,
+                Err(e) => {
+                    return DashSDKResult::error(
+                        FFIError::InternalError(format!("Failed to serialize identity: {}", e))
+                            .into(),
+                    )
+                }
+            };
+
+            let c_str = match CString::new(json_str) {
+                Ok(s) => s,
+                Err(e) => {
+                    return DashSDKResult::error(
+                        FFIError::InternalError(format!("Failed to create CString: {}", e)).into(),
+                    )
+                }
+            };
+            DashSDKResult::success_string(c_str.into_raw())
         }
-        Ok(None) => DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::NotFound,
-            "Identity not found".to_string(),
-        )),
+        Ok(None) => {
+            // Return null for not found
+            DashSDKResult::success_string(std::ptr::null_mut())
+        }
         Err(e) => DashSDKResult::error(e.into()),
     }
 }

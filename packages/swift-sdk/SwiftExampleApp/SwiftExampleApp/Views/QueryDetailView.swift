@@ -155,9 +155,63 @@ struct QueryDetailView: View {
                     showResult = true
                     isLoading = false
                 }
+            } catch let sdkError as SDKError {
+                await MainActor.run {
+                    // Handle SDK errors with more detail
+                    switch sdkError {
+                    case .invalidParameter(let message):
+                        self.error = "Invalid Parameter: \(message)"
+                    case .invalidState(let message):
+                        self.error = "Invalid State: \(message)"
+                    case .networkError(let message):
+                        self.error = "Network Error: \(message)"
+                    case .serializationError(let message):
+                        self.error = "Serialization Error: \(message)"
+                    case .protocolError(let message):
+                        self.error = "Protocol Error: \(message)"
+                    case .cryptoError(let message):
+                        self.error = "Crypto Error: \(message)"
+                    case .notFound(let message):
+                        self.error = "Not Found: \(message)"
+                    case .timeout(let message):
+                        self.error = "Timeout: \(message)"
+                    case .notImplemented(let message):
+                        self.error = "Not Implemented: \(message)"
+                    case .internalError(let message):
+                        self.error = "Internal Error: \(message)"
+                    case .unknown(let message):
+                        self.error = "Unknown Error: \(message)"
+                    }
+                    isLoading = false
+                }
             } catch {
                 await MainActor.run {
-                    self.error = error.localizedDescription
+                    // For non-SDK errors, try to get more information
+                    let nsError = error as NSError
+                    var errorMessage = ""
+                    
+                    // Try to get the most descriptive error message
+                    if let failureReason = nsError.localizedFailureReason {
+                        errorMessage = failureReason
+                    } else if !nsError.localizedDescription.isEmpty && nsError.localizedDescription != "The operation couldn't be completed. (\(nsError.domain) error \(nsError.code).)" {
+                        errorMessage = nsError.localizedDescription
+                    } else {
+                        errorMessage = "Error Domain: \(nsError.domain)\nError Code: \(nsError.code)"
+                    }
+                    
+                    // Add user info if available
+                    if !nsError.userInfo.isEmpty {
+                        errorMessage += "\n\nDetails:"
+                        for (key, value) in nsError.userInfo {
+                            if let stringValue = value as? String {
+                                errorMessage += "\n\(key): \(stringValue)"
+                            } else if let debugDescription = (value as? CustomDebugStringConvertible)?.debugDescription {
+                                errorMessage += "\n\(key): \(debugDescription)"
+                            }
+                        }
+                    }
+                    
+                    self.error = errorMessage
                     isLoading = false
                 }
             }
