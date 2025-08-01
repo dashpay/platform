@@ -33,7 +33,7 @@ pub enum DapiError {
     Http(#[from] axum::http::Error),
 
     #[error("WebSocket error: {0}")]
-    WebSocket(String),
+    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
 
     #[error("Task join error: {0}")]
     TaskJoin(#[from] tokio::task::JoinError),
@@ -89,11 +89,6 @@ impl DapiError {
     /// Create a server error
     pub fn server<S: Into<String>>(msg: S) -> Self {
         Self::Server(msg.into())
-    }
-
-    /// Create a WebSocket error
-    pub fn websocket<S: Into<String>>(msg: S) -> Self {
-        Self::WebSocket(msg.into())
     }
 
     /// Create an invalid data error

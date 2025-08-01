@@ -255,7 +255,7 @@ impl PlatformServiceImpl {
     async fn fetch_proof_for_state_transition(
         &self,
         _tx_bytes: Vec<u8>,
-    ) -> Result<(Proof, ResponseMetadata), anyhow::Error> {
+    ) -> crate::DAPIResult<(Proof, ResponseMetadata)> {
         // TODO: Implement actual proof fetching from Drive
         // For now, return empty proof structures
 

@@ -37,7 +37,6 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 # Error handling
-anyhow = "1.0.98"
 thiserror = "2.0.12"
 
 # Time handling

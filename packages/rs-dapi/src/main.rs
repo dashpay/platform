@@ -136,9 +136,9 @@ fn configure_logging(cli: &Cli) -> Result<(), String> {
     // Determine log level based on verbose flags
     let env_filter = if cli.debug || cli.verbose > 0 {
         match cli.verbose.max(if cli.debug { 2 } else { 0 }) {
-            1 => "rs_dapi=debug,info",  // -v: debug from rs-dapi, info from others
-            2 => "rs_dapi=trace,debug", // -vv or --debug: trace from rs-dapi, debug from others
-            _ => "trace",               // -vvv+: trace from everything
+            1 => "rs_dapi=debug,info", // -v: debug from rs-dapi, info from others
+            2 => "rs_dapi=trace,h2=info,debug", // -vv or --debug: trace from rs-dapi, debug from others
+            _ => "h2=info,trace",               // -vvv+: trace from everything
         }
     } else {
         // Use RUST_LOG if set, otherwise default

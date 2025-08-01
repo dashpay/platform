@@ -80,7 +80,7 @@ impl Default for MockZmqListener {
 #[async_trait]
 impl ZmqListenerTrait for MockZmqListener {
     /// Start the mock ZMQ listener and return a receiver for events
-    async fn start(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
+    async fn subscribe(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
         let receiver = self.event_sender.subscribe();
 
         // No actual ZMQ connection needed for mock
@@ -109,14 +109,20 @@ mod tests {
     #[tokio::test]
     async fn test_mock_zmq_listener_start() {
         let listener = MockZmqListener::new();
-        let _receiver = listener.start().await.expect("Should start successfully");
+        let _receiver = listener
+            .subscribe()
+            .await
+            .expect("Should start successfully");
         // Test passes if no panic occurs
     }
 
     #[tokio::test]
     async fn test_mock_zmq_listener_events() {
         let listener = MockZmqListener::new();
-        let mut receiver = listener.start().await.expect("Should start successfully");
+        let mut receiver = listener
+            .subscribe()
+            .await
+            .expect("Should start successfully");
 
         // Send a mock transaction
         let test_data = vec![1, 2, 3, 4, 5];

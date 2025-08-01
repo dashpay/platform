@@ -49,7 +49,7 @@ impl StreamingServiceImpl {
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         trace!("Creating streaming service with ZMQ listener");
         let zmq_listener: Arc<dyn ZmqListenerTrait> =
-            Arc::new(ZmqListener::new(&config.dapi.core.zmq_url));
+            Arc::new(ZmqListener::new(&config.dapi.core.zmq_url)?);
 
         Self::new_with_zmq_listener(drive_client, tenderdash_client, config, zmq_listener)
     }
@@ -109,7 +109,7 @@ impl StreamingServiceImpl {
         // Start event processing task
         let subscriber_manager = self.subscriber_manager.clone();
         tokio::spawn(async move {
-            let zmq_events = match zmq_listener.start().await {
+            let zmq_events = match zmq_listener.subscribe().await {
                 Ok(zmq) => zmq,
                 Err(e) => {
                     error!("ZMQ listener error: {}", e);

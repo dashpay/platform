@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::{DAPIResult, DapiError};
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::{
     platform_client::PlatformClient, BroadcastStateTransitionRequest,
@@ -97,7 +97,7 @@ impl DriveClient {
         }
     }
 
-    pub async fn get_status(&self, request: &GetStatusRequest) -> Result<DriveStatusResponse> {
+    pub async fn get_status(&self, request: &GetStatusRequest) -> DAPIResult<DriveStatusResponse> {
         trace!("Connecting to Drive service at: {}", self.base_url);
         // Attempt to connect to Drive gRPC service
         let mut client = match dapi_grpc::platform::v0::platform_client::PlatformClient::connect(
@@ -114,11 +114,11 @@ impl DriveClient {
                     "Failed to connect to Drive service at {}: {}",
                     self.base_url, e
                 );
-                return Err(anyhow::anyhow!(
+                return Err(DapiError::Client(format!(
                     "Failed to connect to Drive service at {}: {}",
                     self.base_url,
                     e
-                ));
+                )));
             }
         };
 
@@ -177,19 +177,19 @@ impl DriveClient {
 
             Ok(drive_status)
         } else {
-            Err(anyhow::anyhow!("Drive returned unexpected response format"))
+            Err(DapiError::Server("Drive returned unexpected response format".to_string()))
         }
     }
 }
 
 #[async_trait]
 impl DriveClientTrait for DriveClient {
-    async fn get_status(&self, request: &GetStatusRequest) -> Result<DriveStatusResponse> {
+    async fn get_status(&self, request: &GetStatusRequest) -> DAPIResult<DriveStatusResponse> {
         self.get_status(request).await
     }
 
     // Identity-related methods
-    async fn get_identity(&self, request: &GetIdentityRequest) -> Result<GetIdentityResponse> {
+    async fn get_identity(&self, request: &GetIdentityRequest) -> DAPIResult<GetIdentityResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity(dapi_grpc::tonic::Request::new(request.clone()))
@@ -200,7 +200,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_keys(
         &self,
         request: &GetIdentityKeysRequest,
-    ) -> Result<GetIdentityKeysResponse> {
+    ) -> DAPIResult<GetIdentityKeysResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_keys(dapi_grpc::tonic::Request::new(request.clone()))
@@ -211,7 +211,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identities_contract_keys(
         &self,
         request: &GetIdentitiesContractKeysRequest,
-    ) -> Result<GetIdentitiesContractKeysResponse> {
+    ) -> DAPIResult<GetIdentitiesContractKeysResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identities_contract_keys(dapi_grpc::tonic::Request::new(request.clone()))
@@ -222,7 +222,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_nonce(
         &self,
         request: &GetIdentityNonceRequest,
-    ) -> Result<GetIdentityNonceResponse> {
+    ) -> DAPIResult<GetIdentityNonceResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_nonce(dapi_grpc::tonic::Request::new(request.clone()))
@@ -233,7 +233,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_contract_nonce(
         &self,
         request: &GetIdentityContractNonceRequest,
-    ) -> Result<GetIdentityContractNonceResponse> {
+    ) -> DAPIResult<GetIdentityContractNonceResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_contract_nonce(dapi_grpc::tonic::Request::new(request.clone()))
@@ -244,7 +244,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_balance(
         &self,
         request: &GetIdentityBalanceRequest,
-    ) -> Result<GetIdentityBalanceResponse> {
+    ) -> DAPIResult<GetIdentityBalanceResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_balance(dapi_grpc::tonic::Request::new(request.clone()))
@@ -255,7 +255,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identities_balances(
         &self,
         request: &GetIdentitiesBalancesRequest,
-    ) -> Result<GetIdentitiesBalancesResponse> {
+    ) -> DAPIResult<GetIdentitiesBalancesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identities_balances(dapi_grpc::tonic::Request::new(request.clone()))
@@ -266,7 +266,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_balance_and_revision(
         &self,
         request: &GetIdentityBalanceAndRevisionRequest,
-    ) -> Result<GetIdentityBalanceAndRevisionResponse> {
+    ) -> DAPIResult<GetIdentityBalanceAndRevisionResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_balance_and_revision(dapi_grpc::tonic::Request::new(request.clone()))
@@ -277,7 +277,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_by_public_key_hash(
         &self,
         request: &GetIdentityByPublicKeyHashRequest,
-    ) -> Result<GetIdentityByPublicKeyHashResponse> {
+    ) -> DAPIResult<GetIdentityByPublicKeyHashResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_by_public_key_hash(dapi_grpc::tonic::Request::new(request.clone()))
@@ -288,7 +288,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_by_non_unique_public_key_hash(
         &self,
         request: &GetIdentityByNonUniquePublicKeyHashRequest,
-    ) -> Result<GetIdentityByNonUniquePublicKeyHashResponse> {
+    ) -> DAPIResult<GetIdentityByNonUniquePublicKeyHashResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_by_non_unique_public_key_hash(dapi_grpc::tonic::Request::new(
@@ -302,7 +302,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_data_contract(
         &self,
         request: &GetDataContractRequest,
-    ) -> Result<GetDataContractResponse> {
+    ) -> DAPIResult<GetDataContractResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_data_contract(dapi_grpc::tonic::Request::new(request.clone()))
@@ -313,7 +313,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_data_contracts(
         &self,
         request: &GetDataContractsRequest,
-    ) -> Result<GetDataContractsResponse> {
+    ) -> DAPIResult<GetDataContractsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_data_contracts(dapi_grpc::tonic::Request::new(request.clone()))
@@ -324,7 +324,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_data_contract_history(
         &self,
         request: &GetDataContractHistoryRequest,
-    ) -> Result<GetDataContractHistoryResponse> {
+    ) -> DAPIResult<GetDataContractHistoryResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_data_contract_history(dapi_grpc::tonic::Request::new(request.clone()))
@@ -333,7 +333,7 @@ impl DriveClientTrait for DriveClient {
     }
 
     // Document methods
-    async fn get_documents(&self, request: &GetDocumentsRequest) -> Result<GetDocumentsResponse> {
+    async fn get_documents(&self, request: &GetDocumentsRequest) -> DAPIResult<GetDocumentsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_documents(dapi_grpc::tonic::Request::new(request.clone()))
@@ -345,7 +345,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_epochs_info(
         &self,
         request: &GetEpochsInfoRequest,
-    ) -> Result<GetEpochsInfoResponse> {
+    ) -> DAPIResult<GetEpochsInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_epochs_info(dapi_grpc::tonic::Request::new(*request))
@@ -356,7 +356,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_finalized_epoch_infos(
         &self,
         request: &GetFinalizedEpochInfosRequest,
-    ) -> Result<GetFinalizedEpochInfosResponse> {
+    ) -> DAPIResult<GetFinalizedEpochInfosResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_finalized_epoch_infos(dapi_grpc::tonic::Request::new(*request))
@@ -367,7 +367,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_consensus_params(
         &self,
         request: &GetConsensusParamsRequest,
-    ) -> Result<GetConsensusParamsResponse> {
+    ) -> DAPIResult<GetConsensusParamsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_consensus_params(dapi_grpc::tonic::Request::new(*request))
@@ -378,7 +378,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_protocol_version_upgrade_state(
         &self,
         request: &GetProtocolVersionUpgradeStateRequest,
-    ) -> Result<GetProtocolVersionUpgradeStateResponse> {
+    ) -> DAPIResult<GetProtocolVersionUpgradeStateResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_protocol_version_upgrade_state(dapi_grpc::tonic::Request::new(*request))
@@ -389,7 +389,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_protocol_version_upgrade_vote_status(
         &self,
         request: &GetProtocolVersionUpgradeVoteStatusRequest,
-    ) -> Result<GetProtocolVersionUpgradeVoteStatusResponse> {
+    ) -> DAPIResult<GetProtocolVersionUpgradeVoteStatusResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_protocol_version_upgrade_vote_status(dapi_grpc::tonic::Request::new(
@@ -403,7 +403,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_path_elements(
         &self,
         request: &GetPathElementsRequest,
-    ) -> Result<GetPathElementsResponse> {
+    ) -> DAPIResult<GetPathElementsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_path_elements(dapi_grpc::tonic::Request::new(request.clone()))
@@ -414,7 +414,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_total_credits_in_platform(
         &self,
         request: &GetTotalCreditsInPlatformRequest,
-    ) -> Result<GetTotalCreditsInPlatformResponse> {
+    ) -> DAPIResult<GetTotalCreditsInPlatformResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_total_credits_in_platform(dapi_grpc::tonic::Request::new(*request))
@@ -425,7 +425,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_current_quorums_info(
         &self,
         request: &GetCurrentQuorumsInfoRequest,
-    ) -> Result<GetCurrentQuorumsInfoResponse> {
+    ) -> DAPIResult<GetCurrentQuorumsInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_current_quorums_info(dapi_grpc::tonic::Request::new(*request))
@@ -437,7 +437,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_contested_resources(
         &self,
         request: &GetContestedResourcesRequest,
-    ) -> Result<GetContestedResourcesResponse> {
+    ) -> DAPIResult<GetContestedResourcesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_contested_resources(dapi_grpc::tonic::Request::new(request.clone()))
@@ -448,7 +448,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_contested_resource_vote_state(
         &self,
         request: &GetContestedResourceVoteStateRequest,
-    ) -> Result<GetContestedResourceVoteStateResponse> {
+    ) -> DAPIResult<GetContestedResourceVoteStateResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_contested_resource_vote_state(dapi_grpc::tonic::Request::new(request.clone()))
@@ -459,7 +459,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_contested_resource_voters_for_identity(
         &self,
         request: &GetContestedResourceVotersForIdentityRequest,
-    ) -> Result<GetContestedResourceVotersForIdentityResponse> {
+    ) -> DAPIResult<GetContestedResourceVotersForIdentityResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_contested_resource_voters_for_identity(dapi_grpc::tonic::Request::new(
@@ -472,7 +472,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_contested_resource_identity_votes(
         &self,
         request: &GetContestedResourceIdentityVotesRequest,
-    ) -> Result<GetContestedResourceIdentityVotesResponse> {
+    ) -> DAPIResult<GetContestedResourceIdentityVotesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_contested_resource_identity_votes(dapi_grpc::tonic::Request::new(request.clone()))
@@ -483,7 +483,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_vote_polls_by_end_date(
         &self,
         request: &GetVotePollsByEndDateRequest,
-    ) -> Result<GetVotePollsByEndDateResponse> {
+    ) -> DAPIResult<GetVotePollsByEndDateResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_vote_polls_by_end_date(dapi_grpc::tonic::Request::new(*request))
@@ -495,7 +495,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_token_balances(
         &self,
         request: &GetIdentityTokenBalancesRequest,
-    ) -> Result<GetIdentityTokenBalancesResponse> {
+    ) -> DAPIResult<GetIdentityTokenBalancesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_token_balances(dapi_grpc::tonic::Request::new(request.clone()))
@@ -506,7 +506,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identities_token_balances(
         &self,
         request: &GetIdentitiesTokenBalancesRequest,
-    ) -> Result<GetIdentitiesTokenBalancesResponse> {
+    ) -> DAPIResult<GetIdentitiesTokenBalancesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identities_token_balances(dapi_grpc::tonic::Request::new(request.clone()))
@@ -517,7 +517,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identity_token_infos(
         &self,
         request: &GetIdentityTokenInfosRequest,
-    ) -> Result<GetIdentityTokenInfosResponse> {
+    ) -> DAPIResult<GetIdentityTokenInfosResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identity_token_infos(dapi_grpc::tonic::Request::new(request.clone()))
@@ -528,7 +528,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_identities_token_infos(
         &self,
         request: &GetIdentitiesTokenInfosRequest,
-    ) -> Result<GetIdentitiesTokenInfosResponse> {
+    ) -> DAPIResult<GetIdentitiesTokenInfosResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_identities_token_infos(dapi_grpc::tonic::Request::new(request.clone()))
@@ -539,7 +539,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_token_statuses(
         &self,
         request: &GetTokenStatusesRequest,
-    ) -> Result<GetTokenStatusesResponse> {
+    ) -> DAPIResult<GetTokenStatusesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_token_statuses(dapi_grpc::tonic::Request::new(request.clone()))
@@ -550,7 +550,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_token_direct_purchase_prices(
         &self,
         request: &GetTokenDirectPurchasePricesRequest,
-    ) -> Result<GetTokenDirectPurchasePricesResponse> {
+    ) -> DAPIResult<GetTokenDirectPurchasePricesResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_token_direct_purchase_prices(dapi_grpc::tonic::Request::new(request.clone()))
@@ -561,7 +561,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_token_contract_info(
         &self,
         request: &GetTokenContractInfoRequest,
-    ) -> Result<GetTokenContractInfoResponse> {
+    ) -> DAPIResult<GetTokenContractInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_token_contract_info(dapi_grpc::tonic::Request::new(request.clone()))
@@ -572,7 +572,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_token_pre_programmed_distributions(
         &self,
         request: &GetTokenPreProgrammedDistributionsRequest,
-    ) -> Result<GetTokenPreProgrammedDistributionsResponse> {
+    ) -> DAPIResult<GetTokenPreProgrammedDistributionsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_token_pre_programmed_distributions(dapi_grpc::tonic::Request::new(request.clone()))
@@ -583,7 +583,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_token_perpetual_distribution_last_claim(
         &self,
         request: &GetTokenPerpetualDistributionLastClaimRequest,
-    ) -> Result<GetTokenPerpetualDistributionLastClaimResponse> {
+    ) -> DAPIResult<GetTokenPerpetualDistributionLastClaimResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_token_perpetual_distribution_last_claim(dapi_grpc::tonic::Request::new(
@@ -596,7 +596,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_token_total_supply(
         &self,
         request: &GetTokenTotalSupplyRequest,
-    ) -> Result<GetTokenTotalSupplyResponse> {
+    ) -> DAPIResult<GetTokenTotalSupplyResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_token_total_supply(dapi_grpc::tonic::Request::new(request.clone()))
@@ -607,7 +607,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_prefunded_specialized_balance(
         &self,
         request: &GetPrefundedSpecializedBalanceRequest,
-    ) -> Result<GetPrefundedSpecializedBalanceResponse> {
+    ) -> DAPIResult<GetPrefundedSpecializedBalanceResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_prefunded_specialized_balance(dapi_grpc::tonic::Request::new(request.clone()))
@@ -616,7 +616,7 @@ impl DriveClientTrait for DriveClient {
     }
 
     // Group methods
-    async fn get_group_info(&self, request: &GetGroupInfoRequest) -> Result<GetGroupInfoResponse> {
+    async fn get_group_info(&self, request: &GetGroupInfoRequest) -> DAPIResult<GetGroupInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_group_info(dapi_grpc::tonic::Request::new(request.clone()))
@@ -627,7 +627,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_group_infos(
         &self,
         request: &GetGroupInfosRequest,
-    ) -> Result<GetGroupInfosResponse> {
+    ) -> DAPIResult<GetGroupInfosResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_group_infos(dapi_grpc::tonic::Request::new(request.clone()))
@@ -638,7 +638,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_group_actions(
         &self,
         request: &GetGroupActionsRequest,
-    ) -> Result<GetGroupActionsResponse> {
+    ) -> DAPIResult<GetGroupActionsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_group_actions(dapi_grpc::tonic::Request::new(request.clone()))
@@ -649,7 +649,7 @@ impl DriveClientTrait for DriveClient {
     async fn get_group_action_signers(
         &self,
         request: &GetGroupActionSignersRequest,
-    ) -> Result<GetGroupActionSignersResponse> {
+    ) -> DAPIResult<GetGroupActionSignersResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_group_action_signers(dapi_grpc::tonic::Request::new(request.clone()))
@@ -661,7 +661,7 @@ impl DriveClientTrait for DriveClient {
     async fn broadcast_state_transition(
         &self,
         request: &BroadcastStateTransitionRequest,
-    ) -> Result<BroadcastStateTransitionResponse> {
+    ) -> DAPIResult<BroadcastStateTransitionResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .broadcast_state_transition(dapi_grpc::tonic::Request::new(request.clone()))
@@ -672,7 +672,7 @@ impl DriveClientTrait for DriveClient {
     async fn wait_for_state_transition_result(
         &self,
         request: &WaitForStateTransitionResultRequest,
-    ) -> Result<WaitForStateTransitionResultResponse> {
+    ) -> DAPIResult<WaitForStateTransitionResultResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .wait_for_state_transition_result(dapi_grpc::tonic::Request::new(request.clone()))
@@ -683,14 +683,14 @@ impl DriveClientTrait for DriveClient {
 
 impl DriveClient {
     // Helper method to get a connected client
-    async fn get_client(&self) -> Result<PlatformClient<dapi_grpc::tonic::transport::Channel>> {
+    async fn get_client(&self) -> DAPIResult<PlatformClient<dapi_grpc::tonic::transport::Channel>> {
         match PlatformClient::connect(self.base_url.clone()).await {
             Ok(client) => Ok(client),
-            Err(e) => Err(anyhow::anyhow!(
+            Err(e) => Err(DapiError::Client(format!(
                 "Failed to connect to Platform service at {}: {}",
                 self.base_url,
                 e
-            )),
+            ))),
         }
     }
 }

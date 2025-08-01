@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::{DAPIResult, DapiError};
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -88,7 +88,7 @@ impl TenderdashWebSocketClient {
         self.is_connected.load(Ordering::Relaxed)
     }
 
-    pub async fn connect_and_listen(&self) -> Result<()> {
+    pub async fn connect_and_listen(&self) -> DAPIResult<()> {
         info!("Connecting to Tenderdash WebSocket at {}", self.ws_url);
 
         // Validate URL format
@@ -151,7 +151,7 @@ impl TenderdashWebSocketClient {
         &self,
         message: &str,
         event_sender: &broadcast::Sender<TransactionEvent>,
-    ) -> Result<()> {
+    ) -> DAPIResult<()> {
         let ws_message: TenderdashWsMessage = serde_json::from_str(message)?;
 
         // Skip subscription confirmations and other non-event messages
@@ -177,7 +177,7 @@ impl TenderdashWebSocketClient {
         &self,
         event_data: &serde_json::Value,
         event_sender: &broadcast::Sender<TransactionEvent>,
-    ) -> Result<()> {
+    ) -> DAPIResult<()> {
         let tx_event: TxEvent = serde_json::from_value(event_data.clone())?;
 
         // Extract transaction hash from events
@@ -222,7 +222,7 @@ impl TenderdashWebSocketClient {
         Ok(())
     }
 
-    fn extract_tx_hash(&self, events: &Option<Vec<EventAttribute>>) -> Result<String> {
+    fn extract_tx_hash(&self, events: &Option<Vec<EventAttribute>>) -> DAPIResult<String> {
         if let Some(events) = events {
             for event in events {
                 if event.key == "hash" {
@@ -231,8 +231,8 @@ impl TenderdashWebSocketClient {
             }
         }
 
-        Err(anyhow::anyhow!(
-            "Transaction hash not found in event attributes"
+        Err(DapiError::Client(
+            "Transaction hash not found in event attributes".to_string(),
         ))
     }
 }

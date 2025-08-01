@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::DAPIResult;
 use async_trait::async_trait;
 
 use crate::clients::{
@@ -20,7 +20,7 @@ impl MockTenderdashClient {
 
 #[async_trait]
 impl TenderdashClientTrait for MockTenderdashClient {
-    async fn status(&self) -> Result<TenderdashStatusResponse> {
+    async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
         // Return mock data that matches the test expectations
         Ok(TenderdashStatusResponse {
             node_info: Some(NodeInfo {
@@ -57,14 +57,14 @@ impl TenderdashClientTrait for MockTenderdashClient {
         })
     }
 
-    async fn net_info(&self) -> Result<NetInfoResponse> {
+    async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
         Ok(NetInfoResponse {
             listening: Some(true),
             n_peers: Some("8".to_string()),
         })
     }
 
-    async fn broadcast_tx(&self, _tx: String) -> Result<BroadcastTxResponse> {
+    async fn broadcast_tx(&self, _tx: String) -> DAPIResult<BroadcastTxResponse> {
         Ok(BroadcastTxResponse {
             code: 0,
             data: None,
@@ -73,7 +73,7 @@ impl TenderdashClientTrait for MockTenderdashClient {
         })
     }
 
-    async fn check_tx(&self, _tx: String) -> Result<CheckTxResponse> {
+    async fn check_tx(&self, _tx: String) -> DAPIResult<CheckTxResponse> {
         Ok(CheckTxResponse {
             code: 0,
             info: None,
@@ -81,14 +81,14 @@ impl TenderdashClientTrait for MockTenderdashClient {
         })
     }
 
-    async fn unconfirmed_txs(&self, _limit: Option<u32>) -> Result<UnconfirmedTxsResponse> {
+    async fn unconfirmed_txs(&self, _limit: Option<u32>) -> DAPIResult<UnconfirmedTxsResponse> {
         Ok(UnconfirmedTxsResponse {
             txs: Some(vec![]),
             total: Some("0".to_string()),
         })
     }
 
-    async fn tx(&self, _hash: String) -> Result<TxResponse> {
+    async fn tx(&self, _hash: String) -> DAPIResult<TxResponse> {
         Ok(TxResponse {
             tx_result: None,
             tx: None,

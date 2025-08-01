@@ -1,4 +1,3 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -9,6 +8,7 @@ use tracing::{error, info, trace};
 
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use super::traits::TenderdashClientTrait;
+use crate::error::{DAPIResult, DapiError};
 
 #[derive(Debug, Clone)]
 pub struct TenderdashClient {
@@ -136,7 +136,7 @@ impl TenderdashClient {
         }
     }
 
-    pub async fn status(&self) -> Result<TenderdashStatusResponse> {
+    pub async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
         trace!("Making status request to Tenderdash at: {}", self.base_url);
         let request_body = json!({
             "jsonrpc": "2.0",
@@ -150,20 +150,25 @@ impl TenderdashClient {
             .post(&self.base_url)
             .json(&request_body)
             .send()
-            .await?
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
             .json()
-            .await?;
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
 
         if let Some(error) = response.error {
-            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+            return Err(DapiError::Client(format!(
+                "Tenderdash RPC error: {}",
+                error
+            )));
         }
 
-        response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("Tenderdash status response missing result field"))
+        response.result.ok_or_else(|| {
+            DapiError::Client("Tenderdash status response missing result field".to_string())
+        })
     }
 
-    pub async fn net_info(&self) -> Result<NetInfoResponse> {
+    pub async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "net_info",
@@ -176,21 +181,26 @@ impl TenderdashClient {
             .post(&self.base_url)
             .json(&request_body)
             .send()
-            .await?
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
             .json()
-            .await?;
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
 
         if let Some(error) = response.error {
-            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+            return Err(DapiError::Client(format!(
+                "Tenderdash RPC error: {}",
+                error
+            )));
         }
 
-        response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("Tenderdash net_info response missing result field"))
+        response.result.ok_or_else(|| {
+            DapiError::Client("Tenderdash net_info response missing result field".to_string())
+        })
     }
 
     /// Broadcast a transaction to the Tenderdash network
-    pub async fn broadcast_tx(&self, tx: String) -> Result<BroadcastTxResponse> {
+    pub async fn broadcast_tx(&self, tx: String) -> DAPIResult<BroadcastTxResponse> {
         trace!("Broadcasting transaction to Tenderdash: {} bytes", tx.len());
         let request_body = json!({
             "jsonrpc": "2.0",
@@ -206,22 +216,27 @@ impl TenderdashClient {
             .post(&self.base_url)
             .json(&request_body)
             .send()
-            .await?
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
             .json()
-            .await?;
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
 
         if let Some(error) = response.error {
             error!("Tenderdash broadcast_tx RPC error: {}", error);
-            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+            return Err(DapiError::Client(format!(
+                "Tenderdash RPC error: {}",
+                error
+            )));
         }
 
-        response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("Tenderdash broadcast_tx response missing result field"))
+        response.result.ok_or_else(|| {
+            DapiError::Client("Tenderdash broadcast_tx response missing result field".to_string())
+        })
     }
 
     /// Check a transaction without adding it to the mempool
-    pub async fn check_tx(&self, tx: String) -> Result<CheckTxResponse> {
+    pub async fn check_tx(&self, tx: String) -> DAPIResult<CheckTxResponse> {
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "check_tx",
@@ -236,21 +251,26 @@ impl TenderdashClient {
             .post(&self.base_url)
             .json(&request_body)
             .send()
-            .await?
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
             .json()
-            .await?;
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
 
         if let Some(error) = response.error {
-            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+            return Err(DapiError::Client(format!(
+                "Tenderdash RPC error: {}",
+                error
+            )));
         }
 
-        response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("Tenderdash check_tx response missing result field"))
+        response.result.ok_or_else(|| {
+            DapiError::Client("Tenderdash check_tx response missing result field".to_string())
+        })
     }
 
     /// Get unconfirmed transactions from the mempool
-    pub async fn unconfirmed_txs(&self, limit: Option<u32>) -> Result<UnconfirmedTxsResponse> {
+    pub async fn unconfirmed_txs(&self, limit: Option<u32>) -> DAPIResult<UnconfirmedTxsResponse> {
         let mut params = json!({});
         if let Some(limit) = limit {
             params["limit"] = json!(limit.to_string());
@@ -268,21 +288,28 @@ impl TenderdashClient {
             .post(&self.base_url)
             .json(&request_body)
             .send()
-            .await?
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
             .json()
-            .await?;
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
 
         if let Some(error) = response.error {
-            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+            return Err(DapiError::Client(format!(
+                "Tenderdash RPC error: {}",
+                error
+            )));
         }
 
         response.result.ok_or_else(|| {
-            anyhow::anyhow!("Tenderdash unconfirmed_txs response missing result field")
+            DapiError::Client(
+                "Tenderdash unconfirmed_txs response missing result field".to_string(),
+            )
         })
     }
 
     /// Get transaction by hash
-    pub async fn tx(&self, hash: String) -> Result<TxResponse> {
+    pub async fn tx(&self, hash: String) -> DAPIResult<TxResponse> {
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "tx",
@@ -297,43 +324,48 @@ impl TenderdashClient {
             .post(&self.base_url)
             .json(&request_body)
             .send()
-            .await?
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
             .json()
-            .await?;
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
 
         if let Some(error) = response.error {
-            return Err(anyhow::anyhow!("Tenderdash RPC error: {}", error));
+            return Err(DapiError::Client(format!(
+                "Tenderdash RPC error: {}",
+                error
+            )));
         }
 
-        response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("Tenderdash tx response missing result field"))
+        response.result.ok_or_else(|| {
+            DapiError::Client("Tenderdash tx response missing result field".to_string())
+        })
     }
 }
 
 #[async_trait]
 impl TenderdashClientTrait for TenderdashClient {
-    async fn status(&self) -> Result<TenderdashStatusResponse> {
+    async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
         self.status().await
     }
 
-    async fn net_info(&self) -> Result<NetInfoResponse> {
+    async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
         self.net_info().await
     }
 
-    async fn broadcast_tx(&self, tx: String) -> Result<BroadcastTxResponse> {
+    async fn broadcast_tx(&self, tx: String) -> DAPIResult<BroadcastTxResponse> {
         self.broadcast_tx(tx).await
     }
 
-    async fn check_tx(&self, tx: String) -> Result<CheckTxResponse> {
+    async fn check_tx(&self, tx: String) -> DAPIResult<CheckTxResponse> {
         self.check_tx(tx).await
     }
 
-    async fn unconfirmed_txs(&self, limit: Option<u32>) -> Result<UnconfirmedTxsResponse> {
+    async fn unconfirmed_txs(&self, limit: Option<u32>) -> DAPIResult<UnconfirmedTxsResponse> {
         self.unconfirmed_txs(limit).await
     }
 
-    async fn tx(&self, hash: String) -> Result<TxResponse> {
+    async fn tx(&self, hash: String) -> DAPIResult<TxResponse> {
         self.tx(hash).await
     }
 

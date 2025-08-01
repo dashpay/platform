@@ -69,7 +69,12 @@ assert_matches = "1.5.0"
 
 [features]
 # TODO: remove mocks from default features
-default = ["mocks", "offline-testing", "dapi-grpc/client", "token_reward_explanations"]
+default = [
+  "mocks",
+  "network-testing",
+  "dapi-grpc/client",
+  "token_reward_explanations",
+]
 
 mocks = [
   "dep:serde",
