@@ -58,6 +58,9 @@ pub enum DapiError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Connection closed")]
+    ConnectionClosed,
 }
 
 /// Result type alias for DAPI operations

@@ -12,6 +12,7 @@ path = "src/main.rs"
 tokio = { version = "1.47.0", features = ["full"] }
 tokio-stream = "0.1"
 futures = "0.3.31"
+tokio-util = "0.7.15"
 
 # gRPC framework
 tonic = "0.13.0"
@@ -65,11 +66,15 @@ tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 url = "2.5"
 
 # ZMQ for real-time blockchain events
-zeromq = { version = "0.4.1", default-features = false, features = [
+# zeromq = { version = "0.4.1", default-features = false, features = [
+#     "tokio-runtime",
+#     "tcp-transport",
+# ] }
+# Use fork of zmq.rs to receive Disconnect events, see https://github.com/zeromq/zmq.rs/pull/209
+zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "3b8bb07a349d980b156e02767c6279e2188eb0c5", features = [
     "tokio-runtime",
     "tcp-transport",
-] }
-
+], default-features = false }
 
 # UUID generation
 uuid = { version = "1.0", features = ["v4"] }

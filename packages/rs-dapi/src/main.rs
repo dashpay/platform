@@ -192,11 +192,16 @@ fn print_version() {
     println!("Built with Rust {}", env!("CARGO_PKG_RUST_VERSION"));
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ExitCode> {
+fn main() -> Result<(), ExitCode> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
+
     let cli = Cli::parse();
 
-    match cli.run().await {
+    match rt.block_on(cli.run()) {
         Ok(()) => Ok(()),
         Err(e) => {
             eprintln!("Error: {}", e);
