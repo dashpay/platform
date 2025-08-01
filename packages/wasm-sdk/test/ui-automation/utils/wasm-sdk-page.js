@@ -383,6 +383,9 @@ class WasmSdkPage extends BaseTest {
     const banner = this.page.locator(this.selectors.statusBanner);
     const classList = await banner.getAttribute('class');
     
+    // Handle null classList gracefully
+    if (!classList) return 'unknown';
+    
     if (classList.includes('success')) return 'success';
     if (classList.includes('error')) return 'error';
     if (classList.includes('loading')) return 'loading';
