@@ -67,28 +67,15 @@ public class SDK {
         dash_sdk_init()
     }
     
-    /// Testnet DAPI addresses provided by the user
+    /// Testnet DAPI addresses from WASM SDK (verified working)
     private static let testnetDAPIAddresses = [
-        "https://54.186.161.118:1443",
-        "https://52.43.70.6:1443",
-        "https://18.237.42.109:1443",
-        "https://52.42.192.140:1443",
-        "https://35.166.242.82:1443",
-        "https://35.93.135.201:1443",
-        "https://35.91.145.176:1443",
-        "https://52.10.229.11:1443",
-        "https://54.200.102.141:1443",
-        "https://52.33.28.47:1443",
-        "https://54.189.18.97:1443",
-        "https://44.236.189.81:1443",
-        "https://52.88.31.190:1443",
-        "https://52.10.216.154:1443",
-        "https://35.85.157.172:1443",
-        "https://44.228.242.181:1443",
-        "https://54.69.121.35:1443",
-        "https://52.89.154.228:1443",
-        "https://35.163.144.230:1443",
-        "https://52.32.4.156:1443"
+        "https://52.12.176.90:1443",
+        "https://35.82.197.197:1443",
+        "https://44.240.98.102:1443",
+        "https://52.34.144.50:1443",
+        "https://44.239.39.153:1443",
+        "https://35.164.23.245:1443",
+        "https://54.149.33.167:1443"
     ].joined(separator: ",")
     
     /// Create a new SDK instance with trusted setup
