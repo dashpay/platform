@@ -164,9 +164,25 @@ extension SDK {
         documentType: String?,
         purposes: [String]? = nil
     ) async throws -> [String: Any] {
-        // This query might not have a direct FFI function yet
-        // We'll need to implement it using available functions or create a new FFI function
-        throw SDKError.notImplemented("Get identities contract keys not yet implemented in FFI")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Join identity IDs with commas
+        let identityIdsStr = identityIds.joined(separator: ",")
+        
+        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
+        
+        let result = dash_sdk_identities_fetch_contract_keys(
+            handle,
+            identityIdsStr,
+            contractId,
+            documentType,
+            purposesStr
+        )
+        
+        return try processJSONResult(result)
     }
     
     /// Get identity nonce
@@ -300,15 +316,6 @@ extension SDK {
         startAfter: String? = nil,
         startAt: String? = nil
     ) async throws -> [String: Any] {
-        // Document queries typically require a data contract handle
-        // This would need a more complex implementation
-        throw SDKError.notImplemented("Document list query requires data contract handle - use SDK documents API instead")
-    }
-    
-    /// Get a specific document
-    public func documentGet(dataContractId: String, documentType: String, documentId: String) async throws -> [String: Any] {
-        // Document fetch requires a data contract handle
-        // For now, we need to fetch the contract first
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
@@ -325,23 +332,120 @@ extension SDK {
             throw SDKError.notFound("Data contract not found")
         }
         
-        // Now fetch the document
-        let contractHandlePtr = OpaquePointer(contractHandle)
-        let result = dash_sdk_document_fetch(handle, contractHandlePtr, documentType, documentId)
+        defer {
+            // Clean up contract handle when done
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+        }
         
-        // Clean up contract handle
-        dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+        // Create search parameters struct
+        var searchParams = DashSDKDocumentSearchParams()
+        searchParams.data_contract_handle = OpaquePointer(contractHandle)
+        searchParams.document_type = documentType.cString(using: .utf8)!.withUnsafeBufferPointer { $0.baseAddress }
+        searchParams.where_json = whereClause?.cString(using: .utf8)?.withUnsafeBufferPointer { $0.baseAddress }
+        searchParams.order_by_json = orderByClause?.cString(using: .utf8)?.withUnsafeBufferPointer { $0.baseAddress }
+        searchParams.limit = limit ?? 100
+        searchParams.start_at = 0 // TODO: Handle startAfter/startAt pagination
+        
+        // Search for documents
+        let result = dash_sdk_document_search(handle, &searchParams)
         
         return try processJSONResult(result)
+    }
+    
+    /// Get a specific document
+    public func documentGet(dataContractId: String, documentType: String, documentId: String) async throws -> [String: Any] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // First fetch the data contract
+        let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
+        if let error = contractResult.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
+        }
+        
+        guard let contractHandle = contractResult.data else {
+            throw SDKError.notFound("Data contract not found")
+        }
+        
+        defer {
+            // Clean up contract handle when done
+            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+        }
+        
+        // Now fetch the document
+        let documentResult = dash_sdk_document_fetch(handle, OpaquePointer(contractHandle), documentType, documentId)
+        
+        if let error = documentResult.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError("Failed to fetch document: \(errorMessage)")
+        }
+        
+        guard let documentHandle = documentResult.data else {
+            throw SDKError.notFound("Document not found")
+        }
+        
+        defer {
+            // Clean up document handle
+            dash_sdk_document_destroy(OpaquePointer(documentHandle))
+        }
+        
+        // Get document info to convert to JSON
+        let info = dash_sdk_document_get_info(OpaquePointer(documentHandle))
+        defer {
+            dash_sdk_document_info_destroy(info)
+        }
+        
+        guard let infoPtr = info else {
+            throw SDKError.internalError("Failed to get document info")
+        }
+        
+        // Convert document info to dictionary
+        let documentInfo = infoPtr.pointee
+        
+        // Get JSON representation
+        guard let jsonDataPtr = documentInfo.json_data else {
+            throw SDKError.serializationError("No JSON data in document")
+        }
+        
+        let jsonString = String(cString: jsonDataPtr)
+        
+        guard let data = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse document JSON")
+        }
+        
+        return json
     }
     
     // MARK: - DPNS Queries
     
     /// Get DPNS usernames for identity
     public func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> [[String: Any]] {
-        // This would require querying documents of type 'domain' where ownerId = identityId
-        // Using the document query system
-        throw SDKError.notImplemented("DPNS username query not yet implemented - requires document query")
+        // DPNS contract ID on testnet
+        let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+        
+        // Query for domains owned by this identity
+        let whereClause = "[[\"records.identity\", \"=\", \"\(identityId)\"]]"
+        let orderByClause = "[[\"$createdAt\", false]]"
+        
+        let result = try await documentList(
+            dataContractId: dpnsContractId,
+            documentType: "domain",
+            whereClause: whereClause,
+            orderByClause: orderByClause,
+            limit: limit
+        )
+        
+        // Extract documents array from result
+        if let documents = result["documents"] as? [[String: Any]] {
+            return documents
+        }
+        
+        return []
     }
     
     /// Check DPNS name availability
@@ -381,8 +485,27 @@ extension SDK {
     
     /// Search DPNS names by prefix
     public func dpnsSearch(prefix: String, limit: UInt32? = nil) async throws -> [[String: Any]] {
-        // DPNS search requires document query with prefix matching
-        throw SDKError.notImplemented("DPNS search not yet implemented - requires document query")
+        // DPNS contract ID on testnet
+        let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+        
+        // Query for domains starting with prefix
+        let whereClause = "[[\"normalizedLabel\", \"startsWith\", \"\(prefix)\"]]"
+        let orderByClause = "[[\"normalizedLabel\", true]]"
+        
+        let result = try await documentList(
+            dataContractId: dpnsContractId,
+            documentType: "domain",
+            whereClause: whereClause,
+            orderByClause: orderByClause,
+            limit: limit
+        )
+        
+        // Extract documents array from result
+        if let documents = result["documents"] as? [[String: Any]] {
+            return documents
+        }
+        
+        return []
     }
     
     // MARK: - Voting & Contested Resources Queries
@@ -399,8 +522,29 @@ extension SDK {
         offset: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        // This requires specific FFI implementation for the new parameters
-        throw SDKError.notImplemented("Get contested resources with new parameters not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Convert result type to integer
+        let resultTypeInt: Int32 = switch resultType {
+        case "documents": 0
+        case "vote_tally": 1  
+        case "document_with_vote_tally": 2
+        default: 0
+        }
+        
+        let result = dash_sdk_contested_resource_get_resources(
+            handle,
+            dataContractId,
+            documentTypeName,
+            indexName,
+            startAtValue,
+            resultTypeInt,
+            limit ?? 100,
+            orderAscending
+        )
+        return try processJSONArrayResult(result)
     }
     
     /// Get contested resource vote state
@@ -414,7 +558,29 @@ extension SDK {
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get contested resource vote state not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Convert result type to integer
+        let resultTypeInt: Int32 = switch resultType {
+        case "contenders": 0
+        case "abstainers": 1
+        case "locked": 2
+        default: 0
+        }
+        
+        let result = dash_sdk_contested_resource_get_vote_state(
+            handle,
+            dataContractId,
+            documentTypeName,
+            indexName,
+            startAtIdentifierInfo,
+            resultTypeInt,
+            allowIncludeLockedAndAbstainingVoteTally,
+            count ?? 100
+        )
+        return try processJSONArrayResult(result)
     }
     
     /// Get contested resource voters for identity
@@ -427,7 +593,21 @@ extension SDK {
         count: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get contested resource voters for identity not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_contested_resource_get_voters_for_identity(
+            handle,
+            dataContractId,
+            documentTypeName,
+            indexName,
+            contestantId,
+            startAtIdentifierInfo,
+            count ?? 100,
+            orderAscending
+        )
+        return try processJSONArrayResult(result)
     }
     
     /// Get contested resource identity votes
@@ -437,7 +617,18 @@ extension SDK {
         offset: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get contested resource identity votes not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_contested_resource_get_identity_votes(
+            handle,
+            identityId,
+            limit ?? 100,
+            offset ?? 0,
+            orderAscending
+        )
+        return try processJSONArrayResult(result)
     }
     
     /// Get vote polls by end date
@@ -448,7 +639,19 @@ extension SDK {
         offset: UInt32?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get vote polls by end date not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_voting_get_vote_polls_by_end_date(
+            handle,
+            startTimeMs ?? 0,
+            endTimeMs ?? UInt64.max,
+            limit ?? 100,
+            offset ?? 0,
+            orderAscending
+        )
+        return try processJSONArrayResult(result)
     }
     
     
@@ -466,7 +669,12 @@ extension SDK {
     
     /// Get protocol version upgrade vote status
     public func getProtocolVersionUpgradeVoteStatus(startProTxHash: String?, count: UInt32?) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get protocol version upgrade vote status not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_protocol_version_get_upgrade_vote_status(handle, startProTxHash, count ?? 100)
+        return try processJSONArrayResult(result)
     }
     
     // MARK: - Epoch & Block Queries
@@ -501,12 +709,22 @@ extension SDK {
     
     /// Get finalized epoch infos
     public func getFinalizedEpochInfos(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get finalized epoch infos not yet implemented")
+        // For now, use getEpochsInfo as they might be the same
+        // The FFI might need a separate function for finalized epochs only
+        return try await getEpochsInfo(startEpoch: startEpoch, count: count, ascending: ascending)
     }
     
     /// Get evonodes proposed epoch blocks by IDs
     public func getEvonodesProposedEpochBlocksByIds(epoch: UInt32, ids: [String]) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get evonodes proposed epoch blocks by IDs not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Join IDs with commas
+        let idsStr = ids.joined(separator: ",")
+        
+        let result = dash_sdk_evonode_get_proposed_epoch_blocks_by_ids(handle, epoch, idsStr)
+        return try processJSONArrayResult(result)
     }
     
     /// Get evonodes proposed epoch blocks by range
@@ -516,32 +734,39 @@ extension SDK {
         startAfter: String?,
         orderAscending: Bool
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get evonodes proposed epoch blocks by range not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
+            handle,
+            epoch,
+            startAfter,
+            limit ?? 100,
+            orderAscending
+        )
+        return try processJSONArrayResult(result)
     }
     
     // MARK: - Token Queries
     
     /// Get identities token balances
     public func getIdentitiesTokenBalances(identityIds: [String], tokenId: String) async throws -> [String: UInt64] {
-        // Would need batch FFI function or iterate through identities
-        var balances: [String: UInt64] = [:]
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
         
-        for identityId in identityIds {
-            do {
-                guard let handle = handle else {
-                    throw SDKError.invalidState("SDK not initialized")
-                }
-                
-                let tokenIds = "[\"\(tokenId)\"]"
-                let result = dash_sdk_token_get_identity_balances(handle, identityId, tokenIds)
-                let json = try processJSONResult(result)
-                
-                if let balance = json[tokenId] as? UInt64 {
-                    balances[identityId] = balance
-                }
-            } catch {
-                // Skip failed fetches
-                continue
+        // Join identity IDs with commas
+        let identityIdsStr = identityIds.joined(separator: ",")
+        
+        let result = dash_sdk_identities_fetch_token_balances(handle, identityIdsStr, tokenId)
+        let json = try processJSONResult(result)
+        
+        // Convert the result to [String: UInt64]
+        var balances: [String: UInt64] = [:]
+        for (key, value) in json {
+            if let balance = value as? UInt64 {
+                balances[key] = balance
             }
         }
         
@@ -555,22 +780,54 @@ extension SDK {
         limit: UInt32?,
         offset: UInt32?
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get identity token infos not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Convert token IDs to comma-separated string or nil
+        let tokenIdsStr = tokenIds?.joined(separator: ",")
+        
+        let result = dash_sdk_identity_fetch_token_infos(handle, identityId, tokenIdsStr, limit ?? 100, offset ?? 0)
+        return try processJSONArrayResult(result)
     }
     
     /// Get identities token infos
     public func getIdentitiesTokenInfos(identityIds: [String], tokenId: String) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get identities token infos not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Join identity IDs with commas
+        let identityIdsStr = identityIds.joined(separator: ",")
+        
+        let result = dash_sdk_identities_fetch_token_infos(handle, identityIdsStr, tokenId)
+        return try processJSONArrayResult(result)
     }
     
     /// Get token statuses
     public func getTokenStatuses(tokenIds: [String]) async throws -> [String: Any] {
-        throw SDKError.notImplemented("Get token statuses not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Join token IDs with commas
+        let tokenIdsStr = tokenIds.joined(separator: ",")
+        
+        let result = dash_sdk_token_get_statuses(handle, tokenIdsStr)
+        return try processJSONResult(result)
     }
     
     /// Get token direct purchase prices
     public func getTokenDirectPurchasePrices(tokenIds: [String]) async throws -> [String: Any] {
-        throw SDKError.notImplemented("Get token direct purchase prices not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Join token IDs with commas
+        let tokenIdsStr = tokenIds.joined(separator: ",")
+        
+        let result = dash_sdk_token_get_direct_purchase_prices(handle, tokenIdsStr)
+        return try processJSONResult(result)
     }
     
     /// Get token contract info
@@ -585,7 +842,12 @@ extension SDK {
     
     /// Get token perpetual distribution last claim
     public func getTokenPerpetualDistributionLastClaim(identityId: String, tokenId: String) async throws -> [String: Any] {
-        throw SDKError.notImplemented("Get token perpetual distribution last claim not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_token_get_perpetual_distribution_last_claim(handle, identityId, tokenId)
+        return try processJSONResult(result)
     }
     
     /// Get token total supply
@@ -602,7 +864,12 @@ extension SDK {
     
     /// Get group info
     public func getGroupInfo(contractId: String, groupContractPosition: UInt32) async throws -> [String: Any] {
-        throw SDKError.notImplemented("Get group info not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_group_get_info(handle, contractId, groupContractPosition)
+        return try processJSONResult(result)
     }
     
     /// Get group infos
@@ -612,7 +879,18 @@ extension SDK {
         startGroupContractPositionIncluded: Bool,
         count: UInt32?
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get group infos not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_group_get_infos(
+            handle,
+            contractId,
+            startAtGroupContractPosition ?? 0,
+            startGroupContractPositionIncluded,
+            count ?? 100
+        )
+        return try processJSONArrayResult(result)
     }
     
     /// Get group actions
@@ -624,7 +902,20 @@ extension SDK {
         startActionIdIncluded: Bool,
         count: UInt32?
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get group actions not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_group_get_actions(
+            handle,
+            contractId,
+            groupContractPosition,
+            status,
+            startActionId,
+            startActionIdIncluded,
+            count ?? 100
+        )
+        return try processJSONArrayResult(result)
     }
     
     /// Get group action signers
@@ -634,20 +925,30 @@ extension SDK {
         status: String,
         actionId: String
     ) async throws -> [[String: Any]] {
-        throw SDKError.notImplemented("Get group action signers not yet implemented")
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_group_get_action_signers(
+            handle,
+            contractId,
+            groupContractPosition,
+            status,
+            actionId
+        )
+        return try processJSONArrayResult(result)
     }
     
     // MARK: - System Queries
     
     /// Get platform status
     public func getStatus() async throws -> [String: Any] {
-        // Platform status would typically come from a different query
-        // For now, return basic status info
-        return [
-            "version": "1.0.0",
-            "network": "testnet",
-            "status": "operational"
-        ]
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_get_status(handle)
+        return try processJSONResult(result)
     }
     
     /// Get total credits in platform
