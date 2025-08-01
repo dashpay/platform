@@ -66,7 +66,7 @@ fi
 # Build for iOS device (arm64) - always needed
 if [ "$BUILD_ARCH" != "x86" ]; then
     echo -ne "${GREEN}Building for iOS device (arm64)...${NC}"
-    if cargo build --target aarch64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_device.log 2>&1; then
+    if cargo build --lib --target aarch64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_device.log 2>&1; then
         echo -e "\r${GREEN}✓ iOS device (arm64) build successful${NC}       "
     else
         echo -e "\r${RED}✗ iOS device build failed${NC}              "
@@ -78,7 +78,7 @@ fi
 # Build for iOS simulator based on architecture
 if [ "$BUILD_ARCH" = "x86" ]; then
     echo -ne "${GREEN}Building for iOS simulator (x86_64)...${NC}"
-    if cargo build --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_x86.log 2>&1; then
+    if cargo build --lib --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_x86.log 2>&1; then
         echo -e "\r${GREEN}✓ iOS simulator (x86_64) build successful${NC}      "
     else
         echo -e "\r${RED}✗ iOS simulator (x86_64) build failed${NC}          "
@@ -87,7 +87,7 @@ if [ "$BUILD_ARCH" = "x86" ]; then
     fi
 elif [ "$BUILD_ARCH" = "universal" ]; then
     echo -ne "${GREEN}Building for iOS simulator (arm64)...${NC}"
-    if cargo build --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_arm.log 2>&1; then
+    if cargo build --lib --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_arm.log 2>&1; then
         echo -e "\r${GREEN}✓ iOS simulator (arm64) build successful${NC}       "
     else
         echo -e "\r${RED}✗ iOS simulator (arm64) build failed${NC}           "
@@ -95,7 +95,7 @@ elif [ "$BUILD_ARCH" = "universal" ]; then
         exit 1
     fi
     echo -ne "${GREEN}Building for iOS simulator (x86_64)...${NC}"
-    if cargo build --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_x86.log 2>&1; then
+    if cargo build --lib --target x86_64-apple-ios --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_x86.log 2>&1; then
         echo -e "\r${GREEN}✓ iOS simulator (x86_64) build successful${NC}      "
     else
         echo -e "\r${RED}✗ iOS simulator (x86_64) build failed${NC}          "
@@ -105,7 +105,7 @@ elif [ "$BUILD_ARCH" = "universal" ]; then
 else
     # Default to ARM
     echo -ne "${GREEN}Building for iOS simulator (arm64)...${NC}"
-    if cargo build --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_arm.log 2>&1; then
+    if cargo build --lib --target aarch64-apple-ios-sim --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_sim_arm.log 2>&1; then
         echo -e "\r${GREEN}✓ iOS simulator (arm64) build successful${NC}       "
     else
         echo -e "\r${RED}✗ iOS simulator (arm64) build failed${NC}           "
@@ -121,7 +121,7 @@ mkdir -p "$OUTPUT_DIR"
 # Generate C headers
 echo -ne "${GREEN}Generating C headers...${NC}"
 cd "$PROJECT_ROOT"
-if GENERATE_BINDINGS=1 cargo build --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_headers.log 2>&1; then
+if GENERATE_BINDINGS=1 cargo build --lib --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_headers.log 2>&1; then
     if cp "$PROJECT_ROOT/target/release/build/"*"/out/dash_sdk_ffi.h" "$OUTPUT_DIR/" 2>/dev/null; then
         echo -e "\r${GREEN}✓ Headers generated successfully${NC}              "
     else

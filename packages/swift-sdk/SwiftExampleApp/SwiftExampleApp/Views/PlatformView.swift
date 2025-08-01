@@ -108,7 +108,7 @@ struct PlatformView: View {
         
         Task {
             do {
-                let status = try sdk.getStatus()
+                let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
                 await MainActor.run {
                     self.sdkStatus = status
                     self.isLoadingStatus = false

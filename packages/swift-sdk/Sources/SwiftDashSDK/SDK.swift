@@ -172,13 +172,14 @@ public class SDK {
         }
         
         // Parse the JSON result
-        guard let jsonString = result.string else {
+        guard result.data != nil else {
             throw SDKError.internalError("No status data returned")
         }
         
-        let jsonStr = String(cString: jsonString)
+        let jsonCStr = result.data.assumingMemoryBound(to: CChar.self)
+        let jsonStr = String(cString: jsonCStr)
         defer {
-            dash_sdk_string_free(jsonString)
+            dash_sdk_string_free(jsonCStr)
         }
         
         guard let data = jsonStr.data(using: .utf8) else {
