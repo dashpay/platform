@@ -31,11 +31,13 @@ public class WalletService: ObservableObject {
         self.modelContext = modelContext
         print("ModelContext set: \(modelContext)")
         
-        // Initialize WalletManager
+        // Initialize WalletManager with the same container
         do {
-            print("Initializing WalletManager...")
-            self.walletManager = try WalletManager()
-            print("✅ WalletManager initialized successfully")
+            print("Initializing WalletManager with shared container...")
+            // Get the container from the modelContext
+            let container = modelContext.container
+            self.walletManager = try WalletManager(modelContainer: container)
+            print("✅ WalletManager initialized successfully with shared container")
         } catch {
             print("❌ Failed to initialize WalletManager:")
             print("Error type: \(type(of: error))")

@@ -20,16 +20,21 @@ public class WalletManager: ObservableObject {
     public private(set) var utxoManager: UTXOManager!
     public private(set) var transactionService: TransactionService!
     
-    public init() throws {
+    public init(modelContainer: ModelContainer? = nil) throws {
         print("=== WalletManager.init START ===")
         
-        do {
-            print("Creating ModelContainer...")
-            self.modelContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
-            print("✅ ModelContainer created")
-        } catch {
-            print("❌ Failed to create ModelContainer: \(error)")
-            throw error
+        if let container = modelContainer {
+            print("Using provided ModelContainer")
+            self.modelContainer = container
+        } else {
+            do {
+                print("Creating ModelContainer...")
+                self.modelContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
+                print("✅ ModelContainer created")
+            } catch {
+                print("❌ Failed to create ModelContainer: \(error)")
+                throw error
+            }
         }
         
         print("Creating AddressManager...")
@@ -40,13 +45,13 @@ public class WalletManager: ObservableObject {
         
         // Initialize services
         print("Creating UTXOManager...")
-        self.utxoManager = UTXOManager(walletManager: self, modelContainer: modelContainer)
+        self.utxoManager = UTXOManager(walletManager: self, modelContainer: self.modelContainer)
         
         print("Creating TransactionService...")
         self.transactionService = TransactionService(
             walletManager: self,
             utxoManager: utxoManager,
-            modelContainer: modelContainer
+            modelContainer: self.modelContainer
         )
         
         print("=== WalletManager.init SUCCESS ===")
