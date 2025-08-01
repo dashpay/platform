@@ -296,14 +296,20 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
+    eprintln!("🔵 dash_sdk_create_trusted: Creating trusted context provider for network: {:?}", network);
+    
     // Create trusted context provider
     let trusted_provider = match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
         network,
         None,  // Use default quorum lookup endpoints
         std::num::NonZeroUsize::new(100).unwrap(),  // Cache size
     ) {
-        Ok(provider) => provider,
+        Ok(provider) => {
+            eprintln!("✅ dash_sdk_create_trusted: Trusted context provider created successfully");
+            provider
+        },
         Err(e) => {
+            eprintln!("❌ dash_sdk_create_trusted: Failed to create trusted context provider: {}", e);
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
                 format!("Failed to create trusted context provider: {}", e),
@@ -311,10 +317,70 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
-    // Parse DAPI addresses
+    // Parse DAPI addresses - for trusted setup, we always need real addresses
     let builder = if config.dapi_addresses.is_null() {
-        // Use mock SDK if no addresses provided
-        SdkBuilder::new_mock().with_network(network)
+        eprintln!("🔵 dash_sdk_create_trusted: No DAPI addresses provided, using default addresses for network");
+        // Use default addresses for the network
+        match network {
+            Network::Testnet => {
+                // Use testnet addresses from WASM SDK
+                let default_addresses = vec![
+                    "https://52.12.176.90:1443",
+                    "https://35.82.197.197:1443",
+                    "https://44.240.98.102:1443",
+                    "https://52.34.144.50:1443",
+                    "https://44.239.39.153:1443",
+                    "https://35.164.23.245:1443",
+                    "https://54.149.33.167:1443",
+                ].join(",");
+                
+                eprintln!("🔵 dash_sdk_create_trusted: Using default testnet addresses: {}", default_addresses);
+                let address_list = match AddressList::from_str(&default_addresses) {
+                    Ok(list) => list,
+                    Err(e) => {
+                        eprintln!("❌ dash_sdk_create_trusted: Failed to parse default addresses: {}", e);
+                        return DashSDKResult::error(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to parse default addresses: {}", e),
+                        ))
+                    }
+                };
+                SdkBuilder::new(address_list).with_network(network)
+            },
+            Network::Dash => {
+                // Use mainnet addresses from WASM SDK
+                let default_addresses = vec![
+                    "https://149.28.241.190:443",
+                    "https://198.7.115.48:443",
+                    "https://134.255.182.186:443",
+                    "https://93.115.172.39:443",
+                    "https://5.189.164.253:443",
+                    "https://178.215.237.134:443",
+                    "https://157.66.81.162:443",
+                    "https://173.212.232.90:443",
+                ].join(",");
+                
+                eprintln!("🔵 dash_sdk_create_trusted: Using default mainnet addresses");
+                let address_list = match AddressList::from_str(&default_addresses) {
+                    Ok(list) => list,
+                    Err(e) => {
+                        eprintln!("❌ dash_sdk_create_trusted: Failed to parse default addresses: {}", e);
+                        return DashSDKResult::error(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to parse default addresses: {}", e),
+                        ))
+                    }
+                };
+                SdkBuilder::new(address_list).with_network(network)
+            },
+            _ => {
+                eprintln!("❌ dash_sdk_create_trusted: No DAPI addresses for network: {:?}", network);
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("DAPI addresses not available for network: {:?}", network),
+                ));
+            }
+        }
     } else {
         let addresses_str = match unsafe { CStr::from_ptr(config.dapi_addresses) }.to_str() {
             Ok(s) => s,
@@ -327,13 +393,21 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         };
 
         if addresses_str.is_empty() {
-            // Use mock SDK if addresses string is empty
-            SdkBuilder::new_mock().with_network(network)
+            eprintln!("❌ dash_sdk_create_trusted: Empty DAPI addresses provided");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "DAPI addresses cannot be empty for trusted setup".to_string(),
+            ));
         } else {
+            eprintln!("🔵 dash_sdk_create_trusted: Using provided DAPI addresses: {}", addresses_str);
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
-                Ok(list) => list,
+                Ok(list) => {
+                    eprintln!("✅ dash_sdk_create_trusted: Successfully parsed addresses");
+                    list
+                },
                 Err(e) => {
+                    eprintln!("❌ dash_sdk_create_trusted: Failed to parse addresses: {}", e);
                     return DashSDKResult::error(DashSDKError::new(
                         DashSDKErrorCode::InvalidParameter,
                         format!("Failed to parse DAPI addresses: {}", e),
@@ -346,6 +420,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     };
 
     // Add trusted context provider
+    eprintln!("🔵 dash_sdk_create_trusted: Adding trusted context provider to builder");
     let builder = builder.with_context_provider(trusted_provider);
 
     // Build SDK
