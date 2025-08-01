@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0E7148EC2E0333380055790F /* DashSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashSDK.xcframework */; };
-		0E7148ED2E0333380055790F /* DashSDK.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashSDK.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		0EC20E1A2E2821F000A92860 /* DashSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashSDK.xcframework */; };
+		0E7148EC2E0333380055790F /* DashUnifiedSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashUnifiedSDK.xcframework */; };
+		0E7148ED2E0333380055790F /* DashUnifiedSDK.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashUnifiedSDK.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		0EC20E1A2E2821F000A92860 /* DashUnifiedSDK.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7148EB2E0333380055790F /* DashUnifiedSDK.xcframework */; };
 		FB6D4D772DF55174000F3FE1 /* SwiftDashSDK in Frameworks */ = {isa = PBXBuildFile; productRef = FB6D4D762DF55174000F3FE1 /* SwiftDashSDK */; };
 /* End PBXBuildFile section */
 
@@ -37,7 +37,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				0E7148ED2E0333380055790F /* DashSDK.xcframework in Embed Frameworks */,
+				0E7148ED2E0333380055790F /* DashUnifiedSDK.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -45,7 +45,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0E7148EB2E0333380055790F /* DashSDK.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = DashSDK.xcframework; path = "../../rs-sdk-ffi/build/DashSDK.xcframework"; sourceTree = "<group>"; };
+		0E7148EB2E0333380055790F /* DashUnifiedSDK.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = DashUnifiedSDK.xcframework; path = "../../rs-sdk-ffi/build/DashUnifiedSDK.xcframework"; sourceTree = "<group>"; };
 		FB6D4D002DF53B3F000F3FE1 /* SwiftExampleApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftExampleApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FB6D4D0F2DF53B40000F3FE1 /* SwiftExampleAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftExampleAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FB6D4D192DF53B40000F3FE1 /* SwiftExampleAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftExampleAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -74,8 +74,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0EC20E1A2E2821F000A92860 /* DashSDK.xcframework in Frameworks */,
-				0E7148EC2E0333380055790F /* DashSDK.xcframework in Frameworks */,
+				0EC20E1A2E2821F000A92860 /* DashUnifiedSDK.xcframework in Frameworks */,
+				0E7148EC2E0333380055790F /* DashUnifiedSDK.xcframework in Frameworks */,
 				FB6D4D772DF55174000F3FE1 /* SwiftDashSDK in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -100,7 +100,7 @@
 		0E7148EA2E0333380055790F /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				0E7148EB2E0333380055790F /* DashSDK.xcframework */,
+				0E7148EB2E0333380055790F /* DashUnifiedSDK.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
