@@ -458,10 +458,26 @@ struct QueryDetailView: View {
     }
     
     private func formatResult(_ result: Any) -> String {
+        // Handle primitive types that can't be directly serialized as JSON
+        if result is String || result is NSNumber || result is Bool || 
+           result is Int || result is Int32 || result is Int64 || 
+           result is UInt || result is UInt32 || result is UInt64 ||
+           result is Float || result is Double {
+            // For primitive types, wrap in an object for display
+            let wrappedResult = ["value": result]
+            if let data = try? JSONSerialization.data(withJSONObject: wrappedResult, options: .prettyPrinted),
+               let string = String(data: data, encoding: .utf8) {
+                return string
+            }
+        }
+        
+        // Try to serialize as JSON for objects and arrays
         if let data = try? JSONSerialization.data(withJSONObject: result, options: .prettyPrinted),
            let string = String(data: data, encoding: .utf8) {
             return string
         }
+        
+        // Fallback to string description
         return String(describing: result)
     }
     
