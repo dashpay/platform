@@ -142,14 +142,26 @@ struct CreateWalletView: View {
         Task {
             do {
                 let mnemonic = showImportOption && !importMnemonic.isEmpty ? importMnemonic : nil
-                print("Creating wallet with label: \(walletLabel), has mnemonic: \(mnemonic != nil), PIN length: \(walletPin.count)")
+                print("=== WALLET CREATION START ===")
+                print("Label: \(walletLabel)")
+                print("Has mnemonic: \(mnemonic != nil)")
+                print("PIN length: \(walletPin.count)")
+                print("Import option enabled: \(showImportOption)")
                 
-                _ = try await walletService.createWallet(label: walletLabel, mnemonic: mnemonic, pin: walletPin)
+                let wallet = try await walletService.createWallet(label: walletLabel, mnemonic: mnemonic, pin: walletPin)
+                
+                print("Wallet created successfully: \(wallet.id)")
+                print("=== WALLET CREATION SUCCESS ===")
+                
                 await MainActor.run {
                     dismiss()
                 }
             } catch {
-                print("Wallet creation failed: \(error)")
+                print("=== WALLET CREATION FAILED ===")
+                print("Error type: \(type(of: error))")
+                print("Error: \(error)")
+                print("Error localized: \(error.localizedDescription)")
+                
                 await MainActor.run {
                     self.error = error
                     self.isCreating = false

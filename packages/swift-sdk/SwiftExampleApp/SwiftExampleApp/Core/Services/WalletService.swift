@@ -27,16 +27,25 @@ public class WalletService: ObservableObject {
     private init() {}
     
     public func configure(modelContext: ModelContext) {
+        print("=== WalletService.configure START ===")
         self.modelContext = modelContext
+        print("ModelContext set: \(modelContext)")
         
         // Initialize WalletManager
         do {
+            print("Initializing WalletManager...")
             self.walletManager = try WalletManager()
+            print("✅ WalletManager initialized successfully")
         } catch {
-            print("Failed to initialize WalletManager: \(error)")
+            print("❌ Failed to initialize WalletManager:")
+            print("Error type: \(type(of: error))")
+            print("Error: \(error)")
+            print("Error localized: \(error.localizedDescription)")
         }
         
+        print("Loading current wallet...")
         loadCurrentWallet()
+        print("=== WalletService.configure END ===")
     }
     
     public func setSharedSDK(_ sdk: Any) {
@@ -47,16 +56,21 @@ public class WalletService: ObservableObject {
     // MARK: - Wallet Management
     
     public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234") async throws -> HDWallet {
-        print("WalletService.createWallet called with label: \(label), has mnemonic: \(mnemonic != nil), pin length: \(pin.count)")
+        print("=== WalletService.createWallet START ===")
+        print("Label: \(label)")
+        print("Has mnemonic: \(mnemonic != nil)")
+        print("PIN: \(pin)")
+        print("ModelContext available: \(modelContext != nil)")
         
         guard let walletManager = walletManager else {
-            print("WalletManager not initialized")
+            print("ERROR: WalletManager not initialized")
+            print("WalletManager is nil")
             throw WalletError.notImplemented("WalletManager not initialized")
         }
         
         do {
             // Create wallet using WalletManager
-            print("Creating wallet with WalletManager...")
+            print("WalletManager available, creating wallet...")
             let wallet = try await walletManager.createWallet(
                 label: label,
                 network: .testnet,
@@ -64,13 +78,18 @@ public class WalletService: ObservableObject {
                 pin: pin
             )
             
-            print("Wallet created successfully, loading...")
+            print("Wallet created by WalletManager, ID: \(wallet.id)")
+            print("Loading wallet...")
+            
             // Load the newly created wallet
             await loadWallet(wallet)
             
+            print("=== WalletService.createWallet SUCCESS ===")
             return wallet
         } catch {
-            print("WalletManager.createWallet failed: \(error)")
+            print("=== WalletService.createWallet FAILED ===")
+            print("Error type: \(type(of: error))")
+            print("Error: \(error)")
             throw error
         }
     }

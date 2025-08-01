@@ -21,17 +21,35 @@ public class WalletManager: ObservableObject {
     public private(set) var transactionService: TransactionService!
     
     public init() throws {
-        self.modelContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
+        print("=== WalletManager.init START ===")
+        
+        do {
+            print("Creating ModelContainer...")
+            self.modelContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
+            print("✅ ModelContainer created")
+        } catch {
+            print("❌ Failed to create ModelContainer: \(error)")
+            throw error
+        }
+        
+        print("Creating AddressManager...")
         self.addressManager = AddressManager()
+        
+        print("Creating KeyManager...")
         self.keyManager = KeyManager()
         
         // Initialize services
+        print("Creating UTXOManager...")
         self.utxoManager = UTXOManager(walletManager: self, modelContainer: modelContainer)
+        
+        print("Creating TransactionService...")
         self.transactionService = TransactionService(
             walletManager: self,
             utxoManager: utxoManager,
             modelContainer: modelContainer
         )
+        
+        print("=== WalletManager.init SUCCESS ===")
         
         Task {
             await loadWallets()
