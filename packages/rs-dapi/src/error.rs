@@ -61,6 +61,9 @@ pub enum DapiError {
 
     #[error("Connection closed")]
     ConnectionClosed,
+
+    #[error("Client is gone: {0}")]
+    ClientGone(String),
 }
 
 /// Result type alias for DAPI operations

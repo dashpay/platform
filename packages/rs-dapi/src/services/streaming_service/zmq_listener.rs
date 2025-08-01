@@ -283,6 +283,8 @@ impl ZmqListener {
                 Self::zmq_listener_task(zmq_uri, topics, sender, cancel.child_token()).await
             {
                 error!("ZMQ listener task error: {}", e);
+                // we cancel parent task to stop all spawned threads
+                cancel.cancel();
             }
             Err::<(), _>(DapiError::ConnectionClosed)
         }));
@@ -303,6 +305,12 @@ impl ZmqListener {
             // We don't want to cancel parent task by mistake
             let cancel = cancel_parent.child_token();
 
+            if sender.receiver_count() == 0 {
+                warn!("No receivers for ZMQ events, stopping listener");
+                return Err(DapiError::ClientGone(
+                    "No receivers for ZMQ events".to_string(),
+                ));
+            }
             // Try to establish connection
             match ZmqConnection::new(&zmq_uri, &topics, Duration::from_secs(5), cancel).await {
                 Ok(mut connection) => {
@@ -441,15 +449,19 @@ impl ZmqDispatcher {
                 msg = self.socket.recv() => {
                     match msg {
                         Ok(msg) => if let Err(e) = self.zmq_tx.send(msg).await {
-                            error!("Error sending ZMQ event: {}", e);
-                            // we don't fail here, we just log the error and wait for reconnect
-                            sleep(Duration::from_secs(1)).await;
-
+                            error!("Error sending ZMQ event to receiver: {}, receiver may have exited", e);
+                            // receiver exited? I think it is fatal, we exit as it makes no sense to continue
+                            self.connected.store(false, Ordering::SeqCst);
+                            self.cancel.cancel();
+                            return Err(DapiError::ClientGone("ZMQ receiver exited".to_string()));
                         },
                         Err(e) => {
-                            error!("Error receiving ZMQ message: {}", e);
-                            // we don't fail here, we just log the error and wait for reconnect
-                            sleep(Duration::from_secs(1)).await;
+                            warn!("Error receiving ZMQ message: {}, restarting connection", e);
+                            // most likely the connection is lost, we exit as this will abort the task anyway
+                            self.connected.store(false, Ordering::SeqCst);
+                            self.cancel.cancel();
+
+                            return Err(DapiError::ConnectionClosed);
                         }
                     }
                 }
