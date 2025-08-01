@@ -50,13 +50,18 @@ class AppState: ObservableObject {
             do {
                 isLoading = true
                 
+                print("🔵 AppState: Initializing SDK library...")
                 // Initialize the SDK library
                 SDK.initialize()
                 
+                print("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
                 // Create SDK instance for current network
                 let sdkNetwork = currentNetwork.sdkNetwork
+                print("🔵 AppState: SDK network value: \(sdkNetwork)")
+                
                 let newSDK = try SDK(network: sdkNetwork)
                 sdk = newSDK
+                print("✅ AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
                 
                 // Load persisted data first
                 await loadPersistedData()

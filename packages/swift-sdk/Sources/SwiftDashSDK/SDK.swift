@@ -97,10 +97,12 @@ public class SDK {
     /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
     /// This is suitable for mobile applications where proof verification would be resource-intensive.
     public init(network: Network) throws {
+        print("🔵 SDK.init: Creating SDK with network: \(network)")
         var config = DashSDKConfig()
         
         // Map network - in C enums, Swift imports them as raw values
         config.network = network
+        print("🔵 SDK.init: Network config set to: \(config.network)")
         
         // Set DAPI addresses based on network
         switch network {
@@ -122,16 +124,21 @@ public class SDK {
         config.request_timeout_ms = 30000 // 30 seconds
         
         // Create SDK with trusted setup
+        print("🔵 SDK.init: Creating SDK with trusted setup...")
         let result: DashSDKResult
         if network == DashSDKNetwork(rawValue: 1) { // Testnet
+            print("🔵 SDK.init: Using testnet DAPI addresses")
             result = Self.testnetDAPIAddresses.withCString { addressesCStr -> DashSDKResult in
                 var mutableConfig = config
                 mutableConfig.dapi_addresses = addressesCStr
+                print("🔵 SDK.init: Calling dash_sdk_create_trusted...")
                 return dash_sdk_create_trusted(&mutableConfig)
             }
         } else {
+            print("🔵 SDK.init: Using default network addresses")
             result = dash_sdk_create_trusted(&config)
         }
+        print("🔵 SDK.init: dash_sdk_create_trusted returned")
         
         // Check for errors
         if result.error != nil {

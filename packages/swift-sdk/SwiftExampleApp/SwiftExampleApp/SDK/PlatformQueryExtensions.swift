@@ -104,13 +104,39 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        print("🔵 SDK.identityGet: Calling dash_sdk_identity_fetch...")
-        let result = dash_sdk_identity_fetch(handle, identityId)
-        print("🔵 SDK.identityGet: FFI call returned, processing result...")
+        print("🔵 SDK.identityGet: SDK handle exists: \(handle)")
+        print("🔵 SDK.identityGet: About to call dash_sdk_identity_fetch with handle: \(handle) and ID: \(identityId)")
         
-        let jsonResult = try processJSONResult(result)
-        print("✅ SDK.identityGet: Successfully processed result")
-        return jsonResult
+        // Call the FFI function on a background queue with timeout
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                print("🔵 SDK.identityGet: On background queue, calling FFI...")
+                
+                // Create a timeout
+                let timeoutWorkItem = DispatchWorkItem {
+                    print("❌ SDK.identityGet: FFI call timed out after 30 seconds")
+                    continuation.resume(throwing: SDKError.timeout("Identity fetch timed out"))
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutWorkItem)
+                
+                // Make the FFI call
+                let result = dash_sdk_identity_fetch(handle, identityId)
+                
+                // Cancel timeout if we got a result
+                timeoutWorkItem.cancel()
+                
+                print("🔵 SDK.identityGet: FFI call returned, processing result...")
+                
+                do {
+                    let jsonResult = try self.processJSONResult(result)
+                    print("✅ SDK.identityGet: Successfully processed result")
+                    continuation.resume(returning: jsonResult)
+                } catch {
+                    print("❌ SDK.identityGet: Error processing result: \(error)")
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
     
     /// Get identity keys
