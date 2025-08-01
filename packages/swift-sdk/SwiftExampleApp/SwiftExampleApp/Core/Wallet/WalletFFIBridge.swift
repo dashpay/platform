@@ -89,10 +89,59 @@ public class WalletFFIBridge {
     // MARK: - Key Derivation
     
     public func deriveKey(seed: Data, path: String, network: DashNetwork) -> DerivedKey? {
-        // Placeholder - return dummy keys
+        print("WalletFFIBridge.deriveKey called with path: \(path)")
+        
+        // Create master key from seed
+        guard let xprv = seed.withUnsafeBytes({ seedBytes in
+            dash_key_xprv_from_seed(seedBytes.bindMemory(to: UInt8.self).baseAddress, networkToFFI(network))
+        }) else {
+            let error = getLastError() ?? "Unknown error"
+            print("Failed to create master key: \(error)")
+            return nil
+        }
+        defer { dash_key_xprv_destroy(xprv) }
+        
+        // Derive key at path
+        guard let derivedXprv = dash_key_xprv_derive_path(xprv, path) else {
+            let error = getLastError() ?? "Unknown error"
+            print("Failed to derive key at path \(path): \(error)")
+            return nil
+        }
+        defer { dash_key_xprv_destroy(derivedXprv) }
+        
+        // Get private key
+        var privateKey = Data(count: 32)
+        let privResult = privateKey.withUnsafeMutableBytes { privBytes in
+            dash_key_xprv_private_key(derivedXprv, privBytes.bindMemory(to: UInt8.self).baseAddress)
+        }
+        
+        guard privResult == 0 else {
+            print("Failed to extract private key")
+            return nil
+        }
+        
+        // Get public key
+        guard let xpub = dash_key_xprv_to_xpub(derivedXprv) else {
+            let error = getLastError() ?? "Unknown error"
+            print("Failed to get extended public key: \(error)")
+            return nil
+        }
+        defer { dash_key_xpub_destroy(xpub) }
+        
+        var publicKey = Data(count: 33)
+        let pubResult = publicKey.withUnsafeMutableBytes { pubBytes in
+            dash_key_xpub_public_key(xpub, pubBytes.bindMemory(to: UInt8.self).baseAddress)
+        }
+        
+        guard pubResult == 0 else {
+            print("Failed to extract public key")
+            return nil
+        }
+        
+        print("Successfully derived key at path \(path)")
         return DerivedKey(
-            privateKey: Data(repeating: 0x01, count: 32),
-            publicKey: Data(repeating: 0x02, count: 33),
+            privateKey: privateKey,
+            publicKey: publicKey,
             path: path
         )
     }
@@ -100,15 +149,31 @@ public class WalletFFIBridge {
     // MARK: - Address Generation
     
     public func addressFromPublicKey(_ publicKey: Data, network: DashNetwork) -> String? {
-        // Placeholder - return dummy address
-        let prefix = network == .mainnet ? "X" : "y"
-        return "\(prefix)DummyAddress1234567890abcdef"
+        print("WalletFFIBridge.addressFromPublicKey called, pubkey length: \(publicKey.count)")
+        
+        guard publicKey.count == 33 else {
+            print("Invalid public key length: \(publicKey.count), expected 33")
+            return nil
+        }
+        
+        guard let addressPtr = publicKey.withUnsafeBytes({ pubkeyBytes in
+            dash_key_address_from_pubkey(pubkeyBytes.bindMemory(to: UInt8.self).baseAddress, networkToFFI(network))
+        }) else {
+            let error = getLastError() ?? "Unknown error"
+            print("Failed to generate address: \(error)")
+            return nil
+        }
+        
+        let address = String(cString: addressPtr)
+        dash_sdk_string_free(addressPtr)
+        
+        print("Generated address: \(address)")
+        return address
     }
     
     public func validateAddress(_ address: String, network: DashNetwork) -> Bool {
-        // Placeholder - check prefix
-        let prefix = network == .mainnet ? "X" : "y"
-        return address.hasPrefix(prefix) && address.count > 20
+        let result = dash_key_address_validate(address, networkToFFI(network))
+        return result == 1
     }
     
     // MARK: - Transaction Operations
