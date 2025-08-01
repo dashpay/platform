@@ -91,7 +91,11 @@ public class SDK {
         "https://52.32.4.156:1443"
     ].joined(separator: ",")
     
-    /// Create a new SDK instance
+    /// Create a new SDK instance with trusted setup
+    /// 
+    /// This uses a trusted context provider that fetches quorum keys and
+    /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
+    /// This is suitable for mobile applications where proof verification would be resource-intensive.
     public init(network: Network) throws {
         var config = DashSDKConfig()
         
@@ -117,16 +121,16 @@ public class SDK {
         config.request_retry_count = 3
         config.request_timeout_ms = 30000 // 30 seconds
         
-        // Create SDK with new FFI
+        // Create SDK with trusted setup
         let result: DashSDKResult
         if network == DashSDKNetwork(rawValue: 1) { // Testnet
             result = Self.testnetDAPIAddresses.withCString { addressesCStr -> DashSDKResult in
                 var mutableConfig = config
                 mutableConfig.dapi_addresses = addressesCStr
-                return dash_sdk_create(&mutableConfig)
+                return dash_sdk_create_trusted(&mutableConfig)
             }
         } else {
-            result = dash_sdk_create(&config)
+            result = dash_sdk_create_trusted(&config)
         }
         
         // Check for errors
