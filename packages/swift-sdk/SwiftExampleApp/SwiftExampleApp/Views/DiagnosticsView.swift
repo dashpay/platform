@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftDashSDK
+import UIKit
 
 struct DiagnosticsView: View {
     @EnvironmentObject var appState: UnifiedAppState
@@ -8,11 +9,13 @@ struct DiagnosticsView: View {
     @State private var currentQuery = ""
     @State private var progress: Double = 0
     @State private var showResults = false
+    @State private var showCopiedAlert = false
     
     struct QueryTestResult: Identifiable {
         let id = UUID()
         let queryName: String
         let queryLabel: String
+        let category: String
         let success: Bool
         let result: String?
         let error: String?
@@ -26,9 +29,12 @@ struct DiagnosticsView: View {
         static let testIdentityId2 = "HqyuZoKnHRdKP88Tz5L37whXHa27RuLRoQHzGgJGvCdU"
         static let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         static let testPublicKeyHash = "b7e904ce25ed97594e72f7af0e66f298031c1754"
+        static let testNonUniquePublicKeyHash = "518038dc858461bcee90478fd994bba8057b7531"
         static let testDocumentType = "domain"
         static let testUsername = "dash"
         static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+        static let testContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+        static let testDocumentId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
     }
     
     var body: some View {
@@ -99,6 +105,20 @@ struct DiagnosticsView: View {
                                 .foregroundColor(successCount == totalCount ? .green : .orange)
                         }
                         
+                        // Copy Report Button
+                        Button(action: copyReport) {
+                            HStack {
+                                Image(systemName: "doc.on.doc")
+                                Text("Copy Report")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+                        .padding(.bottom, 8)
+                        
                         ForEach(results) { result in
                             QueryResultRow(result: result)
                         }
@@ -109,6 +129,11 @@ struct DiagnosticsView: View {
         }
         .navigationTitle("Run All Queries")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Report Copied", isPresented: $showCopiedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The diagnostic report has been copied to your clipboard.")
+        }
     }
     
     private func runAllQueries() {
@@ -122,55 +147,75 @@ struct DiagnosticsView: View {
         Task {
             var testResults: [QueryTestResult] = []
             
-            // Define all queries to test
-            let queriesToTest: [(name: String, label: String, test: () async throws -> Any)] = [
-                // Identity Queries
-                ("getIdentity", "Get Identity", {
+            // Define all queries to test with categories
+            let queriesToTest: [(name: String, label: String, category: String, test: () async throws -> Any)] = [
+                // Identity Queries (10 queries)
+                ("getIdentity", "Get Identity", "Identity", {
                     try await sdk.identityGet(identityId: TestData.testIdentityId)
                 }),
                 
-                ("getIdentityBalance", "Get Identity Balance", {
-                    try await sdk.identityGetBalance(identityId: TestData.testIdentityId)
+                ("getIdentityKeys", "Get Identity Keys", "Identity", {
+                    try await sdk.identityGetKeys(identityId: TestData.testIdentityId)
                 }),
                 
-                ("getIdentityBalanceAndRevision", "Get Identity Balance and Revision", {
-                    try await sdk.identityGetBalanceAndRevision(identityId: TestData.testIdentityId)
+                ("getIdentitiesContractKeys", "Get Identities Contract Keys", "Identity", {
+                    try await sdk.identityGetContractKeys(
+                        identityIds: [TestData.testIdentityId, TestData.testIdentityId2],
+                        contractId: TestData.dpnsContractId,
+                        documentType: "domain",
+                        purposes: ["0", "1", "2", "3"]
+                    )
                 }),
                 
-                ("getIdentityNonce", "Get Identity Nonce", {
+                ("getIdentityNonce", "Get Identity Nonce", "Identity", {
                     try await sdk.identityGetNonce(identityId: TestData.testIdentityId)
                 }),
                 
-                ("getIdentityContractNonce", "Get Identity Contract Nonce", {
+                ("getIdentityContractNonce", "Get Identity Contract Nonce", "Identity", {
                     try await sdk.identityGetContractNonce(
                         identityId: TestData.testIdentityId,
                         contractId: TestData.dpnsContractId
                     )
                 }),
                 
-                ("getIdentityKeys", "Get Identity Keys", {
-                    try await sdk.identityGetKeys(identityId: TestData.testIdentityId)
+                ("getIdentityBalance", "Get Identity Balance", "Identity", {
+                    try await sdk.identityGetBalance(identityId: TestData.testIdentityId)
                 }),
                 
-                ("getIdentitiesBalances", "Get Identities Balances", {
+                ("getIdentitiesBalances", "Get Identities Balances", "Identity", {
                     try await sdk.identityGetBalances(identityIds: [TestData.testIdentityId, TestData.testIdentityId2])
                 }),
                 
-                ("getIdentityByPublicKeyHash", "Get Identity by Public Key Hash", {
+                ("getIdentityBalanceAndRevision", "Get Identity Balance and Revision", "Identity", {
+                    try await sdk.identityGetBalanceAndRevision(identityId: TestData.testIdentityId)
+                }),
+                
+                ("getIdentityByPublicKeyHash", "Get Identity by Public Key Hash", "Identity", {
                     try await sdk.identityGetByPublicKeyHash(publicKeyHash: TestData.testPublicKeyHash)
                 }),
                 
-                // Data Contract Queries
-                ("getDataContract", "Get Data Contract", {
+                ("getIdentityByNonUniquePublicKeyHash", "Get Identity by Non-Unique Public Key Hash", "Identity", {
+                    try await sdk.identityGetByNonUniquePublicKeyHash(
+                        publicKeyHash: TestData.testNonUniquePublicKeyHash,
+                        startAfter: nil
+                    )
+                }),
+                
+                // Data Contract Queries (3 queries)
+                ("getDataContract", "Get Data Contract", "Data Contract", {
                     try await sdk.dataContractGet(id: TestData.dpnsContractId)
                 }),
                 
-                ("getDataContractHistory", "Get Data Contract History", {
+                ("getDataContractHistory", "Get Data Contract History", "Data Contract", {
                     try await sdk.dataContractGetHistory(id: TestData.dpnsContractId, limit: 5, offset: 0)
                 }),
                 
-                // Document Queries
-                ("getDocuments", "Get Documents", {
+                ("getDataContracts", "Get Data Contracts", "Data Contract", {
+                    try await sdk.dataContractGetMultiple(ids: [TestData.dpnsContractId])
+                }),
+                
+                // Document Queries (2 queries)
+                ("getDocuments", "Get Documents", "Documents", {
                     try await sdk.documentList(
                         dataContractId: TestData.dpnsContractId,
                         documentType: TestData.testDocumentType,
@@ -178,49 +223,81 @@ struct DiagnosticsView: View {
                     )
                 }),
                 
-                // DPNS Queries
-                ("dpnsResolve", "DPNS Resolve", {
-                    try await sdk.dpnsResolve(name: TestData.testUsername)
+                ("getDocument", "Get Document", "Documents", {
+                    try await sdk.documentGet(
+                        dataContractId: TestData.dpnsContractId,
+                        documentType: TestData.testDocumentType,
+                        documentId: TestData.testDocumentId
+                    )
                 }),
                 
-                ("dpnsCheckAvailability", "DPNS Check Availability", {
+                // DPNS Queries (4 queries)
+                ("getDpnsUsername", "Get DPNS Usernames", "DPNS", {
+                    try await sdk.dpnsGetUsername(identityId: TestData.testIdentityId, limit: 5)
+                }),
+                
+                ("dpnsCheckAvailability", "DPNS Check Availability", "DPNS", {
                     try await sdk.dpnsCheckAvailability(name: "test-name-\(Int.random(in: 1000...9999))")
                 }),
                 
-                ("dpnsSearch", "DPNS Search", {
+                ("dpnsResolve", "DPNS Resolve", "DPNS", {
+                    try await sdk.dpnsResolve(name: TestData.testUsername)
+                }),
+                
+                ("dpnsSearch", "DPNS Search", "DPNS", {
                     try await sdk.dpnsSearch(prefix: "dash", limit: 5)
                 }),
                 
-                // System Queries
-                ("getStatus", "Get Platform Status", {
-                    try await sdk.getStatus()
+                // Voting & Contested Resources Queries (5 queries)
+                ("getContestedResources", "Get Contested Resources", "Voting", {
+                    try await sdk.getContestedResources(
+                        documentTypeName: "domain",
+                        dataContractId: TestData.dpnsContractId,
+                        indexName: "parentNameAndLabel",
+                        resultType: "documents",
+                        allowIncludeLockedAndAbstainingVoteTally: false,
+                        startAtValue: nil,
+                        limit: 5,
+                        offset: 0,
+                        orderAscending: true
+                    )
                 }),
                 
-                ("getTotalCreditsInPlatform", "Get Total Credits", {
-                    try await sdk.getTotalCreditsInPlatform()
+                ("getContestedResourceVoteState", "Get Contested Resource Vote State", "Voting", {
+                    try await sdk.getContestedResourceVoteState(
+                        dataContractId: TestData.dpnsContractId,
+                        documentTypeName: "domain",
+                        indexName: "parentNameAndLabel",
+                        resultType: "contenders",
+                        allowIncludeLockedAndAbstainingVoteTally: false,
+                        startAtIdentifierInfo: nil,
+                        count: 5,
+                        orderAscending: true
+                    )
                 }),
                 
-                // Protocol Version Queries
-                ("getProtocolVersionUpgradeState", "Get Protocol Version Upgrade State", {
-                    try await sdk.getProtocolVersionUpgradeState()
+                ("getContestedResourceVotersForIdentity", "Get Contested Resource Voters for Identity", "Voting", {
+                    try await sdk.getContestedResourceVotersForIdentity(
+                        dataContractId: TestData.dpnsContractId,
+                        documentTypeName: "domain",
+                        indexName: "parentNameAndLabel",
+                        contestantId: TestData.testIdentityId,
+                        startAtIdentifierInfo: nil,
+                        count: 5,
+                        orderAscending: true
+                    )
                 }),
                 
-                // Epoch Queries
-                ("getCurrentEpoch", "Get Current Epoch", {
-                    try await sdk.getCurrentEpoch()
+                ("getContestedResourceIdentityVotes", "Get Contested Resource Identity Votes", "Voting", {
+                    try await sdk.getContestedResourceIdentityVotes(
+                        identityId: TestData.testIdentityId,
+                        limit: 5,
+                        offset: 0,
+                        orderAscending: true
+                    )
                 }),
                 
-                ("getEpochsInfo", "Get Epochs Info", {
-                    try await sdk.getEpochsInfo(startEpoch: nil, count: 1, ascending: true)
-                }),
-                
-                // Token Queries (might fail if tokens don't exist)
-                ("getTokenStatuses", "Get Token Statuses", {
-                    try await sdk.getTokenStatuses(tokenIds: [TestData.testTokenId])
-                }),
-                
-                // Voting Queries
-                ("getVotePollsByEndDate", "Get Vote Polls by End Date", {
+                ("getVotePollsByEndDate", "Get Vote Polls by End Date", "Voting", {
                     try await sdk.getVotePollsByEndDate(
                         startTimeMs: nil,
                         endTimeMs: nil,
@@ -228,6 +305,137 @@ struct DiagnosticsView: View {
                         offset: 0,
                         orderAscending: true
                     )
+                }),
+                
+                // Protocol & Version Queries (2 queries)
+                ("getProtocolVersionUpgradeState", "Get Protocol Version Upgrade State", "Protocol", {
+                    try await sdk.getProtocolVersionUpgradeState()
+                }),
+                
+                ("getProtocolVersionUpgradeVoteStatus", "Get Protocol Version Upgrade Vote Status", "Protocol", {
+                    try await sdk.getProtocolVersionUpgradeVoteStatus(startProTxHash: nil, count: 5)
+                }),
+                
+                // Epoch & Block Queries (5 queries)
+                ("getEpochsInfo", "Get Epochs Info", "Epoch", {
+                    try await sdk.getEpochsInfo(startEpoch: nil, count: 1, ascending: true)
+                }),
+                
+                ("getCurrentEpoch", "Get Current Epoch", "Epoch", {
+                    try await sdk.getCurrentEpoch()
+                }),
+                
+                ("getFinalizedEpochInfos", "Get Finalized Epoch Infos", "Epoch", {
+                    try await sdk.getFinalizedEpochInfos(startEpoch: nil, count: 1, ascending: true)
+                }),
+                
+                ("getEvonodesProposedEpochBlocksByIds", "Get Evonodes Proposed Epoch Blocks by IDs", "Epoch", {
+                    try await sdk.getEvonodesProposedEpochBlocksByIds(
+                        epoch: 100,
+                        ids: [TestData.testIdentityId]
+                    )
+                }),
+                
+                ("getEvonodesProposedEpochBlocksByRange", "Get Evonodes Proposed Epoch Blocks by Range", "Epoch", {
+                    try await sdk.getEvonodesProposedEpochBlocksByRange(
+                        epoch: 100,
+                        limit: 5,
+                        startAfter: nil,
+                        orderAscending: true
+                    )
+                }),
+                
+                // Token Queries (8 queries)
+                ("getIdentitiesTokenBalances", "Get Identities Token Balances", "Token", {
+                    try await sdk.getIdentitiesTokenBalances(
+                        identityIds: [TestData.testIdentityId],
+                        tokenId: TestData.testTokenId
+                    )
+                }),
+                
+                ("getIdentityTokenInfos", "Get Identity Token Infos", "Token", {
+                    try await sdk.getIdentityTokenInfos(
+                        identityId: TestData.testIdentityId,
+                        tokenIds: [TestData.testTokenId],
+                        limit: nil,
+                        offset: nil
+                    )
+                }),
+                
+                ("getIdentitiesTokenInfos", "Get Identities Token Infos", "Token", {
+                    try await sdk.getIdentitiesTokenInfos(
+                        identityIds: [TestData.testIdentityId],
+                        tokenId: TestData.testTokenId
+                    )
+                }),
+                
+                ("getTokenStatuses", "Get Token Statuses", "Token", {
+                    try await sdk.getTokenStatuses(tokenIds: [TestData.testTokenId])
+                }),
+                
+                ("getTokenDirectPurchasePrices", "Get Token Direct Purchase Prices", "Token", {
+                    try await sdk.getTokenDirectPurchasePrices(tokenIds: [TestData.testTokenId])
+                }),
+                
+                ("getTokenContractInfo", "Get Token Contract Info", "Token", {
+                    try await sdk.getTokenContractInfo(dataContractId: TestData.testContractId)
+                }),
+                
+                ("getTokenPerpetualDistributionLastClaim", "Get Token Perpetual Distribution Last Claim", "Token", {
+                    try await sdk.getTokenPerpetualDistributionLastClaim(
+                        identityId: TestData.testIdentityId,
+                        tokenId: TestData.testTokenId
+                    )
+                }),
+                
+                ("getTokenTotalSupply", "Get Token Total Supply", "Token", {
+                    try await sdk.getTokenTotalSupply(tokenId: TestData.testTokenId)
+                }),
+                
+                // Group Queries (4 queries)
+                ("getGroupInfo", "Get Group Info", "Group", {
+                    try await sdk.getGroupInfo(
+                        contractId: TestData.testContractId,
+                        groupContractPosition: 0
+                    )
+                }),
+                
+                ("getGroupInfos", "Get Group Infos", "Group", {
+                    try await sdk.getGroupInfos(
+                        contractId: TestData.testContractId,
+                        startAtGroupContractPosition: nil,
+                        startGroupContractPositionIncluded: true,
+                        count: 5
+                    )
+                }),
+                
+                ("getGroupActions", "Get Group Actions", "Group", {
+                    try await sdk.getGroupActions(
+                        contractId: TestData.testContractId,
+                        groupContractPosition: 0,
+                        status: "ACTIVE",
+                        startActionId: nil,
+                        startActionIdIncluded: true,
+                        count: 5
+                    )
+                }),
+                
+                ("getGroupActionSigners", "Get Group Action Signers", "Group", {
+                    try await sdk.getGroupActionSigners(
+                        contractId: TestData.testContractId,
+                        groupContractPosition: 0,
+                        status: "ACTIVE",
+                        actionId: "1"
+                    )
+                }),
+                
+                // System & Utility Queries (2 queries)
+                ("getStatus", "Get Platform Status", "System", {
+                    try await sdk.getStatus()
+                }),
+                
+                ("getTotalCreditsInPlatform", "Get Total Credits in Platform", "System", {
+                    try await sdk.getTotalCreditsInPlatform()
                 })
             ]
             
@@ -252,6 +460,7 @@ struct DiagnosticsView: View {
                     testResult = QueryTestResult(
                         queryName: query.name,
                         queryLabel: query.label,
+                        category: query.category,
                         success: true,
                         result: resultString,
                         error: nil,
@@ -263,6 +472,7 @@ struct DiagnosticsView: View {
                     testResult = QueryTestResult(
                         queryName: query.name,
                         queryLabel: query.label,
+                        category: query.category,
                         success: false,
                         result: nil,
                         error: error.localizedDescription,
@@ -281,6 +491,68 @@ struct DiagnosticsView: View {
                 currentQuery = "Complete"
             }
         }
+    }
+    
+    private func copyReport() {
+        var report = "Dash Platform iOS SDK - Query Diagnostics Report\n"
+        report += "================================================\n\n"
+        report += "Date: \(Date().formatted())\n"
+        report += "SDK Network: Testnet\n\n"
+        
+        let successCount = results.filter { $0.success }.count
+        let failedCount = results.filter { !$0.success }.count
+        let totalCount = results.count
+        
+        report += "Summary:\n"
+        report += "--------\n"
+        report += "Total Queries: \(totalCount)\n"
+        report += "Successful: \(successCount)\n"
+        report += "Failed: \(failedCount)\n"
+        report += "Success Rate: \(String(format: "%.1f%%", Double(successCount) / Double(totalCount) * 100))\n\n"
+        
+        // Group results by category
+        let groupedResults = Dictionary(grouping: results, by: { $0.category })
+        let sortedCategories = groupedResults.keys.sorted()
+        
+        // Successful Queries
+        report += "SUCCESSFUL QUERIES:\n"
+        report += "==================\n"
+        for category in sortedCategories {
+            let categoryResults = groupedResults[category] ?? []
+            let successfulResults = categoryResults.filter { $0.success }
+            if !successfulResults.isEmpty {
+                report += "\n\(category):\n"
+                for result in successfulResults {
+                    report += "  ✓ \(result.queryLabel) (\(String(format: "%.3fs", result.duration)))\n"
+                }
+            }
+        }
+        
+        // Failed Queries
+        report += "\n\nFAILED QUERIES:\n"
+        report += "===============\n"
+        for category in sortedCategories {
+            let categoryResults = groupedResults[category] ?? []
+            let failedResults = categoryResults.filter { !$0.success }
+            if !failedResults.isEmpty {
+                report += "\n\(category):\n"
+                for result in failedResults {
+                    report += "  ✗ \(result.queryLabel)\n"
+                    report += "    Error: \(result.error ?? "Unknown error")\n"
+                    report += "    Duration: \(String(format: "%.3fs", result.duration))\n\n"
+                }
+            }
+        }
+        
+        // Copy to pasteboard
+        #if os(iOS)
+        UIPasteboard.general.string = report
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        #endif
+        
+        showCopiedAlert = true
     }
     
     private func formatTestResult(_ result: Any) -> String {
@@ -335,9 +607,19 @@ struct QueryResultRow: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                         
-                        Text("\(String(format: "%.3f", result.duration))s")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        HStack {
+                            Text(result.category)
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                            
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(String(format: "%.3f", result.duration))s")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     
                     Spacer()

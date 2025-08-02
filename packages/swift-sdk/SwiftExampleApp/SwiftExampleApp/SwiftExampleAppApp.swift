@@ -39,7 +39,9 @@ struct SwiftExampleAppApp: App {
                     .environmentObject(unifiedState.unifiedState)
                     .environment(\.modelContext, unifiedState.modelContainer.mainContext)
                     .task {
+                        NSLog("🚀 SwiftExampleApp: Starting initialization...")
                         await unifiedState.initialize()
+                        NSLog("🚀 SwiftExampleApp: Initialization complete")
                     }
             }
         }

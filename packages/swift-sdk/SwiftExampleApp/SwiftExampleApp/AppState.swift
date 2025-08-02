@@ -50,18 +50,18 @@ class AppState: ObservableObject {
             do {
                 isLoading = true
                 
-                print("🔵 AppState: Initializing SDK library...")
+                NSLog("🔵 AppState: Initializing SDK library...")
                 // Initialize the SDK library
                 SDK.initialize()
                 
-                print("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
+                NSLog("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
                 // Create SDK instance for current network
                 let sdkNetwork = currentNetwork.sdkNetwork
-                print("🔵 AppState: SDK network value: \(sdkNetwork)")
+                NSLog("🔵 AppState: SDK network value: \(sdkNetwork)")
                 
                 let newSDK = try SDK(network: sdkNetwork)
                 sdk = newSDK
-                print("✅ AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
+                NSLog("✅ AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
                 
                 // Load persisted data first
                 await loadPersistedData()
@@ -280,5 +280,150 @@ class AppState: ObservableObject {
             print("Error getting data statistics: \(error)")
             return nil
         }
+    }
+    
+    // MARK: - Startup Diagnostics
+    
+    private func runStartupDiagnostics(sdk: SDK) async {
+        NSLog("====== PLATFORM QUERY DIAGNOSTICS (STARTUP) ======")
+        
+        // Test data based on WASM SDK examples
+        struct TestData {
+            static let testIdentityId = "6ZhrNvhzD7Qm1nJhWzvipH9cPRLqBamdnXnKjnrrKA2c"
+            static let testIdentityId2 = "HqyuZoKnHRdKP88Tz5L37whXHa27RuLRoQHzGgJGvCdU"
+            static let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            static let testPublicKeyHash = "b7e904ce25ed97594e72f7af0e66f298031c1754"
+            static let testNonUniquePublicKeyHash = "518038dc858461bcee90478fd994bba8057b7531"
+            static let testDocumentType = "domain"
+            static let testUsername = "dash"
+            static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+            static let testContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            static let testDocumentId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+        }
+        
+        // Run a few key queries to test connectivity
+        let diagnosticQueries: [(name: String, test: () async throws -> Any)] = [
+            ("Get Platform Status", {
+                try await sdk.getStatus()
+            }),
+            
+            ("Get Total Credits", {
+                try await sdk.getTotalCreditsInPlatform()
+            }),
+            
+            ("Get Identity", {
+                try await sdk.identityGet(identityId: TestData.testIdentityId)
+            }),
+            
+            ("Get DPNS Contract", {
+                try await sdk.dataContractGet(id: TestData.dpnsContractId)
+            }),
+            
+            ("DPNS Check Availability", {
+                try await sdk.dpnsCheckAvailability(name: "test-name-\(Int.random(in: 1000...9999))")
+            })
+        ]
+        
+        var successCount = 0
+        var failureCount = 0
+        
+        for query in diagnosticQueries {
+            NSLog("\n🔍 Testing: \(query.name)")
+            
+            do {
+                let startTime = Date()
+                let result = try await query.test()
+                let duration = Date().timeIntervalSince(startTime)
+                
+                successCount += 1
+                NSLog("✅ Success (\(String(format: "%.3fs", duration)))")
+                
+                // Print a summary of the result
+                if let dict = result as? [String: Any] {
+                    if let version = dict["version"] as? String {
+                        NSLog("   Platform version: \(version)")
+                    } else if let id = dict["id"] as? String {
+                        NSLog("   ID: \(id)")
+                    } else if let balance = dict["balance"] as? UInt64 {
+                        NSLog("   Balance: \(balance)")
+                    } else {
+                        NSLog("   Result: \(dict.keys.prefix(3).joined(separator: ", "))...")
+                    }
+                } else if let uint = result as? UInt64 {
+                    NSLog("   Value: \(uint)")
+                } else if let bool = result as? Bool {
+                    NSLog("   Available: \(bool)")
+                }
+                
+            } catch {
+                failureCount += 1
+                NSLog("❌ Failed: \(error.localizedDescription)")
+            }
+        }
+        
+        NSLog("\n====== DIAGNOSTIC SUMMARY ======")
+        NSLog("Total queries: \(diagnosticQueries.count)")
+        NSLog("Successful: \(successCount)")
+        NSLog("Failed: \(failureCount)")
+        NSLog("Success rate: \(String(format: "%.0f%%", Double(successCount) / Double(diagnosticQueries.count) * 100))")
+        NSLog("================================\n")
+    }
+    
+    private func runSimpleDiagnostic(sdk: SDK) async {
+        var diagnosticReport = "====== SIMPLE DIAGNOSTIC TEST ======\n"
+        diagnosticReport += "Date: \(Date())\n\n"
+        
+        // Test 1: Get Platform Status
+        do {
+            diagnosticReport += "Testing: Get Platform Status...\n"
+            let status = try await sdk.getStatus()
+            diagnosticReport += "✅ Platform Status Success\n"
+            if let dict = status as? [String: Any] {
+                diagnosticReport += "   Version: \(dict["version"] ?? "unknown")\n"
+                diagnosticReport += "   Mode: \(dict["mode"] ?? "unknown")\n"
+                diagnosticReport += "   QuorumCount: \(dict["quorumCount"] ?? "unknown")\n"
+            }
+        } catch {
+            diagnosticReport += "❌ Platform Status Failed: \(error)\n"
+        }
+        
+        diagnosticReport += "\n"
+        
+        // Test 2: Get Total Credits
+        do {
+            diagnosticReport += "Testing: Get Total Credits...\n"
+            let credits = try await sdk.getTotalCreditsInPlatform()
+            diagnosticReport += "✅ Total Credits Success: \(credits)\n"
+        } catch {
+            diagnosticReport += "❌ Total Credits Failed: \(error)\n"
+        }
+        
+        diagnosticReport += "\n"
+        
+        // Test 3: Check DPNS availability
+        do {
+            diagnosticReport += "Testing: DPNS Check Availability...\n"
+            let name = "test-diagnostic-\(Int.random(in: 1000...9999))"
+            let available = try await sdk.dpnsCheckAvailability(name: name)
+            diagnosticReport += "✅ DPNS Check Success: name '\(name)' available = \(available)\n"
+        } catch {
+            diagnosticReport += "❌ DPNS Check Failed: \(error)\n"
+        }
+        
+        diagnosticReport += "\n====== DIAGNOSTIC COMPLETE ======\n"
+        
+        // Write to documents directory
+        if let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let diagnosticPath = documentsPath.appendingPathComponent("diagnostic_report.txt")
+            do {
+                try diagnosticReport.write(to: diagnosticPath, atomically: true, encoding: .utf8)
+                NSLog("Diagnostic report written to: \(diagnosticPath)")
+            } catch {
+                NSLog("Failed to write diagnostic report: \(error)")
+            }
+        }
+        
+        // Also log to console
+        NSLog(diagnosticReport)
     }
 }
