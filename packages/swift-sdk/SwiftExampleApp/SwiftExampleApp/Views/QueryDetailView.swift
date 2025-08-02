@@ -634,6 +634,13 @@ struct QueryDetailView: View {
         case "getTotalCreditsInPlatform":
             return try await sdk.getTotalCreditsInPlatform()
             
+        case "getCurrentQuorumsInfo":
+            return try await sdk.getCurrentQuorumsInfo()
+            
+        case "getPrefundedSpecializedBalance":
+            let id = queryInputs["id"] ?? ""
+            return try await sdk.getPrefundedSpecializedBalance(id: id)
+            
         case "runAllQueries":
             // This is handled by DiagnosticsView - should not reach here
             throw SDKError.notImplemented("Use DiagnosticsView for running all queries")
@@ -953,6 +960,14 @@ struct QueryDetailView: View {
             
         case "getTotalCreditsInPlatform":
             return []
+            
+        case "getCurrentQuorumsInfo":
+            return []
+            
+        case "getPrefundedSpecializedBalance":
+            return [
+                QueryInput(name: "id", label: "ID", required: true, placeholder: "Base58 encoded ID")
+            ]
             
         case "runAllQueries":
             // No inputs needed - it uses predefined test data

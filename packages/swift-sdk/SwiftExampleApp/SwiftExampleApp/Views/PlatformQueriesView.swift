@@ -199,7 +199,9 @@ struct QueryCategoryDetailView: View {
         case .system:
             return [
                 QueryDefinition(name: "getStatus", label: "Get Status", description: "Get system status"),
-                QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform")
+                QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform"),
+                QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
+                QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account")
             ]
             
         case .diagnostics:

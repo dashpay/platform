@@ -997,4 +997,24 @@ extension SDK {
         let result = dash_sdk_system_get_total_credits_in_platform(handle)
         return try processUInt64Result(result)
     }
+    
+    /// Get current quorums info
+    public func getCurrentQuorumsInfo() async throws -> [String: Any] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_system_get_current_quorums_info(handle)
+        return try processJSONResult(result)
+    }
+    
+    /// Get prefunded specialized balance
+    public func getPrefundedSpecializedBalance(id: String) async throws -> UInt64 {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_system_get_prefunded_specialized_balance(handle, id)
+        return try processUInt64Result(result)
+    }
 }

@@ -49,6 +49,9 @@ struct DiagnosticsView: View {
         // Group
         static let testGroupContractId = "49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N"
         static let testActionId = "6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ"
+        
+        // System
+        static let testPrefundedSpecializedBalanceId = "AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT"
     }
     
     var body: some View {
@@ -443,13 +446,21 @@ struct DiagnosticsView: View {
                     )
                 }),
                 
-                // System & Utility Queries (2 queries)
+                // System & Utility Queries (4 queries)
                 ("getStatus", "Get Platform Status", "System", {
                     try await sdk.getStatus()
                 }),
                 
                 ("getTotalCreditsInPlatform", "Get Total Credits in Platform", "System", {
                     try await sdk.getTotalCreditsInPlatform()
+                }),
+                
+                ("getCurrentQuorumsInfo", "Get Current Quorums Info", "System", {
+                    try await sdk.getCurrentQuorumsInfo()
+                }),
+                
+                ("getPrefundedSpecializedBalance", "Get Prefunded Specialized Balance", "System", {
+                    try await sdk.getPrefundedSpecializedBalance(id: TestData.testPrefundedSpecializedBalanceId)
                 })
             ]
             
