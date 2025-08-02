@@ -390,13 +390,15 @@ extension SDK {
         
         defer {
             // Clean up document handle
-            dash_sdk_document_destroy(OpaquePointer(documentHandle))
+            dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
         }
         
         // Get document info to convert to JSON
         let info = dash_sdk_document_get_info(OpaquePointer(documentHandle))
         defer {
-            dash_sdk_document_info_destroy(info)
+            if let info = info {
+                dash_sdk_document_info_free(info)
+            }
         }
         
         guard let infoPtr = info else {
@@ -406,17 +408,16 @@ extension SDK {
         // Convert document info to dictionary
         let documentInfo = infoPtr.pointee
         
-        // Get JSON representation
-        guard let jsonDataPtr = documentInfo.json_data else {
-            throw SDKError.serializationError("No JSON data in document")
-        }
-        
-        let jsonString = String(cString: jsonDataPtr)
-        
-        guard let data = jsonString.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SDKError.serializationError("Failed to parse document JSON")
-        }
+        // Build JSON representation from document info fields
+        let json: [String: Any] = [
+            "id": documentInfo.id != nil ? String(cString: documentInfo.id!) : "",
+            "ownerId": documentInfo.owner_id != nil ? String(cString: documentInfo.owner_id!) : "",
+            "dataContractId": documentInfo.data_contract_id != nil ? String(cString: documentInfo.data_contract_id!) : "",
+            "documentType": documentInfo.document_type != nil ? String(cString: documentInfo.document_type!) : "",
+            "revision": documentInfo.revision,
+            "createdAt": documentInfo.created_at,
+            "updatedAt": documentInfo.updated_at
+        ]
         
         return json
     }
@@ -526,21 +527,13 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        // Convert result type to integer
-        let resultTypeInt: Int32 = switch resultType {
-        case "documents": 0
-        case "vote_tally": 1  
-        case "document_with_vote_tally": 2
-        default: 0
-        }
-        
         let result = dash_sdk_contested_resource_get_resources(
             handle,
             dataContractId,
             documentTypeName,
             indexName,
             startAtValue,
-            resultTypeInt,
+            nil, // end_index_values_json
             limit ?? 100,
             orderAscending
         )
@@ -563,19 +556,22 @@ extension SDK {
         }
         
         // Convert result type to integer
-        let resultTypeInt: Int32 = switch resultType {
+        let resultTypeInt: UInt8 = switch resultType {
         case "contenders": 0
         case "abstainers": 1
         case "locked": 2
         default: 0
         }
         
+        // Create index values JSON array - empty for now
+        let indexValuesJson = "[]"
+        
         let result = dash_sdk_contested_resource_get_vote_state(
             handle,
             dataContractId,
             documentTypeName,
             indexName,
-            startAtIdentifierInfo,
+            indexValuesJson,
             resultTypeInt,
             allowIncludeLockedAndAbstainingVoteTally,
             count ?? 100
@@ -597,13 +593,16 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
+        // Create index values JSON array - empty for now
+        let indexValuesJson = "[]"
+        
         let result = dash_sdk_contested_resource_get_voters_for_identity(
             handle,
             dataContractId,
             documentTypeName,
             indexName,
+            indexValuesJson,
             contestantId,
-            startAtIdentifierInfo,
             count ?? 100,
             orderAscending
         )
@@ -646,7 +645,9 @@ extension SDK {
         let result = dash_sdk_voting_get_vote_polls_by_end_date(
             handle,
             startTimeMs ?? 0,
+            true, // start_time_included
             endTimeMs ?? UInt64.max,
+            true, // end_time_included
             limit ?? 100,
             offset ?? 0,
             orderAscending
@@ -741,9 +742,9 @@ extension SDK {
         let result = dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
             handle,
             epoch,
+            UInt32(limit ?? 100),
             startAfter,
-            limit ?? 100,
-            orderAscending
+            nil  // start_at parameter - not used in this implementation
         )
         return try processJSONArrayResult(result)
     }
@@ -787,7 +788,7 @@ extension SDK {
         // Convert token IDs to comma-separated string or nil
         let tokenIdsStr = tokenIds?.joined(separator: ",")
         
-        let result = dash_sdk_identity_fetch_token_infos(handle, identityId, tokenIdsStr, limit ?? 100, offset ?? 0)
+        let result = dash_sdk_identity_fetch_token_infos(handle, identityId, tokenIdsStr)
         return try processJSONArrayResult(result)
     }
     
@@ -868,7 +869,7 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_group_get_info(handle, contractId, groupContractPosition)
+        let result = dash_sdk_group_get_info(handle, contractId, UInt16(groupContractPosition))
         return try processJSONResult(result)
     }
     
@@ -885,10 +886,8 @@ extension SDK {
         
         let result = dash_sdk_group_get_infos(
             handle,
-            contractId,
-            startAtGroupContractPosition ?? 0,
-            startGroupContractPositionIncluded,
-            count ?? 100
+            startAtGroupContractPosition.map { String($0) },  // Convert UInt32 to String
+            UInt32(count ?? 100)
         )
         return try processJSONArrayResult(result)
     }
@@ -906,14 +905,16 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
+        // Convert status string to enum value
+        let statusValue: UInt8 = status == "ACTIVE" ? 0 : 1
+        
         let result = dash_sdk_group_get_actions(
             handle,
             contractId,
-            groupContractPosition,
-            status,
-            startActionId,
-            startActionIdIncluded,
-            count ?? 100
+            UInt16(groupContractPosition),
+            statusValue,
+            startActionId,  // Pass the string directly
+            UInt16(count ?? 100)
         )
         return try processJSONArrayResult(result)
     }
@@ -929,11 +930,14 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
+        // Convert status string to enum value
+        let statusValue: UInt8 = status == "ACTIVE" ? 0 : 1
+        
         let result = dash_sdk_group_get_action_signers(
             handle,
             contractId,
-            groupContractPosition,
-            status,
+            UInt16(groupContractPosition),
+            statusValue,
             actionId
         )
         return try processJSONArrayResult(result)
