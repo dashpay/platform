@@ -94,11 +94,8 @@ fn get_token_total_supply(
 
         match TotalSingleTokenBalance::fetch(&sdk, token_id).await {
             Ok(Some(balance)) => {
-                let json = format!(
-                    r#"{{"token_supply":{},"aggregated_token_account_balances":{}}}"#,
-                    balance.token_supply, balance.aggregated_token_account_balances
-                );
-                Ok(Some(json))
+                // Return just the supply number as a string
+                Ok(Some(balance.token_supply.to_string()))
             }
             Ok(None) => Ok(None),
             Err(e) => Err(format!("Failed to fetch token total supply: {}", e)),

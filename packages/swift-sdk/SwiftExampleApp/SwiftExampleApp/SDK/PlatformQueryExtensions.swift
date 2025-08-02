@@ -865,12 +865,12 @@ extension SDK {
     }
     
     /// Get token contract info
-    public func getTokenContractInfo(dataContractId: String) async throws -> [String: Any] {
+    public func getTokenContractInfo(tokenId: String) async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_token_get_contract_info(handle, dataContractId)
+        let result = dash_sdk_token_get_contract_info(handle, tokenId)
         return try processJSONResult(result)
     }
     
@@ -880,7 +880,7 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_token_get_perpetual_distribution_last_claim(handle, identityId, tokenId)
+        let result = dash_sdk_token_get_perpetual_distribution_last_claim(handle, tokenId, identityId)
         return try processJSONResult(result)
     }
     

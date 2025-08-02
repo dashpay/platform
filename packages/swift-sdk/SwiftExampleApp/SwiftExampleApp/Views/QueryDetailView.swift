@@ -563,8 +563,8 @@ struct QueryDetailView: View {
             return try await sdk.getTokenDirectPurchasePrices(tokenIds: tokenIds)
             
         case "getTokenContractInfo":
-            let dataContractId = queryInputs["dataContractId"] ?? ""
-            return try await sdk.getTokenContractInfo(dataContractId: dataContractId)
+            let tokenId = queryInputs["tokenId"] ?? ""
+            return try await sdk.getTokenContractInfo(tokenId: tokenId)
             
         case "getTokenPerpetualDistributionLastClaim":
             let identityId = queryInputs["identityId"] ?? ""

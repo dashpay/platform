@@ -388,7 +388,7 @@ struct DiagnosticsView: View {
                 }),
                 
                 ("getTokenContractInfo", "Get Token Contract Info", "Token", {
-                    try await sdk.getTokenContractInfo(dataContractId: TestData.testContractId)
+                    try await sdk.getTokenContractInfo(tokenId: TestData.testTokenId)
                 }),
                 
                 ("getTokenPerpetualDistributionLastClaim", "Get Token Perpetual Distribution Last Claim", "Token", {

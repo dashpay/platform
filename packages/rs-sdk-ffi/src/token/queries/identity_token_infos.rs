@@ -87,27 +87,29 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_token_infos(
             .await
             .map_err(FFIError::from)?;
 
-        // Convert to JSON string
-        let mut json_parts = Vec::new();
+        // Convert to JSON array
+        let mut json_array = Vec::new();
         for (token_id, info_opt) in token_infos.0.iter() {
-            let info_json = match info_opt {
+            let obj = match info_opt {
                 Some(info) => {
                     // Create JSON representation of IdentityTokenInfo
                     format!(
-                        "{{\"frozen\":{}}}",
+                        "{{\"tokenId\":\"{}\",\"frozen\":{}}}",
+                        token_id.to_string(Encoding::Base58),
                         if info.frozen() { "true" } else { "false" }
                     )
                 }
-                None => "null".to_string(),
+                None => {
+                    format!(
+                        "{{\"tokenId\":\"{}\",\"frozen\":null}}",
+                        token_id.to_string(Encoding::Base58)
+                    )
+                }
             };
-            json_parts.push(format!(
-                "\"{}\":{}",
-                token_id.to_string(Encoding::Base58),
-                info_json
-            ));
+            json_array.push(obj);
         }
 
-        Ok(format!("{{{}}}", json_parts.join(",")))
+        Ok(format!("[{}]", json_array.join(",")))
     });
 
     match result {
