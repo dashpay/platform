@@ -31,6 +31,7 @@ struct DiagnosticsView: View {
         // Contract IDs
         static let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         static let testContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+        static let contractWithHistory = "HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM"
         
         // Public key hashes from WASM SDK
         static let testPublicKeyHash = "b7e904ce25ed97594e72f7af0e66f298031c1754"
@@ -52,6 +53,9 @@ struct DiagnosticsView: View {
         
         // System
         static let testPrefundedSpecializedBalanceId = "AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT"
+        
+        // Contested resources test data
+        static let testContestedIndexValues = ["dash", "alice"]
     }
     
     var body: some View {
@@ -224,7 +228,7 @@ struct DiagnosticsView: View {
                 }),
                 
                 ("getDataContractHistory", "Get Data Contract History", "Data Contract", {
-                    try await sdk.dataContractGetHistory(id: TestData.dpnsContractId, limit: 5, offset: 0)
+                    try await sdk.dataContractGetHistory(id: TestData.contractWithHistory, limit: 10, offset: 0)
                 }),
                 
                 ("getDataContracts", "Get Data Contracts", "Data Contract", {
@@ -285,6 +289,7 @@ struct DiagnosticsView: View {
                         dataContractId: TestData.dpnsContractId,
                         documentTypeName: "domain",
                         indexName: "parentNameAndLabel",
+                        indexValues: TestData.testContestedIndexValues,
                         resultType: "contenders",
                         allowIncludeLockedAndAbstainingVoteTally: false,
                         startAtIdentifierInfo: nil,
@@ -298,6 +303,7 @@ struct DiagnosticsView: View {
                         dataContractId: TestData.dpnsContractId,
                         documentTypeName: "domain",
                         indexName: "parentNameAndLabel",
+                        indexValues: TestData.testContestedIndexValues,
                         contestantId: TestData.testIdentityId,
                         startAtIdentifierInfo: nil,
                         count: 5,

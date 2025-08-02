@@ -596,6 +596,7 @@ extension SDK {
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
+        indexValues: [String]? = nil,
         resultType: String,
         allowIncludeLockedAndAbstainingVoteTally: Bool,
         startAtIdentifierInfo: String?,
@@ -614,8 +615,9 @@ extension SDK {
         default: 0
         }
         
-        // Create index values JSON array - empty for now
-        let indexValuesJson = "[]"
+        // Create index values JSON array
+        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues ?? [])
+        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
         
         let result = dash_sdk_contested_resource_get_vote_state(
             handle,
@@ -635,6 +637,7 @@ extension SDK {
         dataContractId: String,
         documentTypeName: String,
         indexName: String,
+        indexValues: [String]? = nil,
         contestantId: String,
         startAtIdentifierInfo: String?,
         count: UInt32?,
@@ -644,8 +647,9 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        // Create index values JSON array - empty for now
-        let indexValuesJson = "[]"
+        // Create index values JSON array
+        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues ?? [])
+        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
         
         let result = dash_sdk_contested_resource_get_voters_for_identity(
             handle,
@@ -716,7 +720,21 @@ extension SDK {
         }
         
         let result = dash_sdk_protocol_version_get_upgrade_state(handle)
-        return try processJSONResult(result)
+        
+        // Special handling for protocol version upgrade state which returns an array
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+        
+        // If no data, return empty result
+        guard let dataPtr = result.data else {
+            return ["upgrades": []]
+        }
+        
+        let jsonArray = try processJSONArrayResult(result)
+        return ["upgrades": jsonArray]
     }
     
     /// Get protocol version upgrade vote status
@@ -772,8 +790,9 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        // Join IDs with commas
-        let idsStr = ids.joined(separator: ",")
+        // Convert IDs array to JSON
+        let idsData = try JSONSerialization.data(withJSONObject: ids)
+        let idsStr = String(data: idsData, encoding: .utf8) ?? "[]"
         
         let result = dash_sdk_evonode_get_proposed_epoch_blocks_by_ids(handle, epoch, idsStr)
         return try processJSONArrayResult(result)
