@@ -38,7 +38,7 @@ struct DiagnosticsView: View {
         
         // Document data
         static let testDocumentType = "domain"
-        static let testDocumentId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+        static let testDocumentId = "7NYmEKQsYtniQRUmxwdPGeVcirMoPh5ZPyAKz8BWFy3r"
         
         // DPNS
         static let testUsername = "dash"
@@ -348,8 +348,8 @@ struct DiagnosticsView: View {
                 
                 ("getEvonodesProposedEpochBlocksByIds", "Get Evonodes Proposed Epoch Blocks by IDs", "Epoch", {
                     try await sdk.getEvonodesProposedEpochBlocksByIds(
-                        epoch: 100,
-                        ids: [TestData.testIdentityId]
+                        epoch: 5,
+                        ids: ["78adfbe419a528bb0f17e9a31b4ecc4f6b73ad1c97cdcef90f96bb6f0c432c87"]
                     )
                 }),
                 

@@ -353,7 +353,16 @@ extension SDK {
                             searchParams.where_json = wherePtr.baseAddress
                             searchParams.order_by_json = orderByPtr.baseAddress
                             searchParams.limit = limit ?? 100
-                            searchParams.start_at = 0 // TODO: Handle startAfter/startAt pagination
+                            // Handle pagination - startAt takes precedence over startAfter
+                            if let startAt = startAt {
+                                // startAt is inclusive - start from this exact position
+                                searchParams.start_at = UInt32(startAt) ?? 0
+                            } else if let startAfter = startAfter {
+                                // startAfter is exclusive - start from the next position
+                                searchParams.start_at = (UInt32(startAfter) ?? 0) + 1
+                            } else {
+                                searchParams.start_at = 0
+                            }
                             
                             return dash_sdk_document_search(handle, &searchParams)
                         }
@@ -364,7 +373,16 @@ extension SDK {
                         searchParams.where_json = wherePtr.baseAddress
                         searchParams.order_by_json = nil
                         searchParams.limit = limit ?? 100
-                        searchParams.start_at = 0
+                        // Handle pagination - startAt takes precedence over startAfter
+                        if let startAt = startAt {
+                            // startAt is inclusive - start from this exact position
+                            searchParams.start_at = UInt32(startAt) ?? 0
+                        } else if let startAfter = startAfter {
+                            // startAfter is exclusive - start from the next position
+                            searchParams.start_at = (UInt32(startAfter) ?? 0) + 1
+                        } else {
+                            searchParams.start_at = 0
+                        }
                         
                         return dash_sdk_document_search(handle, &searchParams)
                     }
