@@ -412,14 +412,14 @@ struct DiagnosticsView: View {
                 // Group Queries (4 queries)
                 ("getGroupInfo", "Get Group Info", "Group", {
                     try await sdk.getGroupInfo(
-                        contractId: TestData.testContractId,
+                        contractId: TestData.testGroupContractId,
                         groupContractPosition: 0
                     )
                 }),
                 
                 ("getGroupInfos", "Get Group Infos", "Group", {
                     try await sdk.getGroupInfos(
-                        contractId: TestData.testContractId,
+                        contractId: TestData.testGroupContractId,
                         startAtGroupContractPosition: nil,
                         startGroupContractPositionIncluded: true,
                         count: 5
@@ -428,7 +428,7 @@ struct DiagnosticsView: View {
                 
                 ("getGroupActions", "Get Group Actions", "Group", {
                     try await sdk.getGroupActions(
-                        contractId: TestData.testContractId,
+                        contractId: TestData.testGroupContractId,
                         groupContractPosition: 0,
                         status: "ACTIVE",
                         startActionId: nil,
@@ -500,7 +500,7 @@ struct DiagnosticsView: View {
                         category: query.category,
                         success: false,
                         result: nil,
-                        error: error.localizedDescription,
+                        error: formatError(error),
                         duration: duration
                     )
                 }
@@ -578,6 +578,36 @@ struct DiagnosticsView: View {
         #endif
         
         showCopiedAlert = true
+    }
+    
+    private func formatError(_ error: Error) -> String {
+        if let sdkError = error as? SDKError {
+            switch sdkError {
+            case .invalidParameter(let msg):
+                return "Invalid Parameter: \(msg)"
+            case .invalidState(let msg):
+                return "Invalid State: \(msg)"
+            case .networkError(let msg):
+                return "Network Error: \(msg)"
+            case .serializationError(let msg):
+                return "Serialization Error: \(msg)"
+            case .protocolError(let msg):
+                return "Protocol Error: \(msg)"
+            case .cryptoError(let msg):
+                return "Crypto Error: \(msg)"
+            case .notFound(let msg):
+                return "Not Found: \(msg)"
+            case .timeout(let msg):
+                return "Timeout: \(msg)"
+            case .notImplemented(let msg):
+                return "Not Implemented: \(msg)"
+            case .internalError(let msg):
+                return "Internal Error: \(msg)"
+            case .unknown(let msg):
+                return "Unknown Error: \(msg)"
+            }
+        }
+        return error.localizedDescription
     }
     
     private func formatTestResult(_ result: Any) -> String {
