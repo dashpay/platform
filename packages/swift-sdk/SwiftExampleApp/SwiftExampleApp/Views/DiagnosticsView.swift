@@ -22,19 +22,29 @@ struct DiagnosticsView: View {
         let duration: TimeInterval
     }
     
-    // Test data based on WASM SDK examples
+    // Test data from WASM SDK docs.html - exact same values for consistency
     struct TestData {
-        // Common test values from testnet
-        static let testIdentityId = "6ZhrNvhzD7Qm1nJhWzvipH9cPRLqBamdnXnKjnrrKA2c"
-        static let testIdentityId2 = "HqyuZoKnHRdKP88Tz5L37whXHa27RuLRoQHzGgJGvCdU"
+        // Identity IDs from WASM SDK examples
+        static let testIdentityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"
+        static let testIdentityId2 = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+        
+        // Contract IDs
         static let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+        static let testContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+        
+        // Public key hashes from WASM SDK
         static let testPublicKeyHash = "b7e904ce25ed97594e72f7af0e66f298031c1754"
         static let testNonUniquePublicKeyHash = "518038dc858461bcee90478fd994bba8057b7531"
+        
+        // Document data
         static let testDocumentType = "domain"
-        static let testUsername = "dash"
-        static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
-        static let testContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         static let testDocumentId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+        
+        // DPNS
+        static let testUsername = "dash"
+        
+        // Token
+        static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
     }
     
     var body: some View {
