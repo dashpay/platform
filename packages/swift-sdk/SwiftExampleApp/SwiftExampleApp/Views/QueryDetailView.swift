@@ -634,6 +634,10 @@ struct QueryDetailView: View {
         case "getTotalCreditsInPlatform":
             return try await sdk.getTotalCreditsInPlatform()
             
+        case "runAllQueries":
+            // This is handled by DiagnosticsView - should not reach here
+            throw SDKError.notImplemented("Use DiagnosticsView for running all queries")
+            
         default:
             throw SDKError.notImplemented("Query \(query.name) not implemented yet")
         }
@@ -948,6 +952,10 @@ struct QueryDetailView: View {
             return []
             
         case "getTotalCreditsInPlatform":
+            return []
+            
+        case "runAllQueries":
+            // No inputs needed - it uses predefined test data
             return []
             
         default:

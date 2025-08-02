@@ -10,7 +10,7 @@ description = "FFI bindings for Dash Platform SDK - C-compatible interface for c
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", features = ["mocks"] }
+dash-sdk = { path = "../rs-sdk", features = ["mocks", "dpns-contract", "dashpay-contract"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 

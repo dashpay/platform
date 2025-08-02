@@ -14,6 +14,7 @@ struct PlatformQueriesView: View {
         case token = "Token"
         case group = "Group"
         case system = "System & Utility"
+        case diagnostics = "Diagnostics"
         
         var systemImage: String {
             switch self {
@@ -27,6 +28,7 @@ struct PlatformQueriesView: View {
             case .token: return "dollarsign.circle"
             case .group: return "person.3"
             case .system: return "gear"
+            case .diagnostics: return "stethoscope"
             }
         }
         
@@ -42,6 +44,7 @@ struct PlatformQueriesView: View {
             case .token: return "Token balances and information"
             case .group: return "Group management queries"
             case .system: return "System status and utilities"
+            case .diagnostics: return "Test and diagnose platform queries"
             }
         }
     }
@@ -81,16 +84,30 @@ struct QueryCategoryDetailView: View {
     var body: some View {
         List {
             ForEach(queries(for: category), id: \.name) { query in
-                NavigationLink(destination: QueryDetailView(query: query)) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(query.label)
-                            .font(.headline)
-                        Text(query.description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
+                if query.name == "runAllQueries" {
+                    NavigationLink(destination: DiagnosticsView()) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(query.label)
+                                .font(.headline)
+                            Text(query.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
+                } else {
+                    NavigationLink(destination: QueryDetailView(query: query)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(query.label)
+                                .font(.headline)
+                            Text(query.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
         }
@@ -183,6 +200,11 @@ struct QueryCategoryDetailView: View {
             return [
                 QueryDefinition(name: "getStatus", label: "Get Status", description: "Get system status"),
                 QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform")
+            ]
+            
+        case .diagnostics:
+            return [
+                QueryDefinition(name: "runAllQueries", label: "Run All Queries", description: "Execute all platform queries with test data to verify connectivity and functionality")
             ]
         }
     }
