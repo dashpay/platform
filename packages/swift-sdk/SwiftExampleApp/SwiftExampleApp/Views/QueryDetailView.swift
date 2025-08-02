@@ -738,8 +738,8 @@ struct QueryDetailView: View {
             return [
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentType", label: "Document Type", required: true, placeholder: "e.g., domain"),
-                QueryInput(name: "whereClause", label: "Where Clause (JSON)", required: false, placeholder: "[[\"field\", \"==\", \"value\"]]"),
-                QueryInput(name: "orderBy", label: "Order By (JSON)", required: false, placeholder: "[[\"$createdAt\", \"desc\"]]"),
+                QueryInput(name: "whereClause", label: "Where Clause (JSON)", required: false, placeholder: "[{\"field\": \"field\", \"operator\": \"=\", \"value\": \"value\"}]"),
+                QueryInput(name: "orderBy", label: "Order By (JSON)", required: false, placeholder: "[{\"field\": \"$createdAt\", \"ascending\": false}]"),
                 QueryInput(name: "limit", label: "Limit", required: false),
                 QueryInput(name: "startAfter", label: "Start After (Document ID)", required: false, placeholder: "For pagination"),
                 QueryInput(name: "startAt", label: "Start At (Document ID)", required: false, placeholder: "For pagination (inclusive)")

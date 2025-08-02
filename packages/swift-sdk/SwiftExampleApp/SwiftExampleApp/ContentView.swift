@@ -74,6 +74,17 @@ struct ContentView: View {
                         .environmentObject(walletService)
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                // Version display
+                Text("v\(AppVersion.gitCommit)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(8)
+                    .padding(.bottom, 60) // Above tab bar
+                    .padding(.trailing, 10)
+            }
         }
     }
 }

@@ -272,7 +272,7 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_data_contract_fetch(handle, id)
+        let result = dash_sdk_data_contract_fetch_json(handle, id)
         return try processJSONResult(result)
     }
     
@@ -337,17 +337,50 @@ extension SDK {
             dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
         }
         
-        // Create search parameters struct
-        var searchParams = DashSDKDocumentSearchParams()
-        searchParams.data_contract_handle = OpaquePointer(contractHandle)
-        searchParams.document_type = documentType.cString(using: .utf8)!.withUnsafeBufferPointer { $0.baseAddress }
-        searchParams.where_json = whereClause?.cString(using: .utf8)?.withUnsafeBufferPointer { $0.baseAddress }
-        searchParams.order_by_json = orderByClause?.cString(using: .utf8)?.withUnsafeBufferPointer { $0.baseAddress }
-        searchParams.limit = limit ?? 100
-        searchParams.start_at = 0 // TODO: Handle startAfter/startAt pagination
+        // Create search parameters struct with proper string handling
+        let documentTypeCString = documentType.cString(using: .utf8)!
+        let whereClauseCString = whereClause?.cString(using: .utf8)
+        let orderByClauseCString = orderByClause?.cString(using: .utf8)
         
-        // Search for documents
-        let result = dash_sdk_document_search(handle, &searchParams)
+        let result = documentTypeCString.withUnsafeBufferPointer { documentTypePtr in
+            if let whereClause = whereClauseCString {
+                return whereClause.withUnsafeBufferPointer { wherePtr in
+                    if let orderByClause = orderByClauseCString {
+                        return orderByClause.withUnsafeBufferPointer { orderByPtr in
+                            var searchParams = DashSDKDocumentSearchParams()
+                            searchParams.data_contract_handle = OpaquePointer(contractHandle)
+                            searchParams.document_type = documentTypePtr.baseAddress
+                            searchParams.where_json = wherePtr.baseAddress
+                            searchParams.order_by_json = orderByPtr.baseAddress
+                            searchParams.limit = limit ?? 100
+                            searchParams.start_at = 0 // TODO: Handle startAfter/startAt pagination
+                            
+                            return dash_sdk_document_search(handle, &searchParams)
+                        }
+                    } else {
+                        var searchParams = DashSDKDocumentSearchParams()
+                        searchParams.data_contract_handle = OpaquePointer(contractHandle)
+                        searchParams.document_type = documentTypePtr.baseAddress
+                        searchParams.where_json = wherePtr.baseAddress
+                        searchParams.order_by_json = nil
+                        searchParams.limit = limit ?? 100
+                        searchParams.start_at = 0
+                        
+                        return dash_sdk_document_search(handle, &searchParams)
+                    }
+                }
+            } else {
+                var searchParams = DashSDKDocumentSearchParams()
+                searchParams.data_contract_handle = OpaquePointer(contractHandle)
+                searchParams.document_type = documentTypePtr.baseAddress
+                searchParams.where_json = nil
+                searchParams.order_by_json = nil
+                searchParams.limit = limit ?? 100
+                searchParams.start_at = 0
+                
+                return dash_sdk_document_search(handle, &searchParams)
+            }
+        }
         
         return try processJSONResult(result)
     }
@@ -430,8 +463,8 @@ extension SDK {
         let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         
         // Query for domains owned by this identity
-        let whereClause = "[[\"records.identity\", \"=\", \"\(identityId)\"]]"
-        let orderByClause = "[[\"$createdAt\", false]]"
+        let whereClause = "[{\"field\": \"records.identity\", \"operator\": \"=\", \"value\": \"\(identityId)\"}]"
+        let orderByClause = "[{\"field\": \"$createdAt\", \"ascending\": false}]"
         
         let result = try await documentList(
             dataContractId: dpnsContractId,
@@ -490,8 +523,8 @@ extension SDK {
         let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         
         // Query for domains starting with prefix
-        let whereClause = "[[\"normalizedLabel\", \"startsWith\", \"\(prefix)\"]]"
-        let orderByClause = "[[\"normalizedLabel\", true]]"
+        let whereClause = "[{\"field\": \"normalizedLabel\", \"operator\": \"startsWith\", \"value\": \"\(prefix)\"}]"
+        let orderByClause = "[{\"field\": \"normalizedLabel\", \"ascending\": true}]"
         
         let result = try await documentList(
             dataContractId: dpnsContractId,

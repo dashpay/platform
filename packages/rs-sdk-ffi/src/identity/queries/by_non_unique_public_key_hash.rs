@@ -98,8 +98,9 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_by_non_unique_public_key_hash(
 
     match result {
         Ok(Some(identity)) => {
-            // Convert identity to JSON
-            let json_str = match serde_json::to_string(&identity) {
+            // Convert identity to JSON array (single element)
+            let identities = vec![identity];
+            let json_str = match serde_json::to_string(&identities) {
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult::error(
@@ -120,8 +121,16 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_by_non_unique_public_key_hash(
             DashSDKResult::success_string(c_str.into_raw())
         }
         Ok(None) => {
-            // Return null for not found
-            DashSDKResult::success_string(std::ptr::null_mut())
+            // Return empty array for not found
+            let c_str = match CString::new("[]") {
+                Ok(s) => s,
+                Err(e) => {
+                    return DashSDKResult::error(
+                        FFIError::InternalError(format!("Failed to create CString: {}", e)).into(),
+                    )
+                }
+            };
+            DashSDKResult::success_string(c_str.into_raw())
         }
         Err(e) => DashSDKResult::error(e.into()),
     }

@@ -1528,6 +1528,10 @@ struct DashSDKResult dash_sdk_data_contract_put_to_platform_and_wait(struct SDKH
 struct DashSDKResult dash_sdk_data_contract_fetch(const struct SDKHandle *sdk_handle,
                                                   const char *contract_id);
 
+// Fetch a data contract by ID and return as JSON
+struct DashSDKResult dash_sdk_data_contract_fetch_json(const struct SDKHandle *sdk_handle,
+                                                       const char *contract_id);
+
 // Fetch multiple data contracts by their IDs
 //
 // # Parameters
