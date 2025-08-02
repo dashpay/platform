@@ -47,7 +47,8 @@ struct DiagnosticsView: View {
         static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
         
         // Group
-        static let testActionId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
+        static let testGroupContractId = "49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N"
+        static let testActionId = "6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ"
     }
     
     var body: some View {
@@ -435,7 +436,7 @@ struct DiagnosticsView: View {
                 
                 ("getGroupActionSigners", "Get Group Action Signers", "Group", {
                     try await sdk.getGroupActionSigners(
-                        contractId: TestData.testContractId,
+                        contractId: TestData.testGroupContractId,
                         groupContractPosition: 0,
                         status: "ACTIVE",
                         actionId: TestData.testActionId

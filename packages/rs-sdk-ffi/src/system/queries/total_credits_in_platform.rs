@@ -71,8 +71,8 @@ fn get_total_credits_in_platform(sdk_handle: *const SDKHandle) -> Result<Option<
     rt.block_on(async move {
         match TotalCreditsInPlatform::fetch_current(&sdk).await {
             Ok(TotalCreditsInPlatform(credits)) => {
-                let json = format!(r#"{{"credits":{}}}"#, credits);
-                Ok(Some(json))
+                // Return just the credits number as a string
+                Ok(Some(credits.to_string()))
             }
             Err(e) => Err(format!("Failed to fetch total credits in platform: {}", e)),
         }
