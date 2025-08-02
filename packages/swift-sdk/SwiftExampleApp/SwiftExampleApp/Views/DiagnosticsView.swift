@@ -45,6 +45,9 @@ struct DiagnosticsView: View {
         
         // Token
         static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+        
+        // Group
+        static let testActionId = "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF"
     }
     
     var body: some View {
@@ -435,7 +438,7 @@ struct DiagnosticsView: View {
                         contractId: TestData.testContractId,
                         groupContractPosition: 0,
                         status: "ACTIVE",
-                        actionId: "1"
+                        actionId: TestData.testActionId
                     )
                 }),
                 
