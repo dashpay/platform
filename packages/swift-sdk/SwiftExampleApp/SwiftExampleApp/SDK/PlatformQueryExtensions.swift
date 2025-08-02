@@ -984,7 +984,7 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_get_status(handle)
+        let result = dash_sdk_get_platform_status(handle)
         return try processJSONResult(result)
     }
     
