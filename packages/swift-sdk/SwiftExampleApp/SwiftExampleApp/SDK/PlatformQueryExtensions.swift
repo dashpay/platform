@@ -490,7 +490,15 @@ extension SDK {
         let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         
         // Query for domains owned by this identity
-        let whereClause = "[{\"field\": \"records.identity\", \"operator\": \"=\", \"value\": \"\(identityId)\"}]"
+        // DPNS stores identity IDs in records.dashUniqueIdentityId or records.dashAliasIdentityId
+        let whereClause = """
+            [
+                {"$or": [
+                    {"field": "records.dashUniqueIdentityId", "operator": "==", "value": "\(identityId)"},
+                    {"field": "records.dashAliasIdentityId", "operator": "==", "value": "\(identityId)"}
+                ]}
+            ]
+            """
         let orderByClause = "[{\"field\": \"$createdAt\", \"ascending\": false}]"
         
         let result = try await documentList(
@@ -528,7 +536,8 @@ extension SDK {
         
         // If we successfully resolved the name, it's not available
         if let dataPtr = result.data {
-            dash_sdk_string_free(dataPtr)
+            // Free the binary data properly
+            dash_sdk_binary_data_free(dataPtr.assumingMemoryBound(to: DashSDKBinaryData.self))
         }
         
         return false
@@ -541,7 +550,28 @@ extension SDK {
         }
         
         let result = dash_sdk_identity_resolve_name(handle, name)
-        return try processStringResult(result)
+        
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+        
+        guard let dataPtr = result.data else {
+            throw SDKError.notFound("Name not found")
+        }
+        
+        // Cast to DashSDKBinaryData to get the binary identity ID
+        let binaryData = dataPtr.assumingMemoryBound(to: DashSDKBinaryData.self).pointee
+        
+        // Convert the 32-byte identity ID to hex string
+        let identityIdData = Data(bytes: binaryData.data, count: Int(binaryData.len))
+        let identityIdHex = identityIdData.toHexString()
+        
+        // Free the binary data
+        dash_sdk_binary_data_free(dataPtr.assumingMemoryBound(to: DashSDKBinaryData.self))
+        
+        return identityIdHex
     }
     
     /// Search DPNS names by prefix
