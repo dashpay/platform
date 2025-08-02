@@ -363,7 +363,7 @@ struct DiagnosticsView: View {
                     try await sdk.getEvonodesProposedEpochBlocksByRange(
                         epoch: 100,
                         limit: 5,
-                        startAfter: nil,
+                        startAfter: "85F15A31D3838293A9C1D72A1A0FA21E66110CE20878BD4C1024C4AE1D5BE824",
                         orderAscending: true
                     )
                 }),

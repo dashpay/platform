@@ -283,7 +283,16 @@ extension SDK {
         }
         
         let result = dash_sdk_data_contract_fetch_history(handle, id, limit ?? 100, offset ?? 0, startAtMs ?? 0)
-        return try processJSONArrayResult(result)
+        
+        // The result is a JSON object with an "entries" field containing the array
+        let jsonObject = try processJSONResult(result)
+        
+        // Extract the entries array
+        guard let entries = jsonObject["entries"] as? [[String: Any]] else {
+            throw SDKError.serializationError("Expected 'entries' array in data contract history response")
+        }
+        
+        return entries
     }
     
     /// Get multiple data contracts
@@ -918,7 +927,33 @@ extension SDK {
         }
         
         let result = dash_sdk_token_get_perpetual_distribution_last_claim(handle, tokenId, identityId)
-        return try processJSONResult(result)
+        
+        // Special handling for this query - null means no claim found
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+        
+        guard let dataPtr = result.data else {
+            // No claim found - return empty dictionary
+            return [:]
+        }
+        
+        // Check if the pointer is null (no claim found)
+        if dataPtr == UnsafeMutableRawPointer(bitPattern: 0) {
+            return [:]
+        }
+        
+        let jsonString: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+        
+        guard let data = jsonString.data(using: String.Encoding.utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse JSON data")
+        }
+        
+        return json
     }
     
     /// Get token total supply
