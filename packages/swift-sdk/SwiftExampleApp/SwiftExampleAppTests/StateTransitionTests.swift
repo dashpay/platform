@@ -129,22 +129,7 @@ final class StateTransitionTests: XCTestCase {
                 dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
             }
             
-            // Get the transfer key (key ID 3) from the identity
-            let transferKeyResult = dash_sdk_identity_get_public_key_by_id(OpaquePointer(identityHandle)!, 3)
-            
-            guard transferKeyResult.error == nil,
-                  let transferKeyHandle = transferKeyResult.data else {
-                if let error = transferKeyResult.error {
-                    let errorString = String(cString: error.pointee.message)
-                    dash_sdk_error_free(error)
-                    throw XCTSkip("Failed to get transfer key: \(errorString)")
-                }
-                throw XCTSkip("Failed to get transfer key")
-            }
-            
-            defer {
-                dash_sdk_identity_public_key_destroy(OpaquePointer(transferKeyHandle)!)
-            }
+            // Use key ID 3 (transfer key) directly
             
             // Create signer from private key
             let signerResult = key3Private.withUnsafeBytes { keyBytes in
@@ -167,7 +152,7 @@ final class StateTransitionTests: XCTestCase {
                 fromIdentity: OpaquePointer(identityHandle)!,
                 toIdentityId: recipientId,
                 amount: amount,
-                publicKey: OpaquePointer(transferKeyHandle)!,
+                publicKeyId: 3, // Transfer key ID
                 signer: OpaquePointer(signer)!
             )
             

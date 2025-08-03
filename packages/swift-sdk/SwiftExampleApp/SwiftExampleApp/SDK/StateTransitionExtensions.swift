@@ -225,7 +225,7 @@ extension SDK {
         fromIdentity: OpaquePointer,
         toIdentityId: String,
         amount: UInt64,
-        publicKey: OpaquePointer? = nil,
+        publicKeyId: UInt32 = 0,
         signer: OpaquePointer
     ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
         return try await withCheckedThrowingContinuation { continuation in
@@ -242,7 +242,7 @@ extension SDK {
                         fromIdentity,
                         toIdCStr,
                         amount,
-                        publicKey,
+                        publicKeyId,
                         signer,
                         nil  // Default put settings
                     )
@@ -276,7 +276,7 @@ extension SDK {
         amount: UInt64,
         toAddress: String,
         coreFeePerByte: UInt32 = 0,
-        publicKey: OpaquePointer? = nil,
+        publicKeyId: UInt32 = 0,
         signer: OpaquePointer
     ) async throws -> UInt64 {
         return try await withCheckedThrowingContinuation { continuation in
@@ -294,7 +294,7 @@ extension SDK {
                         addressCStr,
                         amount,
                         coreFeePerByte,
-                        publicKey,
+                        publicKeyId,
                         signer,
                         nil  // Default put settings
                     )
@@ -435,7 +435,7 @@ extension SDK {
             fromIdentity: identityHandle,
             toIdentityId: toIdentityId,
             amount: amount,
-            publicKey: nil, // Auto-select key
+            publicKeyId: 0, // Auto-select TRANSFER key
             signer: signer
         )
     }
@@ -486,7 +486,7 @@ extension SDK {
             amount: amount,
             toAddress: toAddress,
             coreFeePerByte: coreFeePerByte,
-            publicKey: nil, // Auto-select key
+            publicKeyId: 0, // Auto-select TRANSFER key
             signer: signer
         )
     }

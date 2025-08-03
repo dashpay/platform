@@ -2,7 +2,7 @@
 
 use dash_sdk::dpp::dashcore::{self, Address};
 use dash_sdk::dpp::prelude::Identity;
-use dash_sdk::platform::IdentityPublicKey;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::str::FromStr;
@@ -19,7 +19,7 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, IOSSigner};
 /// - `address`: Base58-encoded Dash address to withdraw to
 /// - `amount`: Amount of credits to withdraw
 /// - `core_fee_per_byte`: Core fee per byte (optional, pass 0 for default)
-/// - `identity_public_key_handle`: Public key for signing (optional, pass null to auto-select)
+/// - `public_key_id`: ID of the public key to use for signing (pass 0 to auto-select TRANSFER key)
 /// - `signer_handle`: Cryptographic signer
 /// - `put_settings`: Optional settings for the operation (can be null for defaults)
 ///
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
     address: *const c_char,
     amount: u64,
     core_fee_per_byte: u32,
-    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    public_key_id: u32,
     signer_handle: *const crate::types::SignerHandle,
     put_settings: *const DashSDKPutSettings,
 ) -> DashSDKResult {
@@ -69,11 +69,19 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             }
         };
 
-    // Optional public key for signing
-    let signing_key = if identity_public_key_handle.is_null() {
+    // Get public key if specified (0 means auto-select TRANSFER key)
+    let signing_key = if public_key_id == 0 {
         None
     } else {
-        Some(&*(identity_public_key_handle as *const IdentityPublicKey))
+        match identity.get_public_key_by_id(public_key_id.into()) {
+            Some(key) => Some(key),
+            None => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("Public key with ID {} not found in identity", public_key_id),
+                ))
+            }
+        }
     };
 
     // Optional core fee per byte

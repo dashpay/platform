@@ -2,7 +2,7 @@
 
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, Identity};
-use dash_sdk::platform::IdentityPublicKey;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -26,7 +26,7 @@ pub struct DashSDKTransferCreditsResult {
 /// - `from_identity_handle`: Identity to transfer credits from
 /// - `to_identity_id`: Base58-encoded ID of the identity to transfer credits to
 /// - `amount`: Amount of credits to transfer
-/// - `identity_public_key_handle`: Public key for signing (optional, pass null to auto-select TRANSFER key)
+/// - `public_key_id`: ID of the public key to use for signing (pass 0 to auto-select TRANSFER key)
 /// - `signer_handle`: Cryptographic signer
 /// - `put_settings`: Optional settings for the operation (can be null for defaults)
 ///
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
     from_identity_handle: *const IdentityHandle,
     to_identity_id: *const c_char,
     amount: u64,
-    identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
+    public_key_id: u32,
     signer_handle: *const crate::types::SignerHandle,
     put_settings: *const DashSDKPutSettings,
 ) -> DashSDKResult {
@@ -82,11 +82,19 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         }
     };
 
-    // Optional public key for signing
-    let signing_key = if identity_public_key_handle.is_null() {
+    // Get public key if specified (0 means auto-select TRANSFER key)
+    let signing_key = if public_key_id == 0 {
         None
     } else {
-        Some(&*(identity_public_key_handle as *const IdentityPublicKey))
+        match from_identity.get_public_key_by_id(public_key_id.into()) {
+            Some(key) => Some(key),
+            None => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("Public key with ID {} not found in identity", public_key_id),
+                ))
+            }
+        }
     };
 
     let result: Result<DashSDKTransferCreditsResult, FFIError> = wrapper.runtime.block_on(async {
