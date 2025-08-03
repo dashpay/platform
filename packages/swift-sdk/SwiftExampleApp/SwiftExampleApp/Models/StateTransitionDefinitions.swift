@@ -102,14 +102,6 @@ struct TransitionDefinitions {
                     label: "Amount (credits)",
                     required: true,
                     placeholder: "1000000"
-                ),
-                TransitionInput(
-                    name: "privateKey",
-                    type: "text",
-                    label: "Signer Private Key (hex)",
-                    required: true,
-                    placeholder: "Enter 32-byte private key in hex format",
-                    help: "The private key to sign the transfer. Must be 64 hex characters (32 bytes)."
                 )
             ]
         ),
@@ -139,14 +131,6 @@ struct TransitionDefinitions {
                     label: "Core Fee Per Byte (optional)",
                     required: false,
                     placeholder: "1"
-                ),
-                TransitionInput(
-                    name: "privateKey",
-                    type: "text",
-                    label: "Signer Private Key (hex)",
-                    required: true,
-                    placeholder: "Enter 32-byte private key in hex format",
-                    help: "The private key to sign the withdrawal. Must be 64 hex characters (32 bytes)."
                 )
             ]
         ),

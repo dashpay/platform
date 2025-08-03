@@ -3,6 +3,7 @@
 pub mod create;
 pub mod helpers;
 pub mod info;
+pub mod keys;
 pub mod names;
 pub mod put;
 pub mod queries;
@@ -13,6 +14,11 @@ pub mod withdraw;
 // Re-export all public functions for convenient access
 pub use create::dash_sdk_identity_create;
 pub use info::{dash_sdk_identity_destroy, dash_sdk_identity_get_info};
+pub use keys::{
+    dash_sdk_identity_get_signing_key_for_transition, dash_sdk_identity_get_transfer_private_key,
+    dash_sdk_identity_public_key_destroy, dash_sdk_identity_public_key_get_id,
+    StateTransitionType,
+};
 pub use names::dash_sdk_identity_register_name;
 pub use put::{
     dash_sdk_identity_put_to_platform_with_chain_lock,

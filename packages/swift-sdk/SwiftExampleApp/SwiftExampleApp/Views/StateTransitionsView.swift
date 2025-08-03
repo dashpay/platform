@@ -397,19 +397,10 @@ struct StateTransitionsView: View {
             throw SDKError.invalidParameter("Invalid amount")
         }
         
-        guard let privateKeyHex = formInputs["privateKey"], !privateKeyHex.isEmpty else {
-            throw SDKError.invalidParameter("Private key is required")
-        }
-        
-        guard let privateKeyData = Data(hexString: privateKeyHex), privateKeyData.count == 32 else {
-            throw SDKError.invalidParameter("Invalid private key format (must be 32 bytes hex)")
-        }
-        
         let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
             fromIdentityId: fromIdentity.idString,
             toIdentityId: toIdentityId,
-            amount: amount,
-            signerPrivateKey: privateKeyData
+            amount: amount
         )
         
         // Update sender's balance in our local state
@@ -442,14 +433,6 @@ struct StateTransitionsView: View {
             throw SDKError.invalidParameter("Invalid amount")
         }
         
-        guard let privateKeyHex = formInputs["privateKey"], !privateKeyHex.isEmpty else {
-            throw SDKError.invalidParameter("Private key is required")
-        }
-        
-        guard let privateKeyData = Data(hexString: privateKeyHex), privateKeyData.count == 32 else {
-            throw SDKError.invalidParameter("Invalid private key format (must be 32 bytes hex)")
-        }
-        
         let coreFeePerByteString = formInputs["coreFeePerByte"] ?? "0"
         let coreFeePerByte = UInt32(coreFeePerByteString) ?? 0
         
@@ -457,8 +440,7 @@ struct StateTransitionsView: View {
             identityId: identity.idString,
             amount: amount,
             toAddress: toAddress,
-            coreFeePerByte: coreFeePerByte,
-            signerPrivateKey: privateKeyData
+            coreFeePerByte: coreFeePerByte
         )
         
         // Update identity balance in our local state

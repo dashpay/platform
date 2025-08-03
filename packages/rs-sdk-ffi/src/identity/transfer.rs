@@ -26,7 +26,7 @@ pub struct DashSDKTransferCreditsResult {
 /// - `from_identity_handle`: Identity to transfer credits from
 /// - `to_identity_id`: Base58-encoded ID of the identity to transfer credits to
 /// - `amount`: Amount of credits to transfer
-/// - `identity_public_key_handle`: Public key for signing (optional, pass null to auto-select)
+/// - `identity_public_key_handle`: Public key for signing (optional, pass null to auto-select TRANSFER key)
 /// - `signer_handle`: Cryptographic signer
 /// - `put_settings`: Optional settings for the operation (can be null for defaults)
 ///

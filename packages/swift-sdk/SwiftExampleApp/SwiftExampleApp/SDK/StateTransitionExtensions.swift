@@ -1,6 +1,17 @@
 import Foundation
 import SwiftDashSDK
 
+// MARK: - State Transition Type
+public enum StateTransitionType: UInt32 {
+    case identityUpdate = 0
+    case identityTopUp = 1
+    case identityCreditTransfer = 2
+    case identityCreditWithdrawal = 3
+    case documentsBatch = 4
+    case dataContractCreate = 5
+    case dataContractUpdate = 6
+}
+
 // MARK: - State Transition Extensions
 
 extension SDK {
@@ -154,17 +165,12 @@ extension SDK {
         fromIdentityId: String,
         toIdentityId: String,
         amount: UInt64,
-        signerPrivateKey: Data
+        signerPrivateKey: Data? = nil
     ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
                     continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
-                    return
-                }
-                
-                guard signerPrivateKey.count == 32 else {
-                    continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
                     return
                 }
                 
@@ -181,20 +187,56 @@ extension SDK {
                     return
                 }
                 
-                // Create a signer from the private key
-                let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
-                    dash_sdk_signer_create_from_private_key(
-                        keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                        UInt(signerPrivateKey.count)
-                    )
-                }
+                var signerHandle: UnsafeMutableRawPointer?
+                var selectedKeyHandle: UnsafeMutableRawPointer?
                 
-                guard signerResult.error == nil,
-                      let signerHandle = signerResult.data else {
+                if let signerPrivateKey = signerPrivateKey {
+                    // Use provided private key
+                    guard signerPrivateKey.count == 32 else {
+                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                        continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
+                        return
+                    }
+                    
+                    // Create a signer from the private key
+                    let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
+                        dash_sdk_signer_create_from_private_key(
+                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            UInt(signerPrivateKey.count)
+                        )
+                    }
+                    
+                    guard signerResult.error == nil,
+                          let signer = signerResult.data else {
+                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                        let errorString = signerResult.error?.pointee.message != nil ?
+                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                        continuation.resume(throwing: SDKError.internalError(errorString))
+                        return
+                    }
+                    signerHandle = signer
+                } else {
+                    // Auto-select signing key
+                    let keyResult = dash_sdk_identity_get_signing_key_for_transition(
+                        OpaquePointer(fromIdentityHandle)!,
+                        DashUnifiedSDK.StateTransitionType(rawValue: StateTransitionType.identityCreditTransfer.rawValue)
+                    )
+                    
+                    guard keyResult.error == nil,
+                          let keyHandle = keyResult.data else {
+                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                        let errorString = keyResult.error?.pointee.message != nil ?
+                            String(cString: keyResult.error!.pointee.message) : "Failed to get signing key"
+                        continuation.resume(throwing: SDKError.internalError(errorString))
+                        return
+                    }
+                    selectedKeyHandle = keyHandle
+                    
+                    // TODO: In a real implementation, we would get the private key for this public key
+                    // from the wallet/key storage. For now, we'll return an error.
+                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
                     dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                    let errorString = signerResult.error?.pointee.message != nil ?
-                        String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: SDKError.internalError("Automatic key selection requires wallet integration"))
                     return
                 }
                 
@@ -205,8 +247,8 @@ extension SDK {
                         OpaquePointer(fromIdentityHandle)!,
                         toIdCStr,
                         amount,
-                        nil, // Auto-select signing key
-                        OpaquePointer(signerHandle)!,
+                        selectedKeyHandle != nil ? OpaquePointer(selectedKeyHandle!) : nil,
+                        OpaquePointer(signerHandle!)!,
                         nil  // Default put settings
                     )
                 }
@@ -243,17 +285,12 @@ extension SDK {
         amount: UInt64,
         toAddress: String,
         coreFeePerByte: UInt32 = 0,
-        signerPrivateKey: Data
+        signerPrivateKey: Data? = nil
     ) async throws -> UInt64 {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
                     continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
-                    return
-                }
-                
-                guard signerPrivateKey.count == 32 else {
-                    continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
                     return
                 }
                 
@@ -270,20 +307,56 @@ extension SDK {
                     return
                 }
                 
-                // Create a signer from the private key
-                let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
-                    dash_sdk_signer_create_from_private_key(
-                        keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                        UInt(signerPrivateKey.count)
-                    )
-                }
+                var signerHandle: UnsafeMutableRawPointer?
+                var selectedKeyHandle: UnsafeMutableRawPointer?
                 
-                guard signerResult.error == nil,
-                      let signerHandle = signerResult.data else {
+                if let signerPrivateKey = signerPrivateKey {
+                    // Use provided private key
+                    guard signerPrivateKey.count == 32 else {
+                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                        continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
+                        return
+                    }
+                    
+                    // Create a signer from the private key
+                    let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
+                        dash_sdk_signer_create_from_private_key(
+                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            UInt(signerPrivateKey.count)
+                        )
+                    }
+                    
+                    guard signerResult.error == nil,
+                          let signer = signerResult.data else {
+                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                        let errorString = signerResult.error?.pointee.message != nil ?
+                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                        continuation.resume(throwing: SDKError.internalError(errorString))
+                        return
+                    }
+                    signerHandle = signer
+                } else {
+                    // Auto-select signing key
+                    let keyResult = dash_sdk_identity_get_signing_key_for_transition(
+                        OpaquePointer(identityHandle)!,
+                        DashUnifiedSDK.StateTransitionType(rawValue: StateTransitionType.identityCreditWithdrawal.rawValue)
+                    )
+                    
+                    guard keyResult.error == nil,
+                          let keyHandle = keyResult.data else {
+                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                        let errorString = keyResult.error?.pointee.message != nil ?
+                            String(cString: keyResult.error!.pointee.message) : "Failed to get signing key"
+                        continuation.resume(throwing: SDKError.internalError(errorString))
+                        return
+                    }
+                    selectedKeyHandle = keyHandle
+                    
+                    // TODO: In a real implementation, we would get the private key for this public key
+                    // from the wallet/key storage. For now, we'll return an error.
+                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
                     dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                    let errorString = signerResult.error?.pointee.message != nil ?
-                        String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: SDKError.internalError("Automatic key selection requires wallet integration"))
                     return
                 }
                 
@@ -295,8 +368,8 @@ extension SDK {
                         addressCStr,
                         amount,
                         coreFeePerByte,
-                        nil, // Auto-select signing key
-                        OpaquePointer(signerHandle)!,
+                        selectedKeyHandle != nil ? OpaquePointer(selectedKeyHandle!) : nil,
+                        OpaquePointer(signerHandle!)!,
                         nil  // Default put settings
                     )
                 }
