@@ -502,23 +502,44 @@ struct StateTransitionsView: View {
         
         // Check if it looks like hex (64 characters, only hex chars)
         if trimmed.count == 64 && trimmed.allSatisfy({ $0.isHexDigit }) {
-            // For now, just return the hex string - the SDK should handle conversion
-            // TODO: Implement base58 conversion or expose it from SDK
-            print("Warning: Hex identity IDs are not yet supported. Please use base58 format.")
-            return trimmed
+            // Convert hex to base58 using FFI
+            let result = trimmed.withCString { hexCStr in
+                dash_sdk_utils_hex_to_base58(hexCStr)
+            }
+            
+            // Check for errors
+            if result.error != nil {
+                let error = result.error!.pointee
+                let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+                print("Failed to convert hex to base58: \(errorMessage)")
+                dash_sdk_error_free(result.error)
+                return trimmed
+            }
+            
+            guard result.data != nil else {
+                print("No data returned from hex to base58 conversion")
+                return trimmed
+            }
+            
+            // Get the base58 string
+            let base58CStr = result.data.assumingMemoryBound(to: CChar.self)
+            let base58String = String(cString: base58CStr)
+            dash_sdk_string_free(base58CStr)
+            
+            print("Converted hex \(trimmed) to base58: \(base58String)")
+            return base58String
         }
         
-        // Validate base58 characters
-        let base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-        let base58CharSet = CharacterSet(charactersIn: base58Alphabet)
+        // Check if it's valid base58 using FFI
+        let isValid = trimmed.withCString { cStr in
+            dash_sdk_utils_is_valid_base58(cStr)
+        }
         
-        // Check if all characters are valid base58
-        if trimmed.unicodeScalars.allSatisfy({ base58CharSet.contains($0) }) {
+        if isValid == 1 {
             return trimmed
         } else {
-            // Log which characters are invalid for debugging
-            let invalidChars = trimmed.filter { !base58Alphabet.contains($0) }
-            print("Invalid base58 characters found: '\(invalidChars)' in ID: '\(trimmed)'")
+            print("Invalid base58 string: '\(trimmed)'")
+            // Still return it and let the SDK handle the error
             return trimmed
         }
     }
