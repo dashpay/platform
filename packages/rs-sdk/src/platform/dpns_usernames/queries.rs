@@ -223,8 +223,8 @@ mod tests {
         assert!(is_available, "Random name should be available");
 
         // Test resolve (if we know a name exists)
-        if let Ok(Some(identity_id)) = sdk.resolve_dpns_name_to_identity("dash").await {
-            println!("'dash' resolves to identity: {}", identity_id);
+        if let Ok(Some(identity_id)) = sdk.resolve_dpns_name_to_identity("therealslimshaddy5").await {
+            println!("'therealslimshaddy5' resolves to identity: {}", identity_id);
             
             // Test get usernames by identity
             let usernames = sdk.get_dpns_usernames_by_identity(identity_id, Some(5)).await.unwrap();

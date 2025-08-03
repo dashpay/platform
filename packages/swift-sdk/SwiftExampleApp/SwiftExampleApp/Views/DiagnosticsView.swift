@@ -42,7 +42,7 @@ struct DiagnosticsView: View {
         static let testDocumentId = "7NYmEKQsYtniQRUmxwdPGeVcirMoPh5ZPyAKz8BWFy3r"
         
         // DPNS
-        static let testUsername = "dash"
+        static let testUsername = "therealslimshaddy5"  // A name that exists on testnet
         
         // Token
         static let testTokenId = "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"

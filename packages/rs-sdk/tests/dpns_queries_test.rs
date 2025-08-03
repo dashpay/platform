@@ -119,10 +119,10 @@ async fn test_dpns_queries_from_docs() {
     println!();
 
     // Test with a name that's more likely to exist on testnet
-    println!("5. Testing with 'dash' (system name):");
-    match sdk.resolve_dpns_name_to_identity("dash").await {
+    println!("5. Testing with 'therealslimshaddy5' (known existing name):");
+    match sdk.resolve_dpns_name_to_identity("therealslimshaddy5").await {
         Ok(Some(identity_id)) => {
-            println!("   ✅ Success: 'dash' resolves to identity: {}", identity_id);
+            println!("   ✅ Success: 'therealslimshaddy5' resolves to identity: {}", identity_id);
             
             // Get usernames for this identity
             match sdk.get_dpns_usernames_by_identity(identity_id, Some(5)).await {
@@ -135,7 +135,7 @@ async fn test_dpns_queries_from_docs() {
             }
         }
         Ok(None) => {
-            println!("   ℹ️  Name 'dash' not found");
+            println!("   ℹ️  Name 'therealslimshaddy5' not found");
         }
         Err(e) => {
             println!("   ❌ Error: {}", e);
