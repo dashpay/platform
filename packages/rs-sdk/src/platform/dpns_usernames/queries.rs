@@ -299,13 +299,16 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SdkBuilder;
+    use dpp::dashcore::Network;
 
     #[tokio::test]
     #[ignore] // Requires network connection
     async fn test_dpns_queries() {
-        let sdk = crate::Sdk::builder()
+        // Create SDK with testnet configuration
+        let sdk = SdkBuilder::new(vec!["https://52.12.176.90:1443".parse().unwrap()])
+            .with_network(Network::Testnet)
             .build()
-            .await
             .expect("Failed to create SDK");
 
         // Test search
