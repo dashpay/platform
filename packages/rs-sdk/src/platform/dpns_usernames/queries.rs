@@ -306,7 +306,8 @@ mod tests {
     #[ignore] // Requires network connection
     async fn test_dpns_queries() {
         // Create SDK with testnet configuration
-        let sdk = SdkBuilder::new(vec!["https://52.12.176.90:1443".parse().unwrap()])
+        let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
+        let sdk = SdkBuilder::new(address_list)
             .with_network(Network::Testnet)
             .build()
             .expect("Failed to create SDK");
