@@ -39,7 +39,12 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
 
     let id_str = match CStr::from_ptr(identity_id).to_str() {
         Ok(s) => {
-            eprintln!("🔵 dash_sdk_identity_fetch: Identity ID string: {}", s);
+            eprintln!("🔵 dash_sdk_identity_fetch: Identity ID string: '{}'", s);
+            eprintln!("🔵 dash_sdk_identity_fetch: Identity ID length: {}", s.len());
+            // Debug each character to find the problematic one
+            for (i, ch) in s.chars().enumerate() {
+                eprintln!("🔵 dash_sdk_identity_fetch: char[{}] = '{}' (U+{:04X})", i, ch, ch as u32);
+            }
             s
         }
         Err(e) => {

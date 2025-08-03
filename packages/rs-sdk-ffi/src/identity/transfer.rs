@@ -59,13 +59,22 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
     let signer = &*(signer_handle as *const IOSSigner);
 
     let to_identity_id_str = match CStr::from_ptr(to_identity_id).to_str() {
-        Ok(s) => s,
+        Ok(s) => {
+            eprintln!("🔵 dash_sdk_identity_transfer_credits: to_identity_id = '{}'", s);
+            eprintln!("🔵 dash_sdk_identity_transfer_credits: to_identity_id length = {}", s.len());
+            // Debug each character
+            for (i, ch) in s.chars().enumerate() {
+                eprintln!("🔵 dash_sdk_identity_transfer_credits: char[{}] = '{}' (U+{:04X})", i, ch, ch as u32);
+            }
+            s
+        },
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
     let to_id = match Identifier::from_string(to_identity_id_str, Encoding::Base58) {
         Ok(id) => id,
         Err(e) => {
+            eprintln!("❌ dash_sdk_identity_transfer_credits: Failed to parse to_identity_id: {}", e);
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 format!("Invalid to_identity_id: {}", e),
