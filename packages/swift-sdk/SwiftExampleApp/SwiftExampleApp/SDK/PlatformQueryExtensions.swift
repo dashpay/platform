@@ -490,15 +490,8 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        // Convert hex identity ID to 32 bytes
-        guard let identityIdData = Data(hexString: identityId), identityIdData.count == 32 else {
-            throw SDKError.invalidParameter("Invalid identity ID format")
-        }
-        
-        // Call native FFI function
-        let result = identityIdData.withUnsafeBytes { bytes in
-            dash_sdk_dpns_get_usernames(handle, bytes.bindMemory(to: UInt8.self).baseAddress, limit ?? 10)
-        }
+        // Call native FFI function with identity ID as string
+        let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
         
         return try processJSONArrayResult(result)
     }
