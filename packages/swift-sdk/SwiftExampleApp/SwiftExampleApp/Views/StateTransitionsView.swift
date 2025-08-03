@@ -397,9 +397,12 @@ struct StateTransitionsView: View {
             throw SDKError.invalidParameter("Invalid amount")
         }
         
+        // Normalize the recipient identity ID to base58
+        let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
+        
         let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
             fromIdentityId: fromIdentity.idString,
-            toIdentityId: toIdentityId,
+            toIdentityId: normalizedToIdentityId,
             amount: amount
         )
         
@@ -411,7 +414,7 @@ struct StateTransitionsView: View {
         return [
             "senderIdentityId": fromIdentity.idString,
             "senderBalance": senderBalance,
-            "receiverIdentityId": toIdentityId,
+            "receiverIdentityId": normalizedToIdentityId,
             "receiverBalance": receiverBalance,
             "transferAmount": amount,
             "message": "Credits transferred successfully"
@@ -490,6 +493,34 @@ struct StateTransitionsView: View {
             return "Invalid JSON"
         }
         return String(describing: result)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func normalizeIdentityId(_ identityId: String) -> String {
+        let trimmed = identityId.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Check if it looks like hex (64 characters, only hex chars)
+        if trimmed.count == 64 && trimmed.allSatisfy({ $0.isHexDigit }) {
+            // Convert hex to base58
+            if let data = Data(hexString: trimmed) {
+                return data.toBase58()
+            }
+        }
+        
+        // Validate base58 characters
+        let base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        let base58CharSet = CharacterSet(charactersIn: base58Alphabet)
+        
+        // Check if all characters are valid base58
+        if trimmed.unicodeScalars.allSatisfy({ base58CharSet.contains($0) }) {
+            return trimmed
+        } else {
+            // Log which characters are invalid for debugging
+            let invalidChars = trimmed.filter { !base58Alphabet.contains($0) }
+            print("Invalid base58 characters found: '\(invalidChars)' in ID: '\(trimmed)'")
+            return trimmed
+        }
     }
     
     // MARK: - Transition Definitions
