@@ -72,7 +72,7 @@ final class PersistentIdentity {
     }
     
     var formattedBalance: String {
-        let dashAmount = Double(balance) / 100_000_000
+        let dashAmount = Double(balance) / 100_000_000_000 // 1 DASH = 100B credits
         return String(format: "%.8f DASH", dashAmount)
     }
     
