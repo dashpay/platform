@@ -302,7 +302,7 @@ mod tests {
     use crate::SdkBuilder;
     use dpp::dashcore::Network;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore] // Requires network connection
     async fn test_dpns_queries() {
         // Create SDK with testnet configuration

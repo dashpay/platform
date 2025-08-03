@@ -41,8 +41,8 @@ fn test_dpns_validation_functions() {
         ("abc", true),        // 3 chars
         ("test", true),       // 4 chars
         ("alice", true),      // 5 chars, only lowercase
-        ("Alice", false),     // Has uppercase
-        ("test-name", false), // Has hyphen
+        ("Alice", true),      // Converts to "a11ce" which is contested
+        ("test-name", true),  // Hyphens are allowed in contested names
         ("test123", false),   // Has numbers
         ("a", false),         // Too short
         ("ab", false),        // Too short

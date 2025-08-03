@@ -1,18 +1,19 @@
-use dash_sdk::platform::FetchMany;
-use dash_sdk::Sdk;
+use dash_sdk::SdkBuilder;
+use dpp::dashcore::Network;
 
 // Test values from wasm-sdk docs.html
 const TEST_IDENTITY_ID: &str = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk";
 const TEST_USERNAME: &str = "alice";
 const TEST_PREFIX: &str = "ali";
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_queries_from_docs() {
     // Initialize SDK for testnet
-    let sdk = Sdk::builder()
+    let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
+    let sdk = SdkBuilder::new(address_list)
+        .with_network(Network::Testnet)
         .build()
-        .await
         .expect("Failed to create SDK");
 
     println!("Testing DPNS queries with values from wasm-sdk docs.html...\n");
@@ -49,18 +50,13 @@ async fn test_dpns_queries_from_docs() {
     println!("3. Testing get_dpns_usernames_by_identity('{}'):", TEST_IDENTITY_ID);
     
     // Parse the identity ID from base58
-    let identity_bytes = match bs58::decode(TEST_IDENTITY_ID).into_vec() {
-        Ok(bytes) if bytes.len() == 32 => bytes,
-        _ => {
-            println!("   ❌ Error: Invalid identity ID format");
-            return;
-        }
-    };
-    
-    let identity_id = match dash_sdk::dpp::prelude::Identifier::from_bytes(&identity_bytes) {
+    let identity_id = match dash_sdk::dpp::prelude::Identifier::from_string(
+        TEST_IDENTITY_ID, 
+        dpp::platform_value::string_encoding::Encoding::Base58
+    ) {
         Ok(id) => id,
         Err(e) => {
-            println!("   ❌ Error creating identifier: {}", e);
+            println!("   ❌ Error parsing identity ID: {}", e);
             return;
         }
     };
@@ -138,12 +134,13 @@ async fn test_dpns_queries_from_docs() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_search_variations() {
-    let sdk = Sdk::builder()
+    let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
+    let sdk = SdkBuilder::new(address_list)
+        .with_network(Network::Testnet)
         .build()
-        .await
         .expect("Failed to create SDK");
 
     println!("Testing DPNS search with various prefixes...\n");
