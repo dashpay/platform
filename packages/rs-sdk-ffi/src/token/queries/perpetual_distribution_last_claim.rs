@@ -2,7 +2,6 @@
 
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::platform::Fetch;
 use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -10,44 +9,6 @@ use std::os::raw::c_char;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
-
-/// Query for token perpetual distribution last claim
-#[derive(Debug, Clone)]
-struct TokenPerpetualDistributionLastClaimQuery {
-    token_id: Identifier,
-    identity_id: Identifier,
-}
-
-impl
-    dash_sdk::platform::Query<
-        dash_sdk::dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
-    > for TokenPerpetualDistributionLastClaimQuery
-{
-    fn query(
-        self,
-        prove: bool,
-    ) -> Result<
-        dash_sdk::dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
-        dash_sdk::Error,
-    > {
-        use dash_sdk::dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_request::{
-            GetTokenPerpetualDistributionLastClaimRequestV0, Version,
-        };
-
-        Ok(
-            dash_sdk::dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest {
-                version: Some(Version::V0(
-                    GetTokenPerpetualDistributionLastClaimRequestV0 {
-                        token_id: self.token_id.to_vec(),
-                        contract_info: None,
-                        identity_id: self.identity_id.to_vec(),
-                        prove,
-                    },
-                )),
-            },
-        )
-    }
-}
 
 /// Get token perpetual distribution last claim
 ///
@@ -103,35 +64,42 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
         }
     };
 
-    let result: Result<Option<RewardDistributionMoment>, FFIError> =
-        wrapper.runtime.block_on(async {
-            // Create the query
-            let query = TokenPerpetualDistributionLastClaimQuery {
-                token_id,
-                identity_id,
-            };
+    let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
+        use dash_sdk::platform::query::{Query, TokenLastClaimQuery};
+        use dash_sdk::platform::Fetch;
+        
+        let query = TokenLastClaimQuery {
+            token_id: token_id.clone(),
+            identity_id: identity_id.clone(),
+        };
 
-            // Fetch last claim
-            RewardDistributionMoment::fetch(&wrapper.sdk, query)
-                .await
-                .map_err(FFIError::from)
-        });
+        let last_claim = RewardDistributionMoment::fetch(&wrapper.sdk, query)
+            .await
+            .map_err(|e| FFIError::InternalError(format!("Failed to fetch token perpetual distribution last claim: {}", e)))?;
+
+        // Convert RewardDistributionMoment to JSON
+        match last_claim {
+            Some(moment) => {
+                match moment {
+                    RewardDistributionMoment::TimeBasedMoment(ts) => {
+                        Ok(format!(r#"{{"type":"time_based","timestamp_ms":{},"block_height":0}}"#, ts))
+                    },
+                    RewardDistributionMoment::BlockBasedMoment(height) => {
+                        Ok(format!(r#"{{"type":"block_based","timestamp_ms":0,"block_height":{}}}"#, height))
+                    },
+                    RewardDistributionMoment::EpochBasedMoment(epoch) => {
+                        Ok(format!(r#"{{"type":"epoch_based","timestamp_ms":0,"block_height":{}}}"#, epoch))
+                    }
+                }
+            },
+            None => {
+                Err(FFIError::NotFound("No last claim found".to_string()))
+            }
+        }
+    });
 
     match result {
-        Ok(Some(moment)) => {
-            // Create JSON representation based on moment type
-            let json_str = match moment {
-                RewardDistributionMoment::BlockBasedMoment(height) => {
-                    format!(r#"{{"type":"block_based","value":{}}}"#, height)
-                }
-                RewardDistributionMoment::TimeBasedMoment(timestamp) => {
-                    format!(r#"{{"type":"time_based","value":{}}}"#, timestamp)
-                }
-                RewardDistributionMoment::EpochBasedMoment(epoch) => {
-                    format!(r#"{{"type":"epoch_based","value":{}}}"#, epoch)
-                }
-            };
-
+        Ok(json_str) => {
             let c_str = match CString::new(json_str) {
                 Ok(s) => s,
                 Err(e) => {
@@ -141,10 +109,6 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
                 }
             };
             DashSDKResult::success_string(c_str.into_raw())
-        }
-        Ok(None) => {
-            // Return null for not found
-            DashSDKResult::success_string(std::ptr::null_mut())
         }
         Err(e) => DashSDKResult::error(e.into()),
     }
