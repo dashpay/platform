@@ -1024,6 +1024,68 @@ extern "C" {
 // Destroy a document handle
  void dash_sdk_document_handle_destroy(struct DocumentHandle *handle) ;
 
+// Get DPNS usernames owned by an identity
+//
+// This function returns all DPNS usernames associated with a given identity ID.
+// It checks for domains where the identity is:
+// - The owner of the domain document
+// - Listed in records.dashUniqueIdentityId
+// - Listed in records.dashAliasIdentityId
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `identity_id` - The identity ID to search for (base58 string)
+// * `limit` - Maximum number of results to return (0 for default of 10)
+//
+// # Returns
+// * On success: A JSON array of username objects
+// * On error: An error result
+ struct DashSDKResult dash_sdk_dpns_get_usernames(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, uint32_t limit) ;
+
+// Check if a DPNS username is available
+//
+// This function checks if a given username is available for registration.
+// It also validates the username format and checks if it's contested.
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `label` - The username label to check (e.g., "alice")
+//
+// # Returns
+// * On success: A JSON object with availability information
+// * On error: An error result
+ struct DashSDKResult dash_sdk_dpns_check_availability(const struct dash_sdk_handle_t *sdk_handle, const char *label) ;
+
+// Search for DPNS names that start with a given prefix
+//
+// This function searches for DPNS usernames that start with the given prefix.
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `prefix` - The prefix to search for (e.g., "ali" to find "alice", "alicia", etc.)
+// * `limit` - Maximum number of results to return (0 for default of 10)
+//
+// # Returns
+// * On success: A JSON array of username objects
+// * On error: An error result
+ struct DashSDKResult dash_sdk_dpns_search(const struct dash_sdk_handle_t *sdk_handle, const char *prefix, uint32_t limit) ;
+
+// Resolve a DPNS name to an identity ID
+//
+// This function resolves a DPNS username to its associated identity ID.
+// The name can be either:
+// - A full domain name (e.g., "alice.dash")
+// - Just the label (e.g., "alice")
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `name` - The DPNS name to resolve
+//
+// # Returns
+// * On success: A JSON object with the identity ID, or null if not found
+// * On error: An error result
+ struct DashSDKResult dash_sdk_dpns_resolve(const struct dash_sdk_handle_t *sdk_handle, const char *name) ;
+
 // Free an error message
  void dash_sdk_error_free(struct DashSDKError *error) ;
 
@@ -1548,6 +1610,9 @@ extern "C" {
 
 // Free bytes allocated by iOS callbacks
  void dash_sdk_bytes_free(uint8_t *bytes) ;
+
+// Create a signer from a private key
+ struct DashSDKResult dash_sdk_signer_create_from_private_key(const uint8_t *private_key, uintptr_t private_key_len) ;
 
 // Fetches information about current quorums
 //

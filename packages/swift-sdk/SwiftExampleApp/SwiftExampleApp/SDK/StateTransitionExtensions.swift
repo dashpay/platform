@@ -153,7 +153,8 @@ extension SDK {
     public func identityTransferCredits(
         fromIdentityId: String,
         toIdentityId: String,
-        amount: UInt64
+        amount: UInt64,
+        signerPrivateKey: Data
     ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
@@ -162,9 +163,76 @@ extension SDK {
                     return
                 }
                 
-                // For now, this is a placeholder implementation
-                // The actual implementation requires proper key management and signing
-                continuation.resume(throwing: SDKError.notImplemented("Credit transfer requires proper signer implementation"))
+                guard signerPrivateKey.count == 32 else {
+                    continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
+                    return
+                }
+                
+                // First fetch the from identity to get its handle
+                let fetchResult = fromIdentityId.withCString { idCStr in
+                    dash_sdk_identity_fetch(handle, idCStr)
+                }
+                
+                guard fetchResult.error == nil,
+                      let fromIdentityHandle = fetchResult.data else {
+                    let errorString = fetchResult.error?.pointee.message != nil ?
+                        String(cString: fetchResult.error!.pointee.message) : "Failed to fetch from identity"
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                // Create a signer from the private key
+                let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
+                    dash_sdk_signer_create_from_private_key(
+                        keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                        UInt(signerPrivateKey.count)
+                    )
+                }
+                
+                guard signerResult.error == nil,
+                      let signerHandle = signerResult.data else {
+                    dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                    let errorString = signerResult.error?.pointee.message != nil ?
+                        String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                // Transfer credits
+                let result = toIdentityId.withCString { toIdCStr in
+                    dash_sdk_identity_transfer_credits(
+                        handle,
+                        OpaquePointer(fromIdentityHandle)!,
+                        toIdCStr,
+                        amount,
+                        nil, // Auto-select signing key
+                        OpaquePointer(signerHandle)!,
+                        nil  // Default put settings
+                    )
+                }
+                
+                // Clean up handles
+                dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                dash_sdk_signer_destroy(OpaquePointer(signerHandle)!)
+                
+                if result.error == nil {
+                    if let transferResultPtr = result.data {
+                        let transferResult = transferResultPtr.assumingMemoryBound(to: DashSDKTransferCreditsResult.self).pointee
+                        let senderBalance = transferResult.sender_balance
+                        let receiverBalance = transferResult.receiver_balance
+                        
+                        // Free the transfer result
+                        dash_sdk_transfer_credits_result_free(transferResultPtr.assumingMemoryBound(to: DashSDKTransferCreditsResult.self))
+                        
+                        continuation.resume(returning: (senderBalance, receiverBalance))
+                    } else {
+                        continuation.resume(throwing: SDKError.internalError("No data returned"))
+                    }
+                } else {
+                    let errorString = result.error?.pointee.message != nil ?
+                        String(cString: result.error!.pointee.message) : "Unknown error"
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                }
             }
         }
     }
@@ -173,10 +241,92 @@ extension SDK {
     public func identityWithdraw(
         identityId: String,
         amount: UInt64,
-        toAddress: String
-    ) async throws -> String {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Identity withdrawal not yet implemented")
+        toAddress: String,
+        coreFeePerByte: UInt32 = 0,
+        signerPrivateKey: Data
+    ) async throws -> UInt64 {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                guard signerPrivateKey.count == 32 else {
+                    continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
+                    return
+                }
+                
+                // First fetch the identity to get its handle
+                let fetchResult = identityId.withCString { idCStr in
+                    dash_sdk_identity_fetch(handle, idCStr)
+                }
+                
+                guard fetchResult.error == nil,
+                      let identityHandle = fetchResult.data else {
+                    let errorString = fetchResult.error?.pointee.message != nil ?
+                        String(cString: fetchResult.error!.pointee.message) : "Failed to fetch identity"
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                // Create a signer from the private key
+                let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
+                    dash_sdk_signer_create_from_private_key(
+                        keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                        UInt(signerPrivateKey.count)
+                    )
+                }
+                
+                guard signerResult.error == nil,
+                      let signerHandle = signerResult.data else {
+                    dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                    let errorString = signerResult.error?.pointee.message != nil ?
+                        String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                // Withdraw credits
+                let result = toAddress.withCString { addressCStr in
+                    dash_sdk_identity_withdraw(
+                        handle,
+                        OpaquePointer(identityHandle)!,
+                        addressCStr,
+                        amount,
+                        coreFeePerByte,
+                        nil, // Auto-select signing key
+                        OpaquePointer(signerHandle)!,
+                        nil  // Default put settings
+                    )
+                }
+                
+                // Clean up handles
+                dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                dash_sdk_signer_destroy(OpaquePointer(signerHandle)!)
+                
+                if result.error == nil {
+                    if let dataPtr = result.data {
+                        // The result is a string containing the new balance
+                        let balanceString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+                        // Free the C string
+                        dash_sdk_string_free(dataPtr.assumingMemoryBound(to: CChar.self))
+                        
+                        if let newBalance = UInt64(balanceString) {
+                            continuation.resume(returning: newBalance)
+                        } else {
+                            continuation.resume(throwing: SDKError.serializationError("Failed to parse balance"))
+                        }
+                    } else {
+                        continuation.resume(throwing: SDKError.internalError("No data returned"))
+                    }
+                } else {
+                    let errorString = result.error?.pointee.message != nil ?
+                        String(cString: result.error!.pointee.message) : "Unknown error"
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                }
+            }
+        }
     }
     
     // MARK: - Document State Transitions

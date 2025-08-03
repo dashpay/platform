@@ -295,14 +295,208 @@ struct StateTransitionsView: View {
     }
     
     private func executeStateTransition() async throws -> Any {
-        guard appState.platformState.sdk != nil else {
+        guard let sdk = appState.platformState.sdk else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        // TODO: Implement actual state transition execution
-        // This will require FFI bindings for each transition type
+        switch selectedTransition {
+        case "identityCreate":
+            return try await executeIdentityCreate(sdk: sdk)
+            
+        case "identityTopUp":
+            return try await executeIdentityTopUp(sdk: sdk)
+            
+        case "identityCreditTransfer":
+            return try await executeIdentityCreditTransfer(sdk: sdk)
+            
+        case "identityCreditWithdrawal":
+            return try await executeIdentityCreditWithdrawal(sdk: sdk)
+            
+        case "documentCreate":
+            return try await executeDocumentCreate(sdk: sdk)
+            
+        default:
+            throw SDKError.notImplemented("State transition '\(selectedTransition)' not yet implemented")
+        }
+    }
+    
+    // MARK: - Individual State Transition Implementations
+    
+    private func executeIdentityCreate(sdk: SDK) async throws -> Any {
+        let identityData = try await sdk.identityCreate()
         
-        throw SDKError.notImplemented("State transitions not yet implemented")
+        // Extract identity ID from the response
+        guard let idString = identityData["id"] as? String,
+              let idData = Data(hexString: idString), idData.count == 32 else {
+            throw SDKError.invalidParameter("Invalid identity ID in response")
+        }
+        
+        // Extract balance
+        var balance: UInt64 = 0
+        if let balanceValue = identityData["balance"] {
+            if let balanceNum = balanceValue as? NSNumber {
+                balance = balanceNum.uint64Value
+            } else if let balanceString = balanceValue as? String,
+                      let balanceUInt = UInt64(balanceString) {
+                balance = balanceUInt
+            }
+        }
+        
+        // Add the new identity to our list
+        let identityModel = IdentityModel(
+            id: idData,
+            balance: balance,
+            isLocal: false,
+            alias: formInputs["alias"],
+            dpnsName: nil
+        )
+        
+        await MainActor.run {
+            appState.platformState.addIdentity(identityModel)
+        }
+        
+        return [
+            "identityId": idString,
+            "balance": balance,
+            "message": "Identity created successfully"
+        ]
+    }
+    
+    private func executeIdentityTopUp(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // For demo purposes, create mock instant lock and transaction
+        // In production, these would come from the Core wallet
+        let mockInstantLock = Data(repeating: 0, count: 165) // Typical IS lock size
+        let mockTransaction = Data(repeating: 0, count: 250) // Typical tx size
+        let mockPrivateKey = Data(repeating: 1, count: 32) // Mock private key
+        let outputIndex: UInt32 = 0
+        
+        // Create Identity object from handle
+        let identityHandle = try await sdk.identityGet(identityId: identity.idString)
+        // Note: We need a way to convert the dictionary to an Identity object with handle
+        
+        throw SDKError.notImplemented("Identity top-up requires proper Identity handle conversion")
+    }
+    
+    private func executeIdentityCreditTransfer(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let fromIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let toIdentityId = formInputs["toIdentityId"], !toIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("Recipient identity ID is required")
+        }
+        
+        guard let amountString = formInputs["amount"],
+              let amount = UInt64(amountString) else {
+            throw SDKError.invalidParameter("Invalid amount")
+        }
+        
+        guard let privateKeyHex = formInputs["privateKey"], !privateKeyHex.isEmpty else {
+            throw SDKError.invalidParameter("Private key is required")
+        }
+        
+        guard let privateKeyData = Data(hexString: privateKeyHex), privateKeyData.count == 32 else {
+            throw SDKError.invalidParameter("Invalid private key format (must be 32 bytes hex)")
+        }
+        
+        let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
+            fromIdentityId: fromIdentity.idString,
+            toIdentityId: toIdentityId,
+            amount: amount,
+            signerPrivateKey: privateKeyData
+        )
+        
+        // Update sender's balance in our local state
+        await MainActor.run {
+            appState.platformState.updateIdentityBalance(id: fromIdentity.id, newBalance: senderBalance)
+        }
+        
+        return [
+            "senderIdentityId": fromIdentity.idString,
+            "senderBalance": senderBalance,
+            "receiverIdentityId": toIdentityId,
+            "receiverBalance": receiverBalance,
+            "transferAmount": amount,
+            "message": "Credits transferred successfully"
+        ]
+    }
+    
+    private func executeIdentityCreditWithdrawal(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let toAddress = formInputs["toAddress"], !toAddress.isEmpty else {
+            throw SDKError.invalidParameter("Recipient address is required")
+        }
+        
+        guard let amountString = formInputs["amount"],
+              let amount = UInt64(amountString) else {
+            throw SDKError.invalidParameter("Invalid amount")
+        }
+        
+        guard let privateKeyHex = formInputs["privateKey"], !privateKeyHex.isEmpty else {
+            throw SDKError.invalidParameter("Private key is required")
+        }
+        
+        guard let privateKeyData = Data(hexString: privateKeyHex), privateKeyData.count == 32 else {
+            throw SDKError.invalidParameter("Invalid private key format (must be 32 bytes hex)")
+        }
+        
+        let coreFeePerByteString = formInputs["coreFeePerByte"] ?? "0"
+        let coreFeePerByte = UInt32(coreFeePerByteString) ?? 0
+        
+        let newBalance = try await sdk.identityWithdraw(
+            identityId: identity.idString,
+            amount: amount,
+            toAddress: toAddress,
+            coreFeePerByte: coreFeePerByte,
+            signerPrivateKey: privateKeyData
+        )
+        
+        // Update identity balance in our local state
+        await MainActor.run {
+            appState.platformState.updateIdentityBalance(id: identity.id, newBalance: newBalance)
+        }
+        
+        return [
+            "identityId": identity.idString,
+            "newBalance": newBalance,
+            "withdrawnAmount": amount,
+            "toAddress": toAddress,
+            "message": "Credits withdrawn successfully"
+        ]
+    }
+    
+    private func executeDocumentCreate(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Contract ID is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let propertiesJson = formInputs["properties"],
+              let propertiesData = propertiesJson.data(using: .utf8),
+              let properties = try? JSONSerialization.jsonObject(with: propertiesData) as? [String: Any] else {
+            throw SDKError.invalidParameter("Invalid document properties JSON")
+        }
+        
+        // For demo purposes, we need to fetch the contract and create proper handles
+        throw SDKError.notImplemented("Document creation requires proper contract and identity handle conversion")
     }
     
     private func formatResult(_ result: Any) -> String {
