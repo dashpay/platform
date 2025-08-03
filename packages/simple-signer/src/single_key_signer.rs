@@ -1,4 +1,4 @@
-use dashcore::signer;
+use dashcore::{signer, Network};
 use dashcore::PrivateKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -20,6 +20,13 @@ impl SingleKeySigner {
             .map_err(|e| format!("Invalid WIF private key: {}", e))?;
         Ok(Self { private_key })
     }
+
+    pub fn new_from_slice(private_key_data: &[u8], network: Network) -> Result<Self, String> {
+        let private_key = PrivateKey::from_slice(private_key_data, network)
+            .map_err(|e| format!("Invalid private key: {}", e))?;
+        Ok(Self { private_key })
+    }
+
 
     /// Create a new SingleKeySigner from a hex-encoded private key
     pub fn from_hex(private_key_hex: &str, network: dashcore::Network) -> Result<Self, String> {
@@ -70,13 +77,17 @@ impl Signer for SingleKeySigner {
         // Only support ECDSA keys for now
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                eprintln!("we are about to sign {} with {}", hex::encode(data), hex::encode(&self.private_key.inner.secret_bytes()));
                 let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
                 Ok(signature.to_vec().into())
             }
-            _ => Err(ProtocolError::Generic(format!(
-                "SingleKeySigner only supports ECDSA keys, got {:?}",
-                identity_public_key.key_type()
-            ))),
+            _ => {
+                eprintln!("wrong key type: {:?}", identity_public_key.key_type());
+                Err(ProtocolError::Generic(format!(
+                    "SingleKeySigner only supports ECDSA keys, got {:?}",
+                    identity_public_key.key_type()
+                )))
+            },
         }
     }
 

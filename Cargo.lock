@@ -5111,6 +5111,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
+ "simple-signer",
  "thiserror 2.0.12",
  "tokio",
  "tracing",

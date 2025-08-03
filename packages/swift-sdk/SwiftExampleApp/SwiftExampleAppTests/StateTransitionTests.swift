@@ -84,15 +84,6 @@ final class StateTransitionTests: XCTestCase {
         
         print("All checks passed")
         
-        // Try to call a simple SDK method first
-        do {
-            print("Testing SDK identity fetch...")
-            let identity = try await sdk.identityGet(identityId: testIdentityId)
-            print("Identity fetched successfully: \(identity)")
-        } catch {
-            print("Identity fetch failed: \(error)")
-        }
-        
         // Now try the actual transfer
         let recipientId = "HccabTZZpMEDAqU4oQFk3PE47kS6jDDmCjoxR88gFttA"
         let amount: UInt64 = 10_000_000
@@ -424,6 +415,180 @@ final class StateTransitionTests: XCTestCase {
         print("✅ Private keys decoded successfully")
     }
     
+    func testSignerCreation() throws {
+        print("🔄 Testing signer creation in isolation")
+        
+        print("Private key: \(key3Private.hexEncodedString())")
+        print("Private key length: \(key3Private.count) bytes")
+        
+        // Create signer from private key
+        let signerResult = key3Private.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(key3Private.count)
+            )
+        }
+        
+        if let error = signerResult.error {
+            let errorString = String(cString: error.pointee.message)
+            dash_sdk_error_free(error)
+            XCTFail("Failed to create signer: \(errorString)")
+            return
+        }
+        
+        guard let signer = signerResult.data else {
+            XCTFail("Failed to create signer: no data returned")
+            return
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        print("✅ Signer created successfully")
+        print("Signer handle: \(signer)")
+        
+        // Test actual signing
+        print("🔄 Testing actual signing operation")
+        
+        // Create some test data to sign
+        let testData = "Hello, Dash Platform!".data(using: .utf8)!
+        print("Test data to sign: \(testData.hexEncodedString())")
+        print("Test data length: \(testData.count) bytes")
+        
+        // Try to sign the data
+        let signResult = testData.withUnsafeBytes { dataBytes in
+            dash_sdk_signer_sign(
+                OpaquePointer(signer)!,
+                dataBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(testData.count)
+            )
+        }
+        
+        if let error = signResult.error {
+            let errorString = String(cString: error.pointee.message)
+            dash_sdk_error_free(error)
+            XCTFail("Failed to sign data: \(errorString)")
+            return
+        }
+        
+        guard let signaturePtr = signResult.data else {
+            XCTFail("No signature data returned")
+            return
+        }
+        
+        // The result should be a signature structure
+        let signature = signaturePtr.assumingMemoryBound(to: DashSDKSignature.self).pointee
+        
+        // Convert signature bytes to Data
+        let signatureData = Data(bytes: signature.signature, count: Int(signature.signature_len))
+        print("✅ Signature created successfully!")
+        print("Signature: \(signatureData.hexEncodedString())")
+        print("Signature length: \(signatureData.count) bytes")
+        
+        // Free the signature
+        dash_sdk_signature_free(signaturePtr.assumingMemoryBound(to: DashSDKSignature.self))
+        
+        // Verify signature properties
+        XCTAssertEqual(signatureData.count, 65, "ECDSA signature should be 65 bytes (r + s)")
+        
+        print("✅ Signer creation and signing test completed successfully")
+    }
+    
+    func testMinimalTransferFFI() async throws {
+        print("🔄 Testing minimal transfer at FFI level")
+        
+        // Create signer
+        let signerResult = key3Private.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(key3Private.count)
+            )
+        }
+        
+        guard signerResult.error == nil, let signer = signerResult.data else {
+            XCTFail("Failed to create signer")
+            return
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        print("✅ Signer created")
+        
+        // Fetch identity handle directly
+        let fetchResult = testIdentityId.withCString { idCStr in
+            dash_sdk_identity_fetch_handle(sdk.handle, idCStr)
+        }
+        
+        guard fetchResult.error == nil, let identityHandle = fetchResult.data else {
+            if let error = fetchResult.error {
+                let errorString = String(cString: error.pointee.message)
+                dash_sdk_error_free(error)
+                XCTFail("Failed to fetch identity: \(errorString)")
+            } else {
+                XCTFail("Failed to fetch identity")
+            }
+            return
+        }
+        
+        defer {
+            dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+        }
+        
+        print("✅ Identity handle fetched")
+        
+        // Try the actual transfer call with minimal amount
+        let recipientId = "HccabTZZpMEDAqU4oQFk3PE47kS6jDDmCjoxR88gFttA"
+        let amount: UInt64 = 1000 // Very small amount
+        
+        print("🔄 Calling dash_sdk_identity_transfer_credits...")
+        print("From identity handle: \(identityHandle)")
+        print("To: \(recipientId)")
+        print("Amount: \(amount)")
+        print("Signer: \(signer)")
+        
+        let result = recipientId.withCString { toIdCStr in
+            dash_sdk_identity_transfer_credits(
+                sdk.handle,
+                OpaquePointer(identityHandle)!,
+                toIdCStr,
+                amount,
+                0, // Auto-select key
+                OpaquePointer(signer)!,
+                nil  // Default put settings
+            )
+        }
+        
+        if let error = result.error {
+            let errorString = String(cString: error.pointee.message)
+            dash_sdk_error_free(error)
+            print("❌ Transfer failed with FFI error: \(errorString)")
+            XCTFail("Transfer failed: \(errorString)")
+            return
+        }
+        
+        guard let transferResultPtr = result.data else {
+            XCTFail("No transfer result data returned")
+            return
+        }
+        
+        let transferResult = transferResultPtr.assumingMemoryBound(to: DashSDKTransferCreditsResult.self).pointee
+        let senderBalance = transferResult.sender_balance
+        let receiverBalance = transferResult.receiver_balance
+        
+        // Free the transfer result
+        dash_sdk_transfer_credits_result_free(transferResultPtr.assumingMemoryBound(to: DashSDKTransferCreditsResult.self))
+        
+        print("✅ Transfer successful!")
+        print("Sender new balance: \(senderBalance)")
+        print("Receiver new balance: \(receiverBalance)")
+        
+        XCTAssertTrue(senderBalance >= 0)
+        XCTAssertTrue(receiverBalance > 0)
+    }
+    
     func testFetchIdentityBalance() async throws {
         print("🔄 Fetching identity balance")
         
@@ -530,5 +695,9 @@ extension Data {
         }
         
         return result
+    }
+    
+    func hexEncodedString() -> String {
+        return map { String(format: "%02hhx", $0) }.joined()
     }
 }

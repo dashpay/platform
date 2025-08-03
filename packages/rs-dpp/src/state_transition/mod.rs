@@ -597,7 +597,9 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreditTransfer(st) => {
+                eprintln!("🔵 signing: verifying key level and purpose {:?} {:?}", identity_public_key, options);
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                eprintln!("🔵 signing: verified key level and purpose");
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreate(_) => {
@@ -615,9 +617,13 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
         }
+        eprintln!("🔵 signing: a");
         let data = self.signable_bytes()?;
+        eprintln!("🔵 signing: b");
         self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        eprintln!("🔵 signing: c");
         self.set_signature_public_key_id(identity_public_key.id());
+        eprintln!("🔵 signing: d");
         Ok(())
     }
 
