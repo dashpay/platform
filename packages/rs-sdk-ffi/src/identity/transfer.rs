@@ -191,7 +191,27 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         
         eprintln!("🔵 dash_sdk_identity_transfer_credits: Defensive checks complete");
         
-        eprintln!("🔵 dash_sdk_identity_transfer_credits: Calling from_identity.transfer_credits...");
+        // Additional check on the signing_key if present
+        if let Some(ref key) = signing_key {
+            eprintln!("🔵 dash_sdk_identity_transfer_credits: Signing key details:");
+            eprintln!("  - Key ID: {}", key.id());
+            eprintln!("  - Purpose: {:?}", key.purpose());
+            eprintln!("  - Security level: {:?}", key.security_level());
+            eprintln!("  - Key type: {:?}", key.key_type());
+            eprintln!("  - Read only: {}", key.read_only());
+            
+            // Try to access the key data to see if it crashes here
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _data = key.data();
+                eprintln!("  - Key data length: {} bytes", key.data().len());
+            })) {
+                Ok(_) => eprintln!("  - Key data is accessible"),
+                Err(_) => eprintln!("  ❌ Key data access caused panic!"),
+            }
+        }
+        
+        eprintln!("🔵 dash_sdk_identity_transfer_credits: About to call SDK's transfer_credits method");
+        eprintln!("🔵 dash_sdk_identity_transfer_credits: This will internally call IdentityCreditTransferTransition::try_from_identity");
         
         let transfer_result = from_identity
             .transfer_credits(&wrapper.sdk, to_id, amount, signing_key, *signer, settings)

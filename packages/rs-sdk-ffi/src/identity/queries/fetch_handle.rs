@@ -3,6 +3,8 @@
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::{Purpose, SecurityLevel, KeyType};
 use dash_sdk::platform::Fetch;
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -76,11 +78,34 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
     match result {
         Ok(Some(identity)) => {
             eprintln!("🔵 dash_sdk_identity_fetch_handle: Identity fetched successfully");
+            eprintln!("🔵 dash_sdk_identity_fetch_handle: Identity ID: {:?}", identity.id());
             eprintln!("🔵 dash_sdk_identity_fetch_handle: Identity balance: {}", identity.balance());
+            eprintln!("🔵 dash_sdk_identity_fetch_handle: Identity revision: {}", identity.revision());
             eprintln!("🔵 dash_sdk_identity_fetch_handle: Number of public keys: {}", identity.public_keys().len());
+            
+            // List all keys
+            for (key_id, key) in identity.public_keys() {
+                eprintln!("🔵 dash_sdk_identity_fetch_handle: Key {}: purpose={:?}, type={:?}", 
+                    key_id, key.purpose(), key.key_type());
+            }
+            
+            // Verify we can find a transfer key
+            let transfer_key = identity.get_first_public_key_matching(
+                Purpose::TRANSFER,
+                dash_sdk::dpp::identity::SecurityLevel::full_range().into(),
+                dash_sdk::dpp::identity::KeyType::all_key_types().into(),
+                true,
+            );
+            
+            match transfer_key {
+                Some(key) => eprintln!("🔵 dash_sdk_identity_fetch_handle: Found transfer key with ID: {}", key.id()),
+                None => eprintln!("⚠️ dash_sdk_identity_fetch_handle: No transfer key found!"),
+            }
             
             // Create handle from the fetched identity
             let handle = Box::into_raw(Box::new(identity)) as *mut IdentityHandle;
+            eprintln!("🔵 dash_sdk_identity_fetch_handle: Created handle at: {:p}", handle);
+            
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
                 DashSDKResultDataType::ResultIdentityHandle,

@@ -145,7 +145,7 @@ final class StateTransitionTests: XCTestCase {
                 fromIdentity: OpaquePointer(identityHandle)!,
                 toIdentityId: recipientId,
                 amount: amount,
-                publicKeyId: 3, // Transfer key ID
+                publicKeyId: 0, // Auto-select transfer key
                 signer: OpaquePointer(signer)!
             )
             
