@@ -3,17 +3,17 @@
 //! This module provides function pointer types that allow Platform SDK to call
 //! Core SDK functionality without direct compile-time dependencies.
 
+use once_cell::sync::OnceCell;
 use std::ffi::c_char;
 use std::os::raw::c_void;
 use std::sync::Arc;
-use once_cell::sync::OnceCell;
 use std::sync::RwLock;
 
-use drive_proof_verifier::ContextProvider;
-use dash_sdk::error::ContextProviderError;
 use dash_sdk::dpp::data_contract::TokenConfiguration;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, CoreBlockHeight};
+use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::error::ContextProviderError;
+use drive_proof_verifier::ContextProvider;
 
 /// Result type for FFI callbacks
 #[repr(C)]
@@ -24,10 +24,8 @@ pub struct CallbackResult {
 }
 
 /// Function pointer type for getting platform activation height
-pub type GetPlatformActivationHeightFn = unsafe extern "C" fn(
-    handle: *mut c_void,
-    out_height: *mut u32,
-) -> CallbackResult;
+pub type GetPlatformActivationHeightFn =
+    unsafe extern "C" fn(handle: *mut c_void, out_height: *mut u32) -> CallbackResult;
 
 /// Function pointer type for getting quorum public key
 pub type GetQuorumPublicKeyFn = unsafe extern "C" fn(
@@ -65,22 +63,29 @@ pub fn init_global_callbacks() {
 ///
 /// # Safety
 /// The callbacks must remain valid for the lifetime of the SDK
-pub unsafe fn set_global_callbacks(callbacks: ContextProviderCallbacks) -> Result<(), &'static str> {
+pub unsafe fn set_global_callbacks(
+    callbacks: ContextProviderCallbacks,
+) -> Result<(), &'static str> {
     let storage = GLOBAL_CALLBACKS.get_or_init(|| RwLock::new(None));
-    let mut guard = storage.write().map_err(|_| "Failed to acquire write lock")?;
+    let mut guard = storage
+        .write()
+        .map_err(|_| "Failed to acquire write lock")?;
     *guard = Some(callbacks);
     Ok(())
 }
 
 /// Get global context provider callbacks
 pub fn get_global_callbacks() -> Option<ContextProviderCallbacks> {
-    GLOBAL_CALLBACKS.get()
+    GLOBAL_CALLBACKS
+        .get()
         .and_then(|storage| storage.read().ok())
-        .and_then(|guard| guard.as_ref().map(|cb| ContextProviderCallbacks {
-            core_handle: cb.core_handle,
-            get_platform_activation_height: cb.get_platform_activation_height,
-            get_quorum_public_key: cb.get_quorum_public_key,
-        }))
+        .and_then(|guard| {
+            guard.as_ref().map(|cb| ContextProviderCallbacks {
+                core_handle: cb.core_handle,
+                get_platform_activation_height: cb.get_platform_activation_height,
+                get_quorum_public_key: cb.get_quorum_public_key,
+            })
+        })
 }
 
 /// Context provider implementation using callbacks
@@ -115,7 +120,7 @@ impl ContextProvider for CallbackContextProvider {
 
         unsafe {
             let mut public_key = [0u8; 48];
-            
+
             let result = callback(
                 self.callbacks.core_handle,
                 quorum_type,
@@ -128,7 +133,10 @@ impl ContextProvider for CallbackContextProvider {
                 Ok(public_key)
             } else {
                 let error_msg = if result.error_message.is_null() {
-                    format!("Failed to get quorum public key: error code {}", result.error_code)
+                    format!(
+                        "Failed to get quorum public key: error code {}",
+                        result.error_code
+                    )
                 } else {
                     let c_str = std::ffi::CStr::from_ptr(result.error_message);
                     c_str.to_string_lossy().into_owned()
@@ -143,16 +151,16 @@ impl ContextProvider for CallbackContextProvider {
 
         unsafe {
             let mut height = 0u32;
-            let result = callback(
-                self.callbacks.core_handle,
-                &mut height,
-            );
+            let result = callback(self.callbacks.core_handle, &mut height);
 
             if result.success {
                 Ok(height)
             } else {
                 let error_msg = if result.error_message.is_null() {
-                    format!("Failed to get platform activation height: error code {}", result.error_code)
+                    format!(
+                        "Failed to get platform activation height: error code {}",
+                        result.error_code
+                    )
                 } else {
                     let c_str = std::ffi::CStr::from_ptr(result.error_message);
                     c_str.to_string_lossy().into_owned()

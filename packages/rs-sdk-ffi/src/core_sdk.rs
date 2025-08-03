@@ -1,12 +1,12 @@
 //! Core SDK FFI bindings
 //!
 //! This module provides FFI bindings for the Core SDK (SPV functionality).
-//! It exposes Core SDK functions under the `dash_core_*` namespace to keep them 
+//! It exposes Core SDK functions under the `dash_core_*` namespace to keep them
 //! separate from Platform SDK functions in the unified SDK.
 
+use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 use dash_spv_ffi::*;
 use std::ffi::{c_char, CStr};
-use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
 // Note: We use FFIClientConfig and FFIDashSpvClient directly instead of type aliases
 // to avoid C header generation issues with cbindgen
@@ -21,7 +21,7 @@ pub extern "C" fn dash_core_sdk_init() -> i32 {
 }
 
 /// Create a Core SDK client with testnet config
-/// 
+///
 /// # Safety
 /// - Returns null on failure
 #[no_mangle]
@@ -34,15 +34,15 @@ pub unsafe extern "C" fn dash_core_sdk_create_client_testnet() -> *mut FFIDashSp
 
     // Create the actual SPV client
     let client = dash_spv_ffi::dash_spv_ffi_client_new(config);
-    
+
     // Clean up the config
     dash_spv_ffi::dash_spv_ffi_config_destroy(config);
-    
+
     client
 }
 
 /// Create a Core SDK client with mainnet config
-/// 
+///
 /// # Safety
 /// - Returns null on failure
 #[no_mangle]
@@ -55,15 +55,15 @@ pub unsafe extern "C" fn dash_core_sdk_create_client_mainnet() -> *mut FFIDashSp
 
     // Create the actual SPV client
     let client = dash_spv_ffi::dash_spv_ffi_client_new(config);
-    
+
     // Clean up the config
     dash_spv_ffi::dash_spv_ffi_config_destroy(config);
-    
+
     client
 }
 
 /// Create a Core SDK client with custom config
-/// 
+///
 /// # Safety
 /// - `config` must be a valid CoreSDKConfig pointer
 /// - Returns null on failure
@@ -129,7 +129,7 @@ pub unsafe extern "C" fn dash_core_sdk_sync_to_tip(client: *mut FFIDashSpvClient
 
     dash_spv_ffi::dash_spv_ffi_client_sync_to_tip(
         client,
-        None, // completion_callback
+        None,                 // completion_callback
         std::ptr::null_mut(), // user_data
     )
 }
@@ -147,9 +147,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_sync_progress(
         return std::ptr::null_mut();
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_get_sync_progress(
-        client,
-    )
+    dash_spv_ffi::dash_spv_ffi_client_get_sync_progress(client)
 }
 
 /// Get Core SDK statistics
@@ -165,9 +163,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_stats(
         return std::ptr::null_mut();
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_get_stats(
-        client,
-    )
+    dash_spv_ffi::dash_spv_ffi_client_get_stats(client)
 }
 
 /// Get the current block height
@@ -185,16 +181,14 @@ pub unsafe extern "C" fn dash_core_sdk_get_block_height(
     }
 
     // Get stats and extract block height from sync progress
-    let stats = dash_spv_ffi::dash_spv_ffi_client_get_stats(
-        client,
-    );
-    
+    let stats = dash_spv_ffi::dash_spv_ffi_client_get_stats(client);
+
     if stats.is_null() {
         return -1;
     }
-    
+
     *height = (*stats).header_height;
-    
+
     // Clean up the stats pointer
     dash_spv_ffi::dash_spv_ffi_spv_stats_destroy(stats);
     0
@@ -214,10 +208,7 @@ pub unsafe extern "C" fn dash_core_sdk_watch_address(
         return -1;
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_watch_address(
-        client,
-        address,
-    )
+    dash_spv_ffi::dash_spv_ffi_client_watch_address(client, address)
 }
 
 /// Remove an address from watching
@@ -234,10 +225,7 @@ pub unsafe extern "C" fn dash_core_sdk_unwatch_address(
         return -1;
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_unwatch_address(
-        client,
-        address,
-    )
+    dash_spv_ffi::dash_spv_ffi_client_unwatch_address(client, address)
 }
 
 /// Get balance for all watched addresses
@@ -253,9 +241,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_total_balance(
         return std::ptr::null_mut();
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_get_total_balance(
-        client
-    )
+    dash_spv_ffi::dash_spv_ffi_client_get_total_balance(client)
 }
 
 /// Get platform activation height
@@ -272,10 +258,7 @@ pub unsafe extern "C" fn dash_core_sdk_get_platform_activation_height(
         return -1;
     }
 
-    let result = dash_spv_ffi::ffi_dash_spv_get_platform_activation_height(
-        client,
-        height,
-    );
+    let result = dash_spv_ffi::ffi_dash_spv_get_platform_activation_height(client, height);
 
     // FFIResult has an error_code field
     result.error_code
@@ -342,10 +325,7 @@ pub unsafe extern "C" fn dash_core_sdk_broadcast_transaction(
         return -1;
     }
 
-    dash_spv_ffi::dash_spv_ffi_client_broadcast_transaction(
-        client,
-        transaction_hex,
-    )
+    dash_spv_ffi::dash_spv_ffi_client_broadcast_transaction(client, transaction_hex)
 }
 
 /// Check if Core SDK feature is enabled at runtime
@@ -359,5 +339,3 @@ pub extern "C" fn dash_core_sdk_is_enabled() -> bool {
 pub extern "C" fn dash_core_sdk_version() -> *const c_char {
     dash_spv_ffi::dash_spv_ffi_version()
 }
-
-

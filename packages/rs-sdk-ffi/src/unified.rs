@@ -1,7 +1,7 @@
 //! Unified SDK coordination module
 //!
 //! This module provides unified functions that coordinate between Core SDK and Platform SDK
-//! when both are available. It manages initialization, state synchronization, and 
+//! when both are available. It manages initialization, state synchronization, and
 //! cross-layer operations.
 
 use std::ffi::{c_char, CStr};
@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
-use dash_spv_ffi::{FFIDashSpvClient, FFIClientConfig};
-use crate::types::{SDKHandle, DashSDKConfig};
+use crate::types::{DashSDKConfig, SDKHandle};
+use dash_spv_ffi::{FFIClientConfig, FFIDashSpvClient};
 
 /// Static flag to track unified initialization
 static UNIFIED_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -230,9 +230,7 @@ pub unsafe extern "C" fn dash_unified_sdk_is_integration_enabled(
 /// # Safety
 /// - `handle` must be a valid unified SDK handle
 #[no_mangle]
-pub unsafe extern "C" fn dash_unified_sdk_has_core_sdk(
-    handle: *mut UnifiedSDKHandle,
-) -> bool {
+pub unsafe extern "C" fn dash_unified_sdk_has_core_sdk(handle: *mut UnifiedSDKHandle) -> bool {
     if handle.is_null() {
         return false;
     }
@@ -262,7 +260,7 @@ pub unsafe extern "C" fn dash_unified_sdk_register_core_context(
     }
 
     let handle = &*handle;
-    
+
     if handle.core_client.is_null() || handle.platform_sdk.is_null() {
         return -1;
     }
@@ -296,14 +294,15 @@ pub unsafe extern "C" fn dash_unified_sdk_get_status(
     // Get Core SDK height
     #[cfg(feature = "core")]
     if !handle.core_client.is_null() {
-        let result = crate::core_sdk::dash_core_sdk_get_block_height(handle.core_client, core_height);
+        let result =
+            crate::core_sdk::dash_core_sdk_get_block_height(handle.core_client, core_height);
         if result != 0 {
             *core_height = 0;
         }
     } else {
         *core_height = 0;
     }
-    
+
     #[cfg(not(feature = "core"))]
     {
         *core_height = 0;
@@ -320,7 +319,7 @@ pub unsafe extern "C" fn dash_unified_sdk_get_status(
 pub extern "C" fn dash_unified_sdk_version() -> *const c_char {
     #[cfg(feature = "core")]
     const VERSION_INFO: &str = concat!("unified-", env!("CARGO_PKG_VERSION"), "+core\0");
-    
+
     #[cfg(not(feature = "core"))]
     const VERSION_INFO: &str = concat!("unified-", env!("CARGO_PKG_VERSION"), "+platform-only\0");
     VERSION_INFO.as_ptr() as *const c_char
@@ -344,7 +343,7 @@ mod tests {
     use super::*;
     use crate::types::DashSDKNetwork;
     use std::ptr;
-    
+
     /// Test the basic lifecycle of the unified SDK with core feature enabled
     #[test]
     #[cfg(feature = "core")]
@@ -352,7 +351,7 @@ mod tests {
         // Initialize the unified SDK system
         let init_result = dash_unified_sdk_init();
         assert_eq!(init_result, 0, "Failed to initialize unified SDK");
-        
+
         // Create a testnet configuration for the unified SDK
         let platform_config = DashSDKConfig {
             network: DashSDKNetwork::SDKTestnet,
@@ -361,100 +360,122 @@ mod tests {
             request_retry_count: 3,
             request_timeout_ms: 30000,
         };
-        
+
         // Step 1: Call dash_spv_ffi_config_testnet() to get a pointer to the FFI config object
         let core_config_ptr = dash_spv_ffi::dash_spv_ffi_config_testnet();
         assert!(!core_config_ptr.is_null(), "Failed to create core config");
-        
+
         // Step 2: Create the UnifiedSDKConfig using the pointer
         let unified_config = UnifiedSDKConfig {
             core_config: core_config_ptr,
             platform_config,
             enable_integration: true,
         };
-        
+
         // Step 3: Proceed with the test by passing a reference to dash_unified_sdk_create()
         let handle = unsafe { dash_unified_sdk_create(&unified_config) };
         assert!(!handle.is_null(), "Failed to create unified SDK handle");
-        
+
         // Verify that the core client is available when core feature is enabled
         let core_client = unsafe { dash_unified_sdk_get_core_client(handle) };
-        assert!(!core_client.is_null(), "Core client should not be null when core feature is enabled");
-        
+        assert!(
+            !core_client.is_null(),
+            "Core client should not be null when core feature is enabled"
+        );
+
         // Verify that the platform SDK is available
         let platform_sdk = unsafe { dash_unified_sdk_get_platform_sdk(handle) };
         assert!(!platform_sdk.is_null(), "Platform SDK should not be null");
-        
+
         // Verify integration status
         let integration_enabled = unsafe { dash_unified_sdk_is_integration_enabled(handle) };
         assert!(integration_enabled, "Integration should be enabled");
-        
+
         // Verify core support
         let has_core = unsafe { dash_unified_sdk_has_core_sdk(handle) };
-        assert!(has_core, "Should have core SDK when core feature is enabled");
-        
+        assert!(
+            has_core,
+            "Should have core SDK when core feature is enabled"
+        );
+
         // Clean up the handle
         unsafe { dash_unified_sdk_destroy(handle) };
-        
+
         // Clean up the config pointer
         unsafe { dash_spv_ffi::dash_spv_ffi_config_destroy(core_config_ptr) };
     }
-    
+
     /// Test that unified SDK functions handle null pointers gracefully
     #[test]
     fn test_unified_sdk_null_handling() {
         // Test that destroy function handles null pointer
         unsafe { dash_unified_sdk_destroy(ptr::null_mut()) };
-        
+
         // Test that get functions return null for null input
         #[cfg(feature = "core")]
         {
             let core_client = unsafe { dash_unified_sdk_get_core_client(ptr::null_mut()) };
             assert!(core_client.is_null(), "Should return null for null input");
         }
-        
+
         let platform_sdk = unsafe { dash_unified_sdk_get_platform_sdk(ptr::null_mut()) };
         assert!(platform_sdk.is_null(), "Should return null for null input");
-        
+
         // Test that status functions handle null input
-        let integration_enabled = unsafe { dash_unified_sdk_is_integration_enabled(ptr::null_mut()) };
+        let integration_enabled =
+            unsafe { dash_unified_sdk_is_integration_enabled(ptr::null_mut()) };
         assert!(!integration_enabled, "Should return false for null input");
-        
+
         let has_core = unsafe { dash_unified_sdk_has_core_sdk(ptr::null_mut()) };
         assert!(!has_core, "Should return false for null input");
     }
-    
+
     /// Test unified SDK version information
     #[test]
     fn test_unified_sdk_version() {
         let version = dash_unified_sdk_version();
         assert!(!version.is_null(), "Version string should not be null");
-        
+
         // Convert to Rust string to verify it's valid
         let version_str = unsafe {
             std::ffi::CStr::from_ptr(version)
                 .to_str()
                 .expect("Version should be valid UTF-8")
         };
-        
-        assert!(version_str.starts_with("unified-"), "Version should start with 'unified-'");
-        
+
+        assert!(
+            version_str.starts_with("unified-"),
+            "Version should start with 'unified-'"
+        );
+
         #[cfg(feature = "core")]
-        assert!(version_str.contains("+core"), "Version should contain '+core' when core feature is enabled");
-        
+        assert!(
+            version_str.contains("+core"),
+            "Version should contain '+core' when core feature is enabled"
+        );
+
         #[cfg(not(feature = "core"))]
-        assert!(version_str.contains("+platform-only"), "Version should contain '+platform-only' when core feature is disabled");
+        assert!(
+            version_str.contains("+platform-only"),
+            "Version should contain '+platform-only' when core feature is disabled"
+        );
     }
-    
+
     /// Test unified SDK core support detection
     #[test]
     fn test_unified_sdk_core_support() {
         let has_core_support = dash_unified_sdk_has_core_support();
-        
+
         #[cfg(feature = "core")]
-        assert!(has_core_support, "Should report core support when core feature is enabled");
-        
+        assert!(
+            has_core_support,
+            "Should report core support when core feature is enabled"
+        );
+
         #[cfg(not(feature = "core"))]
-        assert!(!has_core_support, "Should not report core support when core feature is disabled");
+        assert!(
+            !has_core_support,
+            "Should not report core support when core feature is disabled"
+        );
     }
 }

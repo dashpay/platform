@@ -56,7 +56,6 @@ pub use voting::*;
 // Re-export all Core SDK functions and types for unified access
 pub use dash_spv_ffi::*;
 
-
 use std::panic;
 
 /// Initialize the FFI library.
@@ -65,10 +64,10 @@ use std::panic;
 pub extern "C" fn dash_sdk_init() {
     // NOTE: Panic handler setup removed to avoid conflicts with dash-unified-ffi
     // The unified library sets its own panic handler in dash_unified_init()
-    
+
     // Initialize context callbacks storage
     context_callbacks::init_global_callbacks();
-    
+
     // Initialize any other subsystems if needed
 }
 

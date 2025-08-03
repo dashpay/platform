@@ -9,9 +9,9 @@ use dash_sdk::{Sdk, SdkBuilder};
 use std::ffi::CStr;
 use std::str::FromStr;
 
+use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
 use crate::types::{DashSDKConfig, DashSDKNetwork, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
-use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
 
 /// Extended SDK configuration with context provider support
 #[repr(C)]
@@ -87,9 +87,10 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
     // Create runtime
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .thread_name("dash-sdk-worker")
-        .worker_threads(1)  // Reduce threads for mobile
+        .worker_threads(1) // Reduce threads for mobile
         .enable_all()
-        .build() {
+        .build()
+    {
         Ok(rt) => rt,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
@@ -173,9 +174,10 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
     // Create runtime
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .thread_name("dash-sdk-worker")
-        .worker_threads(1)  // Reduce threads for mobile
+        .worker_threads(1) // Reduce threads for mobile
         .enable_all()
-        .build() {
+        .build()
+    {
         Ok(rt) => rt,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
@@ -225,32 +227,36 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
         builder = builder.with_context_provider(provider_wrapper.provider());
     } else if !config.core_sdk_handle.is_null() {
         // Try to create context provider from global callbacks
-        if let Some(callback_provider) = crate::context_callbacks::CallbackContextProvider::from_global() {
+        if let Some(callback_provider) =
+            crate::context_callbacks::CallbackContextProvider::from_global()
+        {
             builder = builder.with_context_provider(callback_provider);
         } else {
             // Fallback to deprecated method (which will also check for global callbacks)
             use crate::context_provider::dash_sdk_context_provider_from_core;
-            
+
             let context_provider_handle = dash_sdk_context_provider_from_core(
                 config.core_sdk_handle,
                 std::ptr::null(),
                 std::ptr::null(),
                 std::ptr::null(),
             );
-            
+
             if context_provider_handle.is_null() {
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InternalError,
                     "Failed to create context provider. Make sure to call dash_sdk_register_context_callbacks first.".to_string(),
                 ));
             }
-            
+
             let provider_wrapper = &*(context_provider_handle as *const ContextProviderWrapper);
             builder = builder.with_context_provider(provider_wrapper.provider());
         }
     } else {
         // No context provider specified - try to use global callbacks if available
-        if let Some(callback_provider) = crate::context_callbacks::CallbackContextProvider::from_global() {
+        if let Some(callback_provider) =
+            crate::context_callbacks::CallbackContextProvider::from_global()
+        {
             builder = builder.with_context_provider(callback_provider);
         }
     }
@@ -298,9 +304,10 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     // Create runtime
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .thread_name("dash-sdk-worker")
-        .worker_threads(1)  // Reduce threads for mobile
+        .worker_threads(1) // Reduce threads for mobile
         .enable_all()
-        .build() {
+        .build()
+    {
         Ok(rt) => rt,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
@@ -310,20 +317,26 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
-    eprintln!("🔵 dash_sdk_create_trusted: Creating trusted context provider for network: {:?}", network);
-    
+    eprintln!(
+        "🔵 dash_sdk_create_trusted: Creating trusted context provider for network: {:?}",
+        network
+    );
+
     // Create trusted context provider
     let trusted_provider = match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
         network,
-        None,  // Use default quorum lookup endpoints
-        std::num::NonZeroUsize::new(100).unwrap(),  // Cache size
+        None,                                      // Use default quorum lookup endpoints
+        std::num::NonZeroUsize::new(100).unwrap(), // Cache size
     ) {
         Ok(provider) => {
             eprintln!("✅ dash_sdk_create_trusted: Trusted context provider created successfully");
             Arc::new(provider)
-        },
+        }
         Err(e) => {
-            eprintln!("❌ dash_sdk_create_trusted: Failed to create trusted context provider: {}", e);
+            eprintln!(
+                "❌ dash_sdk_create_trusted: Failed to create trusted context provider: {}",
+                e
+            );
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
                 format!("Failed to create trusted context provider: {}", e),
@@ -346,21 +359,28 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                     "https://44.239.39.153:1443",
                     "https://35.164.23.245:1443",
                     "https://54.149.33.167:1443",
-                ].join(",");
-                
-                eprintln!("🔵 dash_sdk_create_trusted: Using default testnet addresses: {}", default_addresses);
+                ]
+                .join(",");
+
+                eprintln!(
+                    "🔵 dash_sdk_create_trusted: Using default testnet addresses: {}",
+                    default_addresses
+                );
                 let address_list = match AddressList::from_str(&default_addresses) {
                     Ok(list) => list,
                     Err(e) => {
-                        eprintln!("❌ dash_sdk_create_trusted: Failed to parse default addresses: {}", e);
+                        eprintln!(
+                            "❌ dash_sdk_create_trusted: Failed to parse default addresses: {}",
+                            e
+                        );
                         return DashSDKResult::error(DashSDKError::new(
                             DashSDKErrorCode::InternalError,
                             format!("Failed to parse default addresses: {}", e),
-                        ))
+                        ));
                     }
                 };
                 SdkBuilder::new(address_list).with_network(network)
-            },
+            }
             Network::Dash => {
                 // Use mainnet addresses from WASM SDK
                 let default_addresses = vec![
@@ -372,23 +392,30 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                     "https://178.215.237.134:443",
                     "https://157.66.81.162:443",
                     "https://173.212.232.90:443",
-                ].join(",");
-                
+                ]
+                .join(",");
+
                 eprintln!("🔵 dash_sdk_create_trusted: Using default mainnet addresses");
                 let address_list = match AddressList::from_str(&default_addresses) {
                     Ok(list) => list,
                     Err(e) => {
-                        eprintln!("❌ dash_sdk_create_trusted: Failed to parse default addresses: {}", e);
+                        eprintln!(
+                            "❌ dash_sdk_create_trusted: Failed to parse default addresses: {}",
+                            e
+                        );
                         return DashSDKResult::error(DashSDKError::new(
                             DashSDKErrorCode::InternalError,
                             format!("Failed to parse default addresses: {}", e),
-                        ))
+                        ));
                     }
                 };
                 SdkBuilder::new(address_list).with_network(network)
-            },
+            }
             _ => {
-                eprintln!("❌ dash_sdk_create_trusted: No DAPI addresses for network: {:?}", network);
+                eprintln!(
+                    "❌ dash_sdk_create_trusted: No DAPI addresses for network: {:?}",
+                    network
+                );
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
                     format!("DAPI addresses not available for network: {:?}", network),
@@ -413,19 +440,25 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                 "DAPI addresses cannot be empty for trusted setup".to_string(),
             ));
         } else {
-            eprintln!("🔵 dash_sdk_create_trusted: Using provided DAPI addresses: {}", addresses_str);
+            eprintln!(
+                "🔵 dash_sdk_create_trusted: Using provided DAPI addresses: {}",
+                addresses_str
+            );
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
                 Ok(list) => {
                     eprintln!("✅ dash_sdk_create_trusted: Successfully parsed addresses");
                     list
-                },
+                }
                 Err(e) => {
-                    eprintln!("❌ dash_sdk_create_trusted: Failed to parse addresses: {}", e);
+                    eprintln!(
+                        "❌ dash_sdk_create_trusted: Failed to parse addresses: {}",
+                        e
+                    );
                     return DashSDKResult::error(DashSDKError::new(
                         DashSDKErrorCode::InvalidParameter,
                         format!("Failed to parse DAPI addresses: {}", e),
-                    ))
+                    ));
                 }
             };
 
@@ -436,7 +469,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     // Clone trusted provider for prefetching quorums
     let provider_for_prefetch = Arc::clone(&trusted_provider);
     let provider_for_wrapper = Arc::clone(&trusted_provider);
-    
+
     // Add trusted context provider
     eprintln!("🔵 dash_sdk_create_trusted: Adding trusted context provider to builder");
     let builder = builder.with_context_provider(Arc::clone(&trusted_provider));
@@ -448,7 +481,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         Ok(sdk) => {
             // Prefetch quorums for trusted setup
             eprintln!("🔵 dash_sdk_create_trusted: SDK built, prefetching quorums...");
-            
+
             let runtime_clone = runtime.handle().clone();
             runtime_clone.spawn(async move {
                 // First, try a simple HTTP test
@@ -457,22 +490,26 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                     Ok(_) => eprintln!("✅ Basic HTTP test successful (Google)"),
                     Err(e) => eprintln!("❌ Basic HTTP test failed: {}", e),
                 }
-                
+
                 // Try the quorums endpoint directly
                 eprintln!("🔵 Testing quorums endpoint directly...");
                 match reqwest::get("https://quorums.testnet.networks.dash.org/quorums").await {
                     Ok(resp) => eprintln!("✅ Direct quorums endpoint test successful, status: {}", resp.status()),
                     Err(e) => eprintln!("❌ Direct quorums endpoint test failed: {}", e),
                 }
-                
+
                 // Now try through the provider
                 match provider_for_prefetch.update_quorum_caches().await {
                     Ok(_) => eprintln!("✅ dash_sdk_create_trusted: Successfully prefetched quorums"),
                     Err(e) => eprintln!("⚠️ dash_sdk_create_trusted: Failed to prefetch quorums: {}. Continuing anyway.", e),
                 }
             });
-            
-            let wrapper = Box::new(SDKWrapper::new_with_trusted_provider(sdk, runtime, provider_for_wrapper));
+
+            let wrapper = Box::new(SDKWrapper::new_with_trusted_provider(
+                sdk,
+                runtime,
+                provider_for_wrapper,
+            ));
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
         }
@@ -504,11 +541,13 @@ pub unsafe extern "C" fn dash_sdk_register_context_callbacks(
     }
 
     let callbacks = &*callbacks;
-    match crate::context_callbacks::set_global_callbacks(crate::context_callbacks::ContextProviderCallbacks {
-        core_handle: callbacks.core_handle,
-        get_platform_activation_height: callbacks.get_platform_activation_height,
-        get_quorum_public_key: callbacks.get_quorum_public_key,
-    }) {
+    match crate::context_callbacks::set_global_callbacks(
+        crate::context_callbacks::ContextProviderCallbacks {
+            core_handle: callbacks.core_handle,
+            get_platform_activation_height: callbacks.get_platform_activation_height,
+            get_quorum_public_key: callbacks.get_quorum_public_key,
+        },
+    ) {
         Ok(_) => 0,
         Err(_) => -1,
     }
@@ -547,18 +586,18 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
             core_handle: callbacks.core_handle,
             get_platform_activation_height: callbacks.get_platform_activation_height,
             get_quorum_public_key: callbacks.get_quorum_public_key,
-        }
+        },
     );
-    
+
     let wrapper = Box::new(ContextProviderWrapper::new(context_provider));
     let context_provider_handle = Box::into_raw(wrapper) as *mut ContextProviderHandle;
-    
+
     let extended_config = DashSDKConfigExtended {
         base_config: *config,
         context_provider: context_provider_handle,
         core_sdk_handle: std::ptr::null_mut(),
     };
-    
+
     // Use the extended creation function
     dash_sdk_create_extended(&extended_config)
 }

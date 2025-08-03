@@ -6,11 +6,14 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // Only generate bindings when explicitly requested
-    println!("cargo:warning=Build script running, GENERATE_BINDINGS={:?}", env::var("GENERATE_BINDINGS"));
+    println!(
+        "cargo:warning=Build script running, GENERATE_BINDINGS={:?}",
+        env::var("GENERATE_BINDINGS")
+    );
     if env::var("GENERATE_BINDINGS").is_ok() {
         println!("cargo:warning=Generating unified SDK bindings with cbindgen");
         println!("cargo:warning=OUT_DIR={}", out_dir);
-        
+
         // Enhanced cbindgen configuration for unified SDK
         let config = cbindgen::Config {
             language: cbindgen::Language::C,
@@ -41,7 +44,7 @@ fn main() {
                 ],
                 item_types: vec![
                     cbindgen::ItemType::Functions,
-                    cbindgen::ItemType::Structs, 
+                    cbindgen::ItemType::Structs,
                     cbindgen::ItemType::Enums,
                     cbindgen::ItemType::Constants,
                     cbindgen::ItemType::Globals,
@@ -55,16 +58,19 @@ fn main() {
         // Build unified header with dependency parsing always enabled
         let builder = cbindgen::Builder::new()
             .with_crate(&crate_dir)
-            .with_parse_deps(true)  // Always parse dependencies for complete type definitions
+            .with_parse_deps(true) // Always parse dependencies for complete type definitions
             .with_config(config);
 
         builder
             .generate()
             .expect("Unable to generate unified bindings")
             .write_to_file(Path::new(&out_dir).join("dash_sdk_ffi.h"));
-            
-        println!("cargo:warning=Unified header generated successfully at {}/dash_sdk_ffi.h", out_dir);
-        
+
+        println!(
+            "cargo:warning=Unified header generated successfully at {}/dash_sdk_ffi.h",
+            out_dir
+        );
+
         // Run header combination script to include missing Core SDK types
         let combine_script = Path::new(&crate_dir).join("combine_headers.sh");
         if combine_script.exists() {
@@ -74,11 +80,14 @@ fn main() {
                 .current_dir(&crate_dir)
                 .output()
                 .expect("Failed to run header combination script");
-                
+
             if output.status.success() {
                 println!("cargo:warning=Header combination completed successfully");
             } else {
-                println!("cargo:warning=Header combination failed: {}", String::from_utf8_lossy(&output.stderr));
+                println!(
+                    "cargo:warning=Header combination failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         }
     }

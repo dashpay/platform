@@ -85,7 +85,7 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
                     // This is an approximation - the actual current block height would need a different query
                     let block_height = epoch.first_block_height();
                     let core_height = epoch.first_core_block_height();
-                    
+
                     let json = format!(
                         r#"{{"version":{},"network":"{}","blockHeight":{},"coreHeight":{}}}"#,
                         10, // Protocol version
@@ -98,8 +98,7 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
                     // If no epochs found, return default values
                     let json = format!(
                         r#"{{"version":{},"network":"{}","blockHeight":0,"coreHeight":0}}"#,
-                        10,
-                        network_str
+                        10, network_str
                     );
                     Ok(json)
                 }

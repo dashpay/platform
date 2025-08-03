@@ -1,9 +1,9 @@
 //! Stub implementations for Core SDK FFI functions
-//! 
+//!
 //! These are temporary stubs for testing compilation.
 //! In production, these symbols would be provided by linking against the Core SDK library.
 
-use super::context_provider::{FFIResult, FFIDashSpvClient, CoreSDKHandle};
+use super::context_provider::{CoreSDKHandle, FFIDashSpvClient, FFIResult};
 use std::ffi::c_char;
 
 #[cfg(test)]
@@ -20,7 +20,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_quorum_public_key(
         let test_key = [0u8; 48];
         std::ptr::copy_nonoverlapping(test_key.as_ptr(), out_pubkey, 48);
     }
-    
+
     FFIResult {
         error_code: 0,
         error_message: std::ptr::null(),
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_platform_activation_height(
     if !out_height.is_null() {
         *out_height = 1000000; // Example activation height
     }
-    
+
     FFIResult {
         error_code: 0,
         error_message: std::ptr::null(),
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_platform_activation_height(
 #[cfg(test)]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_core_handle(
-    _client: *mut FFIDashSpvClient
+    _client: *mut FFIDashSpvClient,
 ) -> *mut CoreSDKHandle {
     // Stub implementation
     std::ptr::null_mut()
@@ -55,8 +55,6 @@ pub unsafe extern "C" fn ffi_dash_spv_get_core_handle(
 
 #[cfg(test)]
 #[no_mangle]
-pub unsafe extern "C" fn ffi_dash_spv_release_core_handle(
-    _handle: *mut CoreSDKHandle
-) {
+pub unsafe extern "C" fn ffi_dash_spv_release_core_handle(_handle: *mut CoreSDKHandle) {
     // Stub implementation - nothing to do
 }

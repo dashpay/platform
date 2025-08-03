@@ -9,8 +9,8 @@ mod tests {
         unsafe {
             // Create a mock Core SDK handle
             let mock_client = ptr::null_mut();
-            let core_handle = CoreSDKHandle { 
-                client: mock_client 
+            let core_handle = CoreSDKHandle {
+                client: mock_client,
             };
             let core_handle_ptr = &core_handle as *const CoreSDKHandle as *mut CoreSDKHandle;
 
@@ -22,7 +22,10 @@ mod tests {
                 ptr::null(),
             );
 
-            assert!(!context_provider.is_null(), "Context provider should be created");
+            assert!(
+                !context_provider.is_null(),
+                "Context provider should be created"
+            );
 
             // Clean up
             dash_sdk_context_provider_destroy(context_provider);
@@ -34,8 +37,8 @@ mod tests {
         unsafe {
             // Create a mock Core SDK handle
             let mock_client = ptr::null_mut();
-            let core_handle = CoreSDKHandle { 
-                client: mock_client 
+            let core_handle = CoreSDKHandle {
+                client: mock_client,
             };
             let core_handle_ptr = &core_handle as *const CoreSDKHandle as *mut CoreSDKHandle;
 
@@ -58,7 +61,7 @@ mod tests {
 
             // Create SDK with extended config
             let result = dash_sdk_create_extended(&extended_config);
-            
+
             // In test mode with stubs, this might fail due to missing implementations
             // but we're mainly testing that the code compiles
             println!("SDK creation result - has error: {}", result.tag == 1);

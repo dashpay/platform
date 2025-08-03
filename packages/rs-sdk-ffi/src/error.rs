@@ -104,19 +104,29 @@ impl From<FFIError> for DashSDKError {
             FFIError::SDKError(sdk_err) => {
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
-                
+
                 // Try to determine error type from the message
-                let (code, detailed_msg) = if error_str.contains("timeout") || error_str.contains("Timeout") {
+                let (code, detailed_msg) = if error_str.contains("timeout")
+                    || error_str.contains("Timeout")
+                {
                     (DashSDKErrorCode::Timeout, error_str)
                 } else if error_str.contains("I/O error") || error_str.contains("connection") {
-                    (DashSDKErrorCode::NetworkError, format!("Network connection failed: {}", error_str))
+                    (
+                        DashSDKErrorCode::NetworkError,
+                        format!("Network connection failed: {}", error_str),
+                    )
                 } else if error_str.contains("DAPI") || error_str.contains("dapi") {
                     // Check for specific DAPI issues
-                    if error_str.contains("No available addresses") || error_str.contains("empty address list") {
-                        (DashSDKErrorCode::NetworkError, 
+                    if error_str.contains("No available addresses")
+                        || error_str.contains("empty address list")
+                    {
+                        (DashSDKErrorCode::NetworkError,
                          "Cannot connect to network: No DAPI addresses configured. The SDK needs masternode quorum information to connect to the network.".to_string())
                     } else {
-                        (DashSDKErrorCode::NetworkError, format!("DAPI error: {}", error_str))
+                        (
+                            DashSDKErrorCode::NetworkError,
+                            format!("DAPI error: {}", error_str),
+                        )
                     }
                 } else if error_str.contains("protocol") || error_str.contains("Protocol") {
                     (DashSDKErrorCode::ProtocolError, error_str)
@@ -124,9 +134,12 @@ impl From<FFIError> for DashSDKError {
                     (DashSDKErrorCode::NotFound, error_str)
                 } else {
                     // Default to network error with the original message
-                    (DashSDKErrorCode::NetworkError, format!("Failed to fetch balances: {}", error_str))
+                    (
+                        DashSDKErrorCode::NetworkError,
+                        format!("Failed to fetch balances: {}", error_str),
+                    )
                 };
-                
+
                 (code, detailed_msg)
             }
             FFIError::SerializationError(_) => {

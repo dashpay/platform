@@ -17,7 +17,7 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
     identity_id: *const c_char,
 ) -> DashSDKResult {
     eprintln!("🔵 dash_sdk_identity_fetch: Called");
-    
+
     if sdk_handle.is_null() {
         eprintln!("❌ dash_sdk_identity_fetch: SDK handle is null");
         return DashSDKResult::error(DashSDKError::new(
@@ -41,9 +41,12 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
         Ok(s) => {
             eprintln!("🔵 dash_sdk_identity_fetch: Identity ID string: {}", s);
             s
-        },
+        }
         Err(e) => {
-            eprintln!("❌ dash_sdk_identity_fetch: Failed to convert C string: {}", e);
+            eprintln!(
+                "❌ dash_sdk_identity_fetch: Failed to convert C string: {}",
+                e
+            );
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
@@ -52,9 +55,12 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
         Ok(id) => {
             eprintln!("🔵 dash_sdk_identity_fetch: Parsed identifier successfully");
             id
-        },
+        }
         Err(e) => {
-            eprintln!("❌ dash_sdk_identity_fetch: Failed to parse identity ID: {}", e);
+            eprintln!(
+                "❌ dash_sdk_identity_fetch: Failed to parse identity ID: {}",
+                e
+            );
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 format!("Invalid identity ID: {}", e),
@@ -68,7 +74,10 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
         let fetch_result = Identity::fetch(&wrapper.sdk, id)
             .await
             .map_err(FFIError::from);
-        eprintln!("🔵 dash_sdk_identity_fetch: Fetch completed with result: {:?}", fetch_result.is_ok());
+        eprintln!(
+            "🔵 dash_sdk_identity_fetch: Fetch completed with result: {:?}",
+            fetch_result.is_ok()
+        );
         fetch_result
     });
 

@@ -1,3 +1,5 @@
+mod queries;
+
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::{Document, Fetch, FetchMany};
 use crate::{Error, Sdk};

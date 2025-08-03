@@ -9,17 +9,16 @@ use std::ptr;
 use std::slice;
 use std::str::FromStr;
 
+use dashcore::{Address, Network, Script, Transaction, TxIn, TxOut};
 use key_wallet::{
-    ExtendedPrivKey, ExtendedPubKey,
-    Mnemonic as KeyWalletMnemonic, 
-    Network as KeyWalletNetwork, DerivationPath
+    DerivationPath, ExtendedPrivKey, ExtendedPubKey, Mnemonic as KeyWalletMnemonic,
+    Network as KeyWalletNetwork,
 };
 use secp256k1::Secp256k1;
-use dashcore::{Network, Script, Address, Transaction, TxIn, TxOut};
 use secp256k1::SecretKey;
 
-use dash_spv_ffi::set_last_error;
 use crate::error::FFIError;
+use dash_spv_ffi::set_last_error;
 
 // MARK: - Network Type
 
@@ -44,7 +43,6 @@ impl From<FFIKeyNetwork> for KeyWalletNetwork {
     }
 }
 
-
 // MARK: - Mnemonic
 
 /// Opaque handle for a BIP39 mnemonic
@@ -62,7 +60,8 @@ pub struct FFIMnemonic {
 /// - NULL on error (check dash_get_last_error)
 #[no_mangle]
 pub extern "C" fn dash_key_mnemonic_generate(word_count: u8) -> *mut FFIMnemonic {
-    match KeyWalletMnemonic::generate(word_count as usize, key_wallet::mnemonic::Language::English) {
+    match KeyWalletMnemonic::generate(word_count as usize, key_wallet::mnemonic::Language::English)
+    {
         Ok(mnemonic) => Box::into_raw(Box::new(FFIMnemonic { inner: mnemonic })),
         Err(e) => {
             set_last_error(&format!("Failed to generate mnemonic: {}", e));
@@ -209,9 +208,12 @@ pub extern "C" fn dash_key_xprv_from_seed(
 
     let seed_slice = unsafe { slice::from_raw_parts(seed, 64) };
     let network = network.into();
-    
+
     match ExtendedPrivKey::new_master(network, seed_slice) {
-        Ok(xprv) => Box::into_raw(Box::new(FFIExtendedPrivKey { inner: xprv, network })),
+        Ok(xprv) => Box::into_raw(Box::new(FFIExtendedPrivKey {
+            inner: xprv,
+            network,
+        })),
         Err(e) => {
             set_last_error(&format!("Failed to create master key: {}", e));
             ptr::null_mut()
@@ -248,9 +250,9 @@ pub extern "C" fn dash_key_xprv_derive_child(
     };
 
     match child_number.and_then(|cn| xprv.inner.ckd_priv(&Secp256k1::new(), cn)) {
-        Ok(child) => Box::into_raw(Box::new(FFIExtendedPrivKey { 
-            inner: child, 
-            network: xprv.network 
+        Ok(child) => Box::into_raw(Box::new(FFIExtendedPrivKey {
+            inner: child,
+            network: xprv.network,
         })),
         Err(e) => {
             set_last_error(&format!("Failed to derive child: {}", e));
@@ -288,18 +290,16 @@ pub extern "C" fn dash_key_xprv_derive_path(
     };
 
     match DerivationPath::from_str(path_str) {
-        Ok(derivation_path) => {
-            match xprv.inner.derive_priv(&Secp256k1::new(), &derivation_path) {
-                Ok(derived) => Box::into_raw(Box::new(FFIExtendedPrivKey { 
-                    inner: derived, 
-                    network: xprv.network 
-                })),
-                Err(e) => {
-                    set_last_error(&format!("Failed to derive: {}", e));
-                    ptr::null_mut()
-                }
+        Ok(derivation_path) => match xprv.inner.derive_priv(&Secp256k1::new(), &derivation_path) {
+            Ok(derived) => Box::into_raw(Box::new(FFIExtendedPrivKey {
+                inner: derived,
+                network: xprv.network,
+            })),
+            Err(e) => {
+                set_last_error(&format!("Failed to derive: {}", e));
+                ptr::null_mut()
             }
-        }
+        },
         Err(e) => {
             set_last_error(&format!("Invalid derivation path: {}", e));
             ptr::null_mut()
@@ -324,10 +324,10 @@ pub extern "C" fn dash_key_xprv_to_xpub(xprv: *const FFIExtendedPrivKey) -> *mut
 
     let xprv = unsafe { &*xprv };
     let xpub = ExtendedPubKey::from_priv(&Secp256k1::new(), &xprv.inner);
-    
-    Box::into_raw(Box::new(FFIExtendedPubKey { 
-        inner: xpub, 
-        network: xprv.network 
+
+    Box::into_raw(Box::new(FFIExtendedPubKey {
+        inner: xpub,
+        network: xprv.network,
     }))
 }
 
@@ -352,7 +352,7 @@ pub extern "C" fn dash_key_xprv_private_key(
 
     let xprv = unsafe { &*xprv };
     let key_bytes = xprv.inner.private_key.secret_bytes();
-    
+
     unsafe {
         ptr::copy_nonoverlapping(key_bytes.as_ptr(), key_out, 32);
     }
@@ -390,7 +390,7 @@ pub extern "C" fn dash_key_xpub_public_key(
 
     let xpub = unsafe { &*xpub };
     let key_bytes = xpub.inner.public_key.serialize();
-    
+
     unsafe {
         ptr::copy_nonoverlapping(key_bytes.as_ptr(), key_out, 33);
     }
@@ -430,7 +430,7 @@ pub extern "C" fn dash_key_address_from_pubkey(
 
     let pubkey_slice = unsafe { slice::from_raw_parts(pubkey, 33) };
     let network: Network = network.into();
-    
+
     match secp256k1::PublicKey::from_slice(pubkey_slice) {
         Ok(secp_pk) => {
             let pk = dashcore::PublicKey::new(secp_pk);
@@ -460,10 +460,7 @@ pub extern "C" fn dash_key_address_from_pubkey(
 /// - 1 if valid
 /// - 0 if invalid
 #[no_mangle]
-pub extern "C" fn dash_key_address_validate(
-    address: *const c_char,
-    network: FFIKeyNetwork,
-) -> i32 {
+pub extern "C" fn dash_key_address_validate(address: *const c_char, network: FFIKeyNetwork) -> i32 {
     if address.is_null() {
         return 0;
     }
@@ -474,7 +471,7 @@ pub extern "C" fn dash_key_address_validate(
     };
 
     let expected_network: Network = network.into();
-    
+
     match address_str.parse::<Address<_>>() {
         Ok(addr) => {
             if *addr.network() == expected_network {

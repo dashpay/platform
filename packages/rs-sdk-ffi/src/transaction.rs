@@ -9,16 +9,17 @@ use std::ptr;
 use std::slice;
 
 use dashcore::{
-    Transaction, TxIn, TxOut, OutPoint, Script, ScriptBuf, 
-    Txid, consensus, Network, Amount, EcdsaSighashType,
-    sighash::SighashCache, hashes::{Hash, sha256d},
-    Address, PrivateKey, PublicKey,
+    consensus,
+    hashes::{sha256d, Hash},
+    sighash::SighashCache,
+    Address, Amount, EcdsaSighashType, Network, OutPoint, PrivateKey, PublicKey, Script, ScriptBuf,
+    Transaction, TxIn, TxOut, Txid,
 };
-use secp256k1::{Secp256k1, SecretKey, Message};
+use secp256k1::{Message, Secp256k1, SecretKey};
 
-use dash_spv_ffi::set_last_error;
 use crate::error::FFIError;
 use crate::key_wallet::FFIKeyNetwork;
+use dash_spv_ffi::set_last_error;
 
 // MARK: - Transaction Types
 
@@ -69,7 +70,7 @@ pub extern "C" fn dash_tx_create() -> *mut FFITransaction {
         output: vec![],
         special_transaction_payload: None,
     };
-    
+
     Box::into_raw(Box::new(FFITransaction { inner: tx }))
 }
 
@@ -83,10 +84,7 @@ pub extern "C" fn dash_tx_create() -> *mut FFITransaction {
 /// - 0 on success
 /// - -1 on error
 #[no_mangle]
-pub extern "C" fn dash_tx_add_input(
-    tx: *mut FFITransaction,
-    input: *const FFITxIn,
-) -> i32 {
+pub extern "C" fn dash_tx_add_input(tx: *mut FFITransaction, input: *const FFITxIn) -> i32 {
     if tx.is_null() || input.is_null() {
         set_last_error("tx or input");
         return -1;
@@ -94,7 +92,7 @@ pub extern "C" fn dash_tx_add_input(
 
     let tx = unsafe { &mut *tx };
     let input = unsafe { &*input };
-    
+
     // Convert txid
     // Convert 32-byte array to Txid
     let txid = match Txid::from_slice(&input.txid) {
@@ -104,17 +102,16 @@ pub extern "C" fn dash_tx_add_input(
             return -1;
         }
     };
-    
+
     // Convert script
     let script_sig = if input.script_sig.is_null() || input.script_sig_len == 0 {
         ScriptBuf::new()
     } else {
-        let script_slice = unsafe { 
-            slice::from_raw_parts(input.script_sig, input.script_sig_len as usize) 
-        };
+        let script_slice =
+            unsafe { slice::from_raw_parts(input.script_sig, input.script_sig_len as usize) };
         ScriptBuf::from(script_slice.to_vec())
     };
-    
+
     let tx_in = TxIn {
         previous_output: OutPoint {
             txid,
@@ -124,7 +121,7 @@ pub extern "C" fn dash_tx_add_input(
         sequence: input.sequence,
         witness: Default::default(),
     };
-    
+
     tx.inner.input.push(tx_in);
     0
 }
@@ -139,10 +136,7 @@ pub extern "C" fn dash_tx_add_input(
 /// - 0 on success
 /// - -1 on error
 #[no_mangle]
-pub extern "C" fn dash_tx_add_output(
-    tx: *mut FFITransaction,
-    output: *const FFITxOut,
-) -> i32 {
+pub extern "C" fn dash_tx_add_output(tx: *mut FFITransaction, output: *const FFITxOut) -> i32 {
     if tx.is_null() || output.is_null() {
         set_last_error("tx or output");
         return -1;
@@ -150,23 +144,23 @@ pub extern "C" fn dash_tx_add_output(
 
     let tx = unsafe { &mut *tx };
     let output = unsafe { &*output };
-    
+
     // Convert script
     let script_pubkey = if output.script_pubkey.is_null() || output.script_pubkey_len == 0 {
         set_last_error("Output script cannot be empty");
         return -1;
     } else {
-        let script_slice = unsafe { 
-            slice::from_raw_parts(output.script_pubkey, output.script_pubkey_len as usize) 
+        let script_slice = unsafe {
+            slice::from_raw_parts(output.script_pubkey, output.script_pubkey_len as usize)
         };
         ScriptBuf::from(script_slice.to_vec())
     };
-    
+
     let tx_out = TxOut {
         value: output.amount,
         script_pubkey,
     };
-    
+
     tx.inner.output.push(tx_out);
     0
 }
@@ -181,10 +175,7 @@ pub extern "C" fn dash_tx_add_output(
 /// - 0 on success
 /// - -1 on error
 #[no_mangle]
-pub extern "C" fn dash_tx_get_txid(
-    tx: *const FFITransaction,
-    txid_out: *mut u8,
-) -> i32 {
+pub extern "C" fn dash_tx_get_txid(tx: *const FFITransaction, txid_out: *mut u8) -> i32 {
     if tx.is_null() || txid_out.is_null() {
         set_last_error("tx or txid_out");
         return -1;
@@ -192,7 +183,7 @@ pub extern "C" fn dash_tx_get_txid(
 
     let tx = unsafe { &*tx };
     let txid = tx.inner.txid();
-    
+
     unsafe {
         let txid_bytes = txid.as_byte_array();
         ptr::copy_nonoverlapping(txid_bytes.as_ptr(), txid_out, 32);
@@ -224,27 +215,25 @@ pub extern "C" fn dash_tx_serialize(
     let tx = unsafe { &*tx };
     let serialized = consensus::serialize(&tx.inner);
     let size = serialized.len() as u32;
-    
+
     unsafe {
         if out_buf.is_null() {
             // Just return size
             *out_len = size;
             return 0;
         }
-        
+
         let provided_size = *out_len;
         if provided_size < size {
-            set_last_error(&
-                format!("Buffer too small: {} < {}", provided_size, size)
-            );
+            set_last_error(&format!("Buffer too small: {} < {}", provided_size, size));
             *out_len = size;
             return -1;
         }
-        
+
         ptr::copy_nonoverlapping(serialized.as_ptr(), out_buf, serialized.len());
         *out_len = size;
     }
-    
+
     0
 }
 
@@ -258,17 +247,14 @@ pub extern "C" fn dash_tx_serialize(
 /// - Pointer to FFITransaction on success
 /// - NULL on error
 #[no_mangle]
-pub extern "C" fn dash_tx_deserialize(
-    data: *const u8,
-    len: u32,
-) -> *mut FFITransaction {
+pub extern "C" fn dash_tx_deserialize(data: *const u8, len: u32) -> *mut FFITransaction {
     if data.is_null() {
         set_last_error("data");
         return ptr::null_mut();
     }
 
     let slice = unsafe { slice::from_raw_parts(data, len as usize) };
-    
+
     match consensus::deserialize::<Transaction>(slice) {
         Ok(tx) => Box::into_raw(Box::new(FFITransaction { inner: tx })),
         Err(e) => {
@@ -318,14 +304,12 @@ pub extern "C" fn dash_tx_sighash(
     }
 
     let tx = unsafe { &*tx };
-    let script_slice = unsafe { 
-        slice::from_raw_parts(script_pubkey, script_pubkey_len as usize) 
-    };
+    let script_slice = unsafe { slice::from_raw_parts(script_pubkey, script_pubkey_len as usize) };
     let script = Script::from_bytes(script_slice);
-    
+
     let sighash_type = EcdsaSighashType::from_consensus(sighash_type);
     let cache = SighashCache::new(&tx.inner);
-    
+
     match cache.legacy_signature_hash(input_index as usize, script, sighash_type.to_u32()) {
         Ok(hash) => {
             unsafe {
@@ -370,7 +354,7 @@ pub extern "C" fn dash_tx_sign_input(
 
     let tx = unsafe { &mut *tx };
     let input_index = input_index as usize;
-    
+
     if input_index >= tx.inner.input.len() {
         set_last_error("Input index out of range");
         return -1;
@@ -385,7 +369,8 @@ pub extern "C" fn dash_tx_sign_input(
         script_pubkey_len,
         sighash_type,
         sighash.as_mut_ptr(),
-    ) != 0 {
+    ) != 0
+    {
         return -1;
     }
 
@@ -403,20 +388,20 @@ pub extern "C" fn dash_tx_sign_input(
     let secp = Secp256k1::new();
     let message = Message::from_digest(sighash);
     let sig = secp.sign_ecdsa(&message, &privkey);
-    
+
     // Build signature script (simplified P2PKH)
     let mut sig_bytes = sig.serialize_der().to_vec();
     sig_bytes.push(sighash_type as u8);
-    
+
     let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &privkey);
     let pubkey_bytes = pubkey.serialize();
-    
+
     let mut script_sig = vec![];
     script_sig.push(sig_bytes.len() as u8);
     script_sig.extend_from_slice(&sig_bytes);
     script_sig.push(pubkey_bytes.len() as u8);
     script_sig.extend_from_slice(&pubkey_bytes);
-    
+
     tx.inner.input[input_index].script_sig = ScriptBuf::from(script_sig);
     0
 }
@@ -445,33 +430,31 @@ pub extern "C" fn dash_script_p2pkh(
     }
 
     let hash_slice = unsafe { slice::from_raw_parts(pubkey_hash, 20) };
-    
+
     // Build P2PKH script: OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG
     let mut script = vec![0x76, 0xa9, 0x14]; // OP_DUP OP_HASH160 PUSH(20)
     script.extend_from_slice(hash_slice);
     script.extend_from_slice(&[0x88, 0xac]); // OP_EQUALVERIFY OP_CHECKSIG
-    
+
     let size = script.len() as u32;
-    
+
     unsafe {
         if out_buf.is_null() {
             *out_len = size;
             return 0;
         }
-        
+
         let provided_size = *out_len;
         if provided_size < size {
-            set_last_error(&
-                format!("Buffer too small: {} < {}", provided_size, size)
-            );
+            set_last_error(&format!("Buffer too small: {} < {}", provided_size, size));
             *out_len = size;
             return -1;
         }
-        
+
         ptr::copy_nonoverlapping(script.as_ptr(), out_buf, script.len());
         *out_len = size;
     }
-    
+
     0
 }
 
@@ -505,14 +488,14 @@ pub extern "C" fn dash_address_to_pubkey_hash(
     };
 
     let expected_network: Network = network.into();
-    
+
     match address_str.parse::<dashcore::Address<_>>() {
         Ok(addr) => {
             if *addr.network() != expected_network {
                 set_last_error("Address network mismatch");
                 return -1;
             }
-            
+
             match addr.payload() {
                 dashcore::address::Payload::PubkeyHash(hash) => {
                     unsafe {

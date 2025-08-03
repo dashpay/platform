@@ -6,14 +6,14 @@
 use std::ffi::{c_char, CStr};
 use std::sync::Arc;
 
-use drive_proof_verifier::ContextProvider;
-use dash_sdk::error::ContextProviderError;
 use dash_sdk::dpp::data_contract::TokenConfiguration;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, CoreBlockHeight};
+use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::error::ContextProviderError;
+use drive_proof_verifier::ContextProvider;
 
-use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 use crate::context_callbacks::{CallbackContextProvider, ContextProviderCallbacks};
+use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
 /// Handle for Core SDK that can be passed to Platform SDK
 /// This matches the definition from dash_spv_ffi.h
@@ -137,7 +137,10 @@ impl ContextProvider for CoreBridgeContextProvider {
 /// - `core_handle` must be a valid Core SDK handle
 /// - String parameters must be valid UTF-8 C strings or null
 #[no_mangle]
-#[deprecated(since = "2.0.0", note = "Use dash_sdk_context_provider_from_callbacks instead")]
+#[deprecated(
+    since = "2.0.0",
+    note = "Use dash_sdk_context_provider_from_callbacks instead"
+)]
 pub unsafe extern "C" fn dash_sdk_context_provider_from_core(
     core_handle: *mut CoreSDKHandle,
     _core_rpc_url: *const c_char,
@@ -176,7 +179,7 @@ pub unsafe extern "C" fn dash_sdk_context_provider_from_callbacks(
         get_platform_activation_height: callbacks.get_platform_activation_height,
         get_quorum_public_key: callbacks.get_quorum_public_key,
     });
-    
+
     let wrapper = Box::new(ContextProviderWrapper::new(provider));
     Box::into_raw(wrapper) as *mut ContextProviderHandle
 }
