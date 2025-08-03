@@ -13,6 +13,7 @@ pub mod queries;
 pub mod topup;
 pub mod transfer;
 pub mod withdraw;
+pub mod test_transfer;
 
 // Re-export all public functions for convenient access
 pub use create::dash_sdk_identity_create;
@@ -42,6 +43,7 @@ pub use transfer::{
     DashSDKTransferCreditsResult,
 };
 pub use withdraw::dash_sdk_identity_withdraw;
+pub use test_transfer::dash_sdk_test_identity_transfer_crash;
 
 // Re-export query functions
 pub use queries::{
