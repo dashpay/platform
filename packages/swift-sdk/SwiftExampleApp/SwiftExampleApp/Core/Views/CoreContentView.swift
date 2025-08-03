@@ -6,6 +6,8 @@ struct CoreContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
     @State private var showingCreateWallet = false
+    @State private var lastTapLocation: CGPoint = .zero
+    @State private var showTapCoordinates = false
     
     var body: some View {
         VStack {
@@ -33,6 +35,33 @@ struct CoreContentView: View {
                             .padding(.vertical, 10)
                             .background(Color.blue)
                             .cornerRadius(8)
+                    }
+                    
+                    // Debug button to test tap coordinates
+                    Button {
+                        showTapCoordinates.toggle()
+                    } label: {
+                        VStack {
+                            Text("Tap Coordinate Test")
+                                .font(.headline)
+                            Text("Tap anywhere on this button")
+                                .font(.caption)
+                            if showTapCoordinates {
+                                Text("Last tap: (\(Int(lastTapLocation.x)), \(Int(lastTapLocation.y)))")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 100)
+                        .padding()
+                        .background(Color.gray.opacity(0.2))
+                        .cornerRadius(10)
+                    }
+                    .padding(.horizontal)
+                    .onTapGesture { location in
+                        lastTapLocation = location
+                        showTapCoordinates = true
+                        print("Tapped at: \(location)")
                     }
                     
                     Spacer()
