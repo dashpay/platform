@@ -131,7 +131,7 @@ struct StateTransitionsView: View {
                 Picker("Identity", selection: $selectedIdentityId) {
                     Text("Select...").tag("")
                     ForEach(appState.platformState.identities, id: \.idString) { identity in
-                        Text(identity.alias ?? identity.idString)
+                        Text(identity.alias ?? identity.idHexString)
                             .tag(identity.idString)
                     }
                 }

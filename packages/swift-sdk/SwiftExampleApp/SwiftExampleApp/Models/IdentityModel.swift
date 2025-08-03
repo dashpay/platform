@@ -30,13 +30,22 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     let dppIdentity: DPPIdentity?
     let publicKeys: [IdentityPublicKey]
     
-    /// Get the identity ID as a hex string
+    // Cache the base58 representation
+    private let _base58String: String
+    
+    /// Get the identity ID as a base58 string (for FFI calls)
     var idString: String {
+        _base58String
+    }
+    
+    /// Get the identity ID as a hex string (for display when needed)
+    var idHexString: String {
         id.toHexString()
     }
     
     init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
         self.id = id
+        self._base58String = id.toBase58String()
         self.balance = balance
         self.isLocal = isLocal
         self.alias = alias
@@ -59,6 +68,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     init?(from identity: SwiftDashSDK.Identity) {
         guard let idData = Data(hexString: identity.id), idData.count == 32 else { return nil }
         self.id = idData
+        self._base58String = idData.toBase58String()
         self.balance = identity.balance
         self.isLocal = false
         self.alias = nil
@@ -75,6 +85,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     /// Create from DPP Identity
     init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], dpnsName: String? = nil) {
         self.id = dppIdentity.id  // DPPIdentity already uses Data for id
+        self._base58String = dppIdentity.id.toBase58String()
         self.balance = dppIdentity.balance
         self.isLocal = false
         self.alias = alias

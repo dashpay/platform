@@ -173,7 +173,7 @@ struct IdentityRow: View {
                     }
                 }
                 
-                Text(identity.idString)
+                Text(identity.idHexString)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -339,7 +339,7 @@ struct FetchIdentityView: View {
                 if let fetchedIdentity = fetchedIdentity {
                     Section("Fetched Identity") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("ID: \(fetchedIdentity.idString)")
+                            Text("ID: \(fetchedIdentity.idHexString)")
                                 .font(.caption)
                             Text("Balance: \(fetchedIdentity.formattedBalance)")
                                 .font(.subheadline)

@@ -26,7 +26,7 @@ struct IdentityDetailView: View {
                             .foregroundColor(.blue)
                     }
                     
-                    Label(identity.idString, systemImage: "number")
+                    Label(identity.idHexString, systemImage: "number")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
