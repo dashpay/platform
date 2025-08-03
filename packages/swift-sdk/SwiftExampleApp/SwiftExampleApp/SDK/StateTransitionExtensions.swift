@@ -151,23 +151,12 @@ extension SDK {
     }
     
     /// Transfer credits between identities
-    /// NOTE: This function currently has issues because dash_sdk_identity_fetch returns JSON, not an identity handle.
-    /// The dash_sdk_identity_transfer_credits function expects an identity handle.
-    /// See StateTransitionExtensions_transfer_fix.swift for a temporary workaround.
     public func identityTransferCredits(
         fromIdentityId: String,
         toIdentityId: String,
         amount: UInt64,
         signerPrivateKey: Data? = nil
     ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
-        // TEMPORARY: Throw an error to avoid the crash
-        throw SDKError.notImplemented("""
-            Transfer functionality temporarily disabled due to FFI compatibility issue.
-            The identity fetch returns JSON but transfer expects an identity handle.
-            This requires an update to the Rust FFI layer.
-            """)
-        
-        /* Original implementation commented out to avoid crash:
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -307,7 +296,6 @@ extension SDK {
                 }
             }
         }
-        */
     }
     
     /// Withdraw credits from identity
