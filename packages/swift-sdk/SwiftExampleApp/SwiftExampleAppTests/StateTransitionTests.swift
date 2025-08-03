@@ -18,11 +18,16 @@ final class StateTransitionTests: XCTestCase {
         EnvLoader.loadEnvFile()
         
         // Get test configuration from environment
-        testIdentityId = try EnvLoader.getRequired("TEST_IDENTITY_ID")
+        guard let testId = EnvLoader.get("TEST_IDENTITY_ID") else {
+            throw XCTSkip("TEST_IDENTITY_ID not found in environment. Please copy .env.example to .env and add your test credentials.")
+        }
+        testIdentityId = testId
         
         // Decode private keys from base58
-        let key1Base58 = try EnvLoader.getRequired("TEST_KEY_1_PRIVATE")
-        let key3Base58 = try EnvLoader.getRequired("TEST_KEY_3_PRIVATE")
+        guard let key1Base58 = EnvLoader.get("TEST_KEY_1_PRIVATE"),
+              let key3Base58 = EnvLoader.get("TEST_KEY_3_PRIVATE") else {
+            throw XCTSkip("TEST_KEY_1_PRIVATE or TEST_KEY_3_PRIVATE not found in environment. Please copy .env.example to .env and add your test credentials.")
+        }
         
         key1Private = try decodePrivateKey(from: key1Base58)
         key3Private = try decodePrivateKey(from: key3Base58)
@@ -98,11 +103,46 @@ final class StateTransitionTests: XCTestCase {
         print("Amount: \(amount) credits")
         
         do {
-            let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
-                fromIdentityId: testIdentityId,
+            // First, fetch the identity to create a handle
+            let identityDict = try await sdk.identityGet(identityId: testIdentityId)
+            guard let balance = identityDict["balance"] as? UInt64 else {
+                throw XCTSkip("Failed to fetch identity balance")
+            }
+            
+            // Create DPPIdentity
+            guard let idData = Data(hexString: testIdentityId) else {
+                throw XCTSkip("Invalid identity ID format")
+            }
+            
+            let identity = DPPIdentity(
+                id: idData,
+                publicKeys: [:], // Empty for testing
+                balance: balance,
+                revision: 0
+            )
+            
+            // Create signer from private key
+            let signerResult = key3Private.withUnsafeBytes { keyBytes in
+                dash_sdk_signer_create_from_private_key(
+                    keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                    UInt(key3Private.count)
+                )
+            }
+            
+            guard signerResult.error == nil,
+                  let signer = signerResult.data else {
+                throw XCTSkip("Failed to create signer")
+            }
+            
+            defer {
+                dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            }
+            
+            let (senderBalance, receiverBalance) = try await sdk.transferCredits(
+                from: identity,
                 toIdentityId: recipientId,
                 amount: amount,
-                signerPrivateKey: key3Private
+                signer: OpaquePointer(signer)!
             )
             
             print("✅ Transfer successful!")
@@ -196,12 +236,46 @@ final class StateTransitionTests: XCTestCase {
             // Now attempt the transfer
             print("5. Executing transfer...")
             do {
-                print("   Calling identityTransferCredits...")
-                let result = try await sdk.identityTransferCredits(
-                    fromIdentityId: testIdentityId,
+                print("   Creating identity and signer...")
+                
+                // Create DPPIdentity
+                guard let idData = Data(hexString: testIdentityId) else {
+                    throw XCTSkip("Invalid identity ID format")
+                }
+                
+                let identity = try await sdk.identityGet(identityId: testIdentityId)
+                let balance = (identity["balance"] as? UInt64) ?? 0
+                
+                let dppIdentity = DPPIdentity(
+                    id: idData,
+                    publicKeys: [:], // Empty for testing
+                    balance: balance,
+                    revision: 0
+                )
+                
+                // Create signer from private key
+                let signerResult = key3Private.withUnsafeBytes { keyBytes in
+                    dash_sdk_signer_create_from_private_key(
+                        keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                        UInt(key3Private.count)
+                    )
+                }
+                
+                guard signerResult.error == nil,
+                      let signer = signerResult.data else {
+                    throw XCTSkip("Failed to create signer")
+                }
+                
+                defer {
+                    dash_sdk_signer_destroy(OpaquePointer(signer)!)
+                }
+                
+                print("   Calling transferCredits...")
+                let result = try await sdk.transferCredits(
+                    from: dppIdentity,
                     toIdentityId: recipientId,
                     amount: amount,
-                    signerPrivateKey: key3Private
+                    signer: OpaquePointer(signer)!
                 )
                 
                 print("   ✅ Transfer successful!")
@@ -250,12 +324,45 @@ final class StateTransitionTests: XCTestCase {
         print("Amount: \(amount) credits")
         
         // Execute withdrawal using key 3 (transfer key)
-        let newBalance = try await sdk.identityWithdraw(
-            identityId: testIdentityId,
+        
+        // Create DPPIdentity
+        guard let idData = Data(hexString: testIdentityId) else {
+            throw XCTSkip("Invalid identity ID format")
+        }
+        
+        let identityDict = try await sdk.identityGet(identityId: testIdentityId)
+        let balance = (identityDict["balance"] as? UInt64) ?? 0
+        
+        let identity = DPPIdentity(
+            id: idData,
+            publicKeys: [:], // Empty for testing
+            balance: balance,
+            revision: 0
+        )
+        
+        // Create signer from private key
+        let signerResult = key3Private.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(key3Private.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw XCTSkip("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        let newBalance = try await sdk.withdrawFromIdentity(
+            identity,
             amount: amount,
             toAddress: withdrawalAddress,
             coreFeePerByte: 1,
-            signerPrivateKey: key3Private
+            signer: OpaquePointer(signer)!
         )
         
         print("✅ Withdrawal successful!")
