@@ -173,10 +173,21 @@ fn get_contested_resource_voters_for_identity(
 
         let index_values: Vec<Value> = index_values_array
             .into_iter()
-            .map(|hex_str| {
-                let bytes = hex::decode(&hex_str)
-                    .map_err(|e| format!("Failed to decode index value: {}", e))?;
-                Ok(Value::Bytes(bytes))
+            .map(|value_str| {
+                // Check if the value is hex-encoded (all characters are valid hex)
+                if value_str.chars().all(|c| c.is_ascii_hexdigit()) && value_str.len() % 2 == 0 {
+                    // Try to decode as hex
+                    match hex::decode(&value_str) {
+                        Ok(bytes) => Ok(Value::Bytes(bytes)),
+                        Err(_) => {
+                            // If hex decode fails, treat as text
+                            Ok(Value::Text(value_str))
+                        }
+                    }
+                } else {
+                    // Not hex, treat as text string
+                    Ok(Value::Text(value_str))
+                }
             })
             .collect::<Result<Vec<Value>, String>>()?;
 

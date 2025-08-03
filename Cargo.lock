@@ -1554,6 +1554,7 @@ dependencies = [
  "js-sys",
  "lru",
  "rs-dapi-client",
+ "rs-sdk-trusted-context-provider",
  "rustls-pemfile",
  "sanitize-filename",
  "serde",
@@ -3027,6 +3028,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots 1.0.2",
 ]
 
 [[package]]
@@ -4984,6 +4986,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "webpki-roots 1.0.2",
 ]
 
 [[package]]
