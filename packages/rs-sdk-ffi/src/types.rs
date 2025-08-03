@@ -32,6 +32,9 @@ pub struct IdentityPublicKeyHandle {
     _private: [u8; 0],
 }
 
+/// Alias for compatibility
+pub type DashSDKPublicKeyHandle = IdentityPublicKeyHandle;
+
 /// Network type for SDK configuration
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +86,8 @@ pub enum DashSDKResultDataType {
     ResultDataContractHandle = 5,
     /// Map of identity IDs to balances
     IdentityBalanceMap = 6,
+    /// Public key handle
+    ResultPublicKeyHandle = 7,
 }
 
 /// Binary data container for results

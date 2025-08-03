@@ -2,6 +2,7 @@
 
 pub mod create;
 pub mod create_from_components;
+pub mod get_public_key;
 pub mod helpers;
 pub mod info;
 pub mod keys;
@@ -18,6 +19,7 @@ pub use create::dash_sdk_identity_create;
 pub use create_from_components::{
     dash_sdk_identity_create_from_components, DashSDKPublicKeyData,
 };
+pub use get_public_key::dash_sdk_identity_get_public_key_by_id;
 pub use info::{dash_sdk_identity_destroy, dash_sdk_identity_get_info};
 pub use keys::{
     dash_sdk_identity_get_signing_key_for_transition, dash_sdk_identity_get_transfer_private_key,
