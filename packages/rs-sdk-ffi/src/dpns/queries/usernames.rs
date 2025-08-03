@@ -1,17 +1,16 @@
 //! Get DPNS usernames for an identity
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::Arc;
 
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::identifier::Identifier;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use serde_json::json;
-use std::ffi::CString;
 
 /// Get DPNS usernames owned by an identity
 ///
@@ -23,7 +22,7 @@ use std::ffi::CString;
 ///
 /// # Arguments
 /// * `sdk_handle` - Handle to the SDK instance
-/// * `identity_id` - The identity ID to search for (32 bytes)
+/// * `identity_id` - The identity ID to search for (base58 string)
 /// * `limit` - Maximum number of results to return (0 for default of 10)
 ///
 /// # Returns
@@ -32,7 +31,7 @@ use std::ffi::CString;
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_dpns_get_usernames(
     sdk_handle: *const SDKHandle,
-    identity_id: *const u8,
+    identity_id: *const c_char,
     limit: u32,
 ) -> DashSDKResult {
     if sdk_handle.is_null() {
@@ -52,9 +51,15 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_usernames(
     let sdk_wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
     let sdk = &sdk_wrapper.sdk;
 
-    // Convert identity ID from bytes
-    let identity_id_slice = unsafe { std::slice::from_raw_parts(identity_id, 32) };
-    let identifier = match Identifier::from_bytes(identity_id_slice) {
+    // Convert identity ID from string
+    let id_str = match CStr::from_ptr(identity_id).to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            return DashSDKResult::error(FFIError::from(e).into());
+        }
+    };
+
+    let identifier = match Identifier::from_string(id_str, Encoding::Base58) {
         Ok(id) => id,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
