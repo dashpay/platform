@@ -55,6 +55,7 @@ pub use token::*;
 pub use transaction::*;
 pub use types::*;
 pub use unified::*;
+pub use utils::*;
 pub use voting::*;
 
 // Re-export all Core SDK functions and types for unified access

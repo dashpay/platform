@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftDashSDK
+import DashSDKFFI
 
 struct StateTransitionsView: View {
     @EnvironmentObject var appState: UnifiedAppState
