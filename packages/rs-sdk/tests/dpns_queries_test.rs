@@ -9,10 +9,22 @@ const TEST_PREFIX: &str = "ali";
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_queries_from_docs() {
-    // Initialize SDK for testnet
+    use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+    use std::num::NonZeroUsize;
+    
+    // Create trusted context provider for testnet
+    let context_provider = TrustedHttpContextProvider::new(
+        Network::Testnet,
+        None, // No devnet name
+        NonZeroUsize::new(100).unwrap(), // Cache size
+    )
+    .expect("Failed to create context provider");
+    
+    // Initialize SDK for testnet with trusted context provider
     let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
     let sdk = SdkBuilder::new(address_list)
         .with_network(Network::Testnet)
+        .with_context_provider(context_provider)
         .build()
         .expect("Failed to create SDK");
 
@@ -137,9 +149,21 @@ async fn test_dpns_queries_from_docs() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_search_variations() {
+    use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+    use std::num::NonZeroUsize;
+    
+    // Create trusted context provider for testnet
+    let context_provider = TrustedHttpContextProvider::new(
+        Network::Testnet,
+        None, // No devnet name
+        NonZeroUsize::new(100).unwrap(), // Cache size
+    )
+    .expect("Failed to create context provider");
+    
     let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
     let sdk = SdkBuilder::new(address_list)
         .with_network(Network::Testnet)
+        .with_context_provider(context_provider)
         .build()
         .expect("Failed to create SDK");
 
