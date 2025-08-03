@@ -189,6 +189,23 @@ class AppState: ObservableObject {
         }
     }
     
+    func updateIdentity(_ identity: IdentityModel) {
+        guard let dataManager = dataManager else { return }
+        
+        if let index = identities.firstIndex(where: { $0.id == identity.id }) {
+            identities[index] = identity
+            
+            // Save to persistence
+            Task {
+                do {
+                    try dataManager.saveIdentity(identity)
+                } catch {
+                    print("Error updating identity: \(error)")
+                }
+            }
+        }
+    }
+    
     func removeIdentity(_ identity: IdentityModel) {
         guard let dataManager = dataManager else { return }
         
@@ -209,19 +226,7 @@ class AppState: ObservableObject {
         
         if let index = identities.firstIndex(where: { $0.id == id }) {
             var identity = identities[index]
-            identity = IdentityModel(
-                id: identity.id,
-                balance: newBalance,
-                isLocal: identity.isLocal,
-                alias: identity.alias,
-                type: identity.type,
-                privateKeys: identity.privateKeys,
-                votingPrivateKey: identity.votingPrivateKey,
-                ownerPrivateKey: identity.ownerPrivateKey,
-                payoutPrivateKey: identity.payoutPrivateKey,
-                dppIdentity: identity.dppIdentity,
-                publicKeys: identity.publicKeys
-            )
+            identity.balance = newBalance
             identities[index] = identity
             
             // Update in persistence
@@ -230,6 +235,25 @@ class AppState: ObservableObject {
                     try dataManager.saveIdentity(identity)
                 } catch {
                     print("Error updating identity balance: \(error)")
+                }
+            }
+        }
+    }
+    
+    func updateIdentityDPNSName(id: Data, dpnsName: String) {
+        guard let dataManager = dataManager else { return }
+        
+        if let index = identities.firstIndex(where: { $0.id == id }) {
+            var identity = identities[index]
+            identity.dpnsName = dpnsName
+            identities[index] = identity
+            
+            // Update in persistence
+            Task {
+                do {
+                    try dataManager.saveIdentity(identity)
+                } catch {
+                    print("Error updating identity DPNS name: \(error)")
                 }
             }
         }

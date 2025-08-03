@@ -16,14 +16,15 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         hasher.combine(id)
     }
     let id: Data  // Changed from String to Data
-    let balance: UInt64
-    let isLocal: Bool
+    var balance: UInt64
+    var isLocal: Bool
     let alias: String?
     let type: IdentityType
     let privateKeys: [String]
     let votingPrivateKey: String?
     let ownerPrivateKey: String?
     let payoutPrivateKey: String?
+    var dpnsName: String?
     
     // DPP-related properties
     let dppIdentity: DPPIdentity?
@@ -34,7 +35,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         id.toHexString()
     }
     
-    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
+    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
         self.id = id
         self.balance = balance
         self.isLocal = isLocal
@@ -44,14 +45,15 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         self.votingPrivateKey = votingPrivateKey
         self.ownerPrivateKey = ownerPrivateKey
         self.payoutPrivateKey = payoutPrivateKey
+        self.dpnsName = dpnsName
         self.dppIdentity = dppIdentity
         self.publicKeys = publicKeys
     }
     
     /// Initialize with hex string ID for convenience
-    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
+    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
         guard let idData = Data(hexString: idString), idData.count == 32 else { return nil }
-        self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dppIdentity: dppIdentity, publicKeys: publicKeys)
+        self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dpnsName: dpnsName, dppIdentity: dppIdentity, publicKeys: publicKeys)
     }
     
     init?(from identity: SwiftDashSDK.Identity) {
@@ -65,18 +67,20 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         self.votingPrivateKey = nil
         self.ownerPrivateKey = nil
         self.payoutPrivateKey = nil
+        self.dpnsName = nil
         self.dppIdentity = nil
         self.publicKeys = []
     }
     
     /// Create from DPP Identity
-    init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = []) {
+    init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], dpnsName: String? = nil) {
         self.id = dppIdentity.id  // DPPIdentity already uses Data for id
         self.balance = dppIdentity.balance
         self.isLocal = false
         self.alias = alias
         self.type = type
         self.privateKeys = privateKeys
+        self.dpnsName = dpnsName
         self.dppIdentity = dppIdentity
         self.publicKeys = Array(dppIdentity.publicKeys.values)
         

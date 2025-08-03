@@ -65,72 +65,57 @@ struct IdentitiesView: View {
     private func refreshAllBalances() async {
         guard let sdk = appState.sdk else { return }
         
-        // Get all non-local identity IDs as Data
-        let identityIds = appState.identities
-//            .filter { !$0.isLocal }
-            .map { $0.id }
+        // Get all non-local identities
+        let nonLocalIdentities = appState.identities.filter { !$0.isLocal }
         
-        guard !identityIds.isEmpty else { return }
+        guard !nonLocalIdentities.isEmpty else { return }
         
-        do {
-            // Fetch all balances in a single request
-            let balances = try sdk.identities.fetchBalances(ids: identityIds)
-            
-            // Update each identity's balance
-            await MainActor.run {
-                for (id, balance) in balances {
-                    if let balance = balance {
-                        appState.updateIdentityBalance(id: id, newBalance: balance)
+        // Fetch each identity's balance and DPNS name
+        await withTaskGroup(of: Void.self) { group in
+            for identity in nonLocalIdentities {
+                group.addTask {
+                    do {
+                        // Fetch identity data
+                        let fetchedIdentity = try await sdk.identityGet(identityId: identity.idString)
+                        
+                        // Update balance
+                        if let balanceValue = fetchedIdentity["balance"] {
+                            var newBalance: UInt64 = 0
+                            if let balanceNum = balanceValue as? NSNumber {
+                                newBalance = balanceNum.uint64Value
+                            } else if let balanceString = balanceValue as? String,
+                                      let balanceUInt = UInt64(balanceString) {
+                                newBalance = balanceUInt
+                            }
+                            
+                            await MainActor.run {
+                                appState.updateIdentityBalance(id: identity.id, newBalance: newBalance)
+                            }
+                        }
+                        
+                        // Also try to fetch DPNS name if we don't have one
+                        if identity.dpnsName == nil {
+                            do {
+                                let usernames = try await sdk.dpnsGetUsername(
+                                    identityId: identity.idString,
+                                    limit: 1
+                                )
+                                
+                                if let firstUsername = usernames.first,
+                                   let label = firstUsername["label"] as? String {
+                                    await MainActor.run {
+                                        appState.updateIdentityDPNSName(id: identity.id, dpnsName: label)
+                                    }
+                                }
+                            } catch {
+                                // Silently fail - not all identities have DPNS names
+                            }
+                        }
+                    } catch {
+                        // Log error but continue with other identities
+                        print("Failed to refresh identity \(identity.idString): \(error)")
                     }
                 }
-            }
-        } catch {
-            await MainActor.run {
-                var errorMessage = "Failed to refresh balances: "
-                
-                // Check if it's an SDKError
-                if let sdkError = error as? SDKError {
-                    switch sdkError {
-                    case .invalidParameter(let detail):
-                        errorMessage += "Invalid parameter - \(detail)"
-                    case .invalidState(let detail):
-                        errorMessage += "Invalid state - \(detail)"
-                    case .networkError(let detail):
-                        errorMessage += "Network error - \(detail)"
-                    case .serializationError(let detail):
-                        errorMessage += "Data serialization error - \(detail)"
-                    case .protocolError(let detail):
-                        errorMessage += "Protocol error - \(detail)"
-                    case .cryptoError(let detail):
-                        errorMessage += "Cryptographic error - \(detail)"
-                    case .notFound(let detail):
-                        errorMessage += "Not found - \(detail)"
-                    case .timeout(let detail):
-                        errorMessage += "Request timed out - \(detail)"
-                    case .notImplemented(let detail):
-                        errorMessage += "Feature not implemented - \(detail)"
-                    case .internalError(let detail):
-                        errorMessage += "Internal error - \(detail)"
-                    case .unknown(let detail):
-                        errorMessage += detail
-                    }
-                } else {
-                    // For other errors, try to get more details
-                    let nsError = error as NSError
-                    if nsError.domain.isEmpty {
-                        errorMessage += error.localizedDescription
-                    } else {
-                        errorMessage += "\(nsError.domain) - Code: \(nsError.code)"
-                        if let reason = nsError.localizedFailureReason {
-                            errorMessage += " - \(reason)"
-                        }
-                        if let suggestion = nsError.localizedRecoverySuggestion {
-                            errorMessage += "\n\(suggestion)"
-                        }
-                    }
-                }
-                
-                appState.showError(message: errorMessage)
             }
         }
     }
@@ -151,73 +136,110 @@ struct IdentityRow: View {
     @State private var isRefreshing = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(identity.alias ?? "Identity")
-                    .font(.headline)
-                Spacer()
-                
-                if identity.type != .user {
-                    Text(identity.type.rawValue)
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(identity.type == .masternode ? Color.purple : Color.orange)
-                        .cornerRadius(4)
-                }
-                
-                if identity.isLocal {
-                    Text("Local")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.gray.opacity(0.2))
-                        .cornerRadius(4)
-                }
-            }
-            
-            Text(identity.idString)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            
-            HStack {
-                Text(identity.formattedBalance)
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
-                
-                Spacer()
-                
-                if !identity.isLocal {
-                    Button(action: {
-                        Task {
-                            isRefreshing = true
-                            await refreshBalance()
-                            isRefreshing = false
+        NavigationLink(destination: IdentityDetailView(identity: identity)) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(identity.alias ?? identity.dpnsName ?? "Identity")
+                            .font(.headline)
+                        
+                        if let dpnsName = identity.dpnsName, identity.alias != nil {
+                            Text(dpnsName)
+                                .font(.caption)
+                                .foregroundColor(.blue)
                         }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                     }
-                    .buttonStyle(BorderlessButtonStyle())
+                    
+                    Spacer()
+                    
+                    if identity.type != .user {
+                        Text(identity.type.rawValue)
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(identity.type == .masternode ? Color.purple : Color.orange)
+                            .cornerRadius(4)
+                    }
+                    
+                    if identity.isLocal {
+                        Text("Local")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.gray.opacity(0.2))
+                            .cornerRadius(4)
+                    }
+                }
+                
+                Text(identity.idString)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                
+                HStack {
+                    Text(identity.formattedBalance)
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                    
+                    Spacer()
+                    
+                    if !identity.isLocal {
+                        Button(action: {
+                            Task {
+                                isRefreshing = true
+                                await refreshBalance()
+                                isRefreshing = false
+                            }
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                                .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
+                    }
                 }
             }
+            .padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
     }
     
     private func refreshBalance() async {
         guard let sdk = appState.sdk else { return }
         
         do {
-            if let fetchedIdentity = try sdk.identities.get(id: identity.idString) {
-                appState.updateIdentityBalance(id: identity.id, newBalance: fetchedIdentity.balance)
+            // Fetch identity data
+            let fetchedIdentity = try await sdk.identityGet(identityId: identity.idString)
+            
+            // Update balance
+            if let balanceValue = fetchedIdentity["balance"] {
+                if let balanceNum = balanceValue as? NSNumber {
+                    appState.updateIdentityBalance(id: identity.id, newBalance: balanceNum.uint64Value)
+                } else if let balanceString = balanceValue as? String,
+                          let balanceUInt = UInt64(balanceString) {
+                    appState.updateIdentityBalance(id: identity.id, newBalance: balanceUInt)
+                }
+            }
+            
+            // Also try to fetch DPNS name if we don't have one
+            if identity.dpnsName == nil {
+                do {
+                    let usernames = try await sdk.dpnsGetUsername(
+                        identityId: identity.idString,
+                        limit: 1
+                    )
+                    
+                    if let firstUsername = usernames.first,
+                       let label = firstUsername["label"] as? String {
+                        appState.updateIdentityDPNSName(id: identity.id, dpnsName: label)
+                    }
+                } catch {
+                    // Silently fail - not all identities have DPNS names
+                }
             }
         } catch {
             // Silently fail for local identities
@@ -353,14 +375,65 @@ struct FetchIdentityView: View {
         
         do {
             isLoading = true
-            if let identity = try sdk.identities.get(id: identityId) {
-                if let model = IdentityModel(from: identity) {
-                    fetchedIdentity = model
-                    appState.addIdentity(model)
-                }
-            } else {
-                appState.showError(message: "Identity not found")
+            
+            // Validate identity ID
+            let trimmedId = identityId.trimmingCharacters(in: .whitespacesAndNewlines)
+            var idData: Data?
+            
+            // Try hex first, then Base58
+            if let hexData = Data(hexString: trimmedId), hexData.count == 32 {
+                idData = hexData
+            } else if let base58Data = Data.identifier(fromBase58: trimmedId), base58Data.count == 32 {
+                idData = base58Data
             }
+            
+            guard let validIdData = idData else {
+                appState.showError(message: "Invalid identity ID format")
+                isLoading = false
+                return
+            }
+            
+            // Fetch identity from network
+            let identityData = try await sdk.identityGet(identityId: validIdData.toHexString())
+            
+            // Extract balance
+            var balance: UInt64 = 0
+            if let balanceValue = identityData["balance"] {
+                if let balanceNum = balanceValue as? NSNumber {
+                    balance = balanceNum.uint64Value
+                } else if let balanceString = balanceValue as? String,
+                          let balanceUInt = UInt64(balanceString) {
+                    balance = balanceUInt
+                }
+            }
+            
+            // Create identity model
+            let model = IdentityModel(
+                id: validIdData,
+                balance: balance,
+                isLocal: false
+            )
+            
+            fetchedIdentity = model
+            appState.addIdentity(model)
+            
+            // Also try to fetch DPNS name
+            Task {
+                do {
+                    let usernames = try await sdk.dpnsGetUsername(
+                        identityId: validIdData.toHexString(),
+                        limit: 1
+                    )
+                    
+                    if let firstUsername = usernames.first,
+                       let label = firstUsername["label"] as? String {
+                        appState.updateIdentityDPNSName(id: validIdData, dpnsName: label)
+                    }
+                } catch {
+                    // Silently fail - not all identities have DPNS names
+                }
+            }
+            
             isLoading = false
         } catch {
             appState.showError(message: "Failed to fetch identity: \(error.localizedDescription)")

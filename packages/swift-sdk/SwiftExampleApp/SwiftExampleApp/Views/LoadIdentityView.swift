@@ -297,14 +297,56 @@ struct LoadIdentityView: View {
                     payoutPrivateKey: payoutPrivateKeyInput.isEmpty ? nil : payoutPrivateKeyInput
                 )
                 
-                // In a real app, we would verify the identity exists on the network
-                // For now, we'll simulate a network call
-                try await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay
+                // Fetch the identity from the network to verify it exists
+                guard let sdk = appState.sdk else {
+                    await MainActor.run {
+                        errorMessage = "SDK not initialized"
+                        isLoading = false
+                        loadStartTime = nil
+                    }
+                    return
+                }
+                
+                // Try to fetch the identity
+                let identityData = try await sdk.identityGet(identityId: validIdData.toHexString())
+                
+                // Update the identity model with fetched data
+                var fetchedIdentity = identity
+                fetchedIdentity.isLocal = false // Mark as fetched from network
+                
+                // Extract balance if available
+                if let balanceValue = identityData["balance"] {
+                    if let balanceNum = balanceValue as? NSNumber {
+                        fetchedIdentity.balance = balanceNum.uint64Value
+                    } else if let balanceString = balanceValue as? String,
+                              let balanceUInt = UInt64(balanceString) {
+                        fetchedIdentity.balance = balanceUInt
+                    }
+                }
                 
                 // Add to app state
                 await MainActor.run {
-                    appState.addIdentity(identity)
+                    appState.addIdentity(fetchedIdentity)
                     showSuccess = true
+                    
+                    // Also fetch DPNS names for the identity
+                    Task {
+                        do {
+                            let usernames = try await sdk.dpnsGetUsername(
+                                identityId: validIdData.toHexString(),
+                                limit: 1
+                            )
+                            
+                            if let firstUsername = usernames.first,
+                               let label = firstUsername["label"] as? String {
+                                // Update the identity with DPNS name
+                                appState.updateIdentityDPNSName(id: validIdData, dpnsName: label)
+                            }
+                        } catch {
+                            // Silently fail - not all identities have DPNS names
+                            print("No DPNS name found for identity: \(error)")
+                        }
+                    }
                 }
             } catch {
                 await MainActor.run {
