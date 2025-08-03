@@ -54,9 +54,50 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         ));
     }
 
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: Validating handles...");
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: sdk_handle = {:p}", sdk_handle);
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: from_identity_handle = {:p}", from_identity_handle);
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: signer_handle = {:p}", signer_handle);
+    
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
-    let from_identity = &*(from_identity_handle as *const Identity);
+    
+    // Carefully validate the identity handle
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: About to dereference identity handle...");
+    let from_identity = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        &*(from_identity_handle as *const Identity)
+    })) {
+        Ok(identity) => {
+            eprintln!("🔵 dash_sdk_identity_transfer_credits: Identity handle dereferenced successfully");
+            identity
+        },
+        Err(_) => {
+            eprintln!("❌ dash_sdk_identity_transfer_credits: Failed to dereference identity handle - invalid pointer");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "Invalid identity handle - possible use after free".to_string(),
+            ));
+        }
+    };
+    
     let signer = &*(signer_handle as *const IOSSigner);
+    
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: All handles dereferenced successfully");
+    eprintln!("🔵 dash_sdk_identity_transfer_credits: public_key_id = {}", public_key_id);
+    
+    // Try to access identity fields safely
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        eprintln!("🔵 dash_sdk_identity_transfer_credits: Identity ID = {:?}", from_identity.id());
+        eprintln!("🔵 dash_sdk_identity_transfer_credits: Identity balance = {}", from_identity.balance());
+    })) {
+        Ok(_) => eprintln!("🔵 dash_sdk_identity_transfer_credits: Identity fields accessed successfully"),
+        Err(_) => {
+            eprintln!("❌ dash_sdk_identity_transfer_credits: Failed to access identity fields - corrupted identity");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "Identity handle points to corrupted data".to_string(),
+            ));
+        }
+    };
 
     let to_identity_id_str = match CStr::from_ptr(to_identity_id).to_str() {
         Ok(s) => {

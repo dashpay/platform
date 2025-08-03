@@ -46,27 +46,20 @@ final class SimpleTransitionTests: XCTestCase {
         
         // Execute transfer
         do {
-            // First, fetch the identity JSON
-            let identityJson = try await sdk.identityGet(identityId: testIdentityId)
-            
-            // Convert the dictionary to JSON string
-            let jsonData = try JSONSerialization.data(withJSONObject: identityJson, options: [])
-            let jsonString = String(data: jsonData, encoding: .utf8)!
-            
-            // Parse the JSON to an identity handle
-            let parseResult = jsonString.withCString { cString in
-                dash_sdk_identity_parse_json(cString)
+            // Fetch identity handle directly
+            let fetchResult = testIdentityId.withCString { idCStr in
+                dash_sdk_identity_fetch_handle(sdk.handle, idCStr)
             }
             
-            guard parseResult.error == nil,
-                  let identityHandle = parseResult.data else {
-                if let error = parseResult.error {
+            guard fetchResult.error == nil,
+                  let identityHandle = fetchResult.data else {
+                if let error = fetchResult.error {
                     let errorString = String(cString: error.pointee.message)
                     dash_sdk_error_free(error)
-                    XCTFail("Failed to parse identity JSON: \(errorString)")
+                    XCTFail("Failed to fetch identity: \(errorString)")
                     return
                 }
-                XCTFail("Failed to parse identity JSON")
+                XCTFail("Failed to fetch identity")
                 return
             }
             

@@ -1,6 +1,8 @@
 //! Identity parsing operations
 
 use dash_sdk::dpp::prelude::Identity;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use std::ffi::{CStr, c_char};
 
 use crate::types::{DashSDKResultDataType, IdentityHandle};
@@ -36,8 +38,21 @@ pub unsafe extern "C" fn dash_sdk_identity_parse_json(
         }
     };
 
+    eprintln!("🔵 dash_sdk_identity_parse_json: Parsing JSON: {}", json);
+    
     match serde_json::from_str::<Identity>(json) {
         Ok(identity) => {
+            eprintln!("🔵 dash_sdk_identity_parse_json: Successfully parsed identity");
+            eprintln!("🔵 dash_sdk_identity_parse_json: Identity ID: {:?}", identity.id());
+            eprintln!("🔵 dash_sdk_identity_parse_json: Identity balance: {}", identity.balance());
+            eprintln!("🔵 dash_sdk_identity_parse_json: Number of public keys: {}", identity.public_keys().len());
+            
+            // Print public key details
+            for (key_id, key) in identity.public_keys() {
+                eprintln!("🔵 dash_sdk_identity_parse_json: Key {}: purpose={:?}, type={:?}", 
+                    key_id, key.purpose(), key.key_type());
+            }
+            
             let handle = Box::into_raw(Box::new(identity)) as *mut IdentityHandle;
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
