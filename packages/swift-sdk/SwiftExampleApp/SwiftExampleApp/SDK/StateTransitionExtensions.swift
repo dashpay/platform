@@ -222,12 +222,36 @@ extension SDK {
                     }
                     selectedKeyHandle = keyHandle
                     
-                    // TODO: In a real implementation, we would get the private key for this public key
-                    // from the wallet/key storage. For now, we'll return an error.
-                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                    dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                    continuation.resume(throwing: SDKError.internalError("Automatic key selection requires wallet integration"))
-                    return
+                    // Get the key ID from the public key
+                    let keyId = dash_sdk_identity_public_key_get_id(OpaquePointer(keyHandle)!)
+                    
+                    // For demo purposes, generate test private key
+                    guard let fromIdData = Data(hexString: fromIdentityId),
+                          let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: fromIdData, keyId: keyId) else {
+                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
+                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                        continuation.resume(throwing: SDKError.internalError("Failed to generate test private key"))
+                        return
+                    }
+                    
+                    // Create a signer from the test private key
+                    let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
+                        dash_sdk_signer_create_from_private_key(
+                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            UInt(testPrivateKey.count)
+                        )
+                    }
+                    
+                    guard signerResult.error == nil,
+                          let signer = signerResult.data else {
+                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
+                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
+                        let errorString = signerResult.error?.pointee.message != nil ?
+                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                        continuation.resume(throwing: SDKError.internalError(errorString))
+                        return
+                    }
+                    signerHandle = signer
                 }
                 
                 // Transfer credits
@@ -245,7 +269,12 @@ extension SDK {
                 
                 // Clean up handles
                 dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                dash_sdk_signer_destroy(OpaquePointer(signerHandle)!)
+                if let keyHandle = selectedKeyHandle {
+                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
+                }
+                if let signer = signerHandle {
+                    dash_sdk_signer_destroy(OpaquePointer(signer)!)
+                }
                 
                 if result.error == nil {
                     if let transferResultPtr = result.data {
@@ -342,12 +371,36 @@ extension SDK {
                     }
                     selectedKeyHandle = keyHandle
                     
-                    // TODO: In a real implementation, we would get the private key for this public key
-                    // from the wallet/key storage. For now, we'll return an error.
-                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                    dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                    continuation.resume(throwing: SDKError.internalError("Automatic key selection requires wallet integration"))
-                    return
+                    // Get the key ID from the public key
+                    let keyId = dash_sdk_identity_public_key_get_id(OpaquePointer(keyHandle)!)
+                    
+                    // For demo purposes, generate test private key
+                    guard let idData = Data(hexString: identityId),
+                          let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: idData, keyId: keyId) else {
+                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
+                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                        continuation.resume(throwing: SDKError.internalError("Failed to generate test private key"))
+                        return
+                    }
+                    
+                    // Create a signer from the test private key
+                    let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
+                        dash_sdk_signer_create_from_private_key(
+                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            UInt(testPrivateKey.count)
+                        )
+                    }
+                    
+                    guard signerResult.error == nil,
+                          let signer = signerResult.data else {
+                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
+                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                        let errorString = signerResult.error?.pointee.message != nil ?
+                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                        continuation.resume(throwing: SDKError.internalError(errorString))
+                        return
+                    }
+                    signerHandle = signer
                 }
                 
                 // Withdraw credits
@@ -366,7 +419,12 @@ extension SDK {
                 
                 // Clean up handles
                 dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                dash_sdk_signer_destroy(OpaquePointer(signerHandle)!)
+                if let keyHandle = selectedKeyHandle {
+                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
+                }
+                if let signer = signerHandle {
+                    dash_sdk_signer_destroy(OpaquePointer(signer)!)
+                }
                 
                 if result.error == nil {
                     if let dataPtr = result.data {

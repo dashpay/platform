@@ -58,6 +58,19 @@ struct StateTransitionsView: View {
                     executeButton
                 }
                 
+                // Test Transfer Button
+                NavigationLink(destination: TestCreditTransferView()) {
+                    HStack {
+                        Image(systemName: "flask.fill")
+                        Text("Run Test Credit Transfer")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                
                 // Result Display
                 if showResult {
                     resultView
