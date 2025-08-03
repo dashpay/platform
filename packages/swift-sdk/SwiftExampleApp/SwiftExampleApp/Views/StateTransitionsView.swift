@@ -502,10 +502,10 @@ struct StateTransitionsView: View {
         
         // Check if it looks like hex (64 characters, only hex chars)
         if trimmed.count == 64 && trimmed.allSatisfy({ $0.isHexDigit }) {
-            // Convert hex to base58
-            if let data = Data(hexString: trimmed) {
-                return data.toBase58()
-            }
+            // For now, just return the hex string - the SDK should handle conversion
+            // TODO: Implement base58 conversion or expose it from SDK
+            print("Warning: Hex identity IDs are not yet supported. Please use base58 format.")
+            return trimmed
         }
         
         // Validate base58 characters
