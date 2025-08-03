@@ -8,12 +8,7 @@ public struct ExtendedKey {
     let depth: UInt8
     let parentFingerprint: UInt32
     let childNumber: UInt32
-    
-    var publicKey: Data {
-        // For now, return empty data as we get public key during derivation
-        // In a real implementation, this would derive the public key from private key
-        return Data()
-    }
+    let publicKey: Data  // Store the actual public key
     
     var fingerprint: UInt32 {
         // For now, return 0 as we don't have the public key readily available
@@ -140,7 +135,8 @@ public class HDKeyDerivation {
             chainCode: Data(repeating: 0, count: 32), // Placeholder
             depth: UInt8(path.components.count),
             parentFingerprint: 0, // Placeholder
-            childNumber: path.components.last ?? 0
+            childNumber: path.components.last ?? 0,
+            publicKey: derived.publicKey
         )
     }
     

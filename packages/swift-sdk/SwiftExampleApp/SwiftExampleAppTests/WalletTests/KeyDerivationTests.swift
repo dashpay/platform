@@ -73,16 +73,16 @@ final class KeyDerivationTests: XCTestCase {
             keyIndex: 0,
             testnet: false
         )
-        XCTAssertEqual(path.stringRepresentation, "m/13'/5'/0'/0'/0/0")
+        XCTAssertEqual(path.stringRepresentation, "m/9'/5'/5'/0'/0'/0'/0'")
         
-        let masterPath = DerivationPath.dip13Identity(
+        let registrationPath = DerivationPath.dip13Identity(
             account: 0,
             identityIndex: 1,
-            keyType: .master,
+            keyType: .registration,
             keyIndex: 0,
             testnet: false
         )
-        XCTAssertEqual(masterPath.stringRepresentation, "m/13'/5'/0'/1'/1/0")
+        XCTAssertEqual(registrationPath.stringRepresentation, "m/9'/5'/5'/0'/1'/2147483649'")
         
         let topupPath = DerivationPath.dip13Identity(
             account: 0,
@@ -91,22 +91,23 @@ final class KeyDerivationTests: XCTestCase {
             keyIndex: 5,
             testnet: false
         )
-        XCTAssertEqual(topupPath.stringRepresentation, "m/13'/5'/0'/0'/2/5")
+        XCTAssertEqual(topupPath.stringRepresentation, "m/9'/5'/5'/0'/2'/0'")
     }
     
     func testDerivationPathParsing() {
         // Test parsing valid path
-        if let path = DerivationPath.parse("m/44'/5'/0'/0/0") {
+        do {
+            let path = try DerivationPath(path: "m/44'/5'/0'/0/0")
             XCTAssertEqual(path.indexes, [2147483692, 2147483653, 2147483648, 0, 0])
             XCTAssertEqual(path.stringRepresentation, "m/44'/5'/0'/0/0")
-        } else {
-            XCTFail("Failed to parse valid path")
+        } catch {
+            XCTFail("Failed to parse valid path: \(error)")
         }
         
         // Test invalid paths
-        XCTAssertNil(DerivationPath.parse("invalid"))
-        XCTAssertNil(DerivationPath.parse("44'/5'/0'/0/0")) // Missing 'm/'
-        XCTAssertNil(DerivationPath.parse("m/")) // Empty path
+        XCTAssertThrowsError(try DerivationPath(path: "invalid"))
+        XCTAssertThrowsError(try DerivationPath(path: "44'/5'/0'/0/0")) // Missing 'm/'
+        XCTAssertThrowsError(try DerivationPath(path: "m/")) // Empty path
     }
     
     // MARK: - Key Derivation Tests
@@ -147,7 +148,7 @@ final class KeyDerivationTests: XCTestCase {
         }
         
         // Test address generation
-        let address = HDKeyDerivation.addressFromPublicKey(derivedKey.publicKey, network: .testnet)
+        let address = derivedKey.address(network: .testnet)
         XCTAssertNotNil(address)
         XCTAssertTrue(address?.starts(with: "y") ?? false) // Testnet addresses start with 'y'
     }
@@ -192,14 +193,14 @@ final class KeyDerivationTests: XCTestCase {
         
         // Mainnet address
         if let mainnetKey = HDKeyDerivation.deriveKey(seed: seed, path: path, network: .mainnet),
-           let mainnetAddress = HDKeyDerivation.addressFromPublicKey(mainnetKey.publicKey, network: .mainnet) {
+           let mainnetAddress = mainnetKey.address(network: .mainnet) {
             XCTAssertTrue(mainnetAddress.starts(with: "X"))
         }
         
         // Testnet address
         let testnetPath = DerivationPath.dashBIP44(account: 0, change: 0, index: 0, testnet: true)
         if let testnetKey = HDKeyDerivation.deriveKey(seed: seed, path: testnetPath, network: .testnet),
-           let testnetAddress = HDKeyDerivation.addressFromPublicKey(testnetKey.publicKey, network: .testnet) {
+           let testnetAddress = testnetKey.address(network: .testnet) {
             XCTAssertTrue(testnetAddress.starts(with: "y"))
         }
     }

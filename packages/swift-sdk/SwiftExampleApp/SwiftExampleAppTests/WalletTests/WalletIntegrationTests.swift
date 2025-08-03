@@ -4,15 +4,20 @@ import SwiftData
 
 // MARK: - Wallet Integration Tests
 
+@MainActor
 final class WalletIntegrationTests: XCTestCase {
     var walletManager: WalletManager!
     var walletViewModel: WalletViewModel!
+    var container: ModelContainer!
     
     override func setUp() async throws {
         try await super.setUp()
         
+        // Create test model container
+        container = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
+        
         // Create test wallet manager
-        walletManager = try WalletManager()
+        walletManager = try WalletManager(modelContainer: container)
         
         // Create view model
         walletViewModel = try WalletViewModel()
@@ -26,6 +31,7 @@ final class WalletIntegrationTests: XCTestCase {
         
         walletManager = nil
         walletViewModel = nil
+        container = nil
         
         try await super.tearDown()
     }
@@ -173,7 +179,12 @@ final class WalletIntegrationTests: XCTestCase {
         let address = account.externalAddresses[0]
         
         // Add test UTXO
-        let utxo = try await walletManager.utxoManager.addUTXO(
+        guard let utxoManager = walletManager.utxoManager else {
+            XCTFail("UTXO Manager not available")
+            return
+        }
+        
+        try await utxoManager.addUTXO(
             txHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             outputIndex: 0,
             amount: 100_000_000, // 1 DASH
@@ -182,18 +193,22 @@ final class WalletIntegrationTests: XCTestCase {
             blockHeight: 1000
         )
         
+        // Verify UTXO was added
+        await utxoManager.loadUTXOs()
+        let utxo = utxoManager.utxos.first
+        
         XCTAssertNotNil(utxo)
-        XCTAssertEqual(utxo.amount, 100_000_000)
-        XCTAssertFalse(utxo.isSpent)
+        XCTAssertEqual(utxo?.amount, 100_000_000)
+        XCTAssertFalse(utxo?.isSpent ?? true)
         
         // Test balance calculation
-        let balance = walletManager.utxoManager.calculateBalance(for: account)
+        let balance = utxoManager.calculateBalance(for: account)
         XCTAssertEqual(balance.confirmed, 100_000_000)
         XCTAssertEqual(balance.unconfirmed, 0)
         XCTAssertEqual(balance.total, 100_000_000)
         
         // Test coin selection
-        let selection = try walletManager.utxoManager.selectCoins(
+        let selection = try utxoManager.selectCoins(
             amount: 50_000_000,
             feePerKB: 1000,
             account: account
@@ -218,7 +233,12 @@ final class WalletIntegrationTests: XCTestCase {
         let address = account.externalAddresses[0]
         
         // Add test UTXO with sufficient balance
-        _ = try await walletManager.utxoManager.addUTXO(
+        guard let utxoManager = walletManager.utxoManager else {
+            XCTFail("UTXO Manager not available")
+            return
+        }
+        
+        try await utxoManager.addUTXO(
             txHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             outputIndex: 0,
             amount: 100_000_000, // 1 DASH
@@ -232,7 +252,12 @@ final class WalletIntegrationTests: XCTestCase {
         let amount: UInt64 = 50_000_000 // 0.5 DASH
         
         do {
-            let builtTx = try await walletManager.transactionService.createTransaction(
+            guard let transactionService = walletManager.transactionService else {
+                XCTFail("Transaction service not available")
+                return
+            }
+            
+            let builtTx = try await transactionService.createTransaction(
                 to: recipientAddress,
                 amount: amount,
                 from: account
@@ -286,7 +311,12 @@ final class WalletIntegrationTests: XCTestCase {
         }
         
         // Add UTXO
-        _ = try await walletManager.utxoManager.addUTXO(
+        guard let utxoManager = walletManager.utxoManager else {
+            XCTFail("UTXO Manager not available")
+            return
+        }
+        
+        try await utxoManager.addUTXO(
             txHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
             outputIndex: 0,
             amount: 200_000_000, // 2 DASH
@@ -318,7 +348,8 @@ final class WalletIntegrationTests: XCTestCase {
         let walletId = wallet.id
         
         // Create new wallet manager to test loading
-        let newManager = try WalletManager()
+        let newContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
+        let newManager = try WalletManager(modelContainer: newContainer)
         
         // Wait for loading
         try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
@@ -358,7 +389,12 @@ final class WalletIntegrationTests: XCTestCase {
         
         // Try to create transaction without any UTXOs
         do {
-            _ = try await walletManager.transactionService.createTransaction(
+            guard let transactionService = walletManager.transactionService else {
+                XCTFail("Transaction service not available")
+                return
+            }
+            
+            _ = try await transactionService.createTransaction(
                 to: "yTsGq4wV8WySdQTYgGqmiUKMxb8RBr6wc6",
                 amount: 100_000_000,
                 from: account
