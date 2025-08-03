@@ -110,7 +110,7 @@ final class StateTransitionTests: XCTestCase {
             }
             
             // Create DPPIdentity
-            guard let idData = Data(hexString: testIdentityId) else {
+            guard let idData = Data.identifier(fromBase58: testIdentityId) else {
                 throw XCTSkip("Invalid identity ID format")
             }
             
@@ -239,7 +239,7 @@ final class StateTransitionTests: XCTestCase {
                 print("   Creating identity and signer...")
                 
                 // Create DPPIdentity
-                guard let idData = Data(hexString: testIdentityId) else {
+                guard let idData = Data.identifier(fromBase58: testIdentityId) else {
                     throw XCTSkip("Invalid identity ID format")
                 }
                 
@@ -326,7 +326,7 @@ final class StateTransitionTests: XCTestCase {
         // Execute withdrawal using key 3 (transfer key)
         
         // Create DPPIdentity
-        guard let idData = Data(hexString: testIdentityId) else {
+        guard let idData = Data.identifier(fromBase58: testIdentityId) else {
             throw XCTSkip("Invalid identity ID format")
         }
         

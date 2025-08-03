@@ -54,7 +54,7 @@ final class SimpleTransitionTests: XCTestCase {
             }
             
             // Create DPPIdentity
-            guard let idData = Data(hexString: testIdentityId) else {
+            guard let idData = Data.identifier(fromBase58: testIdentityId) else {
                 XCTFail("Invalid identity ID format")
                 return
             }

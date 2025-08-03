@@ -79,10 +79,40 @@ struct EnvLoader {
         }
         
         // Try actual file system paths (these work when running from Xcode)
-        let realHomePath = "/Users/\(NSUserName().isEmpty ? "samuelw" : NSUserName())"
+        // Note: homeDirectoryForCurrentUser is not available on iOS, 
+        // so we construct the home path using NSHomeDirectory or use fallbacks
+        
+        #if os(iOS)
+        // On iOS simulator, NSHomeDirectory returns the app's sandbox, not the user's home
+        // We need to use hardcoded paths for common usernames
+        let username = NSUserName()
+        let possibleHomeDirs = [
+            "/Users/\(username)",
+            "/Users/quantum",
+            "/Users/samuelw"
+        ]
+        
+        for homeDir in possibleHomeDirs {
+            paths.append(contentsOf: [
+                "\(homeDir)/src/platform-ios/packages/swift-sdk/SwiftExampleApp/.env",
+                "\(homeDir)/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+                "\(homeDir)/Documents/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+            ])
+        }
+        #else
+        // On macOS, we can use homeDirectoryForCurrentUser
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         paths.append(contentsOf: [
-            "\(realHomePath)/Documents/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
-            "\(realHomePath)/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+            "\(homeDir)/src/platform-ios/packages/swift-sdk/SwiftExampleApp/.env",
+            "\(homeDir)/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+            "\(homeDir)/Documents/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+        ])
+        #endif
+        
+        // Add current directory relative paths
+        paths.append(contentsOf: [
+            FileManager.default.currentDirectoryPath + "/.env",
+            FileManager.default.currentDirectoryPath + "/packages/swift-sdk/SwiftExampleApp/.env",
         ])
         
         return paths
