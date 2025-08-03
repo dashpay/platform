@@ -5098,6 +5098,7 @@ dependencies = [
  "dashcore 0.39.6",
  "dotenvy",
  "drive-proof-verifier",
+ "ed25519-dalek",
  "env_logger 0.11.8",
  "envy",
  "hex",

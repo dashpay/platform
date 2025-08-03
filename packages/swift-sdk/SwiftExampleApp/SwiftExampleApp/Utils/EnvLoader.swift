@@ -6,17 +6,8 @@ struct EnvLoader {
     
     /// Load environment variables from .env file
     static func loadEnvFile() {
-        // Try multiple locations for .env file
-        let possiblePaths = [
-            // From PROJECT_DIR env var
-            ProcessInfo.processInfo.environment["PROJECT_DIR"].map { "\($0)/.env" },
-            // From current directory
-            "\(FileManager.default.currentDirectoryPath)/.env",
-            // From bundle resource (for tests)
-            Bundle.main.path(forResource: ".env", ofType: nil),
-            // Hardcoded path for SwiftExampleApp (fallback for tests)
-            "/Users/quantum/src/platform-ios/packages/swift-sdk/SwiftExampleApp/.env"
-        ].compactMap { $0 }
+        // Try common project locations for .env file
+        let possiblePaths = findCommonEnvPaths()
         
         var envPath: String?
         for path in possiblePaths {
@@ -76,6 +67,25 @@ struct EnvLoader {
             throw EnvError.missingRequired(key)
         }
         return value
+    }
+    
+    /// Find common .env file locations
+    private static func findCommonEnvPaths() -> [String] {
+        var paths: [String] = []
+        
+        // First try bundle resource (if .env was copied to bundle)
+        if let bundlePath = Bundle.main.path(forResource: ".env", ofType: nil) {
+            paths.append(bundlePath)
+        }
+        
+        // Try actual file system paths (these work when running from Xcode)
+        let realHomePath = "/Users/\(NSUserName().isEmpty ? "samuelw" : NSUserName())"
+        paths.append(contentsOf: [
+            "\(realHomePath)/Documents/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+            "\(realHomePath)/src/platform/packages/swift-sdk/SwiftExampleApp/.env",
+        ])
+        
+        return paths
     }
 }
 
