@@ -1,10 +1,12 @@
 //! Identity operations
 
 pub mod create;
+pub mod create_from_components;
 pub mod helpers;
 pub mod info;
 pub mod keys;
 pub mod names;
+pub mod parse;
 pub mod put;
 pub mod queries;
 pub mod topup;
@@ -13,6 +15,9 @@ pub mod withdraw;
 
 // Re-export all public functions for convenient access
 pub use create::dash_sdk_identity_create;
+pub use create_from_components::{
+    dash_sdk_identity_create_from_components, DashSDKPublicKeyData,
+};
 pub use info::{dash_sdk_identity_destroy, dash_sdk_identity_get_info};
 pub use keys::{
     dash_sdk_identity_get_signing_key_for_transition, dash_sdk_identity_get_transfer_private_key,
@@ -20,6 +25,7 @@ pub use keys::{
     StateTransitionType,
 };
 pub use names::dash_sdk_identity_register_name;
+pub use parse::dash_sdk_identity_parse_json;
 pub use put::{
     dash_sdk_identity_put_to_platform_with_chain_lock,
     dash_sdk_identity_put_to_platform_with_chain_lock_and_wait,

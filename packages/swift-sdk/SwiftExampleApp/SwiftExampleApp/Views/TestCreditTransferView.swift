@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftDashSDK
+import DashSDKFFI
 
 struct TestCreditTransferView: View {
     @EnvironmentObject var appState: UnifiedAppState
@@ -93,19 +94,54 @@ struct TestCreditTransferView: View {
         let amount: UInt64 = 10_000_000 // 0.0001 DASH (10M credits = 10K duffs = 0.0001 DASH)
         
         do {
-            // Check balance first
-            let identity = try await sdk.identityGet(identityId: testIdentityId)
-            if let balance = identity["balance"] as? UInt64 {
-                let dashAmount = Double(balance) / 100_000_000_000 // 1 DASH = 100B credits
-                print("Current balance: \(balance) credits (\(dashAmount) DASH)")
+            // Fetch identity to get balance and create handle
+            let identityDict = try await sdk.identityGet(identityId: testIdentityId)
+            guard let balance = identityDict["balance"] as? UInt64 else {
+                throw SDKError.internalError("Failed to get identity info")
             }
             
-            // Execute transfer
-            let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
-                fromIdentityId: testIdentityId,
+            let dashAmount = Double(balance) / 100_000_000_000 // 1 DASH = 100B credits
+            print("Current balance: \(balance) credits (\(dashAmount) DASH)")
+            
+            // For now, create a basic DPPIdentity to convert to handle
+            // In production, we would fetch the full identity with public keys
+            guard let idData = Data(hexString: testIdentityId) else {
+                throw SDKError.invalidParameter("Invalid identity ID format")
+            }
+            
+            let identity = DPPIdentity(
+                id: idData,
+                publicKeys: [:], // Empty for now - in production we'd fetch these
+                balance: balance,
+                revision: 0
+            )
+            
+            // Create a signer from the private key
+            let signerResult = privateKey.withUnsafeBytes { keyBytes in
+                dash_sdk_signer_create_from_private_key(
+                    keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                    UInt(privateKey.count)
+                )
+            }
+            
+            guard signerResult.error == nil,
+                  let signer = signerResult.data else {
+                let errorString = signerResult.error?.pointee.message != nil ?
+                    String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+                throw SDKError.internalError(errorString)
+            }
+            
+            defer {
+                // Clean up signer when done
+                dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            }
+            
+            // Execute transfer using the convenience method
+            let (senderBalance, receiverBalance) = try await sdk.transferCredits(
+                from: identity,
                 toIdentityId: recipientId,
                 amount: amount,
-                signerPrivateKey: privateKey
+                signer: OpaquePointer(signer)!
             )
             
             resultMessage = """

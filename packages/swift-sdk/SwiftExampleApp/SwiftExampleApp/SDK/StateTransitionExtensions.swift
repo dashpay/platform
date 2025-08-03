@@ -6,6 +6,91 @@ import DashSDKFFI
 
 extension SDK {
     
+    // MARK: - Identity Handle Management
+    
+    /// Convert a DPPIdentity to an identity handle
+    /// The returned handle must be freed with dash_sdk_identity_destroy when done
+    public func identityToHandle(_ identity: DPPIdentity) throws -> OpaquePointer {
+        // Convert identity ID to 32-byte array
+        let idBytes = identity.id // identity.id is already Data
+        guard idBytes.count == 32 else {
+            throw SDKError.invalidParameter("Identity ID must be 32 bytes")
+        }
+        
+        // Convert public keys to C structs
+        let publicKeyData = identity.publicKeys.values.compactMap { key -> DashSDKPublicKeyData? in
+            let keyData = key.data
+            
+            // Map Swift enums to C values
+            let purpose: UInt8 = {
+                switch key.purpose {
+                case .authentication: return 0
+                case .encryption: return 1
+                case .decryption: return 2
+                case .transfer: return 3
+                case .system: return 4
+                case .voting: return 5
+                case .owner: return 6
+                }
+            }()
+            
+            let securityLevel: UInt8 = {
+                switch key.securityLevel {
+                case .master: return 0
+                case .critical: return 1
+                case .high: return 2
+                case .medium: return 3
+                }
+            }()
+            
+            let keyType: UInt8 = {
+                switch key.keyType {
+                case .ecdsaSecp256k1: return 0
+                case .bls12_381: return 1
+                case .ecdsaHash160: return 2
+                case .bip13ScriptHash: return 3
+                case .eddsa25519Hash160: return 4
+                }
+            }()
+            
+            return DashSDKPublicKeyData(
+                id: UInt8(key.id),
+                purpose: purpose,
+                security_level: securityLevel,
+                key_type: keyType,
+                read_only: key.readOnly,
+                data: keyData.withUnsafeBytes { $0.baseAddress?.assumingMemoryBound(to: UInt8.self) } ?? nil,
+                data_len: UInt(keyData.count),
+                disabled_at: key.disabledAt ?? 0
+            )
+        }
+        
+        // Call the FFI function
+        let result = idBytes.withUnsafeBytes { idPtr in
+            publicKeyData.withUnsafeBufferPointer { keysPtr in
+                dash_sdk_identity_create_from_components(
+                    idPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    keysPtr.baseAddress,
+                    UInt(keysPtr.count),
+                    identity.balance,
+                    UInt64(identity.revision)
+                )
+            }
+        }
+        
+        if let error = result.error {
+            let errorString = String(cString: error.pointee.message)
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorString)
+        }
+        
+        guard let handle = result.data else {
+            throw SDKError.internalError("No identity handle returned")
+        }
+        
+        return OpaquePointer(handle)!
+    }
+    
     // MARK: - Identity State Transitions
     
     /// Create a new identity (returns a dictionary for now)
@@ -65,7 +150,7 @@ extension SDK {
     
     /// Top up an identity with instant lock
     public func identityTopUp(
-        identityId: String,
+        identity: OpaquePointer,
         instantLock: Data,
         transaction: Data,
         outputIndex: UInt32,
@@ -83,25 +168,12 @@ extension SDK {
                     return
                 }
                 
-                // First fetch the identity to get its handle
-                let fetchResult = identityId.withCString { idCStr in
-                    dash_sdk_identity_fetch(handle, idCStr)
-                }
-                
-                guard fetchResult.error == nil,
-                      let identityHandle = fetchResult.data else {
-                    let errorString = fetchResult.error?.pointee.message != nil ?
-                        String(cString: fetchResult.error!.pointee.message) : "Failed to fetch identity"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                    return
-                }
-                
                 let result = instantLock.withUnsafeBytes { instantLockBytes in
                     transaction.withUnsafeBytes { txBytes in
                         privateKey.withUnsafeBytes { keyBytes in
                             dash_sdk_identity_topup_with_instant_lock(
                                 handle,
-                                OpaquePointer(identityHandle)!,
+                                identity,
                                 instantLockBytes.bindMemory(to: UInt8.self).baseAddress!,
                                 UInt(instantLock.count),
                                 txBytes.bindMemory(to: UInt8.self).baseAddress!,
@@ -114,8 +186,6 @@ extension SDK {
                     }
                 }
                 
-                // Clean up the identity handle
-                dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
                 
                 if result.error == nil {
                     if result.data_type.rawValue == 3, // ResultIdentityHandle
@@ -152,10 +222,11 @@ extension SDK {
     
     /// Transfer credits between identities
     public func identityTransferCredits(
-        fromIdentityId: String,
+        fromIdentity: OpaquePointer,
         toIdentityId: String,
         amount: UInt64,
-        signerPrivateKey: Data? = nil
+        publicKey: OpaquePointer? = nil,
+        signer: OpaquePointer
     ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
@@ -164,116 +235,17 @@ extension SDK {
                     return
                 }
                 
-                // First fetch the from identity to get its handle
-                let fetchResult = fromIdentityId.withCString { idCStr in
-                    dash_sdk_identity_fetch(handle, idCStr)
-                }
-                
-                guard fetchResult.error == nil,
-                      let fromIdentityHandle = fetchResult.data else {
-                    let errorString = fetchResult.error?.pointee.message != nil ?
-                        String(cString: fetchResult.error!.pointee.message) : "Failed to fetch from identity"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                    return
-                }
-                
-                var signerHandle: UnsafeMutableRawPointer?
-                var selectedKeyHandle: UnsafeMutableRawPointer?
-                
-                if let signerPrivateKey = signerPrivateKey {
-                    // Use provided private key
-                    guard signerPrivateKey.count == 32 else {
-                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                        continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
-                        return
-                    }
-                    
-                    // Create a signer from the private key
-                    let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
-                        dash_sdk_signer_create_from_private_key(
-                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                            UInt(signerPrivateKey.count)
-                        )
-                    }
-                    
-                    guard signerResult.error == nil,
-                          let signer = signerResult.data else {
-                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                        let errorString = signerResult.error?.pointee.message != nil ?
-                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                        return
-                    }
-                    signerHandle = signer
-                } else {
-                    // Auto-select signing key
-                    let keyResult = dash_sdk_identity_get_signing_key_for_transition(
-                        OpaquePointer(fromIdentityHandle)!,
-                        DashSDKFFI.IdentityCreditTransfer
-                    )
-                    
-                    guard keyResult.error == nil,
-                          let keyHandle = keyResult.data else {
-                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                        let errorString = keyResult.error?.pointee.message != nil ?
-                            String(cString: keyResult.error!.pointee.message) : "Failed to get signing key"
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                        return
-                    }
-                    selectedKeyHandle = keyHandle
-                    
-                    // Get the key ID from the public key
-                    let keyId = dash_sdk_identity_public_key_get_id(OpaquePointer(keyHandle)!)
-                    
-                    // For demo purposes, generate test private key
-                    guard let fromIdData = Data(hexString: fromIdentityId),
-                          let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: fromIdData, keyId: keyId) else {
-                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                        continuation.resume(throwing: SDKError.internalError("Failed to generate test private key"))
-                        return
-                    }
-                    
-                    // Create a signer from the test private key
-                    let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
-                        dash_sdk_signer_create_from_private_key(
-                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                            UInt(testPrivateKey.count)
-                        )
-                    }
-                    
-                    guard signerResult.error == nil,
-                          let signer = signerResult.data else {
-                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                        dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                        let errorString = signerResult.error?.pointee.message != nil ?
-                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                        return
-                    }
-                    signerHandle = signer
-                }
-                
                 // Transfer credits
                 let result = toIdentityId.withCString { toIdCStr in
                     dash_sdk_identity_transfer_credits(
                         handle,
-                        OpaquePointer(fromIdentityHandle)!,
+                        fromIdentity,
                         toIdCStr,
                         amount,
-                        selectedKeyHandle != nil ? OpaquePointer(selectedKeyHandle!) : nil,
-                        OpaquePointer(signerHandle!)!,
+                        publicKey,
+                        signer,
                         nil  // Default put settings
                     )
-                }
-                
-                // Clean up handles
-                dash_sdk_identity_destroy(OpaquePointer(fromIdentityHandle)!)
-                if let keyHandle = selectedKeyHandle {
-                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                }
-                if let signer = signerHandle {
-                    dash_sdk_signer_destroy(OpaquePointer(signer)!)
                 }
                 
                 if result.error == nil {
@@ -300,11 +272,12 @@ extension SDK {
     
     /// Withdraw credits from identity
     public func identityWithdraw(
-        identityId: String,
+        identity: OpaquePointer,
         amount: UInt64,
         toAddress: String,
         coreFeePerByte: UInt32 = 0,
-        signerPrivateKey: Data? = nil
+        publicKey: OpaquePointer? = nil,
+        signer: OpaquePointer
     ) async throws -> UInt64 {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
@@ -313,118 +286,20 @@ extension SDK {
                     return
                 }
                 
-                // First fetch the identity to get its handle
-                let fetchResult = identityId.withCString { idCStr in
-                    dash_sdk_identity_fetch(handle, idCStr)
-                }
-                
-                guard fetchResult.error == nil,
-                      let identityHandle = fetchResult.data else {
-                    let errorString = fetchResult.error?.pointee.message != nil ?
-                        String(cString: fetchResult.error!.pointee.message) : "Failed to fetch identity"
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                    return
-                }
-                
-                var signerHandle: UnsafeMutableRawPointer?
-                var selectedKeyHandle: UnsafeMutableRawPointer?
-                
-                if let signerPrivateKey = signerPrivateKey {
-                    // Use provided private key
-                    guard signerPrivateKey.count == 32 else {
-                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                        continuation.resume(throwing: SDKError.invalidParameter("Signer private key must be 32 bytes"))
-                        return
-                    }
-                    
-                    // Create a signer from the private key
-                    let signerResult = signerPrivateKey.withUnsafeBytes { keyBytes in
-                        dash_sdk_signer_create_from_private_key(
-                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                            UInt(signerPrivateKey.count)
-                        )
-                    }
-                    
-                    guard signerResult.error == nil,
-                          let signer = signerResult.data else {
-                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                        let errorString = signerResult.error?.pointee.message != nil ?
-                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                        return
-                    }
-                    signerHandle = signer
-                } else {
-                    // Auto-select signing key
-                    let keyResult = dash_sdk_identity_get_signing_key_for_transition(
-                        OpaquePointer(identityHandle)!,
-                        DashSDKFFI.IdentityCreditWithdrawal
-                    )
-                    
-                    guard keyResult.error == nil,
-                          let keyHandle = keyResult.data else {
-                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                        let errorString = keyResult.error?.pointee.message != nil ?
-                            String(cString: keyResult.error!.pointee.message) : "Failed to get signing key"
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                        return
-                    }
-                    selectedKeyHandle = keyHandle
-                    
-                    // Get the key ID from the public key
-                    let keyId = dash_sdk_identity_public_key_get_id(OpaquePointer(keyHandle)!)
-                    
-                    // For demo purposes, generate test private key
-                    guard let idData = Data(hexString: identityId),
-                          let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: idData, keyId: keyId) else {
-                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                        continuation.resume(throwing: SDKError.internalError("Failed to generate test private key"))
-                        return
-                    }
-                    
-                    // Create a signer from the test private key
-                    let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
-                        dash_sdk_signer_create_from_private_key(
-                            keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                            UInt(testPrivateKey.count)
-                        )
-                    }
-                    
-                    guard signerResult.error == nil,
-                          let signer = signerResult.data else {
-                        dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                        dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                        let errorString = signerResult.error?.pointee.message != nil ?
-                            String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                        return
-                    }
-                    signerHandle = signer
-                }
-                
                 // Withdraw credits
                 let result = toAddress.withCString { addressCStr in
                     dash_sdk_identity_withdraw(
                         handle,
-                        OpaquePointer(identityHandle)!,
+                        identity,
                         addressCStr,
                         amount,
                         coreFeePerByte,
-                        selectedKeyHandle != nil ? OpaquePointer(selectedKeyHandle!) : nil,
-                        OpaquePointer(signerHandle!)!,
+                        publicKey,
+                        signer,
                         nil  // Default put settings
                     )
                 }
                 
-                // Clean up handles
-                dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
-                if let keyHandle = selectedKeyHandle {
-                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle)!)
-                }
-                if let signer = signerHandle {
-                    dash_sdk_signer_destroy(OpaquePointer(signer)!)
-                }
                 
                 if result.error == nil {
                     if let dataPtr = result.data {
@@ -537,3 +412,82 @@ extension SDK {
 // MARK: - Helper Types
 
 // For now, we'll use the existing SDK types and create type aliases when needed
+
+// MARK: - Convenience Methods with DPPIdentity
+
+extension SDK {
+    /// Transfer credits between identities (convenience method with DPPIdentity)
+    public func transferCredits(
+        from identity: DPPIdentity,
+        toIdentityId: String,
+        amount: UInt64,
+        signer: OpaquePointer
+    ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
+        // Convert DPPIdentity to handle
+        let identityHandle = try identityToHandle(identity)
+        defer {
+            // Clean up the handle when done
+            dash_sdk_identity_destroy(identityHandle)
+        }
+        
+        // Call the lower-level method
+        return try await identityTransferCredits(
+            fromIdentity: identityHandle,
+            toIdentityId: toIdentityId,
+            amount: amount,
+            publicKey: nil, // Auto-select key
+            signer: signer
+        )
+    }
+    
+    /// Top up identity with instant lock (convenience method with DPPIdentity)
+    public func topUpIdentity(
+        _ identity: DPPIdentity,
+        instantLock: Data,
+        transaction: Data,
+        outputIndex: UInt32,
+        privateKey: Data
+    ) async throws -> UInt64 {
+        // Convert DPPIdentity to handle
+        let identityHandle = try identityToHandle(identity)
+        defer {
+            // Clean up the handle when done
+            dash_sdk_identity_destroy(identityHandle)
+        }
+        
+        // Call the lower-level method
+        return try await identityTopUp(
+            identity: identityHandle,
+            instantLock: instantLock,
+            transaction: transaction,
+            outputIndex: outputIndex,
+            privateKey: privateKey
+        )
+    }
+    
+    /// Withdraw credits from identity (convenience method with DPPIdentity)
+    public func withdrawFromIdentity(
+        _ identity: DPPIdentity,
+        amount: UInt64,
+        toAddress: String,
+        coreFeePerByte: UInt32 = 0,
+        signer: OpaquePointer
+    ) async throws -> UInt64 {
+        // Convert DPPIdentity to handle
+        let identityHandle = try identityToHandle(identity)
+        defer {
+            // Clean up the handle when done
+            dash_sdk_identity_destroy(identityHandle)
+        }
+        
+        // Call the lower-level method
+        return try await identityWithdraw(
+            identity: identityHandle,
+            amount: amount,
+            toAddress: toAddress,
+            coreFeePerByte: coreFeePerByte,
+            publicKey: nil, // Auto-select key
+            signer: signer
+        )
+    }
+}

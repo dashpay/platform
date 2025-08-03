@@ -414,10 +414,39 @@ struct StateTransitionsView: View {
         // Normalize the recipient identity ID to base58
         let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
         
-        let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
-            fromIdentityId: fromIdentity.idString,
+        // For demo purposes, create a test signer
+        // In production, this would use proper key management
+        let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: fromIdentity.id, keyId: 3) ?? Data(repeating: 0, count: 32)
+        
+        let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(testPrivateKey.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the convenience method with DPPIdentity
+        let dppIdentity = fromIdentity.dppIdentity ?? DPPIdentity(
+            id: fromIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: fromIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: fromIdentity.balance,
+            revision: 0
+        )
+        
+        let (senderBalance, receiverBalance) = try await sdk.transferCredits(
+            from: dppIdentity,
             toIdentityId: normalizedToIdentityId,
-            amount: amount
+            amount: amount,
+            signer: OpaquePointer(signer)!
         )
         
         // Update sender's balance in our local state
@@ -453,11 +482,40 @@ struct StateTransitionsView: View {
         let coreFeePerByteString = formInputs["coreFeePerByte"] ?? "0"
         let coreFeePerByte = UInt32(coreFeePerByteString) ?? 0
         
-        let newBalance = try await sdk.identityWithdraw(
-            identityId: identity.idString,
+        // For demo purposes, create a test signer
+        // In production, this would use proper key management
+        let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: identity.id, keyId: 3) ?? Data(repeating: 0, count: 32)
+        
+        let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(testPrivateKey.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the convenience method with DPPIdentity
+        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+            id: identity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+            balance: identity.balance,
+            revision: 0
+        )
+        
+        let newBalance = try await sdk.withdrawFromIdentity(
+            dppIdentity,
             amount: amount,
             toAddress: toAddress,
-            coreFeePerByte: coreFeePerByte
+            coreFeePerByte: coreFeePerByte,
+            signer: OpaquePointer(signer)!
         )
         
         // Update identity balance in our local state
