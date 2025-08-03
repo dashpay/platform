@@ -190,6 +190,7 @@ struct QueryCategoryDetailView: View {
             
         case .token:
             return [
+                QueryDefinition(name: "getIdentityTokenBalances", label: "Get Identity Token Balances", description: "Get token balances for an identity"),
                 QueryDefinition(name: "getIdentitiesTokenBalances", label: "Get Identities Token Balances", description: "Get token balance for multiple identities"),
                 QueryDefinition(name: "getIdentityTokenInfos", label: "Get Identity Token Infos", description: "Get token information for an identity's tokens"),
                 QueryDefinition(name: "getIdentitiesTokenInfos", label: "Get Identities Token Infos", description: "Get token information for multiple identities"),

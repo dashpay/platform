@@ -368,7 +368,14 @@ struct DiagnosticsView: View {
                     )
                 }),
                 
-                // Token Queries (8 queries)
+                // Token Queries (9 queries)
+                ("getIdentityTokenBalances", "Get Identity Token Balances", "Token", {
+                    try await sdk.getIdentityTokenBalances(
+                        identityId: TestData.testIdentityId,
+                        tokenIds: [TestData.testTokenId]
+                    )
+                }),
+                
                 ("getIdentitiesTokenBalances", "Get Identities Token Balances", "Token", {
                     try await sdk.getIdentitiesTokenBalances(
                         identityIds: [TestData.testIdentityId],

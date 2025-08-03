@@ -530,6 +530,11 @@ struct QueryDetailView: View {
             )
             
         // Token Queries
+        case "getIdentityTokenBalances":
+            let identityId = queryInputs["identityId"] ?? ""
+            let tokenIds = (queryInputs["tokenIds"] ?? "").split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
+            return try await sdk.getIdentityTokenBalances(identityId: identityId, tokenIds: tokenIds)
+            
         case "getIdentitiesTokenBalances":
             let identityIds = (queryInputs["identityIds"] ?? "").split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
             let tokenId = queryInputs["tokenId"] ?? ""
@@ -875,6 +880,12 @@ struct QueryDetailView: View {
             ]
             
         // Token Queries
+        case "getIdentityTokenBalances":
+            return [
+                QueryInput(name: "identityId", label: "Identity ID", required: true),
+                QueryInput(name: "tokenIds", label: "Token IDs (comma-separated)", required: true)
+            ]
+            
         case "getIdentitiesTokenBalances":
             return [
                 QueryInput(name: "identityIds", label: "Identity IDs (comma-separated)", required: true),

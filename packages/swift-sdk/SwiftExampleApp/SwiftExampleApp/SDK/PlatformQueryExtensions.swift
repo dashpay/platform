@@ -820,6 +820,31 @@ extension SDK {
     
     // MARK: - Token Queries
     
+    /// Get identity token balances - get balances for multiple tokens for a single identity
+    public func getIdentityTokenBalances(identityId: String, tokenIds: [String]) async throws -> [String: UInt64] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Join token IDs with commas
+        let tokenIdsStr = tokenIds.joined(separator: ",")
+        
+        let result = dash_sdk_token_get_identity_balances(handle, identityId, tokenIdsStr)
+        let json = try processJSONResult(result)
+        
+        // Convert JSON object to [String: UInt64]
+        var balances: [String: UInt64] = [:]
+        if let dict = json as? [String: Any] {
+            for (tokenId, balance) in dict {
+                if let balanceNum = balance as? NSNumber {
+                    balances[tokenId] = balanceNum.uint64Value
+                }
+            }
+        }
+        
+        return balances
+    }
+    
     /// Get identities token balances
     public func getIdentitiesTokenBalances(identityIds: [String], tokenId: String) async throws -> [String: UInt64] {
         guard let handle = handle else {
