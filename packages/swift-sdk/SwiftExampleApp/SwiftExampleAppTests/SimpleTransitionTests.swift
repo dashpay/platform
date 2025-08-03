@@ -46,25 +46,33 @@ final class SimpleTransitionTests: XCTestCase {
         
         // Execute transfer
         do {
-            // First, fetch the identity to create a handle
-            let identityDict = try await sdk.identityGet(identityId: testIdentityId)
-            guard let balance = identityDict["balance"] as? UInt64 else {
-                XCTFail("Failed to fetch identity balance")
+            // First, fetch the identity JSON
+            let identityJson = try await sdk.identityGet(identityId: testIdentityId)
+            
+            // Convert the dictionary to JSON string
+            let jsonData = try JSONSerialization.data(withJSONObject: identityJson, options: [])
+            let jsonString = String(data: jsonData, encoding: .utf8)!
+            
+            // Parse the JSON to an identity handle
+            let parseResult = jsonString.withCString { cString in
+                dash_sdk_identity_parse_json(cString)
+            }
+            
+            guard parseResult.error == nil,
+                  let identityHandle = parseResult.data else {
+                if let error = parseResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    XCTFail("Failed to parse identity JSON: \(errorString)")
+                    return
+                }
+                XCTFail("Failed to parse identity JSON")
                 return
             }
             
-            // Create DPPIdentity
-            guard let idData = Data.identifier(fromBase58: testIdentityId) else {
-                XCTFail("Invalid identity ID format")
-                return
+            defer {
+                dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
             }
-            
-            let identity = DPPIdentity(
-                id: idData,
-                publicKeys: [:], // Empty for testing
-                balance: balance,
-                revision: 0
-            )
             
             // Create signer from private key
             let signerResult = key3Private.withUnsafeBytes { keyBytes in
@@ -84,8 +92,8 @@ final class SimpleTransitionTests: XCTestCase {
                 dash_sdk_signer_destroy(OpaquePointer(signer)!)
             }
             
-            let result = try await sdk.transferCredits(
-                from: identity,
+            let result = try await sdk.identityTransferCredits(
+                fromIdentity: OpaquePointer(identityHandle)!,
                 toIdentityId: recipientId,
                 amount: amount,
                 signer: OpaquePointer(signer)!

@@ -103,23 +103,31 @@ final class StateTransitionTests: XCTestCase {
         print("Amount: \(amount) credits")
         
         do {
-            // First, fetch the identity to create a handle
-            let identityDict = try await sdk.identityGet(identityId: testIdentityId)
-            guard let balance = identityDict["balance"] as? UInt64 else {
-                throw XCTSkip("Failed to fetch identity balance")
+            // First, fetch the identity JSON
+            let identityJson = try await sdk.identityGet(identityId: testIdentityId)
+            
+            // Convert the dictionary to JSON string
+            let jsonData = try JSONSerialization.data(withJSONObject: identityJson, options: [])
+            let jsonString = String(data: jsonData, encoding: .utf8)!
+            
+            // Parse the JSON to an identity handle
+            let parseResult = jsonString.withCString { cString in
+                dash_sdk_identity_parse_json(cString)
             }
             
-            // Create DPPIdentity
-            guard let idData = Data.identifier(fromBase58: testIdentityId) else {
-                throw XCTSkip("Invalid identity ID format")
+            guard parseResult.error == nil,
+                  let identityHandle = parseResult.data else {
+                if let error = parseResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    throw XCTSkip("Failed to parse identity JSON: \(errorString)")
+                }
+                throw XCTSkip("Failed to parse identity JSON")
             }
             
-            let identity = DPPIdentity(
-                id: idData,
-                publicKeys: [:], // Empty for testing
-                balance: balance,
-                revision: 0
-            )
+            defer {
+                dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+            }
             
             // Create signer from private key
             let signerResult = key3Private.withUnsafeBytes { keyBytes in
@@ -138,8 +146,8 @@ final class StateTransitionTests: XCTestCase {
                 dash_sdk_signer_destroy(OpaquePointer(signer)!)
             }
             
-            let (senderBalance, receiverBalance) = try await sdk.transferCredits(
-                from: identity,
+            let (senderBalance, receiverBalance) = try await sdk.identityTransferCredits(
+                fromIdentity: OpaquePointer(identityHandle)!,
                 toIdentityId: recipientId,
                 amount: amount,
                 signer: OpaquePointer(signer)!
