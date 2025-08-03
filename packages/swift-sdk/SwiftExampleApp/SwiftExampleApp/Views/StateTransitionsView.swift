@@ -5,7 +5,7 @@ struct StateTransitionsView: View {
     @EnvironmentObject var appState: UnifiedAppState
     @State private var selectedCategory: TransitionCategory = .identity
     @State private var selectedTransition: String = ""
-    @State private var selectedIdentity: PersistentIdentity?
+    @State private var selectedIdentityId: String = ""
     @State private var isExecuting = false
     @State private var showResult = false
     @State private var resultText = ""
@@ -53,7 +53,7 @@ struct StateTransitionsView: View {
                 }
                 
                 // Execute Button
-                if !selectedTransition.isEmpty && (selectedIdentity != nil || selectedTransition == "identityCreate") {
+                if !selectedTransition.isEmpty && (!selectedIdentityId.isEmpty || selectedTransition == "identityCreate") {
                     executeButton
                 }
                 
@@ -127,11 +127,11 @@ struct StateTransitionsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
-                Picker("Identity", selection: $selectedIdentity) {
-                    Text("Select...").tag(nil as PersistentIdentity?)
-                    ForEach(appState.platformState.identities) { identity in
-                        Text(identity.displayName)
-                            .tag(identity.persistentModel as PersistentIdentity?)
+                Picker("Identity", selection: $selectedIdentityId) {
+                    Text("Select...").tag("")
+                    ForEach(appState.platformState.identities, id: \.idString) { identity in
+                        Text(identity.alias ?? identity.idString)
+                            .tag(identity.idString)
                     }
                 }
                 .pickerStyle(MenuPickerStyle())
