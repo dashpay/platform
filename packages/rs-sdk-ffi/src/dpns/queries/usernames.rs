@@ -84,9 +84,6 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_usernames(
                         if let Some(id) = username.records_identity_id {
                             obj["recordsIdentityId"] = json!(id.to_string(Encoding::Base58));
                         }
-                        if let Some(id) = username.records_alias_identity_id {
-                            obj["recordsAliasIdentityId"] = json!(id.to_string(Encoding::Base58));
-                        }
 
                         obj
                     })

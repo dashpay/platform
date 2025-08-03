@@ -21,17 +21,13 @@ pub struct DpnsUsername {
     pub owner_id: Identifier,
     /// The identity ID from the records (may be different from owner)
     pub records_identity_id: Option<Identifier>,
-    /// The alias identity ID from the records
-    pub records_alias_identity_id: Option<Identifier>,
 }
 
 impl Sdk {
     /// Get DPNS usernames owned by a specific identity
     ///
-    /// This searches for domains where the identity is either:
-    /// - The owner of the domain document
-    /// - Listed in records.dashUniqueIdentityId
-    /// - Listed in records.dashAliasIdentityId
+    /// This searches for domains where the identity is listed in records.identity.
+    /// Note: This does not search for domains owned by the identity (no index on $ownerId)
     ///
     /// # Arguments
     ///
@@ -48,126 +44,35 @@ impl Sdk {
     ) -> Result<Vec<DpnsUsername>, Error> {
         let dpns_contract = self.fetch_dpns_contract().await?;
         let limit = limit.unwrap_or(10);
-        let mut all_usernames = Vec::new();
 
-        // Query 1: Check for domains owned by this identity
-        let owner_query = DocumentQuery {
-            data_contract: dpns_contract.clone(),
+        // Query for domains with this identity in records.identity (the only indexed identity field)
+        let records_identity_query = DocumentQuery {
+            data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
                 WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text("dash".to_string()),
-                },
-            ],
-            order_by_clauses: vec![OrderClause {
-                field: "$createdAt".to_string(),
-                ascending: false,
-            }],
-            limit,
-            start: None,
-        };
-
-        let owner_documents = Document::fetch_many(self, owner_query).await?;
-        
-        // Filter by owner_id and convert to DpnsUsername
-        for (_, doc_opt) in owner_documents {
-            if let Some(doc) = doc_opt {
-                if doc.owner_id() == identity_id {
-                    if let Some(username) = Self::document_to_dpns_username(doc) {
-                        all_usernames.push(username);
-                        if all_usernames.len() >= limit as usize {
-                            return Ok(all_usernames);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Query 2: Check for domains with this identity in records.dashUniqueIdentityId
-        let unique_id_query = DocumentQuery {
-            data_contract: dpns_contract.clone(),
-            document_type_name: "domain".to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text("dash".to_string()),
-                },
-                WhereClause {
-                    field: "records.dashUniqueIdentityId".to_string(),
+                    field: "records.identity".to_string(),
                     operator: WhereOperator::Equal,
                     value: Value::Identifier(identity_id.to_buffer()),
                 },
             ],
-            order_by_clauses: vec![OrderClause {
-                field: "$createdAt".to_string(),
-                ascending: false,
-            }],
-            limit: limit - all_usernames.len() as u32,
+            order_by_clauses: vec![],  // Remove ordering by $createdAt as it might not be indexed
+            limit,
             start: None,
         };
 
-        let unique_id_documents = Document::fetch_many(self, unique_id_query).await?;
+        let records_identity_documents = Document::fetch_many(self, records_identity_query).await?;
         
-        for (_, doc_opt) in unique_id_documents {
+        let mut usernames = Vec::new();
+        for (_, doc_opt) in records_identity_documents {
             if let Some(doc) = doc_opt {
                 if let Some(username) = Self::document_to_dpns_username(doc) {
-                    // Avoid duplicates
-                    if !all_usernames.iter().any(|u| u.normalized_label == username.normalized_label) {
-                        all_usernames.push(username);
-                        if all_usernames.len() >= limit as usize {
-                            return Ok(all_usernames);
-                        }
-                    }
+                    usernames.push(username);
                 }
             }
         }
 
-        // Query 3: Check for domains with this identity in records.dashAliasIdentityId
-        if all_usernames.len() < limit as usize {
-            let alias_id_query = DocumentQuery {
-                data_contract: dpns_contract,
-                document_type_name: "domain".to_string(),
-                where_clauses: vec![
-                    WhereClause {
-                        field: "normalizedParentDomainName".to_string(),
-                        operator: WhereOperator::Equal,
-                        value: Value::Text("dash".to_string()),
-                    },
-                    WhereClause {
-                        field: "records.dashAliasIdentityId".to_string(),
-                        operator: WhereOperator::Equal,
-                        value: Value::Identifier(identity_id.to_buffer()),
-                    },
-                ],
-                order_by_clauses: vec![OrderClause {
-                    field: "$createdAt".to_string(),
-                    ascending: false,
-                }],
-                limit: limit - all_usernames.len() as u32,
-                start: None,
-            };
-
-            let alias_id_documents = Document::fetch_many(self, alias_id_query).await?;
-            
-            for (_, doc_opt) in alias_id_documents {
-                if let Some(doc) = doc_opt {
-                    if let Some(username) = Self::document_to_dpns_username(doc) {
-                        // Avoid duplicates
-                        if !all_usernames.iter().any(|u| u.normalized_label == username.normalized_label) {
-                            all_usernames.push(username);
-                            if all_usernames.len() >= limit as usize {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(all_usernames)
+        Ok(usernames)
     }
 
     /// Check if a DPNS username is available
@@ -261,28 +166,14 @@ impl Sdk {
         let normalized_label = properties.get("normalizedLabel")?.as_text()?.to_string();
         let parent_domain = properties.get("normalizedParentDomainName")?.as_text()?;
         
-        // Extract identity IDs from records if present
-        let (records_identity_id, records_alias_identity_id) = if let Some(Value::Map(records)) = properties.get("records") {
-            let mut unique_id = None;
-            let mut alias_id = None;
-            
-            for (key, value) in records {
-                if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
-                    match k.as_str() {
-                        "dashUniqueIdentityId" => {
-                            unique_id = Identifier::from_bytes(id_bytes).ok();
-                        }
-                        "dashAliasIdentityId" => {
-                            alias_id = Identifier::from_bytes(id_bytes).ok();
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            
-            (unique_id, alias_id)
+        // Extract identity ID from records if present
+        let records_identity_id = if let Some(Value::Map(records)) = properties.get("records") {
+            // Look for the "identity" key in the map
+            records.iter()
+                .find(|(k, _)| k.as_text() == Some("identity"))
+                .and_then(|(_, v)| v.to_identifier().ok())
         } else {
-            (None, None)
+            None
         };
 
         Some(DpnsUsername {
@@ -291,7 +182,6 @@ impl Sdk {
             full_name: format!("{}.{}", label, parent_domain),
             owner_id: doc.owner_id(),
             records_identity_id,
-            records_alias_identity_id,
         })
     }
 }

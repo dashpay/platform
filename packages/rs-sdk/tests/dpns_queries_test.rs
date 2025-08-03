@@ -87,9 +87,6 @@ async fn test_dpns_queries_from_docs() {
                     if let Some(records_id) = &username.records_identity_id {
                         println!("          - Records Identity: {}", records_id);
                     }
-                    if let Some(alias_id) = &username.records_alias_identity_id {
-                        println!("          - Alias Identity: {}", alias_id);
-                    }
                 }
             }
         }
