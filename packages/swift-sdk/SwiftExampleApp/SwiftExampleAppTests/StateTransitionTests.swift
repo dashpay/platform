@@ -130,7 +130,7 @@ final class StateTransitionTests: XCTestCase {
             }
             
             // Get the transfer key (key ID 3) from the identity
-            let transferKeyResult = dash_sdk_identity_get_public_key_by_id(identityHandle, 3)
+            let transferKeyResult = dash_sdk_identity_get_public_key_by_id(OpaquePointer(identityHandle)!, 3)
             
             guard transferKeyResult.error == nil,
                   let transferKeyHandle = transferKeyResult.data else {
