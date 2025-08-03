@@ -1,16 +1,6 @@
 import Foundation
 import SwiftDashSDK
-
-// MARK: - State Transition Type
-public enum StateTransitionType: UInt32 {
-    case identityUpdate = 0
-    case identityTopUp = 1
-    case identityCreditTransfer = 2
-    case identityCreditWithdrawal = 3
-    case documentsBatch = 4
-    case dataContractCreate = 5
-    case dataContractUpdate = 6
-}
+import DashSDKFFI
 
 // MARK: - State Transition Extensions
 
@@ -219,7 +209,7 @@ extension SDK {
                     // Auto-select signing key
                     let keyResult = dash_sdk_identity_get_signing_key_for_transition(
                         OpaquePointer(fromIdentityHandle)!,
-                        DashUnifiedSDK.StateTransitionType(rawValue: StateTransitionType.identityCreditTransfer.rawValue)
+                        DashSDKFFI.IdentityCreditTransfer
                     )
                     
                     guard keyResult.error == nil,
@@ -339,7 +329,7 @@ extension SDK {
                     // Auto-select signing key
                     let keyResult = dash_sdk_identity_get_signing_key_for_transition(
                         OpaquePointer(identityHandle)!,
-                        DashUnifiedSDK.StateTransitionType(rawValue: StateTransitionType.identityCreditWithdrawal.rawValue)
+                        DashSDKFFI.IdentityCreditWithdrawal
                     )
                     
                     guard keyResult.error == nil,
