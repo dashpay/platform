@@ -1,5 +1,7 @@
 mod queries;
 
+pub use queries::{DpnsUsername};
+
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::{Document, Fetch, FetchMany};
 use crate::{Error, Sdk};

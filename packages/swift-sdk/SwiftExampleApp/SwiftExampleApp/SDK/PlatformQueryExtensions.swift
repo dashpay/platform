@@ -486,61 +486,41 @@ extension SDK {
     
     /// Get DPNS usernames for identity
     public func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> [[String: Any]] {
-        // DPNS contract ID on testnet
-        let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-        
-        // Query for domains owned by this identity
-        // DPNS stores identity IDs in records.dashUniqueIdentityId or records.dashAliasIdentityId
-        let whereClause = """
-            [
-                {"$or": [
-                    {"field": "records.dashUniqueIdentityId", "operator": "==", "value": "\(identityId)"},
-                    {"field": "records.dashAliasIdentityId", "operator": "==", "value": "\(identityId)"}
-                ]}
-            ]
-            """
-        let orderByClause = "[{\"field\": \"$createdAt\", \"ascending\": false}]"
-        
-        let result = try await documentList(
-            dataContractId: dpnsContractId,
-            documentType: "domain",
-            whereClause: whereClause,
-            orderByClause: orderByClause,
-            limit: limit
-        )
-        
-        // Extract documents array from result
-        if let documents = result["documents"] as? [[String: Any]] {
-            return documents
-        }
-        
-        return []
-    }
-    
-    /// Check DPNS name availability
-    public func dpnsCheckAvailability(name: String) async throws -> Bool {
-        // Try to resolve the name - if it fails, the name is available
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_identity_resolve_name(handle, name)
-        
-        if result.error != nil {
-            // If we get an error (likely not found), the name is available
-            if let error = result.error {
-                dash_sdk_error_free(error)
-            }
-            return true
+        // Convert hex identity ID to 32 bytes
+        guard let identityIdData = Data(hexString: identityId), identityIdData.count == 32 else {
+            throw SDKError.invalidParameter("Invalid identity ID format")
         }
         
-        // If we successfully resolved the name, it's not available
-        if let dataPtr = result.data {
-            // Free the binary data properly
-            dash_sdk_binary_data_free(dataPtr.assumingMemoryBound(to: DashSDKBinaryData.self))
+        // Call native FFI function
+        let result = identityIdData.withUnsafeBytes { bytes in
+            dash_sdk_dpns_get_usernames(handle, bytes.bindMemory(to: UInt8.self).baseAddress, limit ?? 10)
         }
         
-        return false
+        return try processJSONArrayResult(result)
+    }
+    
+    /// Check DPNS name availability
+    public func dpnsCheckAvailability(name: String) async throws -> Bool {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Call native FFI function
+        let result = dash_sdk_dpns_check_availability(handle, name)
+        
+        // Process the result to get the availability info
+        let json = try processJSONResult(result)
+        
+        // Extract the "available" boolean from the result
+        guard let isAvailable = json["available"] as? Bool else {
+            throw SDKError.serializationError("Failed to parse availability result")
+        }
+        
+        return isAvailable
     }
     
     /// Resolve DPNS name to identity ID
@@ -576,27 +556,14 @@ extension SDK {
     
     /// Search DPNS names by prefix
     public func dpnsSearch(prefix: String, limit: UInt32? = nil) async throws -> [[String: Any]] {
-        // DPNS contract ID on testnet
-        let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-        
-        // Query for domains starting with prefix
-        let whereClause = "[{\"field\": \"normalizedLabel\", \"operator\": \"startsWith\", \"value\": \"\(prefix)\"}]"
-        let orderByClause = "[{\"field\": \"normalizedLabel\", \"ascending\": true}]"
-        
-        let result = try await documentList(
-            dataContractId: dpnsContractId,
-            documentType: "domain",
-            whereClause: whereClause,
-            orderByClause: orderByClause,
-            limit: limit
-        )
-        
-        // Extract documents array from result
-        if let documents = result["documents"] as? [[String: Any]] {
-            return documents
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
         }
         
-        return []
+        // Call native FFI function
+        let result = dash_sdk_dpns_search(handle, prefix, limit ?? 10)
+        
+        return try processJSONArrayResult(result)
     }
     
     // MARK: - Voting & Contested Resources Queries

@@ -96,6 +96,18 @@ struct QueryCategoryDetailView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                } else if query.name == "testDPNSQueries" {
+                    NavigationLink(destination: DPNSTestView()) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(query.label)
+                                .font(.headline)
+                            Text(query.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                        .padding(.vertical, 4)
+                    }
                 } else {
                     NavigationLink(destination: QueryDetailView(query: query)) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -206,7 +218,8 @@ struct QueryCategoryDetailView: View {
             
         case .diagnostics:
             return [
-                QueryDefinition(name: "runAllQueries", label: "Run All Queries", description: "Execute all platform queries with test data to verify connectivity and functionality")
+                QueryDefinition(name: "runAllQueries", label: "Run All Queries", description: "Execute all platform queries with test data to verify connectivity and functionality"),
+                QueryDefinition(name: "testDPNSQueries", label: "Test DPNS Native Queries", description: "Test the new native DPNS FFI query functions")
             ]
         }
     }
