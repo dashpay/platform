@@ -81,6 +81,19 @@ function validateBasicQueryResult(result) {
 }
 
 /**
+ * Helper function to validate basic query result properties for DPNS queries
+ * (allows "not found" as valid response)
+ * @param {Object} result - The query result object
+ */
+function validateBasicDpnsQueryResult(result) {
+  expect(result.success).toBe(true);
+  expect(result.result).toBeDefined();
+  expect(result.hasError).toBe(false);
+  expect(result.result).not.toContain('Error executing query');
+  expect(result.result).not.toContain('invalid');
+}
+
+/**
  * Helper function to validate proof content contains expected fields
  * @param {string} proofContent - The proof content string
  */
@@ -490,6 +503,52 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(result.result).toMatch(/\d+|credits|balance/i);
       
     });
+
+    test('should execute getCurrentQuorumsInfo query', async () => {
+      await wasmSdkPage.setupQuery('system', 'getCurrentQuorumsInfo');
+      
+      const success = await parameterInjector.injectParameters('system', 'getCurrentQuorumsInfo', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate quorums info result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const quorumsData = JSON.parse(result.result);
+      expect(quorumsData).toBeDefined();
+      // Should contain a quorums array
+      expect(quorumsData).toHaveProperty('quorums');
+      expect(Array.isArray(quorumsData.quorums)).toBe(true);
+      
+      console.log('✅ getCurrentQuorumsInfo single view without proof confirmed');
+    });
+
+    test('should execute getPrefundedSpecializedBalance query', async () => {
+      await wasmSdkPage.setupQuery('system', 'getPrefundedSpecializedBalance');
+      
+      const success = await parameterInjector.injectParameters('system', 'getPrefundedSpecializedBalance', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate specialized balance result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const balanceData = JSON.parse(result.result);
+      expect(balanceData).toBeDefined();
+      // Should contain identityId and balance fields
+      expect(balanceData).toHaveProperty('identityId');
+      expect(balanceData).toHaveProperty('balance');
+      
+      console.log('✅ getPrefundedSpecializedBalance single view without proof confirmed');
+    });
   });
 
   test.describe('Error Handling', () => {
@@ -563,6 +622,145 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain status data with version info
       expect(result.result).toContain('version');
       
+    });
+  });
+
+  test.describe('Protocol & Version Queries', () => {
+    test('should execute getProtocolVersionUpgradeState query', async () => {
+      await wasmSdkPage.setupQuery('protocol', 'getProtocolVersionUpgradeState');
+      
+      // This query needs no parameters, so skip parameter injection
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate protocol version upgrade state result
+      expect(result.result).toBeDefined();
+      expect(result.result).toContain('currentProtocolVersion')
+      
+      console.log('✅ getProtocolVersionUpgradeState single view without proof confirmed');
+    });
+
+    test('should execute getProtocolVersionUpgradeVoteStatus query', async () => {
+      await wasmSdkPage.setupQuery('protocol', 'getProtocolVersionUpgradeVoteStatus');
+      
+      const success = await parameterInjector.injectParameters('protocol', 'getProtocolVersionUpgradeVoteStatus', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate protocol version upgrade vote status result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const voteData = JSON.parse(result.result);
+      expect(voteData).toBeDefined();
+      // Should contain vote status information - likely an array or object
+      expect(typeof voteData === 'object').toBe(true);
+      
+      console.log('✅ getProtocolVersionUpgradeVoteStatus single view without proof confirmed');
+    });
+  });
+
+  test.describe('DPNS Queries', () => {
+    test('should execute getDpnsUsername query', async () => {
+      await wasmSdkPage.setupQuery('dpns', 'getDpnsUsername');
+      
+      const success = await parameterInjector.injectParameters('dpns', 'getDpnsUsername', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicDpnsQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate DPNS username result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const usernameData = JSON.parse(result.result);
+      expect(usernameData).toBeDefined();
+      // Should be an array of usernames or empty array
+      if (Array.isArray(usernameData)) {
+        expect(usernameData.length).toBeGreaterThanOrEqual(0);
+      }
+      
+      console.log('✅ getDpnsUsername single view without proof confirmed');
+    });
+
+    test('should execute dpnsCheckAvailability query', async () => {
+      await wasmSdkPage.setupQuery('dpns', 'dpnsCheckAvailability');
+      
+      const success = await parameterInjector.injectParameters('dpns', 'dpnsCheckAvailability', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicDpnsQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate DPNS availability result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const availabilityData = JSON.parse(result.result);
+      expect(availabilityData).toBeDefined();
+      // Should be a boolean or an object with availability info
+      expect(typeof availabilityData === 'boolean' || typeof availabilityData === 'object').toBe(true);
+      
+      console.log('✅ dpnsCheckAvailability single view without proof confirmed');
+    });
+
+    test('should execute dpnsResolve query', async () => {
+      await wasmSdkPage.setupQuery('dpns', 'dpnsResolve');
+      
+      const success = await parameterInjector.injectParameters('dpns', 'dpnsResolve', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation  
+      validateBasicDpnsQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate DPNS resolve result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const resolveData = JSON.parse(result.result);
+      expect(resolveData).toBeDefined();
+      // Should return identity ID or null/message if not found
+      // Valid responses include identity ID, null, or "not found" message
+      
+      console.log('✅ dpnsResolve single view without proof confirmed');
+    });
+
+    test('should execute dpnsSearch query', async () => {
+      await wasmSdkPage.setupQuery('dpns', 'dpnsSearch');
+      
+      const success = await parameterInjector.injectParameters('dpns', 'dpnsSearch', 'testnet');
+      expect(success).toBe(true);
+      
+      const result = await wasmSdkPage.executeQueryAndGetResult();
+      
+      // Use helper functions for validation
+      validateBasicDpnsQueryResult(result);
+      validateSingleView(result);
+      
+      // Validate DPNS search result
+      expect(() => JSON.parse(result.result)).not.toThrow();
+      const searchData = JSON.parse(result.result);
+      expect(searchData).toBeDefined();
+      // Should be an array of search results with username fields
+      if (Array.isArray(searchData)) {
+        expect(searchData.length).toBeGreaterThanOrEqual(0);
+        // If there are results, each should have a username field
+        searchData.forEach(result => {
+          expect(result).toHaveProperty('username');
+        });
+      }
+      
+      console.log('✅ dpnsSearch single view without proof confirmed');
     });
   });
 

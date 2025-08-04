@@ -62,6 +62,11 @@ class ParameterInjector {
       'tokenId': ['#tokenId', '[name="tokenId"]', 'input[placeholder*="Token ID"]'],
       'tokenIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="tokenIds"] input[type="text"]', '.array-input-container[data-array-name="tokenIds"] input', '#tokenIds', '[name="tokenIds"]', 'input[placeholder*="Token IDs"]'],
       
+      // DPNS parameters
+      'label': ['#label', '[name="label"]', 'input[placeholder*="Username"]', 'input[placeholder*="Label"]'],
+      'name': ['#name', '[name="name"]', 'input[placeholder*="Name"]', 'input[placeholder*="DPNS"]'],
+      'prefix': ['#prefix', '[name="prefix"]', 'input[placeholder*="prefix"]', 'input[placeholder*="Prefix"]'],
+      
       // Query modifiers
       'limit': ['#limit', '[name="limit"]', 'input[placeholder*="limit" i]'],
       'offset': ['#offset', '[name="offset"]', 'input[placeholder*="offset" i]'],

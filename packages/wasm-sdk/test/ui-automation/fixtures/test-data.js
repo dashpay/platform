@@ -247,12 +247,28 @@ const testData = {
       },
       getTotalCreditsInPlatform: {
         testnet: [{}]
+      },
+      getCurrentQuorumsInfo: {
+        testnet: [{}] // No parameters needed
+      },
+      getPrefundedSpecializedBalance: {
+        testnet: [
+          { identityId: "AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT" }
+        ]
       }
     },
 
     protocol: {
       getProtocolVersionUpgradeState: {
-        testnet: [{}]
+        testnet: [{}] // No parameters needed
+      },
+      getProtocolVersionUpgradeVoteStatus: {
+        testnet: [
+          { 
+            startProTxHash: "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113",
+            count: 100
+          }
+        ]
       }
     },
 
@@ -273,6 +289,43 @@ const testData = {
         testnet: [
           {
             ids: ["143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"]
+          }
+        ]
+      }
+    },
+
+    dpns: {
+      getDpnsUsername: {
+        testnet: [
+          { 
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            limit: 10
+          }
+        ]
+      },
+      dpnsCheckAvailability: {
+        testnet: [
+          { label: "alice" },
+          { label: "test-username" },
+          { label: "available-name" }
+        ]
+      },
+      dpnsResolve: {
+        testnet: [
+          { name: "alice" },
+          { name: "alice.dash" },
+          { name: "test-name" }
+        ]
+      },
+      dpnsSearch: {
+        testnet: [
+          { 
+            prefix: "the",
+            limit: 10
+          },
+          {
+            prefix: "test",
+            limit: 5
           }
         ]
       }
