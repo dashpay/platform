@@ -44,6 +44,6 @@ async fn test_server_creation() {
     let config = Config::default();
 
     // Test that we can create a DapiServer successfully
-    let server_result = rs_dapi::server::DapiServer::new(config.into()).await;
+    let server_result = rs_dapi::server::DapiServer::new(config.into(), None).await;
     assert!(server_result.is_ok());
 }

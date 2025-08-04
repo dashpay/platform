@@ -48,10 +48,10 @@ impl PlatformServiceImpl {
             Ok(response) => response,
             Err(e) => {
                 let error_msg = e.to_string();
-                warn!(
+                error!(
                     error = %error_msg,
                     st_hash = %st_hash,
-                    "Failed to broadcast state transition to Tenderdash"
+                    "Failed to broadcast state transition to Tenderdash - technical failure"
                 );
 
                 if error_msg.contains("ECONNRESET") || error_msg.contains("socket hang up") {
@@ -67,11 +67,11 @@ impl PlatformServiceImpl {
 
         // Check broadcast result
         if broadcast_result.code != 0 {
-            warn!(
+            debug!(
                 code = broadcast_result.code,
                 info = ?broadcast_result.info,
                 st_hash = %st_hash,
-                "State transition broadcast failed"
+                "State transition broadcast failed - service error"
             );
 
             // Handle specific error cases
@@ -171,7 +171,10 @@ impl PlatformServiceImpl {
                 }
             }
             Err(e) => {
-                warn!("Failed to check unconfirmed transactions: {}", e);
+                error!(
+                    "Failed to check unconfirmed transactions - technical failure: {}",
+                    e
+                );
             }
         }
 

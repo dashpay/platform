@@ -4,7 +4,7 @@ use dapi_grpc::platform::v0::{
     GetStatusRequest, GetStatusResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use tracing::{error, warn};
+use tracing::error;
 
 use crate::clients::{
     drive_client::DriveStatusResponse,
@@ -48,7 +48,7 @@ impl PlatformServiceImpl {
         let drive_status = match drive_result {
             Ok(status) => status,
             Err(e) => {
-                warn!(error = ?e, "Failed to fetch Drive status, using defaults");
+                error!(error = ?e, "Failed to fetch Drive status - technical failure, using defaults");
                 DriveStatusResponse::default()
             }
         };
@@ -56,7 +56,7 @@ impl PlatformServiceImpl {
         let tenderdash_status = match tenderdash_status_result {
             Ok(status) => status,
             Err(e) => {
-                warn!(error = ?e, "Failed to fetch Tenderdash status, using defaults");
+                error!(error = ?e, "Failed to fetch Tenderdash status - technical failure, using defaults");
                 TenderdashStatusResponse::default()
             }
         };
@@ -64,7 +64,7 @@ impl PlatformServiceImpl {
         let tenderdash_netinfo = match tenderdash_netinfo_result {
             Ok(netinfo) => netinfo,
             Err(e) => {
-                warn!(error = ?e, "Failed to fetch Tenderdash netinfo, using defaults");
+                error!(error = ?e, "Failed to fetch Tenderdash netinfo - technical failure, using defaults");
                 NetInfoResponse::default()
             }
         };

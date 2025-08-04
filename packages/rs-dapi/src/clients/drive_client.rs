@@ -116,8 +116,7 @@ impl DriveClient {
                 );
                 return Err(DapiError::Client(format!(
                     "Failed to connect to Drive service at {}: {}",
-                    self.base_url,
-                    e
+                    self.base_url, e
                 )));
             }
         };
@@ -177,7 +176,9 @@ impl DriveClient {
 
             Ok(drive_status)
         } else {
-            Err(DapiError::Server("Drive returned unexpected response format".to_string()))
+            Err(DapiError::Server(
+                "Drive returned unexpected response format".to_string(),
+            ))
         }
     }
 }
@@ -333,7 +334,10 @@ impl DriveClientTrait for DriveClient {
     }
 
     // Document methods
-    async fn get_documents(&self, request: &GetDocumentsRequest) -> DAPIResult<GetDocumentsResponse> {
+    async fn get_documents(
+        &self,
+        request: &GetDocumentsRequest,
+    ) -> DAPIResult<GetDocumentsResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_documents(dapi_grpc::tonic::Request::new(request.clone()))
@@ -616,7 +620,10 @@ impl DriveClientTrait for DriveClient {
     }
 
     // Group methods
-    async fn get_group_info(&self, request: &GetGroupInfoRequest) -> DAPIResult<GetGroupInfoResponse> {
+    async fn get_group_info(
+        &self,
+        request: &GetGroupInfoRequest,
+    ) -> DAPIResult<GetGroupInfoResponse> {
         let mut client = self.get_client().await?;
         let response = client
             .get_group_info(dapi_grpc::tonic::Request::new(request.clone()))
@@ -686,11 +693,16 @@ impl DriveClient {
     async fn get_client(&self) -> DAPIResult<PlatformClient<dapi_grpc::tonic::transport::Channel>> {
         match PlatformClient::connect(self.base_url.clone()).await {
             Ok(client) => Ok(client),
-            Err(e) => Err(DapiError::Client(format!(
-                "Failed to connect to Platform service at {}: {}",
-                self.base_url,
-                e
-            ))),
+            Err(e) => {
+                error!(
+                    "Failed to connect to Platform service at {}: {}",
+                    self.base_url, e
+                );
+                Err(DapiError::Client(format!(
+                    "Failed to connect to Platform service at {}: {}",
+                    self.base_url, e
+                )))
+            }
         }
     }
 }

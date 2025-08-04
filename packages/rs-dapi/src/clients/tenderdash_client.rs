@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use super::traits::TenderdashClientTrait;
@@ -151,12 +151,19 @@ impl TenderdashClient {
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
+            .map_err(|e| {
+                error!("Failed to send request to Tenderdash at {}: {}", self.base_url, e);
+                DapiError::Client(format!("Failed to send request: {}", e))
+            })?
             .json()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| {
+                error!("Failed to parse Tenderdash response: {}", e);
+                DapiError::Client(format!("Failed to parse response: {}", e))
+            })?;
 
         if let Some(error) = response.error {
+            debug!("Tenderdash RPC returned error: {}", error);
             return Err(DapiError::Client(format!(
                 "Tenderdash RPC error: {}",
                 error
@@ -182,12 +189,19 @@ impl TenderdashClient {
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
+            .map_err(|e| {
+                error!("Failed to send net_info request to Tenderdash at {}: {}", self.base_url, e);
+                DapiError::Client(format!("Failed to send request: {}", e))
+            })?
             .json()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| {
+                error!("Failed to parse Tenderdash net_info response: {}", e);
+                DapiError::Client(format!("Failed to parse response: {}", e))
+            })?;
 
         if let Some(error) = response.error {
+            debug!("Tenderdash net_info RPC returned error: {}", error);
             return Err(DapiError::Client(format!(
                 "Tenderdash RPC error: {}",
                 error
@@ -217,13 +231,19 @@ impl TenderdashClient {
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
+            .map_err(|e| {
+                error!("Failed to send broadcast_tx request to Tenderdash at {}: {}", self.base_url, e);
+                DapiError::Client(format!("Failed to send request: {}", e))
+            })?
             .json()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| {
+                error!("Failed to parse Tenderdash broadcast_tx response: {}", e);
+                DapiError::Client(format!("Failed to parse response: {}", e))
+            })?;
 
         if let Some(error) = response.error {
-            error!("Tenderdash broadcast_tx RPC error: {}", error);
+            debug!("Tenderdash broadcast_tx RPC returned error: {}", error);
             return Err(DapiError::Client(format!(
                 "Tenderdash RPC error: {}",
                 error
@@ -252,12 +272,19 @@ impl TenderdashClient {
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
+            .map_err(|e| {
+                error!("Failed to send check_tx request to Tenderdash at {}: {}", self.base_url, e);
+                DapiError::Client(format!("Failed to send request: {}", e))
+            })?
             .json()
             .await
-            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| {
+                error!("Failed to parse Tenderdash check_tx response: {}", e);
+                DapiError::Client(format!("Failed to parse response: {}", e))
+            })?;
 
         if let Some(error) = response.error {
+            debug!("Tenderdash check_tx RPC returned error: {}", error);
             return Err(DapiError::Client(format!(
                 "Tenderdash RPC error: {}",
                 error
