@@ -40,7 +40,7 @@ class ParameterInjector {
     return {
       // Identity parameters
       'id': ['#id', '[name="id"]', 'input[placeholder*="Identity ID"]'],
-      'identityId': ['#identityId', '[name="identityId"]', 'input[placeholder*="Identity ID"]'],
+      'identityId': ['[name="identityId"]', '#identityId', 'input[placeholder*="Identity ID"]'],
       'identityIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="identityIds"] input[type="text"]', '.array-input-container[data-array-name="identityIds"] input', '#identityIds', '[name="identityIds"]', 'input[placeholder*="Identity IDs"]'],
       'identitiesIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="identitiesIds"] input[type="text"]', '.array-input-container[data-array-name="identitiesIds"] input', '#identitiesIds', '[name="identitiesIds"]', 'input[placeholder*="Identity IDs"]'],
       
@@ -92,6 +92,18 @@ class ParameterInjector {
       'indexName': ['#indexName', '[name="indexName"]'],
       'resultType': ['#resultType', '[name="resultType"]'],
       'contestantId': ['#contestantId', '[name="contestantId"]'],
+      'allowIncludeLockedAndAbstainingVoteTally': ['#allowIncludeLockedAndAbstainingVoteTally', '[name="allowIncludeLockedAndAbstainingVoteTally"]', 'input[type="checkbox"][name="allowIncludeLockedAndAbstainingVoteTally"]'],
+      'startAtIdentifierInfo': ['#startAtIdentifierInfo', '[name="startAtIdentifierInfo"]'],
+      
+      // Group parameters
+      'contractId': ['#contractId', '[name="contractId"]', 'input[placeholder*="Contract ID"]'],
+      'groupContractPosition': ['#groupContractPosition', '[name="groupContractPosition"]'],
+      'startAtGroupContractPosition': ['#startAtGroupContractPosition', '[name="startAtGroupContractPosition"]'],
+      'startGroupContractPositionIncluded': ['#startGroupContractPositionIncluded', '[name="startGroupContractPositionIncluded"]', 'input[type="checkbox"][name="startGroupContractPositionIncluded"]'],
+      'status': ['#status', '[name="status"]', 'select[name="status"]'],
+      'actionId': ['#actionId', '[name="actionId"]'],
+      'startActionId': ['#startActionId', '[name="startActionId"]'],
+      'startActionIdIncluded': ['#startActionIdIncluded', '[name="startActionIdIncluded"]', 'input[type="checkbox"][name="startActionIdIncluded"]'],
       
       // Time parameters
       'startTimeMs': ['#startTimeMs', '[name="startTimeMs"]'],
