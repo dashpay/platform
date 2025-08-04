@@ -453,25 +453,6 @@ test.describe('WASM SDK Query Execution Tests', () => {
   });
 
   test.describe('System Queries', () => {
-    test('should execute getCurrentEpoch query', async () => {
-      await wasmSdkPage.setupQuery('epoch', 'getCurrentEpoch');
-      
-      const result = await wasmSdkPage.executeQueryAndGetResult();
-      
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      
-      // Should contain epoch data (number or JSON with epoch info)
-      expect(result.result).toMatch(/\d+|epoch/i);
-      
-    });
-
     const systemQueries = [
       { 
         name: 'getStatus', 
@@ -541,6 +522,78 @@ test.describe('WASM SDK Query Execution Tests', () => {
               wasmSdkPage, 
               parameterInjector, 
               'system', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
+    });
+  });
+
+  test.describe('Epoch Queries', () => {
+    const epochQueries = [
+      { 
+        name: 'getCurrentEpoch', 
+        hasProofSupport: true, 
+        needsParameters: false,
+        validateFn: (result) => {
+          expect(result).toBeDefined();
+          expect(result).toMatch(/\d+|epoch/i);
+        }
+      },
+      { 
+        name: 'getEpochsInfo', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const epochData = JSON.parse(result);
+          expect(epochData).toBeDefined();
+          expect(typeof epochData === 'object').toBe(true);
+        }
+      }
+    ];
+
+    epochQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('epoch', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('epoch', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'epoch', 
               name,
               'testnet'
             );
