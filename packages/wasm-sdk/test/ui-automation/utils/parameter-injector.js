@@ -76,6 +76,8 @@ class ParameterInjector {
       'epoch': ['#epoch', '[name="epoch"]', 'input[placeholder*="epoch" i]'],
       'startEpoch': ['#startEpoch', '[name="startEpoch"]'],
       'ascending': ['#ascending', '[name="ascending"]', 'input[type="checkbox"][name="ascending"]'],
+      'orderAscending': ['#orderAscending', '[name="orderAscending"]', 'input[type="checkbox"][name="orderAscending"]'],
+      'startAfter': ['#startAfter', '[name="startAfter"]', 'input[placeholder*="startAfter" i]'],
       
       // ProTx parameters
       'startProTxHash': ['#startProTxHash', '[name="startProTxHash"]'],

@@ -546,7 +546,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     });
   });
 
-  test.describe('Epoch Queries', () => {
+  test.describe('Epoch & Block Queries', () => {
     const epochQueries = [
       { 
         name: 'getCurrentEpoch', 
@@ -566,6 +566,39 @@ test.describe('WASM SDK Query Execution Tests', () => {
           const epochData = JSON.parse(result);
           expect(epochData).toBeDefined();
           expect(typeof epochData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getFinalizedEpochInfos', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const epochData = JSON.parse(result);
+          expect(epochData).toBeDefined();
+          expect(typeof epochData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getEvonodesProposedEpochBlocksByIds', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const blockData = JSON.parse(result);
+          expect(blockData).toBeDefined();
+          expect(typeof blockData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getEvonodesProposedEpochBlocksByRange', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const blockData = JSON.parse(result);
+          expect(blockData).toBeDefined();
+          expect(typeof blockData === 'object').toBe(true);
         }
       }
     ];

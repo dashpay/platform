@@ -279,8 +279,17 @@ const testData = {
       getEpochsInfo: {
         testnet: [
           {
-            epoch: 1000,
-            count: 5,
+            startEpoch: 1000,
+            count: 100,
+            ascending: true
+          }
+        ]
+      },
+      getFinalizedEpochInfos: {
+        testnet: [
+          {
+            startEpoch: 8635,
+            count: 100,
             ascending: true
           }
         ]
@@ -288,7 +297,18 @@ const testData = {
       getEvonodesProposedEpochBlocksByIds: {
         testnet: [
           {
+            epoch: 8635,
             ids: ["143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"]
+          }
+        ]
+      },
+      getEvonodesProposedEpochBlocksByRange: {
+        testnet: [
+          {
+            epoch: 8635,
+            limit: 10,
+            startAfter: "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113",
+            orderAscending: true
           }
         ]
       }
