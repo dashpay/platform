@@ -61,6 +61,9 @@ packages/swift-sdk/**/*.xcframework/
 # rs-sdk-ffi build directory
 packages/rs-sdk-ffi/build/
 
+# Swift SDK build outputs
+packages/swift-sdk/build_output.txt
+
 # wasm-drive-verify build artifacts
 packages/wasm-drive-verify/target/
 packages/wasm-drive-verify/wasm/

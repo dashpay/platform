@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftDashSDK
 
 /// SwiftData model for persisting Identity data
 @Model
@@ -13,10 +14,10 @@ final class PersistentIdentity {
     var identityType: String
     
     // MARK: - Key Storage
-    var privateKeys: [String]
-    var votingPrivateKey: String?
-    var ownerPrivateKey: String?
-    var payoutPrivateKey: String?
+    @Relationship(deleteRule: .cascade) var privateKeys: [PersistentPrivateKey]
+    var votingPrivateKeyIdentifier: String?
+    var ownerPrivateKeyIdentifier: String?
+    var payoutPrivateKeyIdentifier: String?
     
     // MARK: - Public Keys
     @Relationship(deleteRule: .cascade) var publicKeys: [PersistentPublicKey]
@@ -41,10 +42,10 @@ final class PersistentIdentity {
         isLocal: Bool = true,
         alias: String? = nil,
         identityType: IdentityType = .user,
-        privateKeys: [String] = [],
-        votingPrivateKey: String? = nil,
-        ownerPrivateKey: String? = nil,
-        payoutPrivateKey: String? = nil,
+        privateKeys: [PersistentPrivateKey] = [],
+        votingPrivateKeyIdentifier: String? = nil,
+        ownerPrivateKeyIdentifier: String? = nil,
+        payoutPrivateKeyIdentifier: String? = nil,
         network: String = "testnet"
     ) {
         self.identityId = identityId
@@ -54,9 +55,9 @@ final class PersistentIdentity {
         self.alias = alias
         self.identityType = identityType.rawValue
         self.privateKeys = privateKeys
-        self.votingPrivateKey = votingPrivateKey
-        self.ownerPrivateKey = ownerPrivateKey
-        self.payoutPrivateKey = payoutPrivateKey
+        self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
+        self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
+        self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
         self.network = network
         self.publicKeys = []
         self.documents = []
@@ -113,16 +114,29 @@ extension PersistentIdentity {
     func toIdentityModel() -> IdentityModel {
         let publicKeyModels = publicKeys.compactMap { $0.toIdentityPublicKey() }
         
+        // Convert PersistentPrivateKey array to Data array by retrieving from keychain
+        let privateKeyData = privateKeys
+            .sorted(by: { $0.keyIndex < $1.keyIndex })
+            .compactMap { $0.getKeyData() }
+        
+        // Retrieve special keys from keychain
+        let votingKey = votingPrivateKeyIdentifier != nil ? 
+            KeychainManager.shared.retrieveSpecialKey(identityId: identityId, keyType: .voting) : nil
+        let ownerKey = ownerPrivateKeyIdentifier != nil ?
+            KeychainManager.shared.retrieveSpecialKey(identityId: identityId, keyType: .owner) : nil
+        let payoutKey = payoutPrivateKeyIdentifier != nil ?
+            KeychainManager.shared.retrieveSpecialKey(identityId: identityId, keyType: .payout) : nil
+        
         return IdentityModel(
             id: identityId,
             balance: UInt64(balance),
             isLocal: isLocal,
             alias: alias,
             type: identityTypeEnum,
-            privateKeys: privateKeys,
-            votingPrivateKey: votingPrivateKey,
-            ownerPrivateKey: ownerPrivateKey,
-            payoutPrivateKey: payoutPrivateKey,
+            privateKeys: privateKeyData,
+            votingPrivateKey: votingKey,
+            ownerPrivateKey: ownerKey,
+            payoutPrivateKey: payoutKey,
             dppIdentity: nil, // Would need to reconstruct from data
             publicKeys: publicKeyModels
         )
@@ -130,6 +144,21 @@ extension PersistentIdentity {
     
     /// Create from IdentityModel
     static func from(_ model: IdentityModel, network: String = "testnet") -> PersistentIdentity {
+        // Store special keys in keychain first
+        var votingKeyId: String? = nil
+        var ownerKeyId: String? = nil
+        var payoutKeyId: String? = nil
+        
+        if let votingKey = model.votingPrivateKey {
+            votingKeyId = KeychainManager.shared.storeSpecialKey(votingKey, identityId: model.id, keyType: .voting)
+        }
+        if let ownerKey = model.ownerPrivateKey {
+            ownerKeyId = KeychainManager.shared.storeSpecialKey(ownerKey, identityId: model.id, keyType: .owner)
+        }
+        if let payoutKey = model.payoutPrivateKey {
+            payoutKeyId = KeychainManager.shared.storeSpecialKey(payoutKey, identityId: model.id, keyType: .payout)
+        }
+        
         let persistent = PersistentIdentity(
             identityId: model.id,
             balance: Int64(model.balance),
@@ -137,12 +166,25 @@ extension PersistentIdentity {
             isLocal: model.isLocal,
             alias: model.alias,
             identityType: model.type,
-            privateKeys: model.privateKeys,
-            votingPrivateKey: model.votingPrivateKey,
-            ownerPrivateKey: model.ownerPrivateKey,
-            payoutPrivateKey: model.payoutPrivateKey,
+            privateKeys: [],  // Initialize empty, will add below
+            votingPrivateKeyIdentifier: votingKeyId,
+            ownerPrivateKeyIdentifier: ownerKeyId,
+            payoutPrivateKeyIdentifier: payoutKeyId,
             network: network
         )
+        
+        // Add private keys
+        for (index, keyData) in model.privateKeys.enumerated() {
+            // Store in keychain
+            if let keychainId = KeychainManager.shared.storePrivateKey(keyData, identityId: model.id, keyIndex: Int32(index)) {
+                let persistentPrivateKey = PersistentPrivateKey(
+                    identityId: model.id,
+                    keyIndex: Int32(index),
+                    keychainIdentifier: keychainId
+                )
+                persistent.privateKeys.append(persistentPrivateKey)
+            }
+        }
         
         // Add public keys
         for publicKey in model.publicKeys {

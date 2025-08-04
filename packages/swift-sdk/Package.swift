@@ -17,7 +17,7 @@ let package = Package(
         // Binary target using the Unified XCFramework
         .binaryTarget(
             name: "DashSDKFFI",
-            path: "../rs-sdk-ffi/build/DashSDK.xcframework"
+            path: "../rs-sdk-ffi/build/DashUnifiedSDK.xcframework"
         ),
         // Swift wrapper target
         .target(

@@ -10,6 +10,7 @@ mod context_provider;
 #[cfg(test)]
 mod context_provider_stubs;
 mod core_sdk;
+mod crypto;
 mod data_contract;
 mod document;
 mod dpns;
@@ -38,6 +39,7 @@ pub use contested_resource::*;
 pub use context_callbacks::*;
 pub use context_provider::*;
 pub use core_sdk::*;
+pub use crypto::*;
 pub use data_contract::*;
 pub use document::*;
 pub use dpns::*;

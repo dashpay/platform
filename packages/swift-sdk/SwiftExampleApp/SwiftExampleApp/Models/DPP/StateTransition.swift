@@ -1,4 +1,5 @@
 import Foundation
+import SwiftDashSDK
 
 // MARK: - State Transition Models based on DPP
 

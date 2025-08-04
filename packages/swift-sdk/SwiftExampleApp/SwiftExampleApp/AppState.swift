@@ -259,6 +259,48 @@ class AppState: ObservableObject {
         }
     }
     
+    func updateIdentityPublicKeys(id: Data, publicKeys: [IdentityPublicKey]) {
+        print("🔵 updateIdentityPublicKeys called with \(publicKeys.count) keys for identity \(id.toHexString())")
+        guard let dataManager = dataManager else { 
+            print("❌ No dataManager available")
+            return 
+        }
+        
+        if let index = identities.firstIndex(where: { $0.id == id }) {
+            print("🔵 Found identity at index \(index)")
+            // Create a new identity with updated public keys
+            let oldIdentity = identities[index]
+            let updatedIdentity = IdentityModel(
+                id: oldIdentity.id,
+                balance: oldIdentity.balance,
+                isLocal: oldIdentity.isLocal,
+                alias: oldIdentity.alias,
+                type: oldIdentity.type,
+                privateKeys: oldIdentity.privateKeys,
+                votingPrivateKey: oldIdentity.votingPrivateKey,
+                ownerPrivateKey: oldIdentity.ownerPrivateKey,
+                payoutPrivateKey: oldIdentity.payoutPrivateKey,
+                dpnsName: oldIdentity.dpnsName,
+                dppIdentity: oldIdentity.dppIdentity,
+                publicKeys: publicKeys
+            )
+            identities[index] = updatedIdentity
+            print("🔵 Updated identity in array, now has \(updatedIdentity.publicKeys.count) public keys")
+            
+            // Update in persistence
+            Task {
+                do {
+                    try dataManager.saveIdentity(updatedIdentity)
+                    print("✅ Saved identity to persistence")
+                } catch {
+                    print("Error updating identity public keys: \(error)")
+                }
+            }
+        } else {
+            print("❌ Identity not found in identities array")
+        }
+    }
+    
     func addContract(_ contract: ContractModel) {
         guard let dataManager = dataManager else { return }
         

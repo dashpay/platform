@@ -56,20 +56,42 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
         }
     };
 
-    let id = match Identifier::from_string(id_str, Encoding::Base58) {
-        Ok(id) => {
-            eprintln!("🔵 dash_sdk_identity_fetch: Parsed identifier successfully");
-            id
+    // Try to parse as hex first (64 chars), then as Base58
+    let id = if id_str.len() == 64 && id_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        eprintln!("🔵 dash_sdk_identity_fetch: Detected hex format, parsing...");
+        match Identifier::from_string(id_str, Encoding::Hex) {
+            Ok(id) => {
+                eprintln!("🔵 dash_sdk_identity_fetch: Parsed hex identifier successfully");
+                id
+            }
+            Err(e) => {
+                eprintln!(
+                    "❌ dash_sdk_identity_fetch: Failed to parse hex identity ID: {}",
+                    e
+                );
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("Invalid hex identity ID: {}", e),
+                ));
+            }
         }
-        Err(e) => {
-            eprintln!(
-                "❌ dash_sdk_identity_fetch: Failed to parse identity ID: {}",
-                e
-            );
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Invalid identity ID: {}", e),
-            ));
+    } else {
+        eprintln!("🔵 dash_sdk_identity_fetch: Trying Base58 format...");
+        match Identifier::from_string(id_str, Encoding::Base58) {
+            Ok(id) => {
+                eprintln!("🔵 dash_sdk_identity_fetch: Parsed Base58 identifier successfully");
+                id
+            }
+            Err(e) => {
+                eprintln!(
+                    "❌ dash_sdk_identity_fetch: Failed to parse Base58 identity ID: {}",
+                    e
+                );
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("Invalid identity ID. Must be either 64-char hex or valid Base58: {}", e),
+                ));
+            }
         }
     };
 

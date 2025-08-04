@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftDashSDK
 
 /// SwiftData model for persisting public key data
 @Model

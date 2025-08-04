@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct LoadIdentityView: View {
     @EnvironmentObject var appState: AppState
@@ -284,6 +285,17 @@ struct LoadIdentityView: View {
                     return
                 }
                 
+                // Convert private key strings to Data
+                let privateKeyData = privateKeys.compactMap { keyString -> Data? in
+                    let trimmed = keyString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    return Data(hexString: trimmed)
+                }
+                
+                let votingKeyData = votingPrivateKeyInput.isEmpty ? nil : Data(hexString: votingPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                let ownerKeyData = ownerPrivateKeyInput.isEmpty ? nil : Data(hexString: ownerPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                let payoutKeyData = payoutPrivateKeyInput.isEmpty ? nil : Data(hexString: payoutPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                
                 // Create the identity model
                 let identity = IdentityModel(
                     id: validIdData,
@@ -291,10 +303,10 @@ struct LoadIdentityView: View {
                     isLocal: true,
                     alias: aliasInput.isEmpty ? nil : aliasInput,
                     type: selectedIdentityType,
-                    privateKeys: privateKeys.filter { !$0.isEmpty },
-                    votingPrivateKey: votingPrivateKeyInput.isEmpty ? nil : votingPrivateKeyInput,
-                    ownerPrivateKey: ownerPrivateKeyInput.isEmpty ? nil : ownerPrivateKeyInput,
-                    payoutPrivateKey: payoutPrivateKeyInput.isEmpty ? nil : payoutPrivateKeyInput
+                    privateKeys: privateKeyData,
+                    votingPrivateKey: votingKeyData,
+                    ownerPrivateKey: ownerKeyData,
+                    payoutPrivateKey: payoutKeyData
                 )
                 
                 // Fetch the identity from the network to verify it exists
@@ -310,19 +322,109 @@ struct LoadIdentityView: View {
                 // Try to fetch the identity
                 let identityData = try await sdk.identityGet(identityId: validIdData.toHexString())
                 
-                // Update the identity model with fetched data
-                var fetchedIdentity = identity
-                fetchedIdentity.isLocal = false // Mark as fetched from network
+                // Debug: Print the entire identity data to see its structure
+                print("🔵 Fetched identity data: \(identityData)")
                 
-                // Extract balance if available
+                // Extract balance
+                var fetchedBalance = identity.balance
                 if let balanceValue = identityData["balance"] {
                     if let balanceNum = balanceValue as? NSNumber {
-                        fetchedIdentity.balance = balanceNum.uint64Value
+                        fetchedBalance = balanceNum.uint64Value
                     } else if let balanceString = balanceValue as? String,
                               let balanceUInt = UInt64(balanceString) {
-                        fetchedIdentity.balance = balanceUInt
+                        fetchedBalance = balanceUInt
                     }
                 }
+                
+                // Extract public keys if available
+                var parsedPublicKeys: [IdentityPublicKey] = []
+                
+                // Try different possible key names for public keys in the JSON
+                // The publicKeys might be a dictionary with key IDs as keys
+                if let publicKeysDict = identityData["publicKeys"] as? [String: Any] {
+                    print("🔵 Public keys are in dictionary format")
+                    parsedPublicKeys = publicKeysDict.compactMap { (keyIdStr, keyData) -> IdentityPublicKey? in
+                        guard let keyData = keyData as? [String: Any],
+                              let id = Int(keyIdStr) ?? keyData["id"] as? Int,
+                              let purpose = keyData["purpose"] as? Int,
+                              let securityLevel = keyData["securityLevel"] as? Int,
+                              let keyType = keyData["type"] as? Int,
+                              let dataStr = keyData["data"] as? String else {
+                            print("❌ Failed to parse key with ID: \(keyIdStr), data: \(keyData)")
+                            return nil
+                        }
+                        
+                        // Data is in Base64 format, not hex
+                        guard let data = Data(base64Encoded: dataStr) else {
+                            print("❌ Failed to decode Base64 data for key \(id)")
+                            return nil
+                        }
+                        
+                        let readOnly = keyData["readOnly"] as? Bool ?? false
+                        let disabledAt = keyData["disabledAt"] as? UInt64
+                        
+                        return IdentityPublicKey(
+                            id: UInt32(id),
+                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
+                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
+                            contractBounds: nil,
+                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
+                            readOnly: readOnly,
+                            data: data,
+                            disabledAt: disabledAt
+                        )
+                    }
+                } else if let publicKeysArray = identityData["publicKeys"] as? [[String: Any]] {
+                    print("🔵 Public keys are in array format")
+                    parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
+                        guard let id = keyData["id"] as? Int,
+                              let purpose = keyData["purpose"] as? Int,
+                              let securityLevel = keyData["securityLevel"] as? Int,
+                              let keyType = keyData["type"] as? Int,
+                              let dataStr = keyData["data"] as? String else {
+                            print("❌ Failed to parse key data: \(keyData)")
+                            return nil
+                        }
+                        
+                        // Data is in Base64 format, not hex
+                        guard let data = Data(base64Encoded: dataStr) else {
+                            print("❌ Failed to decode Base64 data for key \(id)")
+                            return nil
+                        }
+                        
+                        let readOnly = keyData["readOnly"] as? Bool ?? false
+                        let disabledAt = keyData["disabledAt"] as? UInt64
+                        
+                        return IdentityPublicKey(
+                            id: UInt32(id),
+                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
+                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
+                            contractBounds: nil,
+                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
+                            readOnly: readOnly,
+                            data: data,
+                            disabledAt: disabledAt
+                        )
+                    }
+                } else {
+                    print("❌ Public keys not found in identity data")
+                }
+                
+                // Create new identity with fetched data
+                let fetchedIdentity = IdentityModel(
+                    id: validIdData,
+                    balance: fetchedBalance,
+                    isLocal: false,
+                    alias: aliasInput.isEmpty ? nil : aliasInput,
+                    type: selectedIdentityType,
+                    privateKeys: privateKeyData,
+                    votingPrivateKey: votingKeyData,
+                    ownerPrivateKey: ownerKeyData,
+                    payoutPrivateKey: payoutKeyData,
+                    dpnsName: nil,
+                    dppIdentity: nil,
+                    publicKeys: parsedPublicKeys
+                )
                 
                 // Add to app state
                 await MainActor.run {

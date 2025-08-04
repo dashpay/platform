@@ -29,8 +29,11 @@ struct TestKeyGenerator {
         // Key 1: Authentication key (HIGH security)
         keys["1"] = generateTestPrivateKey(identityId: identityId, keyIndex: 1, purpose: 0)
         
-        // Key 2: Transfer key (CRITICAL security)
-        keys["2"] = generateTestPrivateKey(identityId: identityId, keyIndex: 2, purpose: 2)
+        // Key 2: Transfer key (CRITICAL security, purpose 3 = TRANSFER)
+        keys["2"] = generateTestPrivateKey(identityId: identityId, keyIndex: 2, purpose: 3)
+        
+        // Key 3: Another transfer key (some identities might have transfer key at index 3)
+        keys["3"] = generateTestPrivateKey(identityId: identityId, keyIndex: 3, purpose: 3)
         
         return keys
     }

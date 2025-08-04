@@ -58,19 +58,6 @@ struct StateTransitionsView: View {
                     executeButton
                 }
                 
-                // Test Transfer Button
-                NavigationLink(destination: TestCreditTransferView()) {
-                    HStack {
-                        Image(systemName: "flask.fill")
-                        Text("Run Test Credit Transfer")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.orange)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                }
-                
                 // Result Display
                 if showResult {
                     resultView
@@ -414,9 +401,15 @@ struct StateTransitionsView: View {
         // Normalize the recipient identity ID to base58
         let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
         
-        // For demo purposes, create a test signer
+        // Find the transfer key from the identity's public keys
+        let transferKey = fromIdentity.publicKeys.first { key in
+            key.purpose == .transfer
+        }
+        
+        // For demo purposes, generate a test private key based on the transfer key ID
         // In production, this would use proper key management
-        let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: fromIdentity.id, keyId: 3) ?? Data(repeating: 0, count: 32)
+        let keyId = transferKey?.id ?? 3  // Default to key ID 3 if no transfer key found
+        let testPrivateKey = TestKeyGenerator.getPrivateKey(identityId: fromIdentity.id, keyId: UInt32(keyId)) ?? Data(repeating: 0, count: 32)
         
         let signerResult = testPrivateKey.withUnsafeBytes { keyBytes in
             dash_sdk_signer_create_from_private_key(

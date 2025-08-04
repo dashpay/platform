@@ -43,7 +43,14 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
             ));
         }
     };
-    let handle = Box::into_raw(Box::new(signer)) as *mut SignerHandle;
+    
+    // Create a VTableSigner that wraps the SingleKeySigner
+    let vtable_signer = crate::signer::VTableSigner {
+        signer_ptr: Box::into_raw(Box::new(signer)) as *mut std::os::raw::c_void,
+        vtable: &crate::signer::SINGLE_KEY_SIGNER_VTABLE,
+    };
+    
+    let handle = Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle;
     DashSDKResult::success(handle as *mut std::os::raw::c_void)
 }
 

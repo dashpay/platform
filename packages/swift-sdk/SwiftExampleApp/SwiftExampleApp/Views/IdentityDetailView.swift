@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftDashSDK
+import SwiftDashSDK
 
 struct IdentityDetailView: View {
     let identity: IdentityModel
@@ -83,37 +84,37 @@ struct IdentityDetailView: View {
                 }
             }
             
-            // Public Keys Section
-            if !identity.publicKeys.isEmpty {
-                Section("Public Keys") {
-                    ForEach(Array(identity.publicKeys.enumerated()), id: \.offset) { index, key in
+            // Keys Section
+            Section("Keys") {
+                NavigationLink(destination: KeysListView(identity: identity)) {
+                    HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("Key #\(key.id)")
-                                    .font(.caption)
+                                Image(systemName: "key.fill")
+                                Text("Identity Keys")
                                     .fontWeight(.medium)
-                                Spacer()
-                                Text("Purpose: \(key.purpose)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
                             }
                             
-                            Text(key.data.toHexString())
-                                .font(.caption2)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 16) {
+                                Label("\(identity.publicKeys.count) public", systemImage: "key")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                if !identity.privateKeys.isEmpty {
+                                    Label("\(identity.privateKeys.count) private", systemImage: "key.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
                         }
-                        .padding(.vertical, 2)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
                     }
-                }
-            }
-            
-            // Private Keys Section (if any)
-            if !identity.privateKeys.isEmpty {
-                Section("Private Keys") {
-                    Text("\(identity.privateKeys.count) key(s) loaded")
-                        .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
                 }
             }
             
@@ -174,6 +175,46 @@ struct IdentityDetailView: View {
                         appState.updateIdentityBalance(id: identity.id, newBalance: balanceUInt)
                     }
                 }
+                
+                // Parse and update public keys
+                var parsedPublicKeys: [IdentityPublicKey] = []
+                print("🔵 Checking for public keys in fetched identity...")
+                if let publicKeysArray = fetchedIdentity["publicKeys"] as? [[String: Any]] {
+                    print("🔵 Found \(publicKeysArray.count) public keys")
+                    parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
+                        print("🔵 Parsing key data: \(keyData)")
+                        guard let id = keyData["id"] as? Int,
+                              let purpose = keyData["purpose"] as? Int,
+                              let securityLevel = keyData["securityLevel"] as? Int,
+                              let keyType = keyData["type"] as? Int,
+                              let dataStr = keyData["data"] as? String,
+                              let data = Data(base64Encoded: dataStr) else {
+                            return nil
+                        }
+                        
+                        let readOnly = keyData["readOnly"] as? Bool ?? false
+                        let disabledAt = keyData["disabledAt"] as? UInt64
+                        
+                        return IdentityPublicKey(
+                            id: UInt32(id),
+                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
+                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
+                            contractBounds: nil,
+                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
+                            readOnly: readOnly,
+                            data: data,
+                            disabledAt: disabledAt
+                        )
+                    }
+                } else {
+                    print("❌ No public keys found in fetched identity")
+                }
+                
+                print("🔵 Parsed \(parsedPublicKeys.count) public keys total")
+                
+                // Update the identity with public keys
+                appState.updateIdentityPublicKeys(id: identity.id, publicKeys: parsedPublicKeys)
+                print("🔵 Called updateIdentityPublicKeys")
                 
                 // Refresh DPNS names
                 loadDPNSNames()

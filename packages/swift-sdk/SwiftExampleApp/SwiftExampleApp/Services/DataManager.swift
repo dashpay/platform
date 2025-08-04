@@ -25,10 +25,30 @@ final class DataManager: ObservableObject {
             existingIdentity.balance = Int64(identity.balance)
             existingIdentity.alias = identity.alias
             existingIdentity.isLocal = identity.isLocal
-            existingIdentity.privateKeys = identity.privateKeys
-            existingIdentity.votingPrivateKey = identity.votingPrivateKey
-            existingIdentity.ownerPrivateKey = identity.ownerPrivateKey
-            existingIdentity.payoutPrivateKey = identity.payoutPrivateKey
+            // Update private keys
+            existingIdentity.privateKeys.removeAll()
+            for (index, keyData) in identity.privateKeys.enumerated() {
+                // Store in keychain
+                if let keychainId = KeychainManager.shared.storePrivateKey(keyData, identityId: identity.id, keyIndex: Int32(index)) {
+                    let persistentPrivateKey = PersistentPrivateKey(
+                        identityId: identity.id,
+                        keyIndex: Int32(index),
+                        keychainIdentifier: keychainId
+                    )
+                    existingIdentity.privateKeys.append(persistentPrivateKey)
+                }
+            }
+            
+            // Update special keys
+            if let votingKey = identity.votingPrivateKey {
+                existingIdentity.votingPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(votingKey, identityId: identity.id, keyType: .voting)
+            }
+            if let ownerKey = identity.ownerPrivateKey {
+                existingIdentity.ownerPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(ownerKey, identityId: identity.id, keyType: .owner)
+            }
+            if let payoutKey = identity.payoutPrivateKey {
+                existingIdentity.payoutPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(payoutKey, identityId: identity.id, keyType: .payout)
+            }
             existingIdentity.lastUpdated = Date()
             
             // Update public keys

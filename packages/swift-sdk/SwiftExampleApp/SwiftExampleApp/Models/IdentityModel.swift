@@ -20,10 +20,10 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     var isLocal: Bool
     let alias: String?
     let type: IdentityType
-    let privateKeys: [String]
-    let votingPrivateKey: String?
-    let ownerPrivateKey: String?
-    let payoutPrivateKey: String?
+    let privateKeys: [Data]
+    let votingPrivateKey: Data?
+    let ownerPrivateKey: Data?
+    let payoutPrivateKey: Data?
     var dpnsName: String?
     
     // DPP-related properties
@@ -43,7 +43,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         id.toHexString()
     }
     
-    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
+    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
         self.id = id
         self._base58String = id.toBase58String()
         self.balance = balance
@@ -60,7 +60,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     }
     
     /// Initialize with hex string ID for convenience
-    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], votingPrivateKey: String? = nil, ownerPrivateKey: String? = nil, payoutPrivateKey: String? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
+    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, dppIdentity: DPPIdentity? = nil, publicKeys: [IdentityPublicKey] = []) {
         guard let idData = Data(hexString: idString), idData.count == 32 else { return nil }
         self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dpnsName: dpnsName, dppIdentity: dppIdentity, publicKeys: publicKeys)
     }
@@ -83,7 +83,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     }
     
     /// Create from DPP Identity
-    init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [String] = [], dpnsName: String? = nil) {
+    init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], dpnsName: String? = nil) {
         self.id = dppIdentity.id  // DPPIdentity already uses Data for id
         self._base58String = dppIdentity.id.toBase58String()
         self.balance = dppIdentity.balance

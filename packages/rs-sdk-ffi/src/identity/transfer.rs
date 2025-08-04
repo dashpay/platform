@@ -12,6 +12,7 @@ use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKPutSettings, IdentityHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, IOSSigner};
+use dash_sdk::dpp::identity::signer::Signer;
 
 /// Result structure for credit transfer operations
 #[repr(C)]
@@ -81,7 +82,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         }
     };
     
-    let signer = &*(signer_handle as *const IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
     
     eprintln!("🔵 dash_sdk_identity_transfer_credits: All handles dereferenced successfully");
     eprintln!("🔵 dash_sdk_identity_transfer_credits: public_key_id = {}", public_key_id);

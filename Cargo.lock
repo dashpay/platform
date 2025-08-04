@@ -5112,6 +5112,7 @@ dependencies = [
  "serde",
  "serde_json",
  "simple-signer",
+ "subtle",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
