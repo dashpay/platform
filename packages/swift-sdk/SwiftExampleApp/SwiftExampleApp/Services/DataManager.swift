@@ -24,6 +24,7 @@ final class DataManager: ObservableObject {
             // Update existing identity
             existingIdentity.balance = Int64(identity.balance)
             existingIdentity.alias = identity.alias
+            existingIdentity.dpnsName = identity.dpnsName
             existingIdentity.isLocal = identity.isLocal
             // Update private keys
             existingIdentity.privateKeys.removeAll()

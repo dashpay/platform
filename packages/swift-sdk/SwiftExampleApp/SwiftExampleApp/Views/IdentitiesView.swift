@@ -136,7 +136,7 @@ struct IdentityRow: View {
     @State private var isRefreshing = false
     
     var body: some View {
-        NavigationLink(destination: IdentityDetailView(identity: identity)) {
+        NavigationLink(destination: IdentityDetailView(identityId: identity.id)) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {

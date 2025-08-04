@@ -11,6 +11,7 @@ final class PersistentIdentity {
     var revision: Int64
     var isLocal: Bool
     var alias: String?
+    var dpnsName: String?
     var identityType: String
     
     // MARK: - Key Storage
@@ -41,6 +42,7 @@ final class PersistentIdentity {
         revision: Int64 = 0,
         isLocal: Bool = true,
         alias: String? = nil,
+        dpnsName: String? = nil,
         identityType: IdentityType = .user,
         privateKeys: [PersistentPrivateKey] = [],
         votingPrivateKeyIdentifier: String? = nil,
@@ -53,6 +55,7 @@ final class PersistentIdentity {
         self.revision = revision
         self.isLocal = isLocal
         self.alias = alias
+        self.dpnsName = dpnsName
         self.identityType = identityType.rawValue
         self.privateKeys = privateKeys
         self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
@@ -96,6 +99,11 @@ final class PersistentIdentity {
         self.lastSyncedAt = Date()
     }
     
+    func updateDPNSName(_ name: String?) {
+        self.dpnsName = name
+        self.lastUpdated = Date()
+    }
+    
     func addPublicKey(_ key: PersistentPublicKey) {
         publicKeys.append(key)
         lastUpdated = Date()
@@ -137,6 +145,7 @@ extension PersistentIdentity {
             votingPrivateKey: votingKey,
             ownerPrivateKey: ownerKey,
             payoutPrivateKey: payoutKey,
+            dpnsName: dpnsName,
             dppIdentity: nil, // Would need to reconstruct from data
             publicKeys: publicKeyModels
         )
@@ -165,6 +174,7 @@ extension PersistentIdentity {
             revision: Int64(model.dppIdentity?.revision ?? 0),
             isLocal: model.isLocal,
             alias: model.alias,
+            dpnsName: model.dpnsName,
             identityType: model.type,
             privateKeys: [],  // Initialize empty, will add below
             votingPrivateKeyIdentifier: votingKeyId,

@@ -189,6 +189,12 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section("Data") {
+                    NavigationLink(destination: LocalDataContractsView()) {
+                        Text("Local Data Contracts")
+                    }
+                }
+                
                 Section("About") {
                     HStack {
                         Text("Version")

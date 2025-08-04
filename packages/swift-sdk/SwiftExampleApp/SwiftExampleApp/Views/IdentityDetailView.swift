@@ -3,8 +3,12 @@ import SwiftDashSDK
 import SwiftDashSDK
 
 struct IdentityDetailView: View {
-    let identity: IdentityModel
+    let identityId: Data
     @EnvironmentObject var appState: AppState
+    
+    private var identity: IdentityModel? {
+        appState.identities.first { $0.id == identityId }
+    }
     @State private var isRefreshing = false
     @State private var showingEditAlias = false
     @State private var newAlias = ""
@@ -12,14 +16,15 @@ struct IdentityDetailView: View {
     @State private var isLoadingDPNS = false
     
     var body: some View {
-        List {
-            // Basic Info Section
-            Section("Identity Information") {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let alias = identity.alias {
-                        Label(alias, systemImage: "person.text.rectangle")
-                            .font(.headline)
-                    }
+        if let identity = identity {
+            List {
+                // Basic Info Section
+                Section("Identity Information") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let alias = identity.alias {
+                            Label(alias, systemImage: "person.text.rectangle")
+                                .font(.headline)
+                        }
                     
                     if let dpnsName = identity.dpnsName {
                         Label(dpnsName, systemImage: "at")
@@ -87,32 +92,24 @@ struct IdentityDetailView: View {
             // Keys Section
             Section("Keys") {
                 NavigationLink(destination: KeysListView(identity: identity)) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: "key.fill")
-                                Text("Identity Keys")
-                                    .fontWeight(.medium)
-                            }
-                            
-                            HStack(spacing: 16) {
-                                Label("\(identity.publicKeys.count) public", systemImage: "key")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                if !identity.privateKeys.isEmpty {
-                                    Label("\(identity.privateKeys.count) private", systemImage: "key.fill")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
-                            }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: "key.fill")
+                            Text("Identity Keys")
+                                .fontWeight(.medium)
                         }
                         
-                        Spacer()
-                        
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
+                        HStack(spacing: 16) {
+                            Label("\(identity.publicKeys.count) public", systemImage: "key")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            if !identity.privateKeys.isEmpty {
+                                Label("\(identity.privateKeys.count) private", systemImage: "key.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -151,7 +148,23 @@ struct IdentityDetailView: View {
             EditAliasView(identity: identity, newAlias: $newAlias)
         }
         .onAppear {
-            loadDPNSNames()
+            print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
+            
+            // Only load DPNS names from network if we don't have any cached
+            if identity.dpnsName == nil && !identity.isLocal {
+                print("🔵 No cached DPNS name, loading from network...")
+                loadDPNSNames()
+            } else if let cachedName = identity.dpnsName {
+                // Use cached name
+                print("🔵 Using cached DPNS name: \(cachedName)")
+                dpnsNames = [cachedName]
+            }
+        }
+        } else {
+            Text("Identity not found")
+                .foregroundColor(.secondary)
+                .navigationTitle("Identity Details")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
     
@@ -160,7 +173,8 @@ struct IdentityDetailView: View {
             isRefreshing = true
             defer { isRefreshing = false }
             
-            guard let sdk = appState.sdk else { return }
+            guard let sdk = appState.sdk,
+                  let identity = identity else { return }
             
             do {
                 // Refresh identity data
@@ -216,8 +230,8 @@ struct IdentityDetailView: View {
                 appState.updateIdentityPublicKeys(id: identity.id, publicKeys: parsedPublicKeys)
                 print("🔵 Called updateIdentityPublicKeys")
                 
-                // Refresh DPNS names
-                loadDPNSNames()
+                // Refresh DPNS names from network
+                await loadDPNSNamesFromNetwork()
             } catch {
                 await MainActor.run {
                     appState.showError(message: "Failed to refresh identity: \(error.localizedDescription)")
@@ -227,32 +241,46 @@ struct IdentityDetailView: View {
     }
     
     private func loadDPNSNames() {
-        guard !identity.isLocal else { return }
+        guard let identity = identity,
+              !identity.isLocal else { return }
         
         Task {
-            isLoadingDPNS = true
-            defer { isLoadingDPNS = false }
+            await loadDPNSNamesFromNetwork()
+        }
+    }
+    
+    private func loadDPNSNamesFromNetwork() async {
+        guard let identity = identity,
+              !identity.isLocal else { return }
+        
+        print("🔵 loadDPNSNamesFromNetwork called for identity \(identity.idString)")
+        
+        isLoadingDPNS = true
+        defer { isLoadingDPNS = false }
+        
+        guard let sdk = appState.sdk else { return }
+        
+        do {
+            print("🔵 Fetching DPNS names from network...")
+            let usernames = try await sdk.dpnsGetUsername(
+                identityId: identity.idString,
+                limit: 10
+            )
             
-            guard let sdk = appState.sdk else { return }
+            print("🔵 Got \(usernames.count) DPNS names from network")
             
-            do {
-                let usernames = try await sdk.dpnsGetUsername(
-                    identityId: identity.idString,
-                    limit: 10
-                )
+            await MainActor.run {
+                dpnsNames = usernames.compactMap { $0["label"] as? String }
                 
-                await MainActor.run {
-                    dpnsNames = usernames.compactMap { $0["label"] as? String }
-                    
-                    // Update the primary DPNS name if we found one
-                    if let firstUsername = dpnsNames.first, identity.dpnsName == nil {
-                        appState.updateIdentityDPNSName(id: identity.id, dpnsName: firstUsername)
-                    }
+                // Update the primary DPNS name if we found one
+                if let firstUsername = dpnsNames.first {
+                    print("🔵 Updating cached DPNS name to: \(firstUsername)")
+                    appState.updateIdentityDPNSName(id: identity.id, dpnsName: firstUsername)
                 }
-            } catch {
-                // Silently fail - not all identities have DPNS names
-                print("No DPNS names found for identity: \(error)")
             }
+        } catch {
+            // Silently fail - not all identities have DPNS names
+            print("❌ No DPNS names found for identity: \(error)")
         }
     }
 }

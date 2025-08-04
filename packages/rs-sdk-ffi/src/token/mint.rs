@@ -31,6 +31,8 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
     put_settings: *const DashSDKPutSettings,
     state_transition_creation_options: *const DashSDKStateTransitionCreationOptions,
 ) -> DashSDKResult {
+    eprintln!("🟦 FFI TOKEN MINT: Function called");
+    
     // Validate parameters
     if sdk_handle.is_null()
         || transition_owner_id.is_null()
@@ -38,23 +40,35 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
     {
+        eprintln!("❌ FFI TOKEN MINT: One or more required parameters is null");
+        eprintln!("  - sdk_handle is null: {}", sdk_handle.is_null());
+        eprintln!("  - transition_owner_id is null: {}", transition_owner_id.is_null());
+        eprintln!("  - params is null: {}", params.is_null());
+        eprintln!("  - identity_public_key_handle is null: {}", identity_public_key_handle.is_null());
+        eprintln!("  - signer_handle is null: {}", signer_handle.is_null());
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             "One or more required parameters is null".to_string(),
         ));
     }
 
+    eprintln!("🟦 FFI TOKEN MINT: Extracting pointers");
     // SAFETY: We've verified all pointers are non-null above
     let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
     let signer = unsafe { &*(signer_handle as *const crate::signer::IOSSigner) };
     let params = unsafe { &*params };
 
+    eprintln!("🟦 FFI TOKEN MINT: Converting transition owner ID from bytes");
     // Convert transition owner ID from bytes
     let transition_owner_id_slice = unsafe { std::slice::from_raw_parts(transition_owner_id, 32) };
     let minter_id = match Identifier::from_bytes(transition_owner_id_slice) {
-        Ok(id) => id,
+        Ok(id) => {
+            eprintln!("✅ FFI TOKEN MINT: Minter ID: {}", id);
+            id
+        },
         Err(e) => {
+            eprintln!("❌ FFI TOKEN MINT: Invalid transition owner ID: {}", e);
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 format!("Invalid transition owner ID: {}", e),
@@ -62,61 +76,118 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
         }
     };
 
+    eprintln!("🟦 FFI TOKEN MINT: Validating contract parameters");
     // Validate contract parameters
     let has_serialized_contract = match validate_contract_params(
         params.token_contract_id,
         params.serialized_contract,
         params.serialized_contract_len,
     ) {
-        Ok(result) => result,
-        Err(e) => return DashSDKResult::error(e.into()),
-    };
-
-    // Parse optional recipient ID
-    let recipient_id = if params.recipient_id.is_null() {
-        None
-    } else {
-        match parse_identifier_from_bytes(params.recipient_id) {
-            Ok(id) => Some(id),
-            Err(e) => return DashSDKResult::error(e.into()),
+        Ok(result) => {
+            eprintln!("✅ FFI TOKEN MINT: Contract params validated, has_serialized_contract: {}", result);
+            result
+        },
+        Err(e) => {
+            eprintln!("❌ FFI TOKEN MINT: Contract validation error: {:?}", e);
+            return DashSDKResult::error(e.into());
         }
     };
 
-    // Parse optional public note
-    let public_note = match parse_optional_note(params.public_note) {
-        Ok(note) => note,
-        Err(e) => return DashSDKResult::error(e.into()),
+    eprintln!("🟦 FFI TOKEN MINT: Parsing recipient ID");
+    // Parse optional recipient ID
+    let recipient_id = if params.recipient_id.is_null() {
+        eprintln!("🟦 FFI TOKEN MINT: No recipient ID provided");
+        None
+    } else {
+        match parse_identifier_from_bytes(params.recipient_id) {
+            Ok(id) => {
+                eprintln!("✅ FFI TOKEN MINT: Recipient ID: {}", id);
+                Some(id)
+            },
+            Err(e) => {
+                eprintln!("❌ FFI TOKEN MINT: Failed to parse recipient ID: {:?}", e);
+                return DashSDKResult::error(e.into());
+            }
+        }
     };
 
+    eprintln!("🟦 FFI TOKEN MINT: Parsing public note");
+    // Parse optional public note
+    let public_note = match parse_optional_note(params.public_note) {
+        Ok(note) => {
+            if let Some(ref n) = note {
+                eprintln!("✅ FFI TOKEN MINT: Note: {}", n);
+            } else {
+                eprintln!("🟦 FFI TOKEN MINT: No note provided");
+            }
+            note
+        },
+        Err(e) => {
+            eprintln!("❌ FFI TOKEN MINT: Failed to parse note: {:?}", e);
+            return DashSDKResult::error(e.into());
+        }
+    };
+
+    eprintln!("🟦 FFI TOKEN MINT: Token position: {}", params.token_position);
+    eprintln!("🟦 FFI TOKEN MINT: Amount: {}", params.amount);
+
+    eprintln!("🟦 FFI TOKEN MINT: Starting async block");
     let result: Result<MintResult, FFIError> = wrapper.runtime.block_on(async {
+        eprintln!("🟦 FFI TOKEN MINT: Inside async block");
+        
         // Convert FFI types to Rust types
         let settings = crate::identity::convert_put_settings(put_settings);
         let creation_options = convert_state_transition_creation_options(state_transition_creation_options);
         let user_fee_increase = extract_user_fee_increase(put_settings);
+        
+        eprintln!("🟦 FFI TOKEN MINT: Converted settings, user_fee_increase: {}", user_fee_increase);
 
         // Get the data contract either by fetching or deserializing
         use dash_sdk::platform::Fetch;
         use dash_sdk::dpp::prelude::DataContract;
 
+        eprintln!("🟦 FFI TOKEN MINT: Getting data contract");
         let data_contract = if !has_serialized_contract {
+            eprintln!("🟦 FFI TOKEN MINT: Fetching contract from network");
             // Parse and fetch the contract ID
             let token_contract_id_str = match unsafe { CStr::from_ptr(params.token_contract_id) }.to_str() {
-                Ok(s) => s,
-                Err(e) => return Err(FFIError::from(e)),
+                Ok(s) => {
+                    eprintln!("🟦 FFI TOKEN MINT: Contract ID string: {}", s);
+                    s
+                },
+                Err(e) => {
+                    eprintln!("❌ FFI TOKEN MINT: Failed to convert contract ID to string: {}", e);
+                    return Err(FFIError::from(e));
+                }
             };
 
             let token_contract_id = match Identifier::from_string(token_contract_id_str, Encoding::Base58) {
-                Ok(id) => id,
+                Ok(id) => {
+                    eprintln!("✅ FFI TOKEN MINT: Parsed contract ID: {}", id);
+                    id
+                },
                 Err(e) => {
+                    eprintln!("❌ FFI TOKEN MINT: Invalid token contract ID: {}", e);
                     return Err(FFIError::InternalError(format!("Invalid token contract ID: {}", e)))
                 }
             };
 
+            eprintln!("🟦 FFI TOKEN MINT: Fetching data contract from network...");
             // Fetch the data contract
-            DataContract::fetch(&wrapper.sdk, token_contract_id)
-                .await
-                .map_err(FFIError::from)?
-                .ok_or_else(|| FFIError::InternalError("Token contract not found".to_string()))?
+            match DataContract::fetch(&wrapper.sdk, token_contract_id).await {
+                Ok(Some(contract)) => {
+                    eprintln!("✅ FFI TOKEN MINT: Successfully fetched data contract");
+                    contract
+                },
+                Ok(None) => {
+                    eprintln!("❌ FFI TOKEN MINT: Token contract not found on network");
+                    return Err(FFIError::InternalError("Token contract not found".to_string()));
+                },
+                Err(e) => {
+                    eprintln!("❌ FFI TOKEN MINT: Failed to fetch contract: {}", e);
+                    return Err(FFIError::from(e));
+                }
+            }
         } else {
             // Deserialize the provided contract
             let contract_slice = unsafe {
@@ -136,54 +207,72 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
             .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
+        eprintln!("🟦 FFI TOKEN MINT: Creating token mint transition builder");
         // Create token mint transition builder
         let mut builder = TokenMintTransitionBuilder::new(
             Arc::new(data_contract),
             params.token_position as TokenContractPosition,
-            minter_id,
+            minter_id.clone(),
             params.amount as TokenAmount,
         );
+        eprintln!("✅ FFI TOKEN MINT: Created builder with position: {}, minter_id: {}, amount: {}", 
+                 params.token_position, minter_id, params.amount);
 
         // Set optional recipient
         if let Some(recipient_id) = recipient_id {
+            eprintln!("🟦 FFI TOKEN MINT: Setting recipient ID: {}", recipient_id);
             builder = builder.issued_to_identity_id(recipient_id);
         }
 
         // Add optional public note
         if let Some(note) = public_note {
+            eprintln!("🟦 FFI TOKEN MINT: Adding public note");
             builder = builder.with_public_note(note);
         }
 
         // Add settings
         if let Some(settings) = settings {
+            eprintln!("🟦 FFI TOKEN MINT: Adding settings");
             builder = builder.with_settings(settings);
         }
 
         // Add user fee increase
         if user_fee_increase > 0 {
+            eprintln!("🟦 FFI TOKEN MINT: Adding user fee increase: {}", user_fee_increase);
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
 
         // Add state transition creation options
         if let Some(options) = creation_options {
+            eprintln!("🟦 FFI TOKEN MINT: Adding state transition creation options");
             builder = builder.with_state_transition_creation_options(options);
         }
 
+        eprintln!("🟦 FFI TOKEN MINT: Calling wrapper.sdk.token_mint...");
         // Use SDK method to mint and wait
         let result = wrapper
             .sdk
             .token_mint(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
+                eprintln!("❌ FFI TOKEN MINT: Failed to mint token: {}", e);
                 FFIError::InternalError(format!("Failed to mint token and wait: {}", e))
             })?;
 
+        eprintln!("✅ FFI TOKEN MINT: Token mint succeeded!");
         Ok(result)
     });
 
+    eprintln!("🟦 FFI TOKEN MINT: Async block completed, processing result");
     match result {
-        Ok(_mint_result) => DashSDKResult::success(std::ptr::null_mut()),
-        Err(e) => DashSDKResult::error(e.into()),
+        Ok(_mint_result) => {
+            eprintln!("✅ FFI TOKEN MINT: Returning success result");
+            DashSDKResult::success(std::ptr::null_mut())
+        },
+        Err(e) => {
+            eprintln!("❌ FFI TOKEN MINT: Returning error result: {:?}", e);
+            DashSDKResult::error(e.into())
+        }
     }
 }
 

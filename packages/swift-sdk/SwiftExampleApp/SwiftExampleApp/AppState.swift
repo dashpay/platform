@@ -13,6 +13,7 @@ class AppState: ObservableObject {
     @Published var contracts: [ContractModel] = []
     @Published var tokens: [TokenModel] = []
     @Published var documents: [DocumentModel] = []
+    @Published var dataContracts: [DPPDataContract] = []
     
     @Published var currentNetwork: Network {
         didSet {

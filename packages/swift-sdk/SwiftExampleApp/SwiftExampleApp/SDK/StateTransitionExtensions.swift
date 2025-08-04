@@ -370,22 +370,421 @@ extension SDK {
     
     /// Mint new tokens
     public func tokenMint(
-        tokenId: String,
+        contractId: String,
+        recipientId: String,
         amount: UInt64,
-        recipientId: String
-    ) async throws -> UInt64 {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Token mint not yet implemented")
+        ownerIdentity: DPPIdentity,
+        signer: OpaquePointer,
+        note: String? = nil
+    ) async throws -> [String: Any] {
+        print("🟦 TOKEN MINT: Starting token mint operation")
+        print("🟦 TOKEN MINT: Contract ID: \(contractId)")
+        print("🟦 TOKEN MINT: Recipient ID: \(recipientId)")
+        print("🟦 TOKEN MINT: Amount: \(amount)")
+        print("🟦 TOKEN MINT: Owner Identity ID: \(ownerIdentity.idString)")
+        print("🟦 TOKEN MINT: Note: \(note ?? "none")")
+        
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    print("❌ TOKEN MINT: SDK not initialized")
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                print("🟦 TOKEN MINT: Converting owner identity to handle")
+                // Convert owner identity to handle
+                let ownerIdentityHandle: OpaquePointer
+                do {
+                    ownerIdentityHandle = try self.identityToHandle(ownerIdentity)
+                    print("✅ TOKEN MINT: Successfully converted identity to handle")
+                } catch {
+                    print("❌ TOKEN MINT: Failed to convert identity to handle: \(error)")
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                defer {
+                    print("🟦 TOKEN MINT: Cleaning up identity handle")
+                    // Clean up the identity handle when done
+                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                }
+                
+                // Get the owner ID from the identity
+                let ownerId = ownerIdentity.id
+                print("🟦 TOKEN MINT: Owner ID (hex): \(ownerId.toHexString())")
+                
+                // Normalize the recipient identity ID to base58
+                let normalizedRecipientId = self.normalizeIdentityId(recipientId)
+                print("🟦 TOKEN MINT: Normalized recipient ID: \(normalizedRecipientId)")
+                
+                // TODO: We need to get the minting key from the owner identity
+                // For now, we'll assume the first key is the minting key
+                guard let mintingKey = ownerIdentity.publicKeys.values.first else {
+                    print("❌ TOKEN MINT: No public keys found in owner identity")
+                    continuation.resume(throwing: SDKError.invalidParameter("No public keys found in owner identity"))
+                    return
+                }
+                print("🟦 TOKEN MINT: Using minting key ID: \(mintingKey.id), purpose: \(mintingKey.purpose)")
+                
+                // Get the public key handle for the minting key
+                print("🟦 TOKEN MINT: Getting public key handle for key ID: \(mintingKey.id)")
+                let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
+                    ownerIdentityHandle,
+                    UInt8(mintingKey.id)
+                )
+                
+                guard keyHandleResult.error == nil,
+                      let keyHandleData = keyHandleResult.data else {
+                    let errorString = keyHandleResult.error?.pointee.message != nil ?
+                        String(cString: keyHandleResult.error!.pointee.message) : "Failed to get public key"
+                    print("❌ TOKEN MINT: Failed to get public key handle: \(errorString)")
+                    dash_sdk_error_free(keyHandleResult.error)
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                print("✅ TOKEN MINT: Successfully got public key handle")
+                defer {
+                    print("🟦 TOKEN MINT: Cleaning up public key handle")
+                    // Clean up the public key handle when done
+                    dash_sdk_identity_public_key_destroy(publicKeyHandle)
+                }
+                
+                // Create the mint params
+                // Convert recipient ID to bytes
+                print("🟦 TOKEN MINT: Converting recipient ID from base58 to bytes")
+                guard let recipientIdData = Data.identifier(fromBase58: normalizedRecipientId),
+                      recipientIdData.count == 32 else {
+                    print("❌ TOKEN MINT: Invalid recipient identity ID - failed to convert from base58 or wrong size")
+                    continuation.resume(throwing: SDKError.invalidParameter("Invalid recipient identity ID"))
+                    return
+                }
+                print("✅ TOKEN MINT: Recipient ID converted to bytes (hex): \(recipientIdData.toHexString())")
+                
+                // Call the FFI function with proper parameters
+                print("🟦 TOKEN MINT: Preparing to call FFI function dash_sdk_token_mint")
+                let result = contractId.withCString { contractIdCStr in
+                    recipientIdData.withUnsafeBytes { recipientIdBytes in
+                        ownerId.withUnsafeBytes { ownerIdBytes in
+                            var params = DashSDKTokenMintParams()
+                            params.token_contract_id = contractIdCStr
+                            params.serialized_contract = nil
+                            params.serialized_contract_len = 0
+                            params.token_position = 0 // Default position
+                            params.recipient_id = recipientIdBytes.bindMemory(to: UInt8.self).baseAddress
+                            params.amount = amount
+                            
+                            print("🟦 TOKEN MINT: Parameters prepared:")
+                            print("  - Contract ID C String: \(String(cString: contractIdCStr))")
+                            print("  - Token position: 0")
+                            print("  - Amount: \(amount)")
+                            print("  - Recipient ID bytes: \(recipientIdData.toHexString())")
+                            print("  - Owner ID bytes: \(ownerId.toHexString())")
+                            
+                            // Handle note
+                            if let note = note {
+                                print("🟦 TOKEN MINT: Adding note: \(note)")
+                                return note.withCString { noteCStr in
+                                    params.public_note = noteCStr
+                                    
+                                    print("🟦 TOKEN MINT: Calling dash_sdk_token_mint WITH note")
+                                    return dash_sdk_token_mint(
+                                        handle,
+                                        ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
+                                        &params,
+                                        publicKeyHandle,
+                                        signer,
+                                        nil,  // Default put settings
+                                        nil   // Default state transition options
+                                    )
+                                }
+                            } else {
+                                params.public_note = nil
+                                
+                                print("🟦 TOKEN MINT: Calling dash_sdk_token_mint WITHOUT note")
+                                return dash_sdk_token_mint(
+                                    handle,
+                                    ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
+                                    &params,
+                                    publicKeyHandle,
+                                    signer,
+                                    nil,  // Default put settings
+                                    nil   // Default state transition options
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                print("🟦 TOKEN MINT: FFI call completed, checking result")
+                if result.error == nil {
+                    print("✅ TOKEN MINT: Success! Token minted successfully")
+                    // Parse the result
+                    // TODO: Parse actual result structure
+                    continuation.resume(returning: [
+                        "success": true,
+                        "message": "Token minted successfully"
+                    ])
+                } else {
+                    let errorString = result.error?.pointee.message != nil ?
+                        String(cString: result.error!.pointee.message) : "Unknown error"
+                    let errorCode = result.error?.pointee.code.rawValue ?? 0
+                    print("❌ TOKEN MINT: Failed with error code \(errorCode): \(errorString)")
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: SDKError.internalError("Token mint failed: \(errorString)"))
+                }
+            }
+        }
+    }
+    
+    /// Freeze tokens for a target identity
+    public func tokenFreeze(
+        contractId: String,
+        targetIdentityId: String,
+        ownerIdentity: DPPIdentity,
+        signer: OpaquePointer,
+        note: String? = nil
+    ) async throws -> [String: Any] {
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                // Convert owner identity to handle
+                let ownerIdentityHandle: OpaquePointer
+                do {
+                    ownerIdentityHandle = try self.identityToHandle(ownerIdentity)
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                defer {
+                    // Clean up the identity handle when done
+                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                }
+                
+                // Get the owner ID from the identity
+                let ownerId = ownerIdentity.id
+                
+                // Normalize the target identity ID to base58
+                let normalizedTargetId = self.normalizeIdentityId(targetIdentityId)
+                
+                // Convert target ID to bytes
+                guard let targetIdData = Data.identifier(fromBase58: normalizedTargetId),
+                      targetIdData.count == 32 else {
+                    continuation.resume(throwing: SDKError.invalidParameter("Invalid target identity ID"))
+                    return
+                }
+                
+                // TODO: We need to get the freezing key from the owner identity
+                // For now, we'll assume the first key is the freezing key
+                guard let freezingKey = ownerIdentity.publicKeys.values.first else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No public keys found in owner identity"))
+                    return
+                }
+                
+                // Get the public key handle for the freezing key
+                let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
+                    ownerIdentityHandle,
+                    UInt8(freezingKey.id)
+                )
+                
+                guard keyHandleResult.error == nil,
+                      let keyHandleData = keyHandleResult.data else {
+                    let errorString = keyHandleResult.error?.pointee.message != nil ?
+                        String(cString: keyHandleResult.error!.pointee.message) : "Failed to get public key"
+                    dash_sdk_error_free(keyHandleResult.error)
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                defer {
+                    // Clean up the public key handle when done
+                    dash_sdk_identity_public_key_destroy(publicKeyHandle)
+                }
+                
+                // Call the FFI function with proper parameters
+                let result = contractId.withCString { contractIdCStr in
+                    targetIdData.withUnsafeBytes { targetIdBytes in
+                        ownerId.withUnsafeBytes { ownerIdBytes in
+                            var params = DashSDKTokenFreezeParams()
+                            params.token_contract_id = contractIdCStr
+                            params.serialized_contract = nil
+                            params.serialized_contract_len = 0
+                            params.token_position = 0 // Default position
+                            params.target_identity_id = targetIdBytes.bindMemory(to: UInt8.self).baseAddress
+                            
+                            // Handle note
+                            if let note = note {
+                                return note.withCString { noteCStr in
+                                    params.public_note = noteCStr
+                                    
+                                    return dash_sdk_token_freeze(
+                                        handle,
+                                        ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
+                                        &params,
+                                        publicKeyHandle,
+                                        signer,
+                                        nil,  // Default put settings
+                                        nil   // Default state transition options
+                                    )
+                                }
+                            } else {
+                                params.public_note = nil
+                                
+                                return dash_sdk_token_freeze(
+                                    handle,
+                                    ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
+                                    &params,
+                                    publicKeyHandle,
+                                    signer,
+                                    nil,  // Default put settings
+                                    nil   // Default state transition options
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                if result.error == nil {
+                    // Parse the result
+                    // TODO: Parse actual result structure
+                    continuation.resume(returning: [
+                        "success": true,
+                        "message": "Token frozen successfully"
+                    ])
+                } else {
+                    let errorString = result.error?.pointee.message != nil ?
+                        String(cString: result.error!.pointee.message) : "Unknown error"
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: SDKError.internalError("Token freeze failed: \(errorString)"))
+                }
+            }
+        }
     }
     
     /// Burn tokens
     public func tokenBurn(
-        tokenId: String,
+        contractId: String,
         amount: UInt64,
-        ownerIdentityId: String
-    ) async throws -> UInt64 {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Token burn not yet implemented")
+        ownerIdentity: DPPIdentity,
+        signer: OpaquePointer,
+        note: String? = nil
+    ) async throws -> [String: Any] {
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                // Convert owner identity to handle
+                let ownerIdentityHandle: OpaquePointer
+                do {
+                    ownerIdentityHandle = try self.identityToHandle(ownerIdentity)
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                defer {
+                    // Clean up the identity handle when done
+                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                }
+                
+                // Get the owner ID from the identity
+                let ownerId = ownerIdentity.id
+                
+                // TODO: We need to get the burning key from the owner identity
+                // For now, we'll assume the first key is the burning key
+                guard let burningKey = ownerIdentity.publicKeys.values.first else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No public keys found in owner identity"))
+                    return
+                }
+                
+                // Get the public key handle for the burning key
+                let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
+                    ownerIdentityHandle,
+                    UInt8(burningKey.id)
+                )
+                
+                guard keyHandleResult.error == nil,
+                      let keyHandleData = keyHandleResult.data else {
+                    let errorString = keyHandleResult.error?.pointee.message != nil ?
+                        String(cString: keyHandleResult.error!.pointee.message) : "Failed to get public key"
+                    dash_sdk_error_free(keyHandleResult.error)
+                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    return
+                }
+                
+                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                defer {
+                    // Clean up the public key handle when done
+                    dash_sdk_identity_public_key_destroy(publicKeyHandle)
+                }
+                
+                // Call the FFI function with proper parameters
+                let result = contractId.withCString { contractIdCStr in
+                    ownerId.withUnsafeBytes { ownerIdBytes in
+                        var params = DashSDKTokenBurnParams()
+                        params.token_contract_id = contractIdCStr
+                        params.serialized_contract = nil
+                        params.serialized_contract_len = 0
+                        params.token_position = 0 // Default position
+                        params.amount = amount
+                        
+                        // Handle note
+                        if let note = note {
+                            return note.withCString { noteCStr in
+                                params.public_note = noteCStr
+                                
+                                return dash_sdk_token_burn(
+                                    handle,
+                                    ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
+                                    &params,
+                                    publicKeyHandle,
+                                    signer,
+                                    nil,  // Default put settings
+                                    nil   // Default state transition options
+                                )
+                            }
+                        } else {
+                            params.public_note = nil
+                            
+                            return dash_sdk_token_burn(
+                                handle,
+                                ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
+                                &params,
+                                publicKeyHandle,
+                                signer,
+                                nil,  // Default put settings
+                                nil   // Default state transition options
+                            )
+                        }
+                    }
+                }
+                
+                if result.error == nil {
+                    // Parse the result
+                    // TODO: Parse actual result structure
+                    continuation.resume(returning: [
+                        "success": true,
+                        "message": "Tokens burned successfully"
+                    ])
+                } else {
+                    let errorString = result.error?.pointee.message != nil ?
+                        String(cString: result.error!.pointee.message) : "Unknown error"
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: SDKError.internalError("Token burn failed: \(errorString)"))
+                }
+            }
+        }
     }
     
     // MARK: - Data Contract State Transitions
@@ -489,5 +888,23 @@ extension SDK {
             publicKeyId: 0, // Auto-select TRANSFER key
             signer: signer
         )
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func normalizeIdentityId(_ identityId: String) -> String {
+        // Remove any prefix
+        let cleanId = identityId
+            .replacingOccurrences(of: "id:", with: "")
+            .replacingOccurrences(of: "0x", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // If it's hex (64 chars), convert to base58
+        if cleanId.count == 64, let data = Data(hexString: cleanId) {
+            return data.toBase58String()
+        }
+        
+        // Otherwise assume it's already base58
+        return cleanId
     }
 }
