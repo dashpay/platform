@@ -80,6 +80,9 @@ pub struct DapiConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub state_transition_wait_timeout: u64,
+    /// Logging configuration
+    #[serde(flatten)]
+    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +120,7 @@ impl Default for DapiConfig {
             tenderdash: TenderdashConfig::default(),
             core: CoreConfig::default(),
             state_transition_wait_timeout: 30000, // 30 seconds default
+            logging: LoggingConfig::default(),
         }
     }
 }
@@ -142,6 +146,34 @@ impl Default for CoreConfig {
     fn default() -> Self {
         Self {
             zmq_url: "tcp://127.0.0.1:29998".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoggingConfig {
+    /// Main application log level
+    #[serde(rename = "dapi_logging_level")]
+    pub level: String,
+    /// Enable structured JSON logging for application logs
+    #[serde(rename = "dapi_logging_json_format", deserialize_with = "from_str_or_bool")]
+    pub json_format: bool,
+    /// Path to access log file. If set to non-empty value, access logging is enabled.
+    #[serde(rename = "dapi_logging_access_log_path")]  
+    pub access_log_path: Option<String>,
+    /// Access log format. Currently supports "combined" (Apache Common Log Format)
+    #[serde(rename = "dapi_logging_access_log_format")]
+    pub access_log_format: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            json_format: false,
+            access_log_path: None,
+            access_log_format: "combined".to_string(),
         }
     }
 }

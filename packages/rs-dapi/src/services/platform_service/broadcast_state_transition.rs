@@ -31,13 +31,14 @@ impl PlatformServiceImpl {
 
         // Validate that state transition is provided
         if st_bytes_vec.is_empty() {
+            error!("State transition is empty");
             return Err(Status::invalid_argument(
                 "State Transition is not specified",
             ));
         }
 
         let st_bytes = st_bytes_vec.as_slice();
-        debug!("Broadcasting state transition of {} bytes", st_bytes.len());
+        let st_hash = hex::encode(Sha256::digest(st_bytes));
 
         // Convert to base64 for Tenderdash RPC
         let tx_base64 = BASE64_STANDARD.encode(st_bytes);
@@ -47,10 +48,16 @@ impl PlatformServiceImpl {
             Ok(response) => response,
             Err(e) => {
                 let error_msg = e.to_string();
+                warn!(
+                    error = %error_msg,
+                    st_hash = %st_hash,
+                    "Failed to broadcast state transition to Tenderdash"
+                );
+
                 if error_msg.contains("ECONNRESET") || error_msg.contains("socket hang up") {
                     return Err(Status::unavailable("Tenderdash is not available"));
                 }
-                error!("Failed broadcasting state transition: {}", error_msg);
+
                 return Err(Status::internal(format!(
                     "Failed broadcasting state transition: {}",
                     error_msg
@@ -60,6 +67,13 @@ impl PlatformServiceImpl {
 
         // Check broadcast result
         if broadcast_result.code != 0 {
+            warn!(
+                code = broadcast_result.code,
+                info = ?broadcast_result.info,
+                st_hash = %st_hash,
+                "State transition broadcast failed"
+            );
+
             // Handle specific error cases
             if let Some(data) = &broadcast_result.data {
                 return self
@@ -73,7 +87,7 @@ impl PlatformServiceImpl {
                 .await;
         }
 
-        info!("State transition broadcasted successfully");
+        info!(st_hash = %st_hash, "State transition broadcasted successfully");
         Ok(Response::new(BroadcastStateTransitionResponse {}))
     }
 

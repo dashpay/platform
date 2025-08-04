@@ -4,6 +4,7 @@ use dapi_grpc::platform::v0::{
     GetStatusRequest, GetStatusResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use tracing::{error, warn};
 
 use crate::clients::{
     drive_client::DriveStatusResponse,
@@ -21,7 +22,10 @@ impl PlatformServiceImpl {
         // Build fresh response
         match self.build_status_response().await {
             Ok(response) => Ok(Response::new(response)),
-            Err(status) => Err(status),
+            Err(status) => {
+                error!(error = ?status, "Failed to build status response");
+                Err(status)
+            }
         }
     }
 
@@ -40,10 +44,30 @@ impl PlatformServiceImpl {
             self.tenderdash_client.net_info()
         );
 
-        // Handle potential errors by using empty data if calls fail
-        let drive_status = drive_result.unwrap_or_default();
-        let tenderdash_status = tenderdash_status_result.unwrap_or_default();
-        let tenderdash_netinfo = tenderdash_netinfo_result.unwrap_or_default();
+        // Handle potential errors with proper logging
+        let drive_status = match drive_result {
+            Ok(status) => status,
+            Err(e) => {
+                warn!(error = ?e, "Failed to fetch Drive status, using defaults");
+                DriveStatusResponse::default()
+            }
+        };
+
+        let tenderdash_status = match tenderdash_status_result {
+            Ok(status) => status,
+            Err(e) => {
+                warn!(error = ?e, "Failed to fetch Tenderdash status, using defaults");
+                TenderdashStatusResponse::default()
+            }
+        };
+
+        let tenderdash_netinfo = match tenderdash_netinfo_result {
+            Ok(netinfo) => netinfo,
+            Err(e) => {
+                warn!(error = ?e, "Failed to fetch Tenderdash netinfo, using defaults");
+                NetInfoResponse::default()
+            }
+        };
 
         // Use standalone functions to create the response
         build_status_response(drive_status, tenderdash_status, tenderdash_netinfo)

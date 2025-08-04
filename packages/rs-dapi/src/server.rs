@@ -17,6 +17,7 @@ use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 
 use crate::config::Config;
+use crate::logging::{middleware::AccessLogLayer, AccessLogger};
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 use crate::{
@@ -34,10 +35,11 @@ pub struct DapiServer {
     platform_service: Arc<PlatformServiceImpl>,
     rest_translator: Arc<RestTranslator>,
     jsonrpc_translator: Arc<JsonRpcTranslator>,
+    access_logger: Option<AccessLogger>,
 }
 
 impl DapiServer {
-    pub async fn new(config: Arc<Config>) -> DAPIResult<Self> {
+    pub async fn new(config: Arc<Config>, access_logger: Option<AccessLogger>) -> DAPIResult<Self> {
         // Create clients based on configuration
         // For now, let's use real clients by default
         let drive_client: Arc<dyn DriveClientTrait> =
@@ -72,6 +74,7 @@ impl DapiServer {
             core_service: Arc::new(core_service),
             rest_translator,
             jsonrpc_translator,
+            access_logger,
         })
     }
     pub async fn run(self) -> DAPIResult<()> {
@@ -169,10 +172,20 @@ impl DapiServer {
             translator: self.rest_translator.clone(),
         };
 
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/v1/platform/status", get(handle_rest_get_status))
-            .layer(ServiceBuilder::new().layer(CorsLayer::permissive()))
             .with_state(app_state);
+
+        // Add access logging middleware if available
+        if let Some(ref access_logger) = self.access_logger {
+            app = app.layer(
+                ServiceBuilder::new()
+                    .layer(AccessLogLayer::new(access_logger.clone()))
+                    .layer(CorsLayer::permissive()),
+            );
+        } else {
+            app = app.layer(CorsLayer::permissive());
+        }
 
         let listener = TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
@@ -190,10 +203,20 @@ impl DapiServer {
             translator: self.jsonrpc_translator.clone(),
         };
 
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/", post(handle_jsonrpc_request))
-            .layer(ServiceBuilder::new().layer(CorsLayer::permissive()))
             .with_state(app_state);
+
+        // Add access logging middleware if available
+        if let Some(ref access_logger) = self.access_logger {
+            app = app.layer(
+                ServiceBuilder::new()
+                    .layer(AccessLogLayer::new(access_logger.clone()))
+                    .layer(CorsLayer::permissive()),
+            );
+        } else {
+            app = app.layer(CorsLayer::permissive());
+        }
 
         let listener = TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
@@ -205,11 +228,16 @@ impl DapiServer {
         let addr = self.config.health_check_addr();
         info!("Starting health check server on {}", addr);
 
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/health", get(handle_health))
             .route("/health/ready", get(handle_ready))
             .route("/health/live", get(handle_live))
             .route("/metrics", get(handle_metrics));
+
+        // Add access logging middleware if available
+        if let Some(ref access_logger) = self.access_logger {
+            app = app.layer(AccessLogLayer::new(access_logger.clone()));
+        }
 
         let listener = TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;

@@ -3,9 +3,9 @@ use rs_dapi::DAPIResult;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tracing::{error, info, trace};
-use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use rs_dapi::config::Config;
+use rs_dapi::logging::{init_logging, LoggingCliConfig};
 use rs_dapi::server::DapiServer;
 
 #[derive(Debug, Subcommand)]
@@ -96,8 +96,8 @@ impl Cli {
         // Load configuration
         let config = load_config(&self.config);
 
-        // Configure logging
-        configure_logging(&self)?;
+        // Configure logging and access logging
+        let access_logger = configure_logging(&self, &config.dapi.logging).await?;
 
         match self.command.unwrap_or(Commands::Start) {
             Commands::Start => {
@@ -107,7 +107,7 @@ impl Cli {
                     "rs-dapi server initializing",
                 );
 
-                if let Err(e) = run_server(config).await {
+                if let Err(e) = run_server(config, access_logger).await {
                     error!("Server error: {}", e);
                     return Err(e.to_string());
                 }
@@ -132,39 +132,25 @@ fn load_config(path: &Option<PathBuf>) -> Config {
     }
 }
 
-fn configure_logging(cli: &Cli) -> Result<(), String> {
-    // Determine log level based on verbose flags
-    let env_filter = if cli.debug || cli.verbose > 0 {
-        match cli.verbose.max(if cli.debug { 2 } else { 0 }) {
-            1 => "rs_dapi=debug,info", // -v: debug from rs-dapi, info from others
-            2 => "rs_dapi=trace,info", // -vv or --debug: trace from rs-dapi, debug from others
-            3 => "rs_dapi=trace,h2=info,tower=info,hyper_util=info,debug", // -vvv
-            4 => "rs_dapi=trace,debug", // -vvvv
-            _ => "rs_dapi=trace,trace", // -vvvvv+
-        }
-    } else {
-        // Use RUST_LOG if set, otherwise default
-        &std::env::var("RUST_LOG").unwrap_or_else(|_| "rs_dapi=info,warn".to_string())
+async fn configure_logging(
+    cli: &Cli,
+    logging_config: &rs_dapi::config::LoggingConfig,
+) -> Result<Option<rs_dapi::logging::AccessLogger>, String> {
+    let cli_config = LoggingCliConfig {
+        verbose: cli.verbose,
+        debug: cli.debug,
+        color: cli.color,
     };
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new(env_filter))
-        .map_err(|e| format!("Invalid log filter: {}", e))?;
-
-    // Configure subscriber with color support
-    let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(cli.color.unwrap_or(true));
-
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(fmt_layer)
-        .init();
-
-    Ok(())
+    init_logging(logging_config, &cli_config).await
 }
 
-async fn run_server(config: Config) -> DAPIResult<()> {
+async fn run_server(
+    config: Config,
+    access_logger: Option<rs_dapi::logging::AccessLogger>,
+) -> DAPIResult<()> {
     trace!("Creating DAPI server instance...");
-    let server = DapiServer::new(std::sync::Arc::new(config)).await?;
+    let server = DapiServer::new(std::sync::Arc::new(config), access_logger).await?;
 
     info!("rs-dapi server starting on configured ports");
 
