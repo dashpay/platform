@@ -411,7 +411,7 @@ const testData = {
             dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             documentTypeName: "domain",
             indexName: "parentNameAndLabel",
-            resultType: "vote_tally",
+            resultType: "contenders",
             allowIncludeLockedAndAbstainingVoteTally: false,
             count: 10,
             orderAscending: true
@@ -424,6 +424,7 @@ const testData = {
             dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             documentTypeName: "domain",
             indexName: "parentNameAndLabel",
+            // indexValues: "['dash', 'alice']", // This field is missing from the actual site currently
             contestantId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
             count: 10,
             orderAscending: true
