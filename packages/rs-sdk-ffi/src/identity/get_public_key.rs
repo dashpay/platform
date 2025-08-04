@@ -1,6 +1,6 @@
 //! Get public key from identity by key ID
 
-use crate::types::{DashSDKPublicKeyHandle, IdentityHandle, DashSDKResultDataType};
+use crate::types::{DashSDKPublicKeyHandle, DashSDKResultDataType, IdentityHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use std::ptr;
@@ -27,7 +27,7 @@ pub unsafe extern "C" fn dash_sdk_identity_get_public_key_by_id(
     }
 
     let identity = &*(identity as *const dash_sdk::dpp::prelude::Identity);
-    
+
     match identity.get_public_key_by_id(key_id.into()) {
         Some(public_key) => {
             let handle = Box::into_raw(Box::new(public_key.clone())) as *mut DashSDKPublicKeyHandle;
@@ -36,12 +36,10 @@ pub unsafe extern "C" fn dash_sdk_identity_get_public_key_by_id(
                 DashSDKResultDataType::ResultPublicKeyHandle,
             )
         }
-        None => {
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Public key with ID {} not found in identity", key_id),
-            ))
-        }
+        None => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("Public key with ID {} not found in identity", key_id),
+        )),
     }
 }
 

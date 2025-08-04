@@ -1,8 +1,8 @@
 //! Cryptographic utilities for key validation
 
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
-use dash_sdk::dpp::identity::KeyType;
 use dash_sdk::dpp::dashcore::Network;
+use dash_sdk::dpp::identity::KeyType;
 use std::ffi::{c_char, CStr};
 
 /// Validate that a private key corresponds to a public key using DPP's public_key_data_from_private_key_data
@@ -71,18 +71,23 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
         }
     };
 
-    let network = if is_testnet { Network::Testnet } else { Network::Dash };
+    let network = if is_testnet {
+        Network::Testnet
+    } else {
+        Network::Dash
+    };
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key
-    let derived_public_key_data = match key_type.public_key_data_from_private_key_data(&key_array, network) {
-        Ok(data) => data,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::CryptoError,
-                format!("Failed to derive public key: {}", e),
-            ))
-        }
-    };
+    let derived_public_key_data =
+        match key_type.public_key_data_from_private_key_data(&key_array, network) {
+            Ok(data) => data,
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::CryptoError,
+                    format!("Failed to derive public key: {}", e),
+                ))
+            }
+        };
 
     // Decode the expected public key
     let expected_public_key_bytes = match hex::decode(public_key_str) {
@@ -97,7 +102,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
 
     // Compare
     let is_valid = derived_public_key_data == expected_public_key_bytes;
-    
+
     // Return boolean as a string
     let result_str = if is_valid { "true" } else { "false" };
     match std::ffi::CString::new(result_str) {
@@ -150,8 +155,12 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
     };
 
     // Create PrivateKey from bytes
-    let network = if is_testnet { Network::Testnet } else { Network::Dash };
-    
+    let network = if is_testnet {
+        Network::Testnet
+    } else {
+        Network::Dash
+    };
+
     match dash_sdk::dpp::dashcore::PrivateKey::from_slice(&private_key_bytes, network) {
         Ok(private_key) => {
             let wif = private_key.to_wif();
@@ -225,7 +234,11 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
         }
     };
 
-    let network = if is_testnet { Network::Testnet } else { Network::Dash };
+    let network = if is_testnet {
+        Network::Testnet
+    } else {
+        Network::Dash
+    };
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key
     match key_type.public_key_data_from_private_key_data(&key_array, network) {

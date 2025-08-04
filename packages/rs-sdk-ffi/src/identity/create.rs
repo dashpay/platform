@@ -24,10 +24,10 @@ pub unsafe extern "C" fn dash_sdk_identity_create(sdk_handle: *mut SDKHandle) ->
         // In a real implementation, this would use proper key derivation
         use dash_sdk::dpp::identity::IdentityV0;
         use dash_sdk::dpp::prelude::Identifier;
-        
+
         // Generate a random identifier for the new identity
         let id = Identifier::random();
-        
+
         // Create a basic identity structure
         let identity = Identity::V0(IdentityV0 {
             id,
@@ -35,14 +35,14 @@ pub unsafe extern "C" fn dash_sdk_identity_create(sdk_handle: *mut SDKHandle) ->
             balance: 0,
             revision: 0,
         });
-        
+
         // Note: In production, this would:
         // 1. Generate proper keys
         // 2. Create an identity create state transition
         // 3. Sign it with the funding key
         // 4. Broadcast it to the network
         // 5. Wait for confirmation
-        
+
         Ok(identity)
     });
 

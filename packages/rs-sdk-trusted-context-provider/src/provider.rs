@@ -205,14 +205,18 @@ impl TrustedHttpContextProvider {
 
     /// Get the total number of quorums in both caches
     pub fn get_cached_quorum_count(&self) -> usize {
-        let current_count = self.current_quorums_cache.lock()
+        let current_count = self
+            .current_quorums_cache
+            .lock()
             .map(|cache| cache.len())
             .unwrap_or(0);
-        
-        let previous_count = self.previous_quorums_cache.lock()
+
+        let previous_count = self
+            .previous_quorums_cache
+            .lock()
             .map(|cache| cache.len())
             .unwrap_or(0);
-        
+
         current_count + previous_count
     }
 
@@ -234,7 +238,7 @@ impl TrustedHttpContextProvider {
                         eprintln!("🔴 Inner error: {:?}", inner);
                     }
                 }
-                
+
                 // Check for specific error types
                 if e.is_connect() {
                     eprintln!("🔴 Connection error - unable to connect to host");
@@ -247,10 +251,10 @@ impl TrustedHttpContextProvider {
                 } else if e.is_decode() {
                     eprintln!("🔴 Error decoding response");
                 }
-                
+
                 // Try to get more details
                 eprintln!("🔴 Full error chain: {}", e);
-                
+
                 return Err(e.into());
             }
         };

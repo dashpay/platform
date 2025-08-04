@@ -1,11 +1,11 @@
 //! DPNS query operations
 
-mod usernames;
 mod availability;
-mod search;
 mod resolve;
+mod search;
+mod usernames;
 
-pub use usernames::*;
 pub use availability::*;
-pub use search::*;
 pub use resolve::*;
+pub use search::*;
+pub use usernames::*;

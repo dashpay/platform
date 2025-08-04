@@ -597,7 +597,10 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreditTransfer(st) => {
-                eprintln!("🔵 signing: verifying key level and purpose {:?} {:?}", identity_public_key, options);
+                eprintln!(
+                    "🔵 signing: verifying key level and purpose {:?} {:?}",
+                    identity_public_key, options
+                );
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 eprintln!("🔵 signing: verified key level and purpose");
                 st.verify_public_key_is_enabled(identity_public_key)?;

@@ -68,10 +68,12 @@ pub unsafe extern "C" fn dash_sdk_dpns_check_availability(
         });
         match CString::new(result.to_string()) {
             Ok(c_string) => return DashSDKResult::success_string(c_string.into_raw()),
-            Err(_) => return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                "Failed to convert JSON to C string".to_string(),
-            )),
+            Err(_) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    "Failed to convert JSON to C string".to_string(),
+                ))
+            }
         }
     }
 
@@ -79,7 +81,9 @@ pub unsafe extern "C" fn dash_sdk_dpns_check_availability(
     let sdk = &sdk_wrapper.sdk;
 
     // Check homograph safety
-    use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username};
+    use dash_sdk::platform::dpns_usernames::{
+        convert_to_homograph_safe_chars, is_contested_username,
+    };
     let homograph_safe = convert_to_homograph_safe_chars(label_str);
     let is_homograph_different = homograph_safe != label_str.to_lowercase();
     let is_contested = is_contested_username(label_str);
@@ -120,15 +124,13 @@ pub unsafe extern "C" fn dash_sdk_dpns_check_availability(
     });
 
     match result {
-        Ok(json) => {
-            match CString::new(json) {
-                Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
-                Err(_) => DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    "Failed to convert JSON to C string".to_string(),
-                )),
-            }
-        }
+        Ok(json) => match CString::new(json) {
+            Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
+            Err(_) => DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                "Failed to convert JSON to C string".to_string(),
+            )),
+        },
         Err(e) => DashSDKResult::error(e),
     }
 }

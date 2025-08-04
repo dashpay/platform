@@ -1,10 +1,9 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
-        accessors::IdentityGettersV0, 
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        signer::Signer, Identity, IdentityPublicKey, KeyType,
-        Purpose, SecurityLevel,
+        accessors::IdentityGettersV0,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
+        IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
@@ -35,10 +34,16 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
     ) -> Result<StateTransition, ProtocolError> {
         eprintln!("🔵 try_from_identity: Started");
         eprintln!("🔵 try_from_identity: identity_id = {:?}", identity.id());
-        eprintln!("🔵 try_from_identity: to_identity_with_identifier = {:?}", to_identity_with_identifier);
+        eprintln!(
+            "🔵 try_from_identity: to_identity_with_identifier = {:?}",
+            to_identity_with_identifier
+        );
         eprintln!("🔵 try_from_identity: amount = {}", amount);
-        eprintln!("🔵 try_from_identity: signing_withdrawal_key_to_use present = {}", signing_withdrawal_key_to_use.is_some());
-        
+        eprintln!(
+            "🔵 try_from_identity: signing_withdrawal_key_to_use present = {}",
+            signing_withdrawal_key_to_use.is_some()
+        );
+
         let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
             identity_id: identity.id(),
             recipient_id: to_identity_with_identifier,
@@ -66,28 +71,41 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
                 }
             }
             None => {
-                eprintln!("🔵 try_from_identity: No signing key specified, looking for TRANSFER key");
+                eprintln!(
+                    "🔵 try_from_identity: No signing key specified, looking for TRANSFER key"
+                );
                 eprintln!("🔵 try_from_identity: About to call get_first_public_key_matching");
                 eprintln!("🔵 try_from_identity: Purpose = TRANSFER");
                 eprintln!("🔵 try_from_identity: SecurityLevel = full_range");
                 eprintln!("🔵 try_from_identity: KeyType = all_key_types");
                 eprintln!("🔵 try_from_identity: allow_disabled = true");
-                
-                let key_result = identity
-                    .get_first_public_key_matching(
-                        Purpose::TRANSFER,
-                        SecurityLevel::full_range().into(),
-                        KeyType::all_key_types().into(),
-                        true,
-                    );
-                    
-                eprintln!("🔵 try_from_identity: get_first_public_key_matching returned: {}", key_result.is_some());
-                
+
+                let key_result = identity.get_first_public_key_matching(
+                    Purpose::TRANSFER,
+                    SecurityLevel::full_range().into(),
+                    KeyType::all_key_types().into(),
+                    true,
+                );
+
+                eprintln!(
+                    "🔵 try_from_identity: get_first_public_key_matching returned: {}",
+                    key_result.is_some()
+                );
+
                 key_result.ok_or_else(|| {
-                    eprintln!("❌ try_from_identity ERROR: No transfer public key found in identity");
-                    eprintln!("❌ try_from_identity: Total keys in identity: {}", identity.public_keys().len());
+                    eprintln!(
+                        "❌ try_from_identity ERROR: No transfer public key found in identity"
+                    );
+                    eprintln!(
+                        "❌ try_from_identity: Total keys in identity: {}",
+                        identity.public_keys().len()
+                    );
                     for (key_id, key) in identity.public_keys() {
-                        eprintln!("❌ try_from_identity: Key {}: purpose = {:?}", key_id, key.purpose());
+                        eprintln!(
+                            "❌ try_from_identity: Key {}: purpose = {:?}",
+                            key_id,
+                            key.purpose()
+                        );
                     }
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
                         "no transfer public key".to_string(),
@@ -96,9 +114,12 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
             }
         };
 
-        eprintln!("🔵 try_from_identity: Found identity_public_key with ID: {}", identity_public_key.id());
+        eprintln!(
+            "🔵 try_from_identity: Found identity_public_key with ID: {}",
+            identity_public_key.id()
+        );
         eprintln!("🔵 try_from_identity: About to call transition.sign_external");
-        
+
         match transition.sign_external(
             identity_public_key,
             &signer,
@@ -106,7 +127,7 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
         ) {
             Ok(_) => {
                 eprintln!("🔵 try_from_identity: sign_external succeeded");
-            },
+            }
             Err(e) => {
                 eprintln!("❌ try_from_identity ERROR: sign_external failed: {:?}", e);
                 return Err(e);

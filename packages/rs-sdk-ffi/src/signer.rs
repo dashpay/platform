@@ -1,7 +1,7 @@
 //! Signer interface for iOS FFI
 
-use crate::types::SignerHandle;
 use crate::signer_simple;
+use crate::types::SignerHandle;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::BinaryData;
@@ -92,13 +92,13 @@ pub unsafe extern "C" fn dash_sdk_signer_create(
     can_sign_callback: IOSCanSignCallback,
 ) -> *mut SignerHandle {
     let signer = IOSSigner::new(sign_callback, can_sign_callback);
-    
+
     // Create a VTableSigner that wraps the IOSSigner
     let vtable_signer = VTableSigner {
         signer_ptr: Box::into_raw(Box::new(signer)) as *mut std::os::raw::c_void,
         vtable: &IOS_SIGNER_VTABLE,
     };
-    
+
     Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle
 }
 
@@ -108,12 +108,12 @@ pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
     if !handle.is_null() {
         // Try to cast as VTableSigner first
         let vtable_signer = Box::from_raw(handle as *mut VTableSigner);
-        
+
         // Call the destructor through the vtable
         if !vtable_signer.vtable.is_null() {
             ((*vtable_signer.vtable).destroy)(vtable_signer.signer_ptr);
         }
-        
+
         // The VTableSigner itself is dropped here
     }
 }
@@ -140,14 +140,14 @@ pub struct SignerVTable {
         data_len: usize,
         result_len: *mut usize,
     ) -> *mut u8,
-    
+
     /// Can sign with function pointer
     pub can_sign_with: unsafe extern "C" fn(
         signer: *const std::os::raw::c_void,
         identity_public_key_bytes: *const u8,
         identity_public_key_len: usize,
     ) -> bool,
-    
+
     /// Destructor function pointer
     pub destroy: unsafe extern "C" fn(signer: *mut std::os::raw::c_void),
 }
@@ -189,9 +189,10 @@ impl Signer for VTableSigner {
     ) -> Result<BinaryData, ProtocolError> {
         unsafe {
             // Serialize the public key
-            let key_bytes = bincode::encode_to_vec(identity_public_key, bincode::config::standard())
-                .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-            
+            let key_bytes =
+                bincode::encode_to_vec(identity_public_key, bincode::config::standard())
+                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
             let mut result_len: usize = 0;
             let result_ptr = ((*self.vtable).sign)(
                 self.signer_ptr,
@@ -201,32 +202,30 @@ impl Signer for VTableSigner {
                 data.len(),
                 &mut result_len,
             );
-            
+
             if result_ptr.is_null() {
                 return Err(ProtocolError::Generic("Signing failed".to_string()));
             }
-            
+
             // Convert result to BinaryData
             let signature = std::slice::from_raw_parts(result_ptr, result_len).to_vec();
-            
+
             // Free the result using the same allocator
             dash_sdk_bytes_free(result_ptr);
-            
+
             Ok(BinaryData::from(signature))
         }
     }
-    
+
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
         unsafe {
             // Serialize the public key
             match bincode::encode_to_vec(identity_public_key, bincode::config::standard()) {
-                Ok(key_bytes) => {
-                    ((*self.vtable).can_sign_with)(
-                        self.signer_ptr,
-                        key_bytes.as_ptr(),
-                        key_bytes.len(),
-                    )
-                }
+                Ok(key_bytes) => ((*self.vtable).can_sign_with)(
+                    self.signer_ptr,
+                    key_bytes.as_ptr(),
+                    key_bytes.len(),
+                ),
                 Err(_) => false,
             }
         }
@@ -243,16 +242,19 @@ unsafe extern "C" fn single_key_signer_sign(
     result_len: *mut usize,
 ) -> *mut u8 {
     let signer = &*(signer as *const SingleKeySigner);
-    
+
     // Deserialize the public key
     let key_bytes = std::slice::from_raw_parts(identity_public_key_bytes, identity_public_key_len);
-    let identity_public_key = match bincode::decode_from_slice::<IdentityPublicKey, _>(key_bytes, bincode::config::standard()) {
+    let identity_public_key = match bincode::decode_from_slice::<IdentityPublicKey, _>(
+        key_bytes,
+        bincode::config::standard(),
+    ) {
         Ok((key, _)) => key,
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     let data_slice = std::slice::from_raw_parts(data, data_len);
-    
+
     match signer.sign(&identity_public_key, data_slice) {
         Ok(signature) => {
             let sig_vec = signature.to_vec();
@@ -273,10 +275,11 @@ unsafe extern "C" fn single_key_signer_can_sign_with(
     identity_public_key_len: usize,
 ) -> bool {
     let signer = &*(signer as *const SingleKeySigner);
-    
+
     // Deserialize the public key
     let key_bytes = std::slice::from_raw_parts(identity_public_key_bytes, identity_public_key_len);
-    match bincode::decode_from_slice::<IdentityPublicKey, _>(key_bytes, bincode::config::standard()) {
+    match bincode::decode_from_slice::<IdentityPublicKey, _>(key_bytes, bincode::config::standard())
+    {
         Ok((identity_public_key, _)) => signer.can_sign_with(&identity_public_key),
         Err(_) => false,
     }
@@ -305,16 +308,19 @@ unsafe extern "C" fn ios_signer_sign(
     result_len: *mut usize,
 ) -> *mut u8 {
     let signer = &*(signer as *const IOSSigner);
-    
+
     // Deserialize the public key
     let key_bytes = std::slice::from_raw_parts(identity_public_key_bytes, identity_public_key_len);
-    let identity_public_key = match bincode::decode_from_slice::<IdentityPublicKey, _>(key_bytes, bincode::config::standard()) {
+    let identity_public_key = match bincode::decode_from_slice::<IdentityPublicKey, _>(
+        key_bytes,
+        bincode::config::standard(),
+    ) {
         Ok((key, _)) => key,
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     let data_slice = std::slice::from_raw_parts(data, data_len);
-    
+
     match signer.sign(&identity_public_key, data_slice) {
         Ok(signature) => {
             let sig_vec = signature.to_vec();

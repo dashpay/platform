@@ -8,8 +8,8 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::identifier::Identifier;
-use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::platform_value::Value;
 use serde_json::json;
 
 /// Get DPNS usernames owned by an identity
@@ -73,7 +73,10 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_usernames(
 
     // Execute the async operation
     let result = sdk_wrapper.runtime.block_on(async {
-        match sdk.get_dpns_usernames_by_identity(identifier, limit_opt).await {
+        match sdk
+            .get_dpns_usernames_by_identity(identifier, limit_opt)
+            .await
+        {
             Ok(usernames) => {
                 // Convert to JSON array
                 let json_array: Vec<serde_json::Value> = usernames
@@ -104,15 +107,13 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_usernames(
     });
 
     match result {
-        Ok(json) => {
-            match CString::new(json) {
-                Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
-                Err(_) => DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    "Failed to convert JSON to C string".to_string(),
-                )),
-            }
-        }
+        Ok(json) => match CString::new(json) {
+            Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
+            Err(_) => DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                "Failed to convert JSON to C string".to_string(),
+            )),
+        },
         Err(e) => DashSDKResult::error(e),
     }
 }

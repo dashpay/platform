@@ -1,8 +1,8 @@
 //! Create identity from components
 
-use dash_sdk::dpp::identity::{IdentityV0, IdentityPublicKey};
 use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dash_sdk::dpp::prelude::{Identity, Identifier};
+use dash_sdk::dpp::identity::{IdentityPublicKey, IdentityV0};
+use dash_sdk::dpp::prelude::{Identifier, Identity};
 use std::collections::BTreeMap;
 use std::slice;
 
@@ -31,7 +31,7 @@ pub struct DashSDKPublicKeyData {
 }
 
 /// Create an identity handle from components
-/// 
+///
 /// This function creates an identity handle from basic components without
 /// requiring JSON serialization/deserialization.
 ///
@@ -82,10 +82,10 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_components(
 
     // Convert public keys
     let mut keys_map = BTreeMap::new();
-    
+
     if public_keys_count > 0 {
         let keys_slice = slice::from_raw_parts(public_keys, public_keys_count);
-        
+
         for key_data in keys_slice {
             if key_data.data.is_null() {
                 return DashSDKResult::error(DashSDKError::new(
@@ -95,15 +95,11 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_components(
             }
 
             let key_bytes = slice::from_raw_parts(key_data.data, key_data.data_len);
-            
+
             // Create IdentityPublicKey from the data
             // Note: This is a simplified version. In production, you'd properly
             // construct the key with all fields and proper validation
-            use dash_sdk::dpp::identity::{
-                Purpose,
-                SecurityLevel,
-                KeyType,
-            };
+            use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
 
             let purpose = match key_data.purpose {
                 0 => Purpose::AUTHENTICATION,

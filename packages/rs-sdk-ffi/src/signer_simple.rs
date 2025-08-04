@@ -37,19 +37,16 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), Network::Dash) {
         Ok(s) => s,
         Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                e,
-            ));
+            return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e));
         }
     };
-    
+
     // Create a VTableSigner that wraps the SingleKeySigner
     let vtable_signer = crate::signer::VTableSigner {
         signer_ptr: Box::into_raw(Box::new(signer)) as *mut std::os::raw::c_void,
         vtable: &crate::signer::SINGLE_KEY_SIGNER_VTABLE,
     };
-    
+
     let handle = Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle;
     DashSDKResult::success(handle as *mut std::os::raw::c_void)
 }
@@ -87,16 +84,18 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
 
     // Create a dummy identity public key for signing
     // The SingleKeySigner doesn't actually use the key data, just needs one to satisfy the trait
-    let dummy_key = IdentityPublicKey::V0(dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
-        id: 0,
-        key_type: KeyType::ECDSA_SECP256K1,
-        purpose: Purpose::AUTHENTICATION,
-        security_level: SecurityLevel::HIGH,
-        data: vec![0; 33].into(),
-        read_only: false,
-        disabled_at: None,
-        contract_bounds: None,
-    });
+    let dummy_key = IdentityPublicKey::V0(
+        dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            data: vec![0; 33].into(),
+            read_only: false,
+            disabled_at: None,
+            contract_bounds: None,
+        },
+    );
 
     match signer.sign(&dummy_key, data_slice) {
         Ok(signature) => {

@@ -13,7 +13,7 @@ use super::convert_to_homograph_safe_chars;
 pub struct DpnsUsername {
     /// The domain label (e.g., "alice")
     pub label: String,
-    /// The normalized label (e.g., "a11ce") 
+    /// The normalized label (e.g., "a11ce")
     pub normalized_label: String,
     /// The full domain name (e.g., "alice.dash")
     pub full_name: String,
@@ -49,20 +49,18 @@ impl Sdk {
         let records_identity_query = DocumentQuery {
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "records.identity".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Identifier(identity_id.to_buffer()),
-                },
-            ],
-            order_by_clauses: vec![],  // Remove ordering by $createdAt as it might not be indexed
+            where_clauses: vec![WhereClause {
+                field: "records.identity".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(identity_id.to_buffer()),
+            }],
+            order_by_clauses: vec![], // Remove ordering by $createdAt as it might not be indexed
             limit,
             start: None,
         };
 
         let records_identity_documents = Document::fetch_many(self, records_identity_query).await?;
-        
+
         let mut usernames = Vec::new();
         for (_, doc_opt) in records_identity_documents {
             if let Some(doc) = doc_opt {
@@ -98,7 +96,10 @@ impl Sdk {
     /// # Returns
     ///
     /// Returns the identity ID associated with the domain, or None if not found
-    pub async fn resolve_dpns_name_to_identity(&self, name: &str) -> Result<Option<Identifier>, Error> {
+    pub async fn resolve_dpns_name_to_identity(
+        &self,
+        name: &str,
+    ) -> Result<Option<Identifier>, Error> {
         // Use the existing method from mod.rs
         self.resolve_dpns_name(name).await
     }
@@ -161,15 +162,16 @@ impl Sdk {
     /// Helper function to convert a DPNS domain document to DpnsUsername struct
     fn document_to_dpns_username(doc: Document) -> Option<DpnsUsername> {
         let properties = doc.properties();
-        
+
         let label = properties.get("label")?.as_text()?.to_string();
         let normalized_label = properties.get("normalizedLabel")?.as_text()?.to_string();
         let parent_domain = properties.get("normalizedParentDomainName")?.as_text()?;
-        
+
         // Extract identity ID from records if present
         let records_identity_id = if let Some(Value::Map(records)) = properties.get("records") {
             // Look for the "identity" key in the map
-            records.iter()
+            records
+                .iter()
                 .find(|(k, _)| k.as_text() == Some("identity"))
                 .and_then(|(_, v)| v.to_identifier().ok())
         } else {
@@ -197,17 +199,19 @@ mod tests {
     async fn test_dpns_queries() {
         use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
         use std::num::NonZeroUsize;
-        
+
         // Create trusted context provider for testnet
         let context_provider = TrustedHttpContextProvider::new(
             Network::Testnet,
-            None, // No devnet name
+            None,                            // No devnet name
             NonZeroUsize::new(100).unwrap(), // Cache size
         )
         .expect("Failed to create context provider");
-        
+
         // Create SDK with testnet configuration and trusted context provider
-        let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
+        let address_list = "https://52.12.176.90:1443"
+            .parse()
+            .expect("Failed to parse address");
         let sdk = SdkBuilder::new(address_list)
             .with_network(Network::Testnet)
             .with_context_provider(context_provider)
@@ -219,15 +223,24 @@ mod tests {
         println!("Search results for 'test': {:?}", results);
 
         // Test availability check
-        let is_available = sdk.check_dpns_name_availability("somerandomunusedname123456").await.unwrap();
+        let is_available = sdk
+            .check_dpns_name_availability("somerandomunusedname123456")
+            .await
+            .unwrap();
         assert!(is_available, "Random name should be available");
 
         // Test resolve (if we know a name exists)
-        if let Ok(Some(identity_id)) = sdk.resolve_dpns_name_to_identity("therealslimshaddy5").await {
+        if let Ok(Some(identity_id)) = sdk
+            .resolve_dpns_name_to_identity("therealslimshaddy5")
+            .await
+        {
             println!("'therealslimshaddy5' resolves to identity: {}", identity_id);
-            
+
             // Test get usernames by identity
-            let usernames = sdk.get_dpns_usernames_by_identity(identity_id, Some(5)).await.unwrap();
+            let usernames = sdk
+                .get_dpns_usernames_by_identity(identity_id, Some(5))
+                .await
+                .unwrap();
             println!("Usernames for identity {}: {:?}", identity_id, usernames);
         }
     }

@@ -97,15 +97,13 @@ pub unsafe extern "C" fn dash_sdk_dpns_search(
     });
 
     match result {
-        Ok(json) => {
-            match CString::new(json) {
-                Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
-                Err(_) => DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    "Failed to convert JSON to C string".to_string(),
-                )),
-            }
-        }
+        Ok(json) => match CString::new(json) {
+            Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
+            Err(_) => DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                "Failed to convert JSON to C string".to_string(),
+            )),
+        },
         Err(e) => DashSDKResult::error(e),
     }
 }

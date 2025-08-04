@@ -11,17 +11,19 @@ const TEST_PREFIX: &str = "ali";
 async fn test_dpns_queries_from_docs() {
     use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
     use std::num::NonZeroUsize;
-    
+
     // Create trusted context provider for testnet
     let context_provider = TrustedHttpContextProvider::new(
         Network::Testnet,
-        None, // No devnet name
+        None,                            // No devnet name
         NonZeroUsize::new(100).unwrap(), // Cache size
     )
     .expect("Failed to create context provider");
-    
+
     // Initialize SDK for testnet with trusted context provider
-    let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
+    let address_list = "https://52.12.176.90:1443"
+        .parse()
+        .expect("Failed to parse address");
     let sdk = SdkBuilder::new(address_list)
         .with_network(Network::Testnet)
         .with_context_provider(context_provider)
@@ -34,8 +36,14 @@ async fn test_dpns_queries_from_docs() {
     println!("1. Testing dpns_check_availability('alice'):");
     match sdk.check_dpns_name_availability(TEST_USERNAME).await {
         Ok(is_available) => {
-            println!("   ✅ Success: Name 'alice' is {}", 
-                if is_available { "AVAILABLE" } else { "NOT AVAILABLE" });
+            println!(
+                "   ✅ Success: Name 'alice' is {}",
+                if is_available {
+                    "AVAILABLE"
+                } else {
+                    "NOT AVAILABLE"
+                }
+            );
         }
         Err(e) => {
             println!("   ❌ Error: {}", e);
@@ -47,7 +55,10 @@ async fn test_dpns_queries_from_docs() {
     println!("2. Testing dpns_resolve_name('alice'):");
     match sdk.resolve_dpns_name_to_identity(TEST_USERNAME).await {
         Ok(Some(identity_id)) => {
-            println!("   ✅ Success: 'alice' resolves to identity: {}", identity_id);
+            println!(
+                "   ✅ Success: 'alice' resolves to identity: {}",
+                identity_id
+            );
         }
         Ok(None) => {
             println!("   ℹ️  Name 'alice' not found (not registered)");
@@ -59,12 +70,15 @@ async fn test_dpns_queries_from_docs() {
     println!();
 
     // Test 3: Get DPNS usernames for identity
-    println!("3. Testing get_dpns_usernames_by_identity('{}'):", TEST_IDENTITY_ID);
-    
+    println!(
+        "3. Testing get_dpns_usernames_by_identity('{}'):",
+        TEST_IDENTITY_ID
+    );
+
     // Parse the identity ID from base58
     let identity_id = match dash_sdk::dpp::prelude::Identifier::from_string(
-        TEST_IDENTITY_ID, 
-        dpp::platform_value::string_encoding::Encoding::Base58
+        TEST_IDENTITY_ID,
+        dpp::platform_value::string_encoding::Encoding::Base58,
     ) {
         Ok(id) => id,
         Err(e) => {
@@ -73,7 +87,10 @@ async fn test_dpns_queries_from_docs() {
         }
     };
 
-    match sdk.get_dpns_usernames_by_identity(identity_id, Some(10)).await {
+    match sdk
+        .get_dpns_usernames_by_identity(identity_id, Some(10))
+        .await
+    {
         Ok(usernames) => {
             if usernames.is_empty() {
                 println!("   ℹ️  No usernames found for this identity");
@@ -103,7 +120,11 @@ async fn test_dpns_queries_from_docs() {
             if usernames.is_empty() {
                 println!("   ℹ️  No names found starting with '{}'", TEST_PREFIX);
             } else {
-                println!("   ✅ Success: Found {} names starting with '{}':", usernames.len(), TEST_PREFIX);
+                println!(
+                    "   ✅ Success: Found {} names starting with '{}':",
+                    usernames.len(),
+                    TEST_PREFIX
+                );
                 for (i, username) in usernames.iter().enumerate() {
                     println!("      [{}] {}", i + 1, username.full_name);
                     println!("          - Label: {}", username.label);
@@ -120,12 +141,21 @@ async fn test_dpns_queries_from_docs() {
 
     // Test with a name that's more likely to exist on testnet
     println!("5. Testing with 'therealslimshaddy5' (known existing name):");
-    match sdk.resolve_dpns_name_to_identity("therealslimshaddy5").await {
+    match sdk
+        .resolve_dpns_name_to_identity("therealslimshaddy5")
+        .await
+    {
         Ok(Some(identity_id)) => {
-            println!("   ✅ Success: 'therealslimshaddy5' resolves to identity: {}", identity_id);
-            
+            println!(
+                "   ✅ Success: 'therealslimshaddy5' resolves to identity: {}",
+                identity_id
+            );
+
             // Get usernames for this identity
-            match sdk.get_dpns_usernames_by_identity(identity_id, Some(5)).await {
+            match sdk
+                .get_dpns_usernames_by_identity(identity_id, Some(5))
+                .await
+            {
                 Ok(usernames) => {
                     println!("   ✅ This identity owns {} usernames", usernames.len());
                 }
@@ -148,16 +178,18 @@ async fn test_dpns_queries_from_docs() {
 async fn test_dpns_search_variations() {
     use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
     use std::num::NonZeroUsize;
-    
+
     // Create trusted context provider for testnet
     let context_provider = TrustedHttpContextProvider::new(
         Network::Testnet,
-        None, // No devnet name
+        None,                            // No devnet name
         NonZeroUsize::new(100).unwrap(), // Cache size
     )
     .expect("Failed to create context provider");
-    
-    let address_list = "https://52.12.176.90:1443".parse().expect("Failed to parse address");
+
+    let address_list = "https://52.12.176.90:1443"
+        .parse()
+        .expect("Failed to parse address");
     let sdk = SdkBuilder::new(address_list)
         .with_network(Network::Testnet)
         .with_context_provider(context_provider)

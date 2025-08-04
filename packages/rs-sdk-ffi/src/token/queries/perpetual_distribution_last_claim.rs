@@ -67,7 +67,7 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         use dash_sdk::platform::query::{Query, TokenLastClaimQuery};
         use dash_sdk::platform::Fetch;
-        
+
         let query = TokenLastClaimQuery {
             token_id: token_id.clone(),
             identity_id: identity_id.clone(),
@@ -75,26 +75,30 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
 
         let last_claim = RewardDistributionMoment::fetch(&wrapper.sdk, query)
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to fetch token perpetual distribution last claim: {}", e)))?;
+            .map_err(|e| {
+                FFIError::InternalError(format!(
+                    "Failed to fetch token perpetual distribution last claim: {}",
+                    e
+                ))
+            })?;
 
         // Convert RewardDistributionMoment to JSON
         match last_claim {
-            Some(moment) => {
-                match moment {
-                    RewardDistributionMoment::TimeBasedMoment(ts) => {
-                        Ok(format!(r#"{{"type":"time_based","timestamp_ms":{},"block_height":0}}"#, ts))
-                    },
-                    RewardDistributionMoment::BlockBasedMoment(height) => {
-                        Ok(format!(r#"{{"type":"block_based","timestamp_ms":0,"block_height":{}}}"#, height))
-                    },
-                    RewardDistributionMoment::EpochBasedMoment(epoch) => {
-                        Ok(format!(r#"{{"type":"epoch_based","timestamp_ms":0,"block_height":{}}}"#, epoch))
-                    }
-                }
+            Some(moment) => match moment {
+                RewardDistributionMoment::TimeBasedMoment(ts) => Ok(format!(
+                    r#"{{"type":"time_based","timestamp_ms":{},"block_height":0}}"#,
+                    ts
+                )),
+                RewardDistributionMoment::BlockBasedMoment(height) => Ok(format!(
+                    r#"{{"type":"block_based","timestamp_ms":0,"block_height":{}}}"#,
+                    height
+                )),
+                RewardDistributionMoment::EpochBasedMoment(epoch) => Ok(format!(
+                    r#"{{"type":"epoch_based","timestamp_ms":0,"block_height":{}}}"#,
+                    epoch
+                )),
             },
-            None => {
-                Err(FFIError::NotFound("No last claim found".to_string()))
-            }
+            None => Err(FFIError::NotFound("No last claim found".to_string())),
         }
     });
 

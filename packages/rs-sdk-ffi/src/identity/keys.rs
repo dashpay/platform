@@ -20,7 +20,7 @@ pub enum StateTransitionType {
 }
 
 /// Get the appropriate signing key for a state transition
-/// 
+///
 /// This function finds a key that meets the purpose and security level requirements
 /// for the specified state transition type.
 ///
@@ -47,15 +47,18 @@ pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
 
     // Determine purpose and security level requirements based on transition type
     let (required_purposes, required_security_levels) = match transition_type {
-        StateTransitionType::IdentityCreditTransfer | 
-        StateTransitionType::IdentityCreditWithdrawal => {
+        StateTransitionType::IdentityCreditTransfer
+        | StateTransitionType::IdentityCreditWithdrawal => {
             // Transfer and withdrawal require TRANSFER purpose at CRITICAL level
             (vec![Purpose::TRANSFER], vec![SecurityLevel::CRITICAL])
-        },
+        }
         _ => {
             // All other transitions use AUTHENTICATION purpose
             // and can use HIGH or CRITICAL security levels
-            (vec![Purpose::AUTHENTICATION], vec![SecurityLevel::HIGH, SecurityLevel::CRITICAL])
+            (
+                vec![Purpose::AUTHENTICATION],
+                vec![SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+            )
         }
     };
 
@@ -66,9 +69,9 @@ pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
                 .public_keys()
                 .values()
                 .filter(|key| {
-                    key.purpose() == *purpose && 
-                    key.security_level() == *security_level &&
-                    key.disabled_at().is_none() // Only consider enabled keys
+                    key.purpose() == *purpose
+                        && key.security_level() == *security_level
+                        && key.disabled_at().is_none() // Only consider enabled keys
                 })
                 .collect();
 
@@ -83,23 +86,18 @@ pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
 
     // If no suitable key found, return error
     let error_msg = match transition_type {
-        StateTransitionType::IdentityCreditTransfer | 
-        StateTransitionType::IdentityCreditWithdrawal => {
+        StateTransitionType::IdentityCreditTransfer
+        | StateTransitionType::IdentityCreditWithdrawal => {
             "No TRANSFER key found at CRITICAL security level".to_string()
-        },
-        _ => {
-            "No AUTHENTICATION key found at HIGH or CRITICAL security level".to_string()
         }
+        _ => "No AUTHENTICATION key found at HIGH or CRITICAL security level".to_string(),
     };
 
-    DashSDKResult::error(DashSDKError::new(
-        DashSDKErrorCode::NotFound,
-        error_msg,
-    ))
+    DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::NotFound, error_msg))
 }
 
 /// Get the private key data for a transfer key
-/// 
+///
 /// This function retrieves the private key data that corresponds to the
 /// lowest security level transfer key. In a real implementation, this would
 /// interface with a secure key storage system.
@@ -121,10 +119,11 @@ pub unsafe extern "C" fn dash_sdk_identity_get_transfer_private_key(
     // 1. Verify the caller has access to the private keys
     // 2. Retrieve the private key from secure storage (keychain, hardware wallet, etc.)
     // 3. Return the private key data
-    
+
     DashSDKResult::error(DashSDKError::new(
         DashSDKErrorCode::NotImplemented,
-        "Private key retrieval not implemented. Keys should be managed by the wallet layer.".to_string(),
+        "Private key retrieval not implemented. Keys should be managed by the wallet layer."
+            .to_string(),
     ))
 }
 

@@ -1,8 +1,8 @@
 //! Identity withdrawal operations
 
 use dash_sdk::dpp::dashcore::{self, Address};
-use dash_sdk::dpp::prelude::Identity;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::prelude::Identity;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::str::FromStr;

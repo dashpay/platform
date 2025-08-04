@@ -1,14 +1,14 @@
 //! Test module to diagnose transfer crash
 
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::{Purpose, SecurityLevel, KeyType};
+use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::Fetch;
+use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::collections::HashSet;
 
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
@@ -59,16 +59,19 @@ pub unsafe extern "C" fn dash_sdk_test_identity_transfer_crash(
 
     eprintln!("🔵 Test: Identity fetched successfully");
     eprintln!("🔵 Test: Identity balance: {}", identity.balance());
-    eprintln!("🔵 Test: Number of public keys: {}", identity.public_keys().len());
+    eprintln!(
+        "🔵 Test: Number of public keys: {}",
+        identity.public_keys().len()
+    );
 
     // Try to manually call get_first_public_key_matching
     eprintln!("🔵 Test: Attempting to call get_first_public_key_matching...");
-    
+
     let mut security_levels = HashSet::new();
     security_levels.insert(SecurityLevel::CRITICAL);
     security_levels.insert(SecurityLevel::HIGH);
     security_levels.insert(SecurityLevel::MEDIUM);
-    
+
     let mut key_types = HashSet::new();
     key_types.insert(KeyType::ECDSA_SECP256K1);
     key_types.insert(KeyType::BLS12_381);
@@ -79,19 +82,19 @@ pub unsafe extern "C" fn dash_sdk_test_identity_transfer_crash(
     // Wrap in catch_unwind to see if it panics
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         eprintln!("🔵 Test: Inside catch_unwind, calling get_first_public_key_matching");
-        
+
         let key = identity.get_first_public_key_matching(
             Purpose::TRANSFER,
             security_levels,
             key_types,
             true,
         );
-        
+
         match key {
             Some(k) => eprintln!("🔵 Test: Found transfer key with ID: {}", k.id()),
             None => eprintln!("⚠️ Test: No transfer key found"),
         }
-        
+
         eprintln!("🔵 Test: get_first_public_key_matching completed successfully");
     })) {
         Ok(_) => eprintln!("✅ Test: No panic occurred"),
@@ -113,6 +116,6 @@ pub unsafe extern "C" fn dash_sdk_test_identity_transfer_crash(
 
     // If we get here, the method works fine
     eprintln!("✅ Test: All tests passed, no crash detected");
-    
+
     DashSDKResult::success(std::ptr::null_mut())
 }
