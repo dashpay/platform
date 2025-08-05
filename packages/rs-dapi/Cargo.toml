@@ -49,6 +49,8 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # HTTP client for external API calls
 reqwest = { version = "0.12", features = ["json"] }
+reqwest-middleware = "0.4"
+reqwest-tracing = "0.5"
 
 # Caching
 moka = { version = "0.12", features = ["future"] }
@@ -83,6 +85,7 @@ zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "3b8bb07a349d980b156e027
 # Dash Platform dependencies (using workspace versions)
 dapi-grpc = { path = "../dapi-grpc", features = ["server", "client", "serde"] }
 prost-types = "0.14.1"
+pin-project = "1.1"
 
 [build-dependencies]
 tonic-build = "0.14.0"

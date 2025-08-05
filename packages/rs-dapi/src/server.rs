@@ -43,7 +43,7 @@ impl DapiServer {
         // Create clients based on configuration
         // For now, let's use real clients by default
         let drive_client: Arc<dyn DriveClientTrait> =
-            Arc::new(DriveClient::new(&config.dapi.drive.uri));
+            Arc::new(DriveClient::new(&config.dapi.drive.uri).await?);
 
         let tenderdash_client: Arc<dyn TenderdashClientTrait> =
             Arc::new(TenderdashClient::with_websocket(

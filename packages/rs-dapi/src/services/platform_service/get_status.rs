@@ -22,10 +22,7 @@ impl PlatformServiceImpl {
         // Build fresh response
         match self.build_status_response().await {
             Ok(response) => Ok(Response::new(response)),
-            Err(status) => {
-                error!(error = ?status, "Failed to build status response");
-                Err(status)
-            }
+            Err(status) => Err(status),
         }
     }
 
