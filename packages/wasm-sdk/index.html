@@ -1107,6 +1107,7 @@
       get_document_with_proof_info,
       get_dpns_username,
       get_dpns_usernames,
+      get_dpns_usernames_with_proof_info,
       get_dpns_username_by_name,
       get_dpns_username_by_name_with_proof_info,
       // Protocol/Version queries
@@ -4009,11 +4010,19 @@ ${indentStr}]`;
           }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getDpnsUsername') {
-          result = await get_dpns_usernames(
-            sdk,
-            values.identityId,
-            values.limit || 10  // Default to 10 if not specified
-          );
+          if (useProofs) {
+            result = await get_dpns_usernames_with_proof_info(
+              sdk,
+              values.identityId,
+              values.limit || 10  // Default to 10 if not specified
+            );
+          } else {
+            result = await get_dpns_usernames(
+              sdk,
+              values.identityId,
+              values.limit || 10  // Default to 10 if not specified
+            );
+          }
           // Result is an array of usernames
         } else if (queryType === 'dpnsCheckAvailability') {
           // Handle DPNS availability check
@@ -4085,19 +4094,34 @@ ${indentStr}]`;
           ]);
           
           // Execute the document query
-          const documents = await get_documents(
-            sdk,
-            DPNS_CONTRACT_ID,
-            DPNS_DOCUMENT_TYPE,
-            whereClause,
-            orderBy,
-            limit,
-            null, // startAfter
-            null  // startAt
-          );
+          let documents;
+          if (useProofs) {
+            documents = await get_documents_with_proof_info(
+              sdk,
+              DPNS_CONTRACT_ID,
+              DPNS_DOCUMENT_TYPE,
+              whereClause,
+              orderBy,
+              limit,
+              null, // startAfter
+              null  // startAt
+            );
+          } else {
+            documents = await get_documents(
+              sdk,
+              DPNS_CONTRACT_ID,
+              DPNS_DOCUMENT_TYPE,
+              whereClause,
+              orderBy,
+              limit,
+              null, // startAfter
+              null  // startAt
+            );
+          }
           
           // Transform the results to show username and owner identity
-          const searchResults = documents.map(doc => {
+          const documentsArray = useProofs ? documents.data : documents;
+          const searchResults = documentsArray.map(doc => {
             // Access the data field which contains the DPNS document fields
             const data = doc.data || doc;
             
@@ -4110,7 +4134,7 @@ ${indentStr}]`;
             };
           });
           
-          result = {
+          const processedResult = {
             prefix: values.prefix,
             totalResults: searchResults.length,
             limit: limit,
@@ -4119,6 +4143,17 @@ ${indentStr}]`;
               ? `Found ${searchResults.length} name(s) starting with "${values.prefix}"` 
               : `No names found starting with "${values.prefix}"`
           };
+          
+          if (useProofs) {
+            // Create proof response structure with processed data for split view
+            result = {
+              data: processedResult,
+              metadata: documents.metadata,
+              proof: documents.proof
+            };
+          } else {
+            result = processedResult;
+          }
         }
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
