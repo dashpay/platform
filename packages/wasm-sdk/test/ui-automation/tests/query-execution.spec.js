@@ -570,7 +570,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getFinalizedEpochInfos', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -666,7 +666,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getTokenDirectPurchasePrices', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -677,7 +677,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getTokenContractInfo', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -762,7 +762,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     const votingQueries = [
       { 
         name: 'getContestedResources', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -870,7 +870,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     const groupQueries = [
       { 
         name: 'getGroupInfo', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -881,7 +881,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getGroupInfos', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -892,7 +892,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getGroupActions', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -903,7 +903,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getGroupActionSigners', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1040,7 +1040,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     const protocolQueries = [
       { 
         name: 'getProtocolVersionUpgradeState', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: false,
         validateFn: (result) => {
           expect(result).toBeDefined();
@@ -1112,7 +1112,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     const dpnsQueries = [
       { 
         name: 'getDpnsUsername', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1125,7 +1125,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsCheckAvailability', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1136,7 +1136,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsResolve', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1146,7 +1146,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsSearch', 
-        hasProofSupport: false, 
+        hasProofSupport: true, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
