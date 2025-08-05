@@ -53,17 +53,20 @@ fn test_config_load_with_uri_env_vars() {
     std::env::remove_var("DAPI_TENDERDASH_URI");
 }
 
-#[test]
-fn test_clients_can_be_created_with_uris() {
+#[tokio::test]
+async fn test_clients_can_be_created_with_uris() {
     use crate::clients::{DriveClient, TenderdashClient};
 
     let config = Config::default();
 
     // Test that clients can be created with URIs from config
-    let _drive_client = DriveClient::new(&config.dapi.drive.uri);
-    let _tenderdash_client = TenderdashClient::new(&config.dapi.tenderdash.uri);
-
-    // Test passes if no panic occurs during client creation
+    // Note: These will fail if no servers are running, which is expected in unit tests
+    DriveClient::new(&config.dapi.drive.uri)
+        .await
+        .expect_err("DriveClient should fail if no server is running");
+    TenderdashClient::new(&config.dapi.tenderdash.uri)
+        .await
+        .expect_err("TenderdashClient should fail if no server is running");
 }
 
 #[test]

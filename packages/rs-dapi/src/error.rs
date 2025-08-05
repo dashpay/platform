@@ -17,6 +17,10 @@ pub enum DapiError {
     #[error("Client error: {0}")]
     Client(String),
 
+    #[error("Cannot connect to server {0}: {1}")]
+    /// Server unavailable error (URI, detailed message)
+    ServerUnavailable(String, String),
+
     #[error("Server error: {0}")]
     Server(String),
 
@@ -90,6 +94,11 @@ impl DapiError {
     /// Create a client error
     pub fn client<S: Into<String>>(msg: S) -> Self {
         Self::Client(msg.into())
+    }
+
+    /// Create a connection validation error
+    pub fn server_unavailable<U: ToString, S: ToString>(uri: U, msg: S) -> Self {
+        Self::ServerUnavailable(uri.to_string(), msg.to_string())
     }
 
     /// Create a server error

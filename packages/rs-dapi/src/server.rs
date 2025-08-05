@@ -11,22 +11,20 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 
+use crate::clients::{DriveClient, TenderdashClient};
 use crate::config::Config;
+use crate::error::{DAPIResult, DapiError};
 use crate::logging::{middleware::AccessLogLayer, AccessLogger};
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 use crate::{
     clients::traits::{DriveClientTrait, TenderdashClientTrait},
     services::StreamingServiceImpl,
-};
-use crate::{
-    clients::{DriveClient, TenderdashClient},
-    error::DAPIResult,
 };
 
 pub struct DapiServer {
@@ -45,11 +43,13 @@ impl DapiServer {
         let drive_client: Arc<dyn DriveClientTrait> =
             Arc::new(DriveClient::new(&config.dapi.drive.uri).await?);
 
-        let tenderdash_client: Arc<dyn TenderdashClientTrait> =
-            Arc::new(TenderdashClient::with_websocket(
+        let tenderdash_client: Arc<dyn TenderdashClientTrait> = Arc::new(
+            TenderdashClient::with_websocket(
                 &config.dapi.tenderdash.uri,
                 &config.dapi.tenderdash.websocket_uri,
-            ));
+            )
+            .await?,
+        );
 
         let streaming_service = Arc::new(StreamingServiceImpl::new(
             drive_client.clone(),
@@ -76,6 +76,87 @@ impl DapiServer {
             jsonrpc_translator,
             access_logger,
         })
+    }
+
+    /// Create a new DapiServer with mock clients for testing
+    ///
+    /// This method bypasses connection validation and uses mock clients,
+    /// making it suitable for unit tests and environments where real
+    /// services are not available.
+    pub async fn new_with_mocks(
+        config: Arc<Config>,
+        access_logger: Option<AccessLogger>,
+    ) -> DAPIResult<Self> {
+        use crate::clients::mock::{MockDriveClient, MockTenderdashClient};
+
+        info!("Creating DAPI server with mock clients for testing");
+
+        // Create mock clients that don't require real service connections
+        let drive_client: Arc<dyn DriveClientTrait> = Arc::new(MockDriveClient::new());
+        let tenderdash_client: Arc<dyn TenderdashClientTrait> =
+            Arc::new(MockTenderdashClient::new());
+
+        let streaming_service = Arc::new(StreamingServiceImpl::new(
+            drive_client.clone(),
+            tenderdash_client.clone(),
+            config.clone(),
+        )?);
+
+        let platform_service = PlatformServiceImpl::new(
+            drive_client.clone(),
+            tenderdash_client.clone(),
+            config.clone(),
+        );
+
+        let core_service = CoreServiceImpl::new(streaming_service.clone(), config.clone());
+
+        let rest_translator = Arc::new(RestTranslator::new());
+        let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());
+
+        Ok(Self {
+            config,
+            platform_service: Arc::new(platform_service),
+            core_service: Arc::new(core_service),
+            rest_translator,
+            jsonrpc_translator,
+            access_logger,
+        })
+    }
+
+    /// Create a new DapiServer, falling back to mock clients if connection validation fails
+    ///
+    /// This method attempts to create real clients first, but if connection validation
+    /// fails, it falls back to mock clients and logs a warning. This is useful for
+    /// development environments where services may not always be available.
+    pub async fn new_with_fallback(
+        config: Arc<Config>,
+        access_logger: Option<AccessLogger>,
+    ) -> DAPIResult<Self> {
+        match Self::new(config.clone(), access_logger.clone()).await {
+            Ok(server) => {
+                info!("DAPI server created with real clients");
+                Ok(server)
+            }
+            Err(DapiError::ServerUnavailable(_uri, msg)) => {
+                warn!(
+                    "Upstream server unavailable, falling back to mock clients: {}",
+                    msg
+                );
+                Self::new_with_mocks(config, access_logger).await
+            }
+            Err(DapiError::Client(msg)) if msg.contains("Failed to connect") => {
+                warn!(
+                    "Client connection failed, falling back to mock clients: {}",
+                    msg
+                );
+                Self::new_with_mocks(config, access_logger).await
+            }
+            Err(DapiError::Transport(_)) => {
+                warn!("Transport error occurred, falling back to mock clients");
+                Self::new_with_mocks(config, access_logger).await
+            }
+            Err(e) => Err(e),
+        }
     }
     pub async fn run(self) -> DAPIResult<()> {
         info!("Starting DAPI server...");

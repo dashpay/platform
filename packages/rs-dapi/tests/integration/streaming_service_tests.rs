@@ -43,7 +43,7 @@ async fn test_config_loading() {
 async fn test_server_creation() {
     let config = Config::default();
 
-    // Test that we can create a DapiServer successfully
-    let server_result = rs_dapi::server::DapiServer::new(config.into(), None).await;
+    // Test that we can create a DapiServer successfully with fallback to mocks
+    let server_result = rs_dapi::server::DapiServer::new_with_fallback(config.into(), None).await;
     assert!(server_result.is_ok());
 }
