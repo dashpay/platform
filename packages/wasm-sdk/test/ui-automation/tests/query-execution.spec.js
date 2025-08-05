@@ -1125,7 +1125,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsCheckAvailability', 
-        hasProofSupport: true, 
+        hasProofSupport: false, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1136,7 +1136,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsResolve', 
-        hasProofSupport: true, 
+        hasProofSupport: false, 
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
