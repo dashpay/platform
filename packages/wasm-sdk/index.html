@@ -3783,14 +3783,29 @@ ${indentStr}]`;
           }
           
           if (useProofs) {
-            result = await get_identity_keys_with_proof_info(
-              sdk,
-              values.identityId,
-              values.keyRequestType,
-              keyIds,
-              values.limit,
-              values.offset
-            );
+            if (values.keyRequestType === 'search') {
+              // Search keys with proof not yet supported in WASM SDK, fallback to non-proof version
+              console.warn('Search keys with proof not yet supported, using non-proof version');
+              result = await get_identity_keys(
+                sdk,
+                values.identityId,
+                values.keyRequestType,
+                keyIds,
+                searchPurposeMap,
+                values.limit,
+                values.offset
+              );
+            } else {
+              // 'all' and 'specific' key types support proof
+              result = await get_identity_keys_with_proof_info(
+                sdk,
+                values.identityId,
+                values.keyRequestType,
+                keyIds,
+                values.limit,
+                values.offset
+              );
+            }
           } else {
             result = await get_identity_keys(
               sdk,
