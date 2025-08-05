@@ -1117,6 +1117,7 @@
       get_epochs_info,
       get_epochs_info_with_proof_info,
       get_finalized_epoch_infos,
+      get_finalized_epoch_infos_with_proof_info,
       get_current_epoch,
       get_current_epoch_with_proof_info,
       get_evonodes_proposed_epoch_blocks_by_ids,
@@ -1141,15 +1142,22 @@
       get_token_statuses,
       get_token_statuses_with_proof_info,
       get_token_direct_purchase_prices,
+      get_token_direct_purchase_prices_with_proof_info,
       get_token_contract_info,
+      get_token_contract_info_with_proof_info,
       get_token_perpetual_distribution_last_claim,
+      get_token_perpetual_distribution_last_claim_with_proof_info,
       get_token_total_supply,
       get_token_total_supply_with_proof_info,
       // Voting/Contested Resource queries
       get_contested_resources,
+      get_contested_resources_with_proof_info,
       get_contested_resource_vote_state,
+      get_contested_resource_vote_state_with_proof_info,
       get_contested_resource_voters_for_identity,
+      get_contested_resource_voters_for_identity_with_proof_info,
       get_contested_resource_identity_votes,
+      get_contested_resource_identity_votes_with_proof_info,
       get_vote_polls_by_end_date,
       get_vote_polls_by_end_date_with_proof_info,
       // Group queries
@@ -1158,7 +1166,9 @@
       get_group_infos,
       get_group_infos_with_proof_info,
       get_group_actions,
+      get_group_actions_with_proof_info,
       get_group_action_signers,
+      get_group_action_signers_with_proof_info,
       // DPNS functions
       dpns_convert_to_homograph_safe,
       dpns_is_valid_username,
@@ -4112,7 +4122,11 @@ ${indentStr}]`;
         }
         // Protocol/Version queries
         else if (queryType === 'getProtocolVersionUpgradeState') {
-          result = await get_protocol_version_upgrade_state(sdk);
+          if (useProofs) {
+            result = await get_protocol_version_upgrade_state_with_proof_info(sdk);
+          } else {
+            result = await get_protocol_version_upgrade_state(sdk);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getProtocolVersionUpgradeVoteStatus') {
           result = await get_protocol_version_upgrade_vote_status(
@@ -4148,12 +4162,21 @@ ${indentStr}]`;
           }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getFinalizedEpochInfos') {
-          result = await get_finalized_epoch_infos(
-            sdk,
-            values.startEpoch,
-            values.count,
-            values.ascending
-          );
+          if (useProofs) {
+            result = await get_finalized_epoch_infos_with_proof_info(
+              sdk,
+              values.startEpoch,
+              values.count,
+              values.ascending
+            );
+          } else {
+            result = await get_finalized_epoch_infos(
+              sdk,
+              values.startEpoch,
+              values.count,
+              values.ascending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getEvonodesProposedEpochBlocksByIds') {
           result = await get_evonodes_proposed_epoch_blocks_by_ids(
@@ -4268,17 +4291,33 @@ ${indentStr}]`;
           }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenDirectPurchasePrices') {
-          result = await get_token_direct_purchase_prices(sdk, values.tokenIds);
+          if (useProofs) {
+            result = await get_token_direct_purchase_prices_with_proof_info(sdk, values.tokenIds);
+          } else {
+            result = await get_token_direct_purchase_prices(sdk, values.tokenIds);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenContractInfo') {
-          result = await get_token_contract_info(sdk, values.dataContractId);
+          if (useProofs) {
+            result = await get_token_contract_info_with_proof_info(sdk, values.dataContractId);
+          } else {
+            result = await get_token_contract_info(sdk, values.dataContractId);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenPerpetualDistributionLastClaim') {
-          result = await get_token_perpetual_distribution_last_claim(
-            sdk,
-            values.identityId,
-            values.tokenId
-          );
+          if (useProofs) {
+            result = await get_token_perpetual_distribution_last_claim_with_proof_info(
+              sdk,
+              values.identityId,
+              values.tokenId
+            );
+          } else {
+            result = await get_token_perpetual_distribution_last_claim(
+              sdk,
+              values.identityId,
+              values.tokenId
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getTokenTotalSupply') {
           if (useProofs) {
@@ -4291,52 +4330,104 @@ ${indentStr}]`;
         // Voting/Contested Resource queries
         else if (queryType === 'getContestedResources') {
           const startAtValue = values.startAtValue ? new TextEncoder().encode(values.startAtValue) : undefined;
-          result = await get_contested_resources(
-            sdk,
-            values.documentTypeName,
-            values.dataContractId,
-            values.indexName,
-            values.resultType,
-            values.allowIncludeLockedAndAbstainingVoteTally,
-            startAtValue,
-            values.limit,
-            values.offset,
-            values.orderAscending
-          );
+          if (useProofs) {
+            result = await get_contested_resources_with_proof_info(
+              sdk,
+              values.documentTypeName,
+              values.dataContractId,
+              values.indexName,
+              values.resultType,
+              values.allowIncludeLockedAndAbstainingVoteTally,
+              startAtValue,
+              values.limit,
+              values.offset,
+              values.orderAscending
+            );
+          } else {
+            result = await get_contested_resources(
+              sdk,
+              values.documentTypeName,
+              values.dataContractId,
+              values.indexName,
+              values.resultType,
+              values.allowIncludeLockedAndAbstainingVoteTally,
+              startAtValue,
+              values.limit,
+              values.offset,
+              values.orderAscending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getContestedResourceVoteState') {
-          result = await get_contested_resource_vote_state(
-            sdk,
-            values.dataContractId,
-            values.documentTypeName,
-            values.indexName,
-            values.resultType,
-            values.allowIncludeLockedAndAbstainingVoteTally,
-            values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
-            values.count,
-            values.orderAscending
-          );
+          if (useProofs) {
+            result = await get_contested_resource_vote_state_with_proof_info(
+              sdk,
+              values.dataContractId,
+              values.documentTypeName,
+              values.indexName,
+              values.resultType,
+              values.allowIncludeLockedAndAbstainingVoteTally,
+              values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
+              values.count,
+              values.orderAscending
+            );
+          } else {
+            result = await get_contested_resource_vote_state(
+              sdk,
+              values.dataContractId,
+              values.documentTypeName,
+              values.indexName,
+              values.resultType,
+              values.allowIncludeLockedAndAbstainingVoteTally,
+              values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
+              values.count,
+              values.orderAscending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getContestedResourceVotersForIdentity') {
-          result = await get_contested_resource_voters_for_identity(
-            sdk,
-            values.dataContractId,
-            values.documentTypeName,
-            values.indexName,
-            values.contestantId,
-            values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
-            values.count,
-            values.orderAscending
-          );
+          if (useProofs) {
+            result = await get_contested_resource_voters_for_identity_with_proof_info(
+              sdk,
+              values.dataContractId,
+              values.documentTypeName,
+              values.indexName,
+              values.contestantId,
+              values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
+              values.count,
+              values.orderAscending
+            );
+          } else {
+            result = await get_contested_resource_voters_for_identity(
+              sdk,
+              values.dataContractId,
+              values.documentTypeName,
+              values.indexName,
+              values.contestantId,
+              values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
+              values.count,
+              values.orderAscending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getContestedResourceIdentityVotes') {
-          result = await get_contested_resource_identity_votes(
-            sdk,
-            values.identityId,
-            values.limit,
-            values.offset,
-            values.orderAscending
-          );
+          if (useProofs) {
+            result = await get_contested_resource_identity_votes_with_proof_info(
+              sdk,
+              values.identityId,
+              values.limit,
+              values.offset,
+              values.orderAscending
+            );
+          } else {
+            result = await get_contested_resource_identity_votes(
+              sdk,
+              values.identityId,
+              values.limit,
+              values.offset,
+              values.orderAscending
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getVotePollsByEndDate') {
           if (useProofs) {
@@ -4389,7 +4480,11 @@ ${indentStr}]`;
         }
         // Group queries
         else if (queryType === 'getGroupInfo') {
-          result = await get_group_info(sdk, values.contractId, values.groupContractPosition);
+          if (useProofs) {
+            result = await get_group_info_with_proof_info(sdk, values.contractId, values.groupContractPosition);
+          } else {
+            result = await get_group_info(sdk, values.contractId, values.groupContractPosition);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getGroupInfos') {
           let startAtInfo = null;
@@ -4399,12 +4494,21 @@ ${indentStr}]`;
               included: values.startGroupContractPositionIncluded || false
             };
           }
-          result = await get_group_infos(
-            sdk,
-            values.contractId,
-            startAtInfo,
-            values.count
-          );
+          if (useProofs) {
+            result = await get_group_infos_with_proof_info(
+              sdk,
+              values.contractId,
+              startAtInfo,
+              values.count
+            );
+          } else {
+            result = await get_group_infos(
+              sdk,
+              values.contractId,
+              startAtInfo,
+              values.count
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getGroupActions') {
           let startAtInfo = null;
@@ -4414,23 +4518,44 @@ ${indentStr}]`;
               included: values.startActionIdIncluded || false
             };
           }
-          result = await get_group_actions(
-            sdk,
-            values.contractId,
-            values.groupContractPosition,
-            values.status,
-            startAtInfo,
-            values.count
-          );
+          if (useProofs) {
+            result = await get_group_actions_with_proof_info(
+              sdk,
+              values.contractId,
+              values.groupContractPosition,
+              values.status,
+              startAtInfo,
+              values.count
+            );
+          } else {
+            result = await get_group_actions(
+              sdk,
+              values.contractId,
+              values.groupContractPosition,
+              values.status,
+              startAtInfo,
+              values.count
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getGroupActionSigners') {
-          result = await get_group_action_signers(
-            sdk,
-            values.contractId,
-            values.groupContractPosition,
-            values.status,
-            values.actionId
-          );
+          if (useProofs) {
+            result = await get_group_action_signers_with_proof_info(
+              sdk,
+              values.contractId,
+              values.groupContractPosition,
+              values.status,
+              values.actionId
+            );
+          } else {
+            result = await get_group_action_signers(
+              sdk,
+              values.contractId,
+              values.groupContractPosition,
+              values.status,
+              values.actionId
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else {
           // Placeholder for unimplemented queries
