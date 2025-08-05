@@ -1076,17 +1076,25 @@
       prefetch_trusted_quorums_testnet,
       // Identity queries
       get_identity_keys,
+      get_identity_keys_with_proof_info,
       get_identity_nonce,
       get_identity_nonce_with_proof_info,
       get_identity_contract_nonce,
       get_identity_contract_nonce_with_proof_info,
       get_identity_balance,
+      get_identity_balance_with_proof_info,
       get_identities_balances,
+      get_identities_balances_with_proof_info,
       get_identity_balance_and_revision,
+      get_identity_balance_and_revision_with_proof_info,
       get_identity_by_public_key_hash,
+      get_identity_by_public_key_hash_with_proof_info,
       get_identities_contract_keys,
+      get_identities_contract_keys_with_proof_info,
       get_identity_by_non_unique_public_key_hash,
+      get_identity_by_non_unique_public_key_hash_with_proof_info,
       get_identity_token_balances,
+      get_identity_token_balances_with_proof_info,
       // Data contract queries
       get_data_contract_history,
       get_data_contracts,
@@ -1125,7 +1133,9 @@
       get_identities_token_balances,
       get_identities_token_balances_with_proof_info,
       get_identity_token_infos,
+      get_identity_token_infos_with_proof_info,
       get_identities_token_infos,
+      get_identities_token_infos_with_proof_info,
       get_token_statuses,
       get_token_statuses_with_proof_info,
       get_token_direct_purchase_prices,
@@ -3769,26 +3779,48 @@ ${indentStr}]`;
             throw new Error('Key IDs are required when using specific key request type');
           }
           
-          result = await get_identity_keys(
-            sdk,
-            values.identityId,
-            values.keyRequestType,
-            keyIds,
-            searchPurposeMap,
-            values.limit,
-            values.offset
-          );
+          if (useProofs) {
+            result = await get_identity_keys_with_proof_info(
+              sdk,
+              values.identityId,
+              values.keyRequestType,
+              keyIds,
+              values.limit,
+              values.offset
+            );
+          } else {
+            result = await get_identity_keys(
+              sdk,
+              values.identityId,
+              values.keyRequestType,
+              keyIds,
+              searchPurposeMap,
+              values.limit,
+              values.offset
+            );
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentitiesContractKeys') {
           const purposes = values.purposes ? values.purposes.map(p => parseInt(p)) : undefined;
-          result = await get_identities_contract_keys(
-            sdk,
-            values.identitiesIds,
-            values.contractId,
-            values.documentTypeName || undefined,
-            purposes
-          );
-          // Result is already a JS object from serde_wasm_bindgen
+          if (useProofs) {
+            result = await get_identities_contract_keys_with_proof_info(
+              sdk,
+              values.identitiesIds,
+              values.contractId,
+              values.documentTypeName || undefined,
+              purposes
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          } else {
+            result = await get_identities_contract_keys(
+              sdk,
+              values.identitiesIds,
+              values.contractId,
+              values.documentTypeName || undefined,
+              purposes
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          }
         } else if (queryType === 'getIdentityNonce') {
           if (useProofs) {
             result = await get_identity_nonce_with_proof_info(sdk, values.identityId);
@@ -3802,27 +3834,58 @@ ${indentStr}]`;
             result = await get_identity_contract_nonce(sdk, values.identityId, values.contractId);
           }
         } else if (queryType === 'getIdentityBalance') {
-          result = await get_identity_balance(sdk, values.id);
+          if (useProofs) {
+            result = await get_identity_balance_with_proof_info(sdk, values.id);
+          } else {
+            result = await get_identity_balance(sdk, values.id);
+          }
           // Result is already an object with balance field
         } else if (queryType === 'getIdentitiesBalances') {
-          result = await get_identities_balances(sdk, values.ids);
+          if (useProofs) {
+            result = await get_identities_balances_with_proof_info(sdk, values.ids);
+          } else {
+            result = await get_identities_balances(sdk, values.ids);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityBalanceAndRevision') {
-          result = await get_identity_balance_and_revision(sdk, values.id);
+          if (useProofs) {
+            result = await get_identity_balance_and_revision_with_proof_info(sdk, values.id);
+          } else {
+            result = await get_identity_balance_and_revision(sdk, values.id);
+          }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityByPublicKeyHash') {
-          result = await get_identity_by_public_key_hash(sdk, values.publicKeyHash);
-          result = result.toJSON();
+          if (useProofs) {
+            result = await get_identity_by_public_key_hash_with_proof_info(sdk, values.publicKeyHash);
+            // Result is already a JS object from serde_wasm_bindgen
+          } else {
+            result = await get_identity_by_public_key_hash(sdk, values.publicKeyHash);
+            result = result.toJSON();
+          }
         } else if (queryType === 'getIdentityByNonUniquePublicKeyHash') {
-          result = await get_identity_by_non_unique_public_key_hash(
-            sdk,
-            values.publicKeyHash,
-            values.startAfter || undefined
-          );
-          // Result is already a JS array
+          if (useProofs) {
+            result = await get_identity_by_non_unique_public_key_hash_with_proof_info(
+              sdk,
+              values.publicKeyHash,
+              values.startAfter || undefined
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          } else {
+            result = await get_identity_by_non_unique_public_key_hash(
+              sdk,
+              values.publicKeyHash,
+              values.startAfter || undefined
+            );
+            // Result is already a JS array
+          }
         } else if (queryType === 'getIdentityTokenBalances') {
-          result = await get_identity_token_balances(sdk, values.identityId, values.tokenIds);
-          // Result is already a JS object from serde_wasm_bindgen
+          if (useProofs) {
+            result = await get_identity_token_balances_with_proof_info(sdk, values.identityId, values.tokenIds);
+            // Result is already a JS object from serde_wasm_bindgen
+          } else {
+            result = await get_identity_token_balances(sdk, values.identityId, values.tokenIds);
+            // Result is already a JS object from serde_wasm_bindgen
+          }
         }
         // Data contract queries
         else if (queryType === 'getDataContract' && values.id) {
@@ -4128,21 +4191,41 @@ ${indentStr}]`;
           }
           // Result is already a JS object from serde_wasm_bindgen
         } else if (queryType === 'getIdentityTokenInfos') {
-          result = await get_identity_token_infos(
-            sdk,
-            values.identityId,
-            values.tokenIds,
-            values.limit,
-            values.offset
-          );
-          // Result is already a JS object from serde_wasm_bindgen
+          if (useProofs) {
+            result = await get_identity_token_infos_with_proof_info(
+              sdk,
+              values.identityId,
+              values.tokenIds,
+              values.limit,
+              values.offset
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          } else {
+            result = await get_identity_token_infos(
+              sdk,
+              values.identityId,
+              values.tokenIds,
+              values.limit,
+              values.offset
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          }
         } else if (queryType === 'getIdentitiesTokenInfos') {
-          result = await get_identities_token_infos(
-            sdk,
-            values.identityIds,
-            values.tokenId
-          );
-          // Result is already a JS object from serde_wasm_bindgen
+          if (useProofs) {
+            result = await get_identities_token_infos_with_proof_info(
+              sdk,
+              values.identityIds,
+              values.tokenId
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          } else {
+            result = await get_identities_token_infos(
+              sdk,
+              values.identityIds,
+              values.tokenId
+            );
+            // Result is already a JS object from serde_wasm_bindgen
+          }
         } else if (queryType === 'getTokenStatuses') {
           if (useProofs) {
             result = await get_token_statuses_with_proof_info(sdk, values.tokenIds);

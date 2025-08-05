@@ -573,19 +573,19 @@ test.describe('WASM SDK Query Execution Tests', () => {
     // Complete set of all available identity queries with correct proof support
     const testQueries = [
       { name: 'getIdentity', hasProofSupport: true, validateFn: validateIdentityResult },
-      { name: 'getIdentityBalance', hasProofSupport: false, validateFn: (result) => validateNumericResult(result, 'balance') },
-      { name: 'getIdentityKeys', hasProofSupport: false, validateFn: validateKeysResult },
+      { name: 'getIdentityBalance', hasProofSupport: true, validateFn: (result) => validateNumericResult(result, 'balance') },
+      { name: 'getIdentityKeys', hasProofSupport: true, validateFn: validateKeysResult },
       { name: 'getIdentityNonce', hasProofSupport: true, validateFn: (result) => validateNumericResult(result, 'nonce') },
       { name: 'getIdentityContractNonce', hasProofSupport: true, validateFn: (result) => validateNumericResult(result, 'nonce') },
-      { name: 'getIdentityByPublicKeyHash', hasProofSupport: false, validateFn: validateIdentityResult },
-      { name: 'getIdentitiesContractKeys', hasProofSupport: false, validateFn: validateKeysResult },
-      { name: 'getIdentitiesBalances', hasProofSupport: false, validateFn: validateBalancesResult },
-      { name: 'getIdentityBalanceAndRevision', hasProofSupport: false, validateFn: validateBalanceAndRevisionResult },
-      { name: 'getIdentityByNonUniquePublicKeyHash', hasProofSupport: false, validateFn: validateIdentitiesResult },
-      { name: 'getIdentityTokenBalances', hasProofSupport: false, validateFn: validateTokenBalanceResult },
+      { name: 'getIdentityByPublicKeyHash', hasProofSupport: true, validateFn: validateIdentityResult },
+      { name: 'getIdentitiesContractKeys', hasProofSupport: true, validateFn: validateKeysResult },
+      { name: 'getIdentitiesBalances', hasProofSupport: true, validateFn: validateBalancesResult },
+      { name: 'getIdentityBalanceAndRevision', hasProofSupport: true, validateFn: validateBalanceAndRevisionResult },
+      { name: 'getIdentityByNonUniquePublicKeyHash', hasProofSupport: true, validateFn: validateIdentitiesResult },
+      { name: 'getIdentityTokenBalances', hasProofSupport: true, validateFn: validateTokenBalanceResult },
       { name: 'getIdentitiesTokenBalances', hasProofSupport: true, validateFn: validateTokenBalanceResult },
-      { name: 'getIdentityTokenInfos', hasProofSupport: false, validateFn: validateTokenInfoResult },
-      { name: 'getIdentitiesTokenInfos', hasProofSupport: false, validateFn: validateTokenInfoResult }
+      { name: 'getIdentityTokenInfos', hasProofSupport: true, validateFn: validateTokenInfoResult },
+      { name: 'getIdentitiesTokenInfos', hasProofSupport: true, validateFn: validateTokenInfoResult }
     ];
 
     testQueries.forEach(({ name, hasProofSupport, validateFn }) => {
