@@ -307,8 +307,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       }
     });
 
-    // Skip this test - proof support not yet implemented in WASM SDK for getDataContracts
-    test.skip('should execute getDataContracts query with proof info', async () => {
+    test('should execute getDataContracts query with proof info', async () => {
       const { result, proofEnabled } = await executeQueryWithProof(
         wasmSdkPage, 
         parameterInjector, 
@@ -334,8 +333,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       }
     });
 
-    // Skip this test - proof support not yet implemented in WASM SDK for getDataContractHistory
-    test.skip('should execute getDataContractHistory query with proof info', async () => {
+    test('should execute getDataContractHistory query with proof info', async () => {
       const { result, proofEnabled } = await executeQueryWithProof(
         wasmSdkPage, 
         parameterInjector, 
