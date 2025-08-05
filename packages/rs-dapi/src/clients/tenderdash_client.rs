@@ -4,7 +4,6 @@ use crate::error::{DAPIResult, DapiError};
 use async_trait::async_trait;
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -125,124 +124,18 @@ pub struct TxResult {
 }
 
 impl TenderdashClient {
-    /// Create a new TenderdashClient with HTTP request tracing middleware
-    ///
-    /// This method validates the connection by making a test HTTP status call
-    /// to ensure the Tenderdash service is reachable and responding correctly.
-    pub async fn new(uri: &str) -> DAPIResult<Self> {
-        info!("Creating Tenderdash client for: {}", uri);
-
-        // Create client with tracing middleware
-        let client = ClientBuilder::new(Client::new())
-            .with(TracingMiddleware::default())
-            .build();
-
-        let tenderdash_client = Self {
-            client,
-            base_url: uri.to_string(),
-            websocket_client: None,
-        };
-
-        // Validate connection by making a test status call
-        info!("Validating Tenderdash connection at: {}", uri);
-        match tenderdash_client.status().await {
-            Ok(_) => {
-                info!("Tenderdash connection validated successfully");
-                Ok(tenderdash_client)
-            }
-            Err(e) => {
-                error!("Tenderdash connection validation failed at {}: {}", uri, e);
-                Err(DapiError::server_unavailable(uri, e.to_string()))
-            }
-        }
-    }
-
-    pub async fn with_websocket(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
-        info!(
-            "Creating Tenderdash client for: {} with WebSocket: {}",
-            uri, ws_uri
-        );
-        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
-
-        // Create client with tracing middleware
-        let client = ClientBuilder::new(Client::new())
-            .with(TracingMiddleware::default())
-            .build();
-
-        let tenderdash_client = Self {
-            client,
-            base_url: uri.to_string(),
-            websocket_client: Some(websocket_client),
-        };
-
-        // Validate HTTP connection by making a test status call
-        trace!("Validating Tenderdash HTTP connection at: {}", uri);
-        match tenderdash_client.status().await {
-            Ok(_) => {
-                debug!("Tenderdash HTTP connection validated successfully");
-            }
-            Err(e) => {
-                error!(
-                    "Tenderdash HTTP connection validation failed at {}: {}",
-                    uri, e
-                );
-                return Err(DapiError::server_unavailable(uri, e));
-            }
-        }
-
-        // Validate WebSocket connection
-        info!("Validating Tenderdash WebSocket connection at: {}", ws_uri);
-        if let Some(_ws_client) = &tenderdash_client.websocket_client {
-            match TenderdashWebSocketClient::test_connection(ws_uri).await {
-                Ok(_) => {
-                    info!("Tenderdash WebSocket connection validated successfully");
-                    Ok(tenderdash_client)
-                }
-                Err(e) => {
-                    error!(
-                        "Tenderdash WebSocket connection validation failed at {}: {}",
-                        ws_uri, e
-                    );
-                    Err(DapiError::server_unavailable(ws_uri, e))
-                }
-            }
-        } else {
-            Ok(tenderdash_client)
-        }
-    }
-
-    pub async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
-        match self.status_internal().await {
-            Ok(status) => {
-                trace!("Successfully retrieved Tenderdash status");
-                Ok(status)
-            }
-            Err(e) => {
-                error!(
-                    error = ?e,
-                    "Failed to get Tenderdash status - technical failure"
-                );
-                Err(e)
-            }
-        }
-    }
-
-    async fn status_internal(&self) -> DAPIResult<TenderdashStatusResponse> {
-        trace!("Making status request to Tenderdash at: {}", self.base_url);
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "status",
-            "params": {},
-            "id": 1
-        });
-
-        let response: TenderdashResponse<TenderdashStatusResponse> = self
+    /// Generic POST method for Tenderdash RPC calls
+    async fn post<T>(&self, request_body: serde_json::Value) -> DAPIResult<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response: TenderdashResponse<T> = self
             .client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!("Failed to serialize request body for status: {}", e);
-                e
+                error!("Failed to serialize request body: {}", e);
+                DapiError::Client(format!("Failed to serialize request body: {}", e))
             })?)
             .send()
             .await
@@ -269,8 +162,95 @@ impl TenderdashClient {
         }
 
         response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash status response missing result field".to_string())
+            DapiError::Client("Tenderdash response missing result field".to_string())
         })
+    }
+
+    /// Create a new TenderdashClient with HTTP request tracing middleware
+    ///
+    /// This method validates the connection by making a test HTTP status call
+    /// to ensure the Tenderdash service is reachable and responding correctly.
+    pub async fn new(uri: &str) -> DAPIResult<Self> {
+        trace!("Creating Tenderdash client for: {}", uri);
+
+        // Create client with tracing middleware
+        let client = ClientBuilder::new(Client::new()).build();
+
+        let tenderdash_client = Self {
+            client,
+            base_url: uri.to_string(),
+            websocket_client: None,
+        };
+
+        tenderdash_client.validate_connection().await?;
+
+        Ok(tenderdash_client)
+    }
+
+    async fn validate_connection(&self) -> DAPIResult<()> {
+        // Validate HTTP connection by making a test status call
+        trace!(
+            "Validating Tenderdash HTTP connection at: {}",
+            self.base_url
+        );
+        match self.status().await {
+            Ok(_) => {
+                info!("Tenderdash HTTP connection validated successfully");
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    "Tenderdash HTTP connection validation failed at {}: {}",
+                    self.base_url, e
+                );
+                Err(DapiError::server_unavailable(
+                    self.base_url.clone(),
+                    e.to_string(),
+                ))
+            }
+        }
+    }
+
+    pub async fn with_websocket(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
+        trace!(uri, ws_uri, "Creating Tenderdash WebSocket client",);
+        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
+
+        // Create client with tracing middleware
+        let tenderdash_client = Self {
+            websocket_client: Some(websocket_client.clone()),
+            ..Self::new(uri).await?
+        };
+
+        // Validate WebSocket connection
+        match TenderdashWebSocketClient::test_connection(ws_uri).await {
+            Ok(_) => {
+                info!("Tenderdash WebSocket connection validated successfully");
+            }
+            Err(e) => {
+                error!(
+                    "Tenderdash WebSocket connection validation failed at {}: {}",
+                    ws_uri, e
+                );
+                return Err(DapiError::server_unavailable(ws_uri, e));
+            }
+        };
+
+        // we are good to go, we can start listening to WebSocket events
+        tokio::spawn(async move { websocket_client.connect_and_listen().await });
+
+        Ok(tenderdash_client)
+    }
+
+    async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
+        trace!("Making status request to Tenderdash at: {}", self.base_url);
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "method": "status",
+            "params": {},
+            "id": 1
+        });
+
+        self.post(request_body).await
     }
 
     pub async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
@@ -297,41 +277,7 @@ impl TenderdashClient {
             "id": 2
         });
 
-        let response: TenderdashResponse<NetInfoResponse> = self
-            .client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!("Failed to serialize request body for net_info: {}", e);
-                e
-            })?)
-            .send()
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to send net_info request to Tenderdash at {}: {}",
-                    self.base_url, e
-                );
-                DapiError::Client(format!("Failed to send request: {}", e))
-            })?
-            .json()
-            .await
-            .map_err(|e| {
-                error!("Failed to parse Tenderdash net_info response: {}", e);
-                DapiError::Client(format!("Failed to parse response: {}", e))
-            })?;
-
-        if let Some(error) = response.error {
-            debug!("Tenderdash net_info RPC returned error: {}", error);
-            return Err(DapiError::Client(format!(
-                "Tenderdash RPC error: {}",
-                error
-            )));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash net_info response missing result field".to_string())
-        })
+        self.post(request_body).await
     }
 
     /// Broadcast a transaction to the Tenderdash network
@@ -346,44 +292,7 @@ impl TenderdashClient {
             "id": 3
         });
 
-        let response: TenderdashResponse<BroadcastTxResponse> = self
-            .client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!(
-                    "Failed to serialize request body for broadcast_tx_async: {}",
-                    e
-                );
-                e
-            })?)
-            .send()
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to send broadcast_tx request to Tenderdash at {}: {}",
-                    self.base_url, e
-                );
-                DapiError::Client(format!("Failed to send request: {}", e))
-            })?
-            .json()
-            .await
-            .map_err(|e| {
-                error!("Failed to parse Tenderdash broadcast_tx response: {}", e);
-                DapiError::Client(format!("Failed to parse response: {}", e))
-            })?;
-
-        if let Some(error) = response.error {
-            debug!("Tenderdash broadcast_tx RPC returned error: {}", error);
-            return Err(DapiError::Client(format!(
-                "Tenderdash RPC error: {}",
-                error
-            )));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash broadcast_tx response missing result field".to_string())
-        })
+        self.post(request_body).await
     }
 
     /// Check a transaction without adding it to the mempool
@@ -397,41 +306,7 @@ impl TenderdashClient {
             "id": 4
         });
 
-        let response: TenderdashResponse<CheckTxResponse> = self
-            .client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!("Failed to serialize request body for check_tx: {}", e);
-                e
-            })?)
-            .send()
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to send check_tx request to Tenderdash at {}: {}",
-                    self.base_url, e
-                );
-                DapiError::Client(format!("Failed to send request: {}", e))
-            })?
-            .json()
-            .await
-            .map_err(|e| {
-                error!("Failed to parse Tenderdash check_tx response: {}", e);
-                DapiError::Client(format!("Failed to parse response: {}", e))
-            })?;
-
-        if let Some(error) = response.error {
-            debug!("Tenderdash check_tx RPC returned error: {}", error);
-            return Err(DapiError::Client(format!(
-                "Tenderdash RPC error: {}",
-                error
-            )));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash check_tx response missing result field".to_string())
-        })
+        self.post(request_body).await
     }
 
     /// Get unconfirmed transactions from the mempool
@@ -448,36 +323,7 @@ impl TenderdashClient {
             "id": 5
         });
 
-        let response: TenderdashResponse<UnconfirmedTxsResponse> = self
-            .client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!(
-                    "Failed to serialize request body for unconfirmed_txs: {}",
-                    e
-                );
-                e
-            })?)
-            .send()
-            .await
-            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
-            .json()
-            .await
-            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
-
-        if let Some(error) = response.error {
-            return Err(DapiError::Client(format!(
-                "Tenderdash RPC error: {}",
-                error
-            )));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client(
-                "Tenderdash unconfirmed_txs response missing result field".to_string(),
-            )
-        })
+        self.post(request_body).await
     }
 
     /// Get transaction by hash
@@ -491,31 +337,7 @@ impl TenderdashClient {
             "id": 6
         });
 
-        let response: TenderdashResponse<TxResponse> = self
-            .client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!("Failed to serialize request body for tx: {}", e);
-                e
-            })?)
-            .send()
-            .await
-            .map_err(|e| DapiError::Client(format!("Failed to send request: {}", e)))?
-            .json()
-            .await
-            .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
-
-        if let Some(error) = response.error {
-            return Err(DapiError::Client(format!(
-                "Tenderdash RPC error: {}",
-                error
-            )));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash tx response missing result field".to_string())
-        })
+        self.post(request_body).await
     }
 }
 

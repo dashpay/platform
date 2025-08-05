@@ -90,27 +90,27 @@ impl TenderdashWebSocketClient {
 
     /// Test WebSocket connection without establishing a persistent connection
     pub async fn test_connection(ws_url: &str) -> DAPIResult<()> {
-        info!("Testing WebSocket connection to {}", ws_url);
-        
+        tracing::trace!("Testing WebSocket connection to {}", ws_url);
+
         // Validate URL format
         let _url = url::Url::parse(ws_url)?;
-        
+
         // Try to connect
         let (_ws_stream, _) = connect_async(ws_url).await?;
-        
-        info!("WebSocket connection test successful");
+
+        tracing::trace!("WebSocket connection test successful");
         Ok(())
     }
 
     pub async fn connect_and_listen(&self) -> DAPIResult<()> {
-        info!("Connecting to Tenderdash WebSocket at {}", self.ws_url);
+        tracing::trace!(ws_url = self.ws_url, "Connecting to Tenderdash WebSocket");
 
         // Validate URL format
         let _url = url::Url::parse(&self.ws_url)?;
         let (ws_stream, _) = connect_async(&self.ws_url).await?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        info!("Connected to Tenderdash WebSocket");
+        tracing::debug!(ws_url = self.ws_url, "Connected to Tenderdash WebSocket");
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 

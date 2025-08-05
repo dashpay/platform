@@ -163,10 +163,7 @@ impl DapiServer {
     pub async fn run(self) -> DAPIResult<()> {
         info!("Starting DAPI server...");
 
-        // Start WebSocket listener in background if available
-        self.start_websocket_listener().await?;
-
-        // Streaming service auto-starts when created, no need to start it manually
+        // Streaming service and websocket service auto-starts when created, no need to start it manually
 
         // Start all servers concurrently
         let grpc_server = self.start_unified_grpc_server();
@@ -194,32 +191,6 @@ impl DapiServer {
                 result
             },
         }
-    }
-
-    async fn start_websocket_listener(&self) -> DAPIResult<()> {
-        // Get WebSocket client if available
-        if let Some(ws_client) = self.get_websocket_client().await {
-            info!("Starting Tenderdash WebSocket listener");
-
-            let ws_client_clone = ws_client.clone();
-            tokio::spawn(async move {
-                if let Err(e) = ws_client_clone.connect_and_listen().await {
-                    error!("WebSocket connection error: {}", e);
-                }
-            });
-
-            // Give WebSocket a moment to establish connection
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
-
-        Ok(())
-    }
-
-    async fn get_websocket_client(&self) -> Option<Arc<crate::clients::TenderdashWebSocketClient>> {
-        // Try to get WebSocket client from the Tenderdash client
-        // This is a bit of a hack since we need to access the internal WebSocket client
-        // In a production system, this would be better architected
-        None // For now, return None - WebSocket functionality is optional
     }
 
     async fn start_unified_grpc_server(&self) -> DAPIResult<()> {
