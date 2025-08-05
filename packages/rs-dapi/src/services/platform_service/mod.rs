@@ -78,19 +78,28 @@ impl PlatformServiceImpl {
 }
 
 #[async_trait::async_trait]
-trait TestTrait {
-    async fn test_method(&self, request: Request<()>) -> Result<Response<()>, Status>;
-}
-
-#[async_trait::async_trait]
 impl Platform for PlatformServiceImpl {
+    // Manually implemented methods
+
+    /// Get the status of the whole system
+    ///
+    /// This method retrieves the current status of Drive, Tenderdash, and other components.
+    ///
+    /// See [`PlatformServiceImpl::get_status_impl`] for the implementation details.
+    async fn get_status(
+        &self,
+        request: Request<GetStatusRequest>,
+    ) -> Result<Response<GetStatusResponse>, Status> {
+        tracing::trace!(?request, "Received get_status request");
+        self.get_status_impl(request).await
+    }
+
     // State transition methods
     drive_method!(
         broadcast_state_transition,
         BroadcastStateTransitionRequest,
         BroadcastStateTransitionResponse
     );
-    drive_method!(get_status, GetStatusRequest, GetStatusResponse);
     drive_method!(
         wait_for_state_transition_result,
         WaitForStateTransitionResultRequest,
