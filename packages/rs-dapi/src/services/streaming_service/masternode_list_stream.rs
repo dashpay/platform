@@ -74,25 +74,3 @@ impl StreamingServiceImpl {
         Ok(Response::new(stream))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::clients::mock::{MockDriveClient, MockTenderdashClient};
-    use crate::config::Config;
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_masternode_list_subscription_creation() {
-        let config = Arc::new(Config::default());
-        let drive_client = Arc::new(MockDriveClient::new());
-        let tenderdash_client = Arc::new(MockTenderdashClient::new());
-
-        let service = StreamingServiceImpl::new(drive_client, tenderdash_client, config).unwrap();
-
-        let request = Request::new(MasternodeListRequest::default());
-
-        let result = service.subscribe_to_masternode_list_impl(request).await;
-        assert!(result.is_ok());
-    }
-}

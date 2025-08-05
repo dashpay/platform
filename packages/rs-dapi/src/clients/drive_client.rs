@@ -1,42 +1,10 @@
-use crate::{DAPIResult, DapiError};
-use async_trait::async_trait;
-use dapi_grpc::platform::v0::{
-    platform_client::PlatformClient, BroadcastStateTransitionRequest,
-    BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
-    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
-    GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
-    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse,
-    GetGroupActionSignersRequest, GetGroupActionSignersResponse, GetGroupActionsRequest,
-    GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest,
-    GetGroupInfosResponse, GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse,
-    GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
-    GetIdentitiesTokenBalancesRequest, GetIdentitiesTokenBalancesResponse,
-    GetIdentitiesTokenInfosRequest, GetIdentitiesTokenInfosResponse,
-    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
-    GetIdentityBalanceRequest, GetIdentityBalanceResponse,
-    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
-    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
-    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetTokenContractInfoRequest,
-    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
-    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
-    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
-    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
-    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
-    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+use std::{
+    borrow::{Borrow, BorrowMut},
+    ops::{Deref, DerefMut},
+    sync::Arc,
 };
+
+use dapi_grpc::platform::v0::{platform_client::PlatformClient, GetStatusRequest};
 use serde::{Deserialize, Serialize};
 
 use tower::ServiceBuilder;
@@ -49,32 +17,31 @@ use tower_http::{
 };
 use tracing::{debug, error, info, trace, Level};
 
-use super::traits::DriveClientTrait;
+/// gRPC client factory for interacting with Dash Platform Drive
+///
+/// ## Cloning
+///
+///  This client is designed to be cloned cheaply. No need to use `Arc` or `Rc`.
+///
+/// ## Usage
+/// ```rust
+/// let drive_client = DriveClient::new("http://localhost:3005").await?;
+/// let mut grpc_client = drive_client.get_client().await?;
+/// let response = grpc_client.get_identity(request).await?;
+/// ```
+///
 
-/// gRPC client for interacting with Dash Platform Drive
-///
-/// This client includes automatic gRPC request/response tracing via tonic interceptors.
-/// All gRPC requests will be logged at TRACE level with:
-/// - Request method and URI
-/// - Response timing and status
-/// - Error details for failed requests
-///
-/// Error handling follows client-layer architecture:
-/// - Technical failures (connection errors, timeouts) are logged with `tracing::error!`
-/// - Service errors (gRPC status codes like NotFound) are logged with `tracing::debug!`
-///
-/// The client maintains a persistent connection that is reused across requests to improve performance.
+#[derive(Clone)]
 pub struct DriveClient {
-    base_url: String,
-    channel: DriveChannel,
     client: PlatformClient<DriveChannel>,
+    // base url stored as an Arc for faster cloning
+    base_url: Arc<String>,
 }
 
 impl std::fmt::Debug for DriveClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DriveClient")
             .field("base_url", &self.base_url)
-            .field("channel", &"<Channel>")
             .finish()
     }
 }
@@ -121,7 +88,7 @@ pub struct DriveTime {
     pub epoch: Option<u64>,
 }
 
-type DriveChannel = Trace<
+pub type DriveChannel = Trace<
     tonic::transport::Channel,
     tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
     DefaultMakeSpan,
@@ -135,39 +102,41 @@ impl DriveClient {
     ///
     /// This method validates the connection by making a test gRPC call to ensure
     /// the Drive service is reachable and responding correctly.
-    pub async fn new(uri: &str) -> DAPIResult<Self> {
+    pub async fn new(uri: &str) -> Result<Self, tonic::Status> {
         info!("Creating Drive client for: {}", uri);
         let channel = Self::create_channel(uri).await?;
 
         let client = Self {
-            base_url: uri.to_string(),
+            base_url: Arc::new(uri.to_string()),
             client: PlatformClient::new(channel.clone()),
-            channel,
         };
 
         // Validate connection by making a test status call
         trace!("Validating Drive connection at: {}", uri);
         let test_request = GetStatusRequest { version: None };
-        match client.get_status(&test_request).await {
+        match client.get_drive_status(&test_request).await {
             Ok(_) => {
                 debug!("Drive connection validated successfully");
                 Ok(client)
             }
-            Err(e) => Err(DapiError::server_unavailable(uri, e.to_string())),
+            Err(e) => {
+                error!("Failed to validate Drive connection: {}", e);
+                Err(e)
+            }
         }
     }
 
-    async fn create_channel(uri: &str) -> DAPIResult<DriveChannel> {
+    async fn create_channel(uri: &str) -> Result<DriveChannel, tonic::Status> {
         let raw_channel = dapi_grpc::tonic::transport::Endpoint::from_shared(uri.to_string())
             .map_err(|e| {
                 error!("Invalid Drive service URI {}: {}", uri, e);
-                DapiError::Client(format!("Invalid URI: {}", e))
+                tonic::Status::invalid_argument(format!("Invalid URI: {}", e))
             })?
             .connect()
             .await
             .map_err(|e| {
                 error!("Failed to connect to Drive service at {}: {}", uri, e);
-                DapiError::server_unavailable(uri, e.to_string())
+                tonic::Status::unavailable(format!("Connection failed: {}", e))
             })?;
 
         let channel: Trace<
@@ -196,17 +165,13 @@ impl DriveClient {
         Ok(channel)
     }
 
-    pub async fn get_status(&self, request: &GetStatusRequest) -> DAPIResult<DriveStatusResponse> {
-        // Get client with tracing interceptor (reuses cached connection)
-        let mut client = self.get_client().await?;
-
+    pub async fn get_drive_status(
+        &self,
+        request: &GetStatusRequest,
+    ) -> Result<DriveStatusResponse, tonic::Status> {
         trace!("Making get_status gRPC call to Drive");
         // Make gRPC call to Drive with timing
-        let response = client
-            .get_status(dapi_grpc::tonic::Request::new(*request))
-            .await;
-
-        let drive_response = response?.into_inner();
+        let drive_response = self.get_client().get_status(*request).await?.into_inner();
 
         // Convert Drive's GetStatusResponse to our DriveStatusResponse format
         if let Some(dapi_grpc::platform::v0::get_status_response::Version::V0(v0)) =
@@ -256,531 +221,14 @@ impl DriveClient {
 
             Ok(drive_status)
         } else {
-            Err(DapiError::Server(
-                "Drive returned unexpected response format".to_string(),
+            Err(tonic::Status::internal(
+                "Drive returned unexpected response format",
             ))
         }
     }
-}
 
-#[async_trait]
-impl DriveClientTrait for DriveClient {
-    async fn get_status(&self, request: &GetStatusRequest) -> DAPIResult<DriveStatusResponse> {
-        self.get_status(request).await
-    }
-
-    // Identity-related methods
-    async fn get_identity(&self, request: &GetIdentityRequest) -> DAPIResult<GetIdentityResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_keys(
-        &self,
-        request: &GetIdentityKeysRequest,
-    ) -> DAPIResult<GetIdentityKeysResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_keys(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identities_contract_keys(
-        &self,
-        request: &GetIdentitiesContractKeysRequest,
-    ) -> DAPIResult<GetIdentitiesContractKeysResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identities_contract_keys(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_nonce(
-        &self,
-        request: &GetIdentityNonceRequest,
-    ) -> DAPIResult<GetIdentityNonceResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_nonce(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_contract_nonce(
-        &self,
-        request: &GetIdentityContractNonceRequest,
-    ) -> DAPIResult<GetIdentityContractNonceResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_contract_nonce(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_balance(
-        &self,
-        request: &GetIdentityBalanceRequest,
-    ) -> DAPIResult<GetIdentityBalanceResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_balance(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identities_balances(
-        &self,
-        request: &GetIdentitiesBalancesRequest,
-    ) -> DAPIResult<GetIdentitiesBalancesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identities_balances(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_balance_and_revision(
-        &self,
-        request: &GetIdentityBalanceAndRevisionRequest,
-    ) -> DAPIResult<GetIdentityBalanceAndRevisionResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_balance_and_revision(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_by_public_key_hash(
-        &self,
-        request: &GetIdentityByPublicKeyHashRequest,
-    ) -> DAPIResult<GetIdentityByPublicKeyHashResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_by_public_key_hash(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_by_non_unique_public_key_hash(
-        &self,
-        request: &GetIdentityByNonUniquePublicKeyHashRequest,
-    ) -> DAPIResult<GetIdentityByNonUniquePublicKeyHashResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_by_non_unique_public_key_hash(dapi_grpc::tonic::Request::new(
-                request.clone(),
-            ))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Data Contract methods
-    async fn get_data_contract(
-        &self,
-        request: &GetDataContractRequest,
-    ) -> DAPIResult<GetDataContractResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_data_contract(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_data_contracts(
-        &self,
-        request: &GetDataContractsRequest,
-    ) -> DAPIResult<GetDataContractsResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_data_contracts(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_data_contract_history(
-        &self,
-        request: &GetDataContractHistoryRequest,
-    ) -> DAPIResult<GetDataContractHistoryResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_data_contract_history(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Document methods
-    async fn get_documents(
-        &self,
-        request: &GetDocumentsRequest,
-    ) -> DAPIResult<GetDocumentsResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_documents(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Epoch and consensus methods
-    async fn get_epochs_info(
-        &self,
-        request: &GetEpochsInfoRequest,
-    ) -> DAPIResult<GetEpochsInfoResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_epochs_info(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_finalized_epoch_infos(
-        &self,
-        request: &GetFinalizedEpochInfosRequest,
-    ) -> DAPIResult<GetFinalizedEpochInfosResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_finalized_epoch_infos(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_consensus_params(
-        &self,
-        request: &GetConsensusParamsRequest,
-    ) -> DAPIResult<GetConsensusParamsResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_consensus_params(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_protocol_version_upgrade_state(
-        &self,
-        request: &GetProtocolVersionUpgradeStateRequest,
-    ) -> DAPIResult<GetProtocolVersionUpgradeStateResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_protocol_version_upgrade_state(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_protocol_version_upgrade_vote_status(
-        &self,
-        request: &GetProtocolVersionUpgradeVoteStatusRequest,
-    ) -> DAPIResult<GetProtocolVersionUpgradeVoteStatusResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_protocol_version_upgrade_vote_status(dapi_grpc::tonic::Request::new(
-                request.clone(),
-            ))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Other methods
-    async fn get_path_elements(
-        &self,
-        request: &GetPathElementsRequest,
-    ) -> DAPIResult<GetPathElementsResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_path_elements(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_total_credits_in_platform(
-        &self,
-        request: &GetTotalCreditsInPlatformRequest,
-    ) -> DAPIResult<GetTotalCreditsInPlatformResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_total_credits_in_platform(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_current_quorums_info(
-        &self,
-        request: &GetCurrentQuorumsInfoRequest,
-    ) -> DAPIResult<GetCurrentQuorumsInfoResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_current_quorums_info(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Contested resource methods
-    async fn get_contested_resources(
-        &self,
-        request: &GetContestedResourcesRequest,
-    ) -> DAPIResult<GetContestedResourcesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_contested_resources(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_contested_resource_vote_state(
-        &self,
-        request: &GetContestedResourceVoteStateRequest,
-    ) -> DAPIResult<GetContestedResourceVoteStateResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_contested_resource_vote_state(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_contested_resource_voters_for_identity(
-        &self,
-        request: &GetContestedResourceVotersForIdentityRequest,
-    ) -> DAPIResult<GetContestedResourceVotersForIdentityResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_contested_resource_voters_for_identity(dapi_grpc::tonic::Request::new(
-                request.clone(),
-            ))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_contested_resource_identity_votes(
-        &self,
-        request: &GetContestedResourceIdentityVotesRequest,
-    ) -> DAPIResult<GetContestedResourceIdentityVotesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_contested_resource_identity_votes(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_vote_polls_by_end_date(
-        &self,
-        request: &GetVotePollsByEndDateRequest,
-    ) -> DAPIResult<GetVotePollsByEndDateResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_vote_polls_by_end_date(dapi_grpc::tonic::Request::new(*request))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Token methods
-    async fn get_identity_token_balances(
-        &self,
-        request: &GetIdentityTokenBalancesRequest,
-    ) -> DAPIResult<GetIdentityTokenBalancesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_token_balances(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identities_token_balances(
-        &self,
-        request: &GetIdentitiesTokenBalancesRequest,
-    ) -> DAPIResult<GetIdentitiesTokenBalancesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identities_token_balances(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identity_token_infos(
-        &self,
-        request: &GetIdentityTokenInfosRequest,
-    ) -> DAPIResult<GetIdentityTokenInfosResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identity_token_infos(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_identities_token_infos(
-        &self,
-        request: &GetIdentitiesTokenInfosRequest,
-    ) -> DAPIResult<GetIdentitiesTokenInfosResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_identities_token_infos(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_token_statuses(
-        &self,
-        request: &GetTokenStatusesRequest,
-    ) -> DAPIResult<GetTokenStatusesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_token_statuses(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_token_direct_purchase_prices(
-        &self,
-        request: &GetTokenDirectPurchasePricesRequest,
-    ) -> DAPIResult<GetTokenDirectPurchasePricesResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_token_direct_purchase_prices(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_token_contract_info(
-        &self,
-        request: &GetTokenContractInfoRequest,
-    ) -> DAPIResult<GetTokenContractInfoResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_token_contract_info(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_token_pre_programmed_distributions(
-        &self,
-        request: &GetTokenPreProgrammedDistributionsRequest,
-    ) -> DAPIResult<GetTokenPreProgrammedDistributionsResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_token_pre_programmed_distributions(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_token_perpetual_distribution_last_claim(
-        &self,
-        request: &GetTokenPerpetualDistributionLastClaimRequest,
-    ) -> DAPIResult<GetTokenPerpetualDistributionLastClaimResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_token_perpetual_distribution_last_claim(dapi_grpc::tonic::Request::new(
-                request.clone(),
-            ))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_token_total_supply(
-        &self,
-        request: &GetTokenTotalSupplyRequest,
-    ) -> DAPIResult<GetTokenTotalSupplyResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_token_total_supply(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_prefunded_specialized_balance(
-        &self,
-        request: &GetPrefundedSpecializedBalanceRequest,
-    ) -> DAPIResult<GetPrefundedSpecializedBalanceResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_prefunded_specialized_balance(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // Group methods
-    async fn get_group_info(
-        &self,
-        request: &GetGroupInfoRequest,
-    ) -> DAPIResult<GetGroupInfoResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_group_info(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_group_infos(
-        &self,
-        request: &GetGroupInfosRequest,
-    ) -> DAPIResult<GetGroupInfosResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_group_infos(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_group_actions(
-        &self,
-        request: &GetGroupActionsRequest,
-    ) -> DAPIResult<GetGroupActionsResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_group_actions(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn get_group_action_signers(
-        &self,
-        request: &GetGroupActionSignersRequest,
-    ) -> DAPIResult<GetGroupActionSignersResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_group_action_signers(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    // State transition methods
-    async fn broadcast_state_transition(
-        &self,
-        request: &BroadcastStateTransitionRequest,
-    ) -> DAPIResult<BroadcastStateTransitionResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .broadcast_state_transition(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn wait_for_state_transition_result(
-        &self,
-        request: &WaitForStateTransitionResultRequest,
-    ) -> DAPIResult<WaitForStateTransitionResultResponse> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .wait_for_state_transition_result(dapi_grpc::tonic::Request::new(request.clone()))
-            .await?;
-        Ok(response.into_inner())
-    }
-}
-
-impl DriveClient {
-    /// Helper method to get a connected client with tracing interceptor
-    ///
-    /// This method provides a unified interface for all DriveClient trait methods,
-    /// ensuring that every gRPC request benefits from:
-    /// - Connection reuse (cached channel)
-    /// - Automatic request/response tracing
-    /// - Consistent error handling and logging
-    ///
-    /// All methods in the DriveClientTrait implementation use this method,
-    /// providing consistent behavior across the entire client.
-    async fn get_client(&self) -> DAPIResult<PlatformClient<DriveChannel>> {
-        Ok(self.client.clone())
+    pub fn get_client(&self) -> PlatformClient<DriveChannel> {
+        self.client.clone()
     }
 }
 
@@ -795,7 +243,7 @@ mod tests {
         match DriveClient::new("http://localhost:1443").await {
             Ok(client) => {
                 // If connection succeeds, verify the structure
-                assert_eq!(client.base_url, "http://localhost:1443");
+                assert_eq!(client.base_url.to_string(), "http://localhost:1443");
             }
             Err(_) => {
                 // Expected when no server is running - this is okay for unit tests

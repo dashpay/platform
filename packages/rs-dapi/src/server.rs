@@ -22,10 +22,7 @@ use crate::error::{DAPIResult, DapiError};
 use crate::logging::{middleware::AccessLogLayer, AccessLogger};
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
-use crate::{
-    clients::traits::{DriveClientTrait, TenderdashClientTrait},
-    services::StreamingServiceImpl,
-};
+use crate::{clients::traits::TenderdashClientTrait, services::StreamingServiceImpl};
 
 pub struct DapiServer {
     config: Arc<Config>,
@@ -40,8 +37,9 @@ impl DapiServer {
     pub async fn new(config: Arc<Config>, access_logger: Option<AccessLogger>) -> DAPIResult<Self> {
         // Create clients based on configuration
         // For now, let's use real clients by default
-        let drive_client: Arc<dyn DriveClientTrait> =
-            Arc::new(DriveClient::new(&config.dapi.drive.uri).await?);
+        let drive_client = DriveClient::new(&config.dapi.drive.uri)
+            .await
+            .map_err(|e| DapiError::Client(format!("Failed to create Drive client: {}", e)))?;
 
         let tenderdash_client: Arc<dyn TenderdashClientTrait> = Arc::new(
             TenderdashClient::with_websocket(
@@ -87,12 +85,16 @@ impl DapiServer {
         config: Arc<Config>,
         access_logger: Option<AccessLogger>,
     ) -> DAPIResult<Self> {
-        use crate::clients::mock::{MockDriveClient, MockTenderdashClient};
+        use crate::clients::mock::MockTenderdashClient;
 
         info!("Creating DAPI server with mock clients for testing");
 
-        // Create mock clients that don't require real service connections
-        let drive_client: Arc<dyn DriveClientTrait> = Arc::new(MockDriveClient::new());
+        // Create real Drive client (it validates connection, but we can handle failure gracefully)
+        // For testing, we might want to make this more flexible in the future
+        let drive_client = DriveClient::new("http://localhost:3005")
+            .await
+            .map_err(|e| DapiError::Client(format!("Mock Drive client creation failed: {}", e)))?;
+
         let tenderdash_client: Arc<dyn TenderdashClientTrait> =
             Arc::new(MockTenderdashClient::new());
 

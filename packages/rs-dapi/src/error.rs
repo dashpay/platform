@@ -80,7 +80,23 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for DapiError {
     }
 }
 
+impl From<DapiError> for tonic::Status {
+    fn from(err: DapiError) -> Self {
+        err.to_status()
+    }
+}
+
 impl DapiError {
+    /// Create a tonic::Status from DapiError.
+    ///
+    /// Defaults to internal status if status cannot be converted.
+    pub fn to_status(&self) -> tonic::Status {
+        match self {
+            DapiError::Status(status) => status.clone(),
+            _ => tonic::Status::internal(self.to_string()),
+        }
+    }
+
     /// Create a configuration error
     pub fn configuration<S: Into<String>>(msg: S) -> Self {
         Self::Configuration(msg.into())

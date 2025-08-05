@@ -11,7 +11,38 @@ use dapi_grpc::platform::v0::{
     GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use futures::FutureExt;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+
+/// Macro to generate Platform trait method implementations that delegate to DriveClient
+///
+/// Usage: `drive_method!(method_name, RequestType, ResponseType);`
+///
+/// This generates a non-async method that returns impl Future, which:
+/// 1. Gets the gRPC client from drive_client
+/// 2. Calls the corresponding method on the client
+/// 3. Returns the response directly (since gRPC client already returns Response<T>)
+macro_rules! drive_method {
+    ($method_name:ident, $request_type:ty, $response_type:ty) => {
+        fn $method_name<'life0, 'async_trait>(
+            &'life0 self,
+            request: Request<$request_type>,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<Response<$response_type>, Status>> + Send + 'async_trait,
+            >,
+        >
+        where
+            'life0: 'async_trait,
+            Self: 'async_trait,
+        {
+            let mut client = self.drive_client.get_client();
+            async move { client.$method_name(request).await }.boxed()
+        }
+    };
+}
 
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
@@ -19,7 +50,7 @@ use crate::config::Config;
 /// Platform service implementation with modular method delegation
 #[derive(Clone)]
 pub struct PlatformServiceImpl {
-    pub drive_client: Arc<dyn crate::clients::traits::DriveClientTrait>,
+    pub drive_client: crate::clients::drive_client::DriveClient,
     pub tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
     pub websocket_client: Arc<TenderdashWebSocketClient>,
     pub config: Arc<Config>,
@@ -27,7 +58,7 @@ pub struct PlatformServiceImpl {
 
 impl PlatformServiceImpl {
     pub fn new(
-        drive_client: Arc<dyn crate::clients::traits::DriveClientTrait>,
+        drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
         config: Arc<Config>,
     ) -> Self {
@@ -46,621 +77,296 @@ impl PlatformServiceImpl {
     }
 }
 
-#[dapi_grpc::tonic::async_trait]
+#[async_trait::async_trait]
+trait TestTrait {
+    async fn test_method(&self, request: Request<()>) -> Result<Response<()>, Status>;
+}
+
+#[async_trait::async_trait]
 impl Platform for PlatformServiceImpl {
-    async fn broadcast_state_transition(
-        &self,
-        request: Request<BroadcastStateTransitionRequest>,
-    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
-        self.broadcast_state_transition_impl(request).await
-    }
-
-    async fn get_status(
-        &self,
-        request: Request<GetStatusRequest>,
-    ) -> Result<Response<GetStatusResponse>, Status> {
-        self.get_status_impl(request).await
-    }
-
-    async fn wait_for_state_transition_result(
-        &self,
-        request: Request<WaitForStateTransitionResultRequest>,
-    ) -> Result<Response<WaitForStateTransitionResultResponse>, Status> {
-        self.wait_for_state_transition_result_impl(request).await
-    }
+    // State transition methods
+    drive_method!(
+        broadcast_state_transition,
+        BroadcastStateTransitionRequest,
+        BroadcastStateTransitionResponse
+    );
+    drive_method!(get_status, GetStatusRequest, GetStatusResponse);
+    drive_method!(
+        wait_for_state_transition_result,
+        WaitForStateTransitionResultRequest,
+        WaitForStateTransitionResultResponse
+    );
 
     // Identity-related methods
-    async fn get_identity(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityResponse>, Status> {
-        match self.drive_client.get_identity(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identity,
+        dapi_grpc::platform::v0::GetIdentityRequest,
+        dapi_grpc::platform::v0::GetIdentityResponse
+    );
+    drive_method!(
+        get_identity_keys,
+        dapi_grpc::platform::v0::GetIdentityKeysRequest,
+        dapi_grpc::platform::v0::GetIdentityKeysResponse
+    );
+    drive_method!(
+        get_identities_contract_keys,
+        dapi_grpc::platform::v0::GetIdentitiesContractKeysRequest,
+        dapi_grpc::platform::v0::GetIdentitiesContractKeysResponse
+    );
+    drive_method!(
+        get_identity_nonce,
+        dapi_grpc::platform::v0::GetIdentityNonceRequest,
+        dapi_grpc::platform::v0::GetIdentityNonceResponse
+    );
 
-    async fn get_identity_keys(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityKeysRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityKeysResponse>, Status> {
-        match self.drive_client.get_identity_keys(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identity_contract_nonce,
+        dapi_grpc::platform::v0::GetIdentityContractNonceRequest,
+        dapi_grpc::platform::v0::GetIdentityContractNonceResponse
+    );
 
-    async fn get_identities_contract_keys(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentitiesContractKeysRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesContractKeysResponse>, Status> {
-        match self
-            .drive_client
-            .get_identities_contract_keys(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identity_balance,
+        dapi_grpc::platform::v0::GetIdentityBalanceRequest,
+        dapi_grpc::platform::v0::GetIdentityBalanceResponse
+    );
 
-    async fn get_identity_nonce(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityNonceRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityNonceResponse>, Status> {
-        match self
-            .drive_client
-            .get_identity_nonce(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identities_balances,
+        dapi_grpc::platform::v0::GetIdentitiesBalancesRequest,
+        dapi_grpc::platform::v0::GetIdentitiesBalancesResponse
+    );
 
-    async fn get_identity_contract_nonce(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityContractNonceRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityContractNonceResponse>, Status> {
-        match self
-            .drive_client
-            .get_identity_contract_nonce(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identity_balance_and_revision,
+        dapi_grpc::platform::v0::GetIdentityBalanceAndRevisionRequest,
+        dapi_grpc::platform::v0::GetIdentityBalanceAndRevisionResponse
+    );
 
-    async fn get_identity_balance(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityBalanceRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityBalanceResponse>, Status> {
-        match self
-            .drive_client
-            .get_identity_balance(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identity_by_public_key_hash,
+        dapi_grpc::platform::v0::GetIdentityByPublicKeyHashRequest,
+        dapi_grpc::platform::v0::GetIdentityByPublicKeyHashResponse
+    );
 
-    async fn get_identities_balances(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentitiesBalancesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesBalancesResponse>, Status> {
-        match self
-            .drive_client
-            .get_identities_balances(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identity_by_non_unique_public_key_hash,
+        dapi_grpc::platform::v0::GetIdentityByNonUniquePublicKeyHashRequest,
+        dapi_grpc::platform::v0::GetIdentityByNonUniquePublicKeyHashResponse
+    );
 
-    async fn get_identity_balance_and_revision(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityBalanceAndRevisionRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityBalanceAndRevisionResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_identity_balance_and_revision(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Evonodes methods
+    drive_method!(
+        get_evonodes_proposed_epoch_blocks_by_ids,
+        dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest,
+        dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksResponse
+    );
 
-    async fn get_identity_by_public_key_hash(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityByPublicKeyHashRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityByPublicKeyHashResponse>, Status> {
-        match self
-            .drive_client
-            .get_identity_by_public_key_hash(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
-
-    async fn get_identity_by_non_unique_public_key_hash(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityByNonUniquePublicKeyHashRequest>,
-    ) -> Result<
-        Response<dapi_grpc::platform::v0::GetIdentityByNonUniquePublicKeyHashResponse>,
-        Status,
-    > {
-        match self
-            .drive_client
-            .get_identity_by_non_unique_public_key_hash(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
-
-    // Evonodes methods (not implemented)
-    async fn get_evonodes_proposed_epoch_blocks_by_ids(
-        &self,
-        _request: Request<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksResponse>, Status>
-    {
-        Err(Status::unimplemented("not implemented"))
-    }
-
-    async fn get_evonodes_proposed_epoch_blocks_by_range(
-        &self,
-        _request: Request<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksResponse>, Status>
-    {
-        Err(Status::unimplemented("not implemented"))
-    }
+    drive_method!(
+        get_evonodes_proposed_epoch_blocks_by_range,
+        dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
+        dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksResponse
+    );
 
     // Data contract methods
-    async fn get_data_contract(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetDataContractRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetDataContractResponse>, Status> {
-        match self.drive_client.get_data_contract(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_data_contract,
+        dapi_grpc::platform::v0::GetDataContractRequest,
+        dapi_grpc::platform::v0::GetDataContractResponse
+    );
 
-    async fn get_data_contract_history(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetDataContractHistoryRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetDataContractHistoryResponse>, Status> {
-        match self
-            .drive_client
-            .get_data_contract_history(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_data_contract_history,
+        dapi_grpc::platform::v0::GetDataContractHistoryRequest,
+        dapi_grpc::platform::v0::GetDataContractHistoryResponse
+    );
 
-    async fn get_data_contracts(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetDataContractsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetDataContractsResponse>, Status> {
-        match self
-            .drive_client
-            .get_data_contracts(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_data_contracts,
+        dapi_grpc::platform::v0::GetDataContractsRequest,
+        dapi_grpc::platform::v0::GetDataContractsResponse
+    );
 
     // Document methods
-    async fn get_documents(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetDocumentsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetDocumentsResponse>, Status> {
-        match self.drive_client.get_documents(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_documents,
+        dapi_grpc::platform::v0::GetDocumentsRequest,
+        dapi_grpc::platform::v0::GetDocumentsResponse
+    );
 
-    // Consensus and protocol methods
-    async fn get_consensus_params(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetConsensusParamsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetConsensusParamsResponse>, Status> {
-        match self
-            .drive_client
-            .get_consensus_params(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // System methods
+    drive_method!(
+        get_consensus_params,
+        dapi_grpc::platform::v0::GetConsensusParamsRequest,
+        dapi_grpc::platform::v0::GetConsensusParamsResponse
+    );
 
-    async fn get_protocol_version_upgrade_state(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetProtocolVersionUpgradeStateRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetProtocolVersionUpgradeStateResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_protocol_version_upgrade_state(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_protocol_version_upgrade_state,
+        dapi_grpc::platform::v0::GetProtocolVersionUpgradeStateRequest,
+        dapi_grpc::platform::v0::GetProtocolVersionUpgradeStateResponse
+    );
 
-    async fn get_protocol_version_upgrade_vote_status(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusRequest>,
-    ) -> Result<
-        Response<dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusResponse>,
-        Status,
-    > {
-        match self
-            .drive_client
-            .get_protocol_version_upgrade_vote_status(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_protocol_version_upgrade_vote_status,
+        dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusRequest,
+        dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusResponse
+    );
 
-    async fn get_epochs_info(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetEpochsInfoRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetEpochsInfoResponse>, Status> {
-        match self.drive_client.get_epochs_info(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_epochs_info,
+        dapi_grpc::platform::v0::GetEpochsInfoRequest,
+        dapi_grpc::platform::v0::GetEpochsInfoResponse
+    );
 
-    async fn get_finalized_epoch_infos(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetFinalizedEpochInfosRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetFinalizedEpochInfosResponse>, Status> {
-        match self
-            .drive_client
-            .get_finalized_epoch_infos(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_finalized_epoch_infos,
+        dapi_grpc::platform::v0::GetFinalizedEpochInfosRequest,
+        dapi_grpc::platform::v0::GetFinalizedEpochInfosResponse
+    );
 
-    // Other platform methods
-    async fn get_path_elements(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetPathElementsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetPathElementsResponse>, Status> {
-        match self.drive_client.get_path_elements(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_path_elements,
+        dapi_grpc::platform::v0::GetPathElementsRequest,
+        dapi_grpc::platform::v0::GetPathElementsResponse
+    );
 
-    async fn get_total_credits_in_platform(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTotalCreditsInPlatformRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetTotalCreditsInPlatformResponse>, Status> {
-        match self
-            .drive_client
-            .get_total_credits_in_platform(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_total_credits_in_platform,
+        dapi_grpc::platform::v0::GetTotalCreditsInPlatformRequest,
+        dapi_grpc::platform::v0::GetTotalCreditsInPlatformResponse
+    );
 
-    async fn get_current_quorums_info(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetCurrentQuorumsInfoRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetCurrentQuorumsInfoResponse>, Status> {
-        match self
-            .drive_client
-            .get_current_quorums_info(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Quorum methods
+    drive_method!(
+        get_current_quorums_info,
+        dapi_grpc::platform::v0::GetCurrentQuorumsInfoRequest,
+        dapi_grpc::platform::v0::GetCurrentQuorumsInfoResponse
+    );
 
-    // All other methods return unimplemented for now
+    // Contested resource methods
+    drive_method!(
+        get_contested_resources,
+        dapi_grpc::platform::v0::GetContestedResourcesRequest,
+        dapi_grpc::platform::v0::GetContestedResourcesResponse
+    );
 
-    async fn get_contested_resources(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetContestedResourcesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourcesResponse>, Status> {
-        match self
-            .drive_client
-            .get_contested_resources(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_prefunded_specialized_balance,
+        dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceRequest,
+        dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceResponse
+    );
 
-    async fn get_prefunded_specialized_balance(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetPrefundedSpecializedBalanceResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_prefunded_specialized_balance(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_contested_resource_vote_state,
+        dapi_grpc::platform::v0::GetContestedResourceVoteStateRequest,
+        dapi_grpc::platform::v0::GetContestedResourceVoteStateResponse
+    );
 
-    async fn get_contested_resource_vote_state(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetContestedResourceVoteStateRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourceVoteStateResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_contested_resource_vote_state(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_contested_resource_voters_for_identity,
+        dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityRequest,
+        dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityResponse
+    );
 
-    async fn get_contested_resource_voters_for_identity(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityRequest>,
-    ) -> Result<
-        Response<dapi_grpc::platform::v0::GetContestedResourceVotersForIdentityResponse>,
-        Status,
-    > {
-        match self
-            .drive_client
-            .get_contested_resource_voters_for_identity(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_contested_resource_identity_votes,
+        dapi_grpc::platform::v0::GetContestedResourceIdentityVotesRequest,
+        dapi_grpc::platform::v0::GetContestedResourceIdentityVotesResponse
+    );
 
-    async fn get_contested_resource_identity_votes(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetContestedResourceIdentityVotesResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_contested_resource_identity_votes(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_vote_polls_by_end_date,
+        dapi_grpc::platform::v0::GetVotePollsByEndDateRequest,
+        dapi_grpc::platform::v0::GetVotePollsByEndDateResponse
+    );
 
-    async fn get_vote_polls_by_end_date(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetVotePollsByEndDateRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetVotePollsByEndDateResponse>, Status> {
-        match self
-            .drive_client
-            .get_vote_polls_by_end_date(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Token balance methods
+    drive_method!(
+        get_identity_token_balances,
+        dapi_grpc::platform::v0::GetIdentityTokenBalancesRequest,
+        dapi_grpc::platform::v0::GetIdentityTokenBalancesResponse
+    );
 
-    async fn get_identity_token_balances(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityTokenBalancesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityTokenBalancesResponse>, Status> {
-        match self
-            .drive_client
-            .get_identity_token_balances(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identities_token_balances,
+        dapi_grpc::platform::v0::GetIdentitiesTokenBalancesRequest,
+        dapi_grpc::platform::v0::GetIdentitiesTokenBalancesResponse
+    );
 
-    async fn get_identities_token_balances(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesTokenBalancesResponse>, Status> {
-        match self
-            .drive_client
-            .get_identities_token_balances(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Token info methods
+    drive_method!(
+        get_identity_token_infos,
+        dapi_grpc::platform::v0::GetIdentityTokenInfosRequest,
+        dapi_grpc::platform::v0::GetIdentityTokenInfosResponse
+    );
 
-    async fn get_identity_token_infos(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentityTokenInfosRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentityTokenInfosResponse>, Status> {
-        match self
-            .drive_client
-            .get_identity_token_infos(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_identities_token_infos,
+        dapi_grpc::platform::v0::GetIdentitiesTokenInfosRequest,
+        dapi_grpc::platform::v0::GetIdentitiesTokenInfosResponse
+    );
 
-    async fn get_identities_token_infos(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetIdentitiesTokenInfosRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetIdentitiesTokenInfosResponse>, Status> {
-        match self
-            .drive_client
-            .get_identities_token_infos(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Token status and pricing methods
+    drive_method!(
+        get_token_statuses,
+        dapi_grpc::platform::v0::GetTokenStatusesRequest,
+        dapi_grpc::platform::v0::GetTokenStatusesResponse
+    );
 
-    async fn get_token_statuses(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTokenStatusesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetTokenStatusesResponse>, Status> {
-        match self
-            .drive_client
-            .get_token_statuses(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_token_direct_purchase_prices,
+        dapi_grpc::platform::v0::GetTokenDirectPurchasePricesRequest,
+        dapi_grpc::platform::v0::GetTokenDirectPurchasePricesResponse
+    );
 
-    async fn get_token_direct_purchase_prices(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetTokenDirectPurchasePricesResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_token_direct_purchase_prices(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_token_contract_info,
+        dapi_grpc::platform::v0::GetTokenContractInfoRequest,
+        dapi_grpc::platform::v0::GetTokenContractInfoResponse
+    );
 
-    async fn get_token_contract_info(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTokenContractInfoRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetTokenContractInfoResponse>, Status> {
-        match self
-            .drive_client
-            .get_token_contract_info(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Token distribution methods
+    drive_method!(
+        get_token_pre_programmed_distributions,
+        dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsRequest,
+        dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsResponse
+    );
 
-    async fn get_token_pre_programmed_distributions(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetTokenPreProgrammedDistributionsResponse>, Status>
-    {
-        match self
-            .drive_client
-            .get_token_pre_programmed_distributions(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_token_perpetual_distribution_last_claim,
+        dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest,
+        dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimResponse
+    );
 
-    async fn get_token_perpetual_distribution_last_claim(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimRequest>,
-    ) -> Result<
-        Response<dapi_grpc::platform::v0::GetTokenPerpetualDistributionLastClaimResponse>,
-        Status,
-    > {
-        match self
-            .drive_client
-            .get_token_perpetual_distribution_last_claim(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_token_total_supply,
+        dapi_grpc::platform::v0::GetTokenTotalSupplyRequest,
+        dapi_grpc::platform::v0::GetTokenTotalSupplyResponse
+    );
 
-    async fn get_token_total_supply(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetTokenTotalSupplyRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetTokenTotalSupplyResponse>, Status> {
-        match self
-            .drive_client
-            .get_token_total_supply(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    // Group methods
+    drive_method!(
+        get_group_info,
+        dapi_grpc::platform::v0::GetGroupInfoRequest,
+        dapi_grpc::platform::v0::GetGroupInfoResponse
+    );
 
-    async fn get_group_info(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetGroupInfoRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetGroupInfoResponse>, Status> {
-        match self.drive_client.get_group_info(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_group_infos,
+        dapi_grpc::platform::v0::GetGroupInfosRequest,
+        dapi_grpc::platform::v0::GetGroupInfosResponse
+    );
 
-    async fn get_group_infos(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetGroupInfosRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetGroupInfosResponse>, Status> {
-        match self.drive_client.get_group_infos(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_group_actions,
+        dapi_grpc::platform::v0::GetGroupActionsRequest,
+        dapi_grpc::platform::v0::GetGroupActionsResponse
+    );
 
-    async fn get_group_actions(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetGroupActionsRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetGroupActionsResponse>, Status> {
-        match self.drive_client.get_group_actions(request.get_ref()).await {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
-
-    async fn get_group_action_signers(
-        &self,
-        request: Request<dapi_grpc::platform::v0::GetGroupActionSignersRequest>,
-    ) -> Result<Response<dapi_grpc::platform::v0::GetGroupActionSignersResponse>, Status> {
-        match self
-            .drive_client
-            .get_group_action_signers(request.get_ref())
-            .await
-        {
-            Ok(response) => Ok(Response::new(response)),
-            Err(e) => Err(Status::internal(format!("Drive client error: {}", e))),
-        }
-    }
+    drive_method!(
+        get_group_action_signers,
+        dapi_grpc::platform::v0::GetGroupActionSignersRequest,
+        dapi_grpc::platform::v0::GetGroupActionSignersResponse
+    );
 }

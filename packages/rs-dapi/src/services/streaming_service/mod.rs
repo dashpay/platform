@@ -14,7 +14,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::Instant;
 use tracing::{error, info, trace};
 
-use crate::clients::traits::{DriveClientTrait, TenderdashClientTrait};
+use crate::clients::traits::TenderdashClientTrait;
 use crate::config::Config;
 
 pub(crate) use subscriber_manager::{
@@ -33,7 +33,7 @@ type CacheStore = Arc<RwLock<HashMap<String, CacheData>>>;
 /// Streaming service implementation with ZMQ integration
 #[derive(Clone)]
 pub struct StreamingServiceImpl {
-    pub drive_client: Arc<dyn DriveClientTrait>,
+    pub drive_client: crate::clients::drive_client::DriveClient,
     pub tenderdash_client: Arc<dyn TenderdashClientTrait>,
     pub config: Arc<Config>,
     pub zmq_listener: Arc<dyn ZmqListenerTrait>,
@@ -43,7 +43,7 @@ pub struct StreamingServiceImpl {
 
 impl StreamingServiceImpl {
     pub fn new(
-        drive_client: Arc<dyn DriveClientTrait>,
+        drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn TenderdashClientTrait>,
         config: Arc<Config>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
@@ -51,12 +51,12 @@ impl StreamingServiceImpl {
         let zmq_listener: Arc<dyn ZmqListenerTrait> =
             Arc::new(ZmqListener::new(&config.dapi.core.zmq_url)?);
 
-        Self::new_with_zmq_listener(drive_client, tenderdash_client, config, zmq_listener)
+        Self::create_with_common_setup(drive_client, tenderdash_client, config, zmq_listener)
     }
 
     /// Create a new streaming service with a custom ZMQ listener (useful for testing)
-    pub fn new_with_zmq_listener(
-        drive_client: Arc<dyn DriveClientTrait>,
+    fn create_with_common_setup(
+        drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn TenderdashClientTrait>,
         config: Arc<Config>,
         zmq_listener: Arc<dyn ZmqListenerTrait>,
@@ -74,34 +74,13 @@ impl StreamingServiceImpl {
         };
 
         info!("Starting streaming service background tasks");
-        service.start_internal();
+        service.start_background_tasks();
 
         Ok(service)
     }
 
-    /// Create a new streaming service with a mock ZMQ listener for testing
-    #[cfg(test)]
-    pub async fn new_with_mock_zmq(
-        drive_client: Arc<dyn DriveClientTrait>,
-        tenderdash_client: Arc<dyn TenderdashClientTrait>,
-        config: Arc<Config>,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        use crate::clients::MockZmqListener;
-
-        trace!("Creating streaming service with mock ZMQ listener for testing");
-        let zmq_listener: Arc<dyn ZmqListenerTrait> = Arc::new(MockZmqListener::new());
-
-        let service =
-            Self::new_with_zmq_listener(drive_client, tenderdash_client, config, zmq_listener)?;
-
-        // Start the streaming service background tasks automatically
-        service.start_internal();
-
-        Ok(service)
-    }
-
-    /// Start the streaming service background tasks (now private)
-    fn start_internal(&self) {
+    /// Start the streaming service background tasks
+    fn start_background_tasks(&self) {
         trace!("Starting ZMQ listener and event processing tasks");
         // Start ZMQ listener
         let zmq_listener = self.zmq_listener.clone();

@@ -36,7 +36,7 @@ impl PlatformServiceImpl {
 
         // Fetch data from Drive and Tenderdash concurrently
         let (drive_result, tenderdash_status_result, tenderdash_netinfo_result) = tokio::join!(
-            self.drive_client.get_status(&drive_request),
+            self.drive_client.get_drive_status(&drive_request),
             self.tenderdash_client.status(),
             self.tenderdash_client.net_info()
         );

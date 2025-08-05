@@ -17,16 +17,7 @@ enum Commands {
     /// JSON-RPC, and optionally REST Gateway and Health Check endpoints.
     /// The server will run until interrupted with Ctrl+C.
     #[command()]
-    Start {
-        /// Force start even if upstream services are unavailable.
-        ///
-        /// When enabled, the server will start with mock clients if it cannot connect
-        /// to the configured Drive or Tenderdash services. This is useful for development
-        /// and testing environments. When disabled (default), the server will exit with
-        /// an error if any upstream service is unavailable.
-        #[arg(long, default_value = "false")]
-        force: bool,
-    },
+    Start,
     /// Display current configuration
     ///
     /// Shows all configuration variables and their current values from:
@@ -109,31 +100,31 @@ impl Cli {
         // Configure logging and access logging
         let access_logger = configure_logging(&self, &config.dapi.logging).await?;
 
-        match self.command.unwrap_or(Commands::Start { force: false }) {
-            Commands::Start {
-                force: allow_connection_fallback,
-            } => {
+        match self.command.unwrap_or(Commands::Start) {
+            Commands::Start => {
                 info!(
                     version = env!("CARGO_PKG_VERSION"),
                     rust = env!("CARGO_PKG_RUST_VERSION"),
                     "rs-dapi server initializing",
                 );
 
-                if let Err(e) = run_server(config, access_logger, allow_connection_fallback).await {
+                if let Err(e) = run_server(config, access_logger).await {
                     error!("Server error: {}", e);
 
                     // Check if this is a connection-related error and set appropriate exit code
                     match &e {
                         DapiError::ServerUnavailable(_, _) => {
-                            error!("Upstream service connection failed. Use --allow-connection-fallback to start with mock clients in development.");
+                            error!(
+                                "Upstream service connection failed. Use --force to start without affected services."
+                            );
                             return Err(format!("Connection error: {}", e));
                         }
                         DapiError::Client(msg) if msg.contains("Failed to connect") => {
-                            error!("Client connection failed. Use --allow-connection-fallback to start with mock clients in development.");
+                            error!("Client connection failed. Use --force to start without affected services.");
                             return Err(format!("Connection error: {}", e));
                         }
                         DapiError::Transport(_) => {
-                            error!("Transport error occurred. Use --allow-connection-fallback to start with mock clients in development.");
+                            error!("Transport error occurred. Use --force to start without affected services.");
                             return Err(format!("Connection error: {}", e));
                         }
                         _ => return Err(e.to_string()),
@@ -176,19 +167,10 @@ async fn configure_logging(
 async fn run_server(
     config: Config,
     access_logger: Option<rs_dapi::logging::AccessLogger>,
-    allow_connection_fallback: bool,
 ) -> DAPIResult<()> {
     trace!("Creating DAPI server instance...");
 
-    let server = if allow_connection_fallback {
-        info!(
-            "Connection fallback enabled - will use mock clients if real services are unavailable"
-        );
-        DapiServer::new_with_fallback(std::sync::Arc::new(config), access_logger).await?
-    } else {
-        info!("Connection fallback disabled - server will exit if any upstream service is unavailable");
-        DapiServer::new(std::sync::Arc::new(config), access_logger).await?
-    };
+    let server = DapiServer::new(std::sync::Arc::new(config), access_logger).await?;
 
     info!("rs-dapi server starting on configured ports");
 
