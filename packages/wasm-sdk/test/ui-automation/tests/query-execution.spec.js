@@ -456,7 +456,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
     const systemQueries = [
       { 
         name: 'getStatus', 
-        hasProofSupport: false, 
+        hasProofSupport: false, // No proof function in WASM-SDK
         needsParameters: false,
         validateFn: (result) => {
           expect(result).toBeDefined();
@@ -474,7 +474,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getCurrentQuorumsInfo', 
-        hasProofSupport: false, 
+        hasProofSupport: false, // No proof function in WASM-SDK 
         needsParameters: false,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -581,7 +581,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getEvonodesProposedEpochBlocksByIds', 
-        hasProofSupport: false, 
+        hasProofSupport: false, // Proof support not yet implemented in WASM-SDK
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -592,7 +592,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getEvonodesProposedEpochBlocksByRange', 
-        hasProofSupport: false, 
+        hasProofSupport: false, // Proof support not yet implemented in WASM-SDK
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1049,7 +1049,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getProtocolVersionUpgradeVoteStatus', 
-        hasProofSupport: false, 
+        hasProofSupport: false, // Proof support not yet implemented in WASM-SDK
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1125,7 +1125,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsCheckAvailability', 
-        hasProofSupport: false, 
+        hasProofSupport: false,  // Proof support not yet implemented in WASM-SDK
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
@@ -1136,7 +1136,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'dpnsResolve', 
-        hasProofSupport: false, 
+        hasProofSupport: false,  // Proof support not yet implemented in WASM-SDK
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
