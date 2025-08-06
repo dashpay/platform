@@ -173,7 +173,10 @@ final class DataManager: ObservableObject {
             existingContract.updateVersion(Int32(contract.version))
             existingContract.schema = contract.schema
             existingContract.documentTypes = contract.documentTypes
-            existingContract.keywords = contract.keywords
+            // Update keywords by recreating relations
+            existingContract.keywordRelations = contract.keywords.map { 
+                PersistentKeyword(keyword: $0, contractId: existingContract.contractId) 
+            }
             existingContract.contractDescription = contract.description
         } else {
             // Create new contract

@@ -19,7 +19,8 @@ final class PersistentContract {
     var documentTypesData: Data
     
     // MARK: - Metadata
-    var keywords: [String]
+    @Relationship(deleteRule: .cascade, inverse: \PersistentKeyword.contract)
+    var keywordRelations: [PersistentKeyword]
     var contractDescription: String?
     
     // MARK: - Token Support
@@ -61,7 +62,7 @@ final class PersistentContract {
         self.ownerId = ownerId
         self.schemaData = (try? JSONSerialization.data(withJSONObject: schema)) ?? Data()
         self.documentTypesData = (try? JSONSerialization.data(withJSONObject: documentTypes)) ?? Data()
-        self.keywords = keywords
+        self.keywordRelations = keywords.map { PersistentKeyword(keyword: $0, contractId: contractId) }
         self.contractDescription = description
         self.hasTokens = hasTokens
         self.tokensData = nil
@@ -77,6 +78,11 @@ final class PersistentContract {
     /// Get the owner ID as a hex string
     var ownerIdString: String {
         ownerId.toHexString()
+    }
+    
+    /// Get keywords as string array
+    var keywords: [String] {
+        keywordRelations.map { $0.keyword }
     }
     
     var schema: [String: Any] {
@@ -196,7 +202,7 @@ extension PersistentContract {
             schema: schema,
             dppDataContract: nil, // Would need to reconstruct from data
             tokens: tokenConfigs,
-            keywords: keywords,
+            keywords: self.keywords,
             description: contractDescription
         )
     }
@@ -210,7 +216,7 @@ extension PersistentContract {
             ownerId: model.ownerId,
             schema: model.schema,
             documentTypes: model.documentTypes,
-            keywords: model.keywords,
+            keywords: model.keywords ?? [],
             description: model.description,
             hasTokens: !model.tokens.isEmpty,
             network: network
@@ -320,7 +326,7 @@ extension PersistentContract {
     /// Predicate to find contracts by keyword
     static func predicate(keyword: String) -> Predicate<PersistentContract> {
         #Predicate<PersistentContract> { contract in
-            contract.keywords.contains(keyword)
+            contract.keywordRelations.contains { $0.keyword == keyword }
         }
     }
     
