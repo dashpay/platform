@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "2.0.1"
+version = "2.1.0-dev.1"
 edition = "2021"
 rust-version.workspace = true
 
