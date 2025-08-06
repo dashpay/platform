@@ -2,9 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DapiError {
-    #[error("Configuration error: {0}")]
-    Config(#[from] config::ConfigError),
-
     #[error("gRPC error: {0}")]
     Grpc(#[from] tonic::Status),
 

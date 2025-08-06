@@ -38,7 +38,6 @@ serde_json = "1.0.141"
 # Configuration
 envy = "0.4.2"
 
-config = "0.15.13"
 clap = { version = "4.4.10", features = ["derive"] }
 dotenvy = { version = "0.15.7" }
 # Logging
@@ -54,7 +53,6 @@ chrono = { version = "0.4.41", features = ["serde"] }
 # HTTP client for external API calls
 reqwest = { version = "0.12", features = ["json"] }
 reqwest-middleware = "0.4"
-reqwest-tracing = "0.5"
 
 # Hex encoding/decoding
 hex = "0.4"

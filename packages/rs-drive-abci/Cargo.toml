@@ -63,7 +63,7 @@ reopen = { version = "1.0.3" }
 delegate = { version = "0.13" }
 regex = { version = "1.8.1" }
 metrics = { version = "0.24" }
-metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
+metrics-exporter-prometheus = { version = "0.17", default-features = false, features = [
   "http-listener",
 ] }
 url = { version = "2.3.1" }
