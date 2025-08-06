@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="#1B2939" rx="225"/>
+  
+  <!-- Dash Logo D Shape -->
+  <g transform="translate(512, 512)">
+    <!-- Main D -->
+    <path d="M -200 -250 L 50 -250 C 180 -250 280 -150 280 0 C 280 150 180 250 50 250 L -200 250 L -150 150 L 0 150 C 100 150 150 100 150 0 C 150 -100 100 -150 0 -150 L -150 -150 Z" 
+          fill="#008CE7" />
+    
+    <!-- Horizontal bar through D -->
+    <rect x="-300" y="-40" width="400" height="80" fill="#008CE7" />
+  </g>
+  
+  <!-- Swift Bird Symbol (smaller, in corner) -->
+  <g transform="translate(750, 250) scale(0.5)">
+    <path d="M 0 0 C -50 -30 -80 -80 -80 -120 C -30 -90 20 -60 60 -20 C 50 -40 30 -70 0 -100 C 40 -80 80 -50 110 -10 C 100 -30 85 -55 70 -80 C 100 -60 130 -30 150 10 C 140 -10 130 -25 115 -40 C 135 -20 150 0 160 30 C 150 60 120 80 80 90 C 40 100 0 90 -30 70 C -20 50 -10 30 0 0 Z" 
+          fill="#FE5B39" 
+          opacity="0.9"/>
+  </g>
+  
+  <!-- Code brackets (subtle) -->
+  <g opacity="0.3">
+    <text x="150" y="850" font-family="SF Mono, Monaco, monospace" font-size="200" fill="#008CE7">&lt;</text>
+    <text x="750" y="850" font-family="SF Mono, Monaco, monospace" font-size="200" fill="#008CE7">&gt;</text>
+  </g>
+</svg>
