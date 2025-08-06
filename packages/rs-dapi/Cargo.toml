@@ -85,7 +85,7 @@ url = "2.5"
 #     "tcp-transport",
 # ] }
 # Use fork of zmq.rs to receive Disconnect events, see https://github.com/zeromq/zmq.rs/pull/209
-zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "3b8bb07a349d980b156e02767c6279e2188eb0c5", features = [
+zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "b0787de310befaedd1f762e3b9bc711612d8137f", features = [
     "tokio-runtime",
     "tcp-transport",
 ], default-features = false }

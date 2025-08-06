@@ -1511,19 +1511,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dashmap"
-version = "5.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
-dependencies = [
- "cfg-if",
- "hashbrown 0.14.5",
- "lock_api",
- "once_cell",
- "parking_lot_core",
-]
-
-[[package]]
 name = "dashpay-contract"
 version = "2.0.0"
 dependencies = [
@@ -7481,13 +7468,12 @@ dependencies = [
 [[package]]
 name = "zeromq"
 version = "0.5.0-pre"
-source = "git+https://github.com/gvz/zmq.rs?rev=3b8bb07a349d980b156e02767c6279e2188eb0c5#3b8bb07a349d980b156e02767c6279e2188eb0c5"
+source = "git+https://github.com/gvz/zmq.rs?rev=b0787de310befaedd1f762e3b9bc711612d8137f#b0787de310befaedd1f762e3b9bc711612d8137f"
 dependencies = [
  "async-trait",
  "asynchronous-codec",
  "bytes",
  "crossbeam-queue",
- "dashmap",
  "futures",
  "log",
  "num-traits",
@@ -7495,6 +7481,7 @@ dependencies = [
  "parking_lot",
  "rand 0.8.5",
  "regex",
+ "scc",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",
