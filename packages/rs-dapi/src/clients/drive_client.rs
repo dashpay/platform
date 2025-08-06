@@ -1,10 +1,9 @@
 use std::{
-    borrow::{Borrow, BorrowMut},
-    ops::{Deref, DerefMut},
     sync::Arc,
 };
 
 use dapi_grpc::platform::v0::{platform_client::PlatformClient, GetStatusRequest};
+use dapi_grpc::drive::v0::drive_internal_client::DriveInternalClient;
 use serde::{Deserialize, Serialize};
 
 use tower::ServiceBuilder;
@@ -22,18 +21,10 @@ use tracing::{debug, error, info, trace, Level};
 /// ## Cloning
 ///
 ///  This client is designed to be cloned cheaply. No need to use `Arc` or `Rc`.
-///
-/// ## Usage
-/// ```rust
-/// let drive_client = DriveClient::new("http://localhost:3005").await?;
-/// let mut grpc_client = drive_client.get_client().await?;
-/// let response = grpc_client.get_identity(request).await?;
-/// ```
-///
-
 #[derive(Clone)]
 pub struct DriveClient {
     client: PlatformClient<DriveChannel>,
+    internal_client: DriveInternalClient<DriveChannel>,
     // base url stored as an Arc for faster cloning
     base_url: Arc<String>,
 }
@@ -109,6 +100,7 @@ impl DriveClient {
         let client = Self {
             base_url: Arc::new(uri.to_string()),
             client: PlatformClient::new(channel.clone()),
+            internal_client: DriveInternalClient::new(channel.clone()),
         };
 
         // Validate connection by making a test status call
@@ -229,6 +221,10 @@ impl DriveClient {
 
     pub fn get_client(&self) -> PlatformClient<DriveChannel> {
         self.client.clone()
+    }
+
+    pub fn get_internal_client(&self) -> DriveInternalClient<DriveChannel> {
+        self.internal_client.clone()
     }
 }
 

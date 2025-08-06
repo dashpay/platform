@@ -1,11 +1,12 @@
 use crate::{DAPIResult, DapiError};
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionEvent {
@@ -42,23 +43,133 @@ struct EventData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TxEvent {
-    height: String,
+    #[serde(deserialize_with = "deserialize_string_or_number")]
+    height: u64,
     tx: Option<String>,
     result: Option<TxResult>,
     events: Option<Vec<EventAttribute>>,
 }
 
+// Generic deserializer to handle string or integer conversion to any numeric type
+fn deserialize_string_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: TryFrom<i128> + TryFrom<u128> + std::str::FromStr,
+    <T as TryFrom<i128>>::Error: std::fmt::Display,
+    <T as TryFrom<u128>>::Error: std::fmt::Display,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    use serde::de::{Error, Visitor};
+
+    struct StringOrNumberVisitor<T>(std::marker::PhantomData<T>);
+
+    impl<T> Visitor<'_> for StringOrNumberVisitor<T>
+    where
+        T: TryFrom<i128> + TryFrom<u128> + std::str::FromStr,
+        <T as TryFrom<i128>>::Error: std::fmt::Display,
+        <T as TryFrom<u128>>::Error: std::fmt::Display,
+        <T as std::str::FromStr>::Err: std::fmt::Display,
+    {
+        type Value = T;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or integer")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            v.parse()
+                .map_err(|e| Error::custom(format!("invalid number string: {}", e)))
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            T::try_from(v as u128).map_err(|e| Error::custom(format!("number out of range: {}", e)))
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            T::try_from(v as i128).map_err(|e| Error::custom(format!("number out of range: {}", e)))
+        }
+    }
+
+    deserializer.deserialize_any(StringOrNumberVisitor(std::marker::PhantomData))
+}
+
+// Specialized deserializer to convert any value to string
+fn deserialize_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error, Visitor};
+
+    struct ToStringVisitor;
+
+    impl Visitor<'_> for ToStringVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string, integer, or boolean")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(v.to_string())
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(v.to_string())
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(v.to_string())
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(v.to_string())
+        }
+    }
+
+    deserializer.deserialize_any(ToStringVisitor)
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TxResult {
+    #[serde(
+        deserialize_with = "deserialize_string_or_number",
+        default = "default_code"
+    )]
     code: u32,
     data: Option<String>,
     info: Option<String>,
     log: Option<String>,
 }
 
+// Default function for code field
+fn default_code() -> u32 {
+    0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct EventAttribute {
     key: String,
+    #[serde(deserialize_with = "deserialize_to_string")]
     value: String,
 }
 
@@ -166,7 +277,15 @@ impl TenderdashWebSocketClient {
         message: &str,
         event_sender: &broadcast::Sender<TransactionEvent>,
     ) -> DAPIResult<()> {
-        let ws_message: TenderdashWsMessage = serde_json::from_str(message)?;
+        trace!("Received WebSocket message: {}", message);
+
+        let ws_message: TenderdashWsMessage = serde_json::from_str(message).inspect_err(|e| {
+            debug!(
+                "Failed to parse WebSocket message as TenderdashWsMessage: {}",
+                e
+            );
+            trace!("Raw message: {}", message);
+        })?;
 
         // Skip subscription confirmations and other non-event messages
         if ws_message.result.is_none() {
@@ -179,7 +298,7 @@ impl TenderdashWebSocketClient {
         if result.get("events").is_some() {
             if let Some(data) = result.get("data") {
                 if let Some(value) = data.get("value") {
-                    return self.handle_tx_event(value, event_sender).await;
+                    return self.handle_tx_event(value, event_sender, &result).await;
                 }
             }
         }
@@ -191,62 +310,490 @@ impl TenderdashWebSocketClient {
         &self,
         event_data: &serde_json::Value,
         event_sender: &broadcast::Sender<TransactionEvent>,
+        outer_result: &serde_json::Value,
     ) -> DAPIResult<()> {
         let tx_event: TxEvent = serde_json::from_value(event_data.clone())?;
 
-        // Extract transaction hash from events
-        let hash = self.extract_tx_hash(&tx_event.events)?;
+        // Extract all transaction hashes from events
+        let hashes = self.extract_all_tx_hashes(&tx_event.events, outer_result)?;
 
-        let height = tx_event.height.parse::<u64>().unwrap_or(0);
+        if hashes.is_empty() {
+            warn!(
+                ?tx_event,
+                "No transaction hashes found in event attributes for event.",
+            );
+            return Err(DapiError::TransactionHashNotFound);
+        }
 
-        // Decode transaction if present
-        let tx = if let Some(tx_base64) = &tx_event.tx {
-            base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, tx_base64).ok()
-        } else {
-            None
-        };
+        // Log if we found multiple hashes (unusual case)
+        if hashes.len() > 1 {
+            warn!(
+                "Found {} transaction hashes in single WebSocket message: {:?}",
+                hashes.len(),
+                hashes
+            );
+        }
 
-        // Determine transaction result
-        let result = if let Some(tx_result) = &tx_event.result {
-            if tx_result.code == 0 {
-                TransactionResult::Success
+        // Process each hash (typically just one)
+        for hash in hashes {
+            let height = tx_event.height;
+
+            // Decode transaction if present
+            let tx: Option<Vec<u8>> = if let Some(tx_base64) = &tx_event.tx {
+                Some(base64::prelude::Engine::decode(
+                    &base64::prelude::BASE64_STANDARD,
+                    tx_base64,
+                )?)
             } else {
-                TransactionResult::Error {
-                    code: tx_result.code,
-                    info: tx_result.info.clone().unwrap_or_default(),
-                    data: tx_result.data.clone(),
+                None
+            };
+
+            // Determine transaction result
+            let result = if let Some(tx_result) = &tx_event.result {
+                if tx_result.code == 0 {
+                    TransactionResult::Success
+                } else {
+                    TransactionResult::Error {
+                        code: tx_result.code,
+                        info: tx_result.info.clone().unwrap_or_default(),
+                        data: tx_result.data.clone(),
+                    }
                 }
-            }
-        } else {
-            TransactionResult::Success
-        };
+            } else {
+                TransactionResult::Success
+            };
 
-        let transaction_event = TransactionEvent {
-            hash: hash.clone(),
-            height,
-            result,
-            tx,
-        };
+            let transaction_event = TransactionEvent {
+                hash: hash.clone(),
+                height,
+                result: result.clone(),
+                tx: tx.clone(),
+            };
 
-        debug!("Broadcasting transaction event for hash: {}", hash);
+            debug!("Broadcasting transaction event for hash: {}", hash);
 
-        // Broadcast the event (ignore if no subscribers)
-        let _ = event_sender.send(transaction_event);
+            // Broadcast the event (ignore if no subscribers)
+            let _ = event_sender.send(transaction_event);
+        }
 
         Ok(())
     }
 
-    fn extract_tx_hash(&self, events: &Option<Vec<EventAttribute>>) -> DAPIResult<String> {
-        if let Some(events) = events {
-            for event in events {
-                if event.key == "hash" {
-                    return Ok(event.value.clone());
+    fn extract_all_tx_hashes(
+        &self,
+        inner_events: &Option<Vec<EventAttribute>>,
+        outer_result: &serde_json::Value,
+    ) -> DAPIResult<Vec<String>> {
+        let mut hashes = Vec::new();
+
+        // First extract from outer events (result.events) - this is the primary location
+        if let Some(outer_events) = outer_result.get("events").and_then(|e| e.as_array()) {
+            for event in outer_events {
+                if let Some(event_type) = event.get("type").and_then(|t| t.as_str()) {
+                    if event_type == "tx" {
+                        if let Some(attributes) = event.get("attributes").and_then(|a| a.as_array())
+                        {
+                            for attr in attributes {
+                                if let (Some(key), Some(value)) = (
+                                    attr.get("key").and_then(|k| k.as_str()),
+                                    attr.get("value").and_then(|v| v.as_str()),
+                                ) {
+                                    if key == "hash" {
+                                        hashes.push(value.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        Err(DapiError::Client(
-            "Transaction hash not found in event attributes".to_string(),
-        ))
+        // Also check inner events (TxEvent.events) as fallback
+        if let Some(events) = inner_events {
+            for event in events {
+                if event.key == "hash" {
+                    hashes.push(event.value.clone());
+                }
+            }
+        }
+
+        // Remove duplicates while preserving order efficiently
+        let mut seen = BTreeSet::new();
+        let unique_hashes: Vec<String> = hashes
+            .into_iter()
+            .filter(|hash| seen.insert(hash.clone()))
+            .collect();
+
+        Ok(unique_hashes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_tx_event_deserialization_with_string_height() {
+        let json_data = json!({
+            "height": "12345",
+            "tx": "dGVzdA==",
+            "result": {
+                "code": 0,
+                "data": null,
+                "info": "",
+                "log": ""
+            },
+            "events": []
+        });
+
+        let tx_event: TxEvent = serde_json::from_value(json_data).unwrap();
+        assert_eq!(tx_event.height, 12345);
+    }
+
+    #[test]
+    fn test_tx_event_deserialization_with_integer_height() {
+        let json_data = json!({
+            "height": 12345,
+            "tx": "dGVzdA==",
+            "result": {
+                "code": 0,
+                "data": null,
+                "info": "",
+                "log": ""
+            },
+            "events": []
+        });
+
+        let tx_event: TxEvent = serde_json::from_value(json_data).unwrap();
+        assert_eq!(tx_event.height, 12345);
+    }
+
+    #[test]
+    fn test_tx_result_deserialization_with_string_code() {
+        let json_data = json!({
+            "code": "1005",
+            "data": null,
+            "info": "test error",
+            "log": ""
+        });
+
+        let tx_result: TxResult = serde_json::from_value(json_data).unwrap();
+        assert_eq!(tx_result.code, 1005);
+    }
+
+    #[test]
+    fn test_tx_result_deserialization_with_integer_code() {
+        let json_data = json!({
+            "code": 1005,
+            "data": null,
+            "info": "test error",
+            "log": ""
+        });
+
+        let tx_result: TxResult = serde_json::from_value(json_data).unwrap();
+        assert_eq!(tx_result.code, 1005);
+    }
+
+    #[test]
+    fn test_tx_result_deserialization_with_missing_code() {
+        let json_data = json!({
+            "gas_used": 905760,
+            "data": null,
+            "info": "",
+            "log": ""
+        });
+
+        let tx_result: TxResult = serde_json::from_value(json_data).unwrap();
+        assert_eq!(tx_result.code, 0); // Should default to 0 (success)
+    }
+
+    #[test]
+    fn test_real_websocket_message_deserialization() {
+        // This is the actual WebSocket message that was causing the "missing field `code`" error
+        let json_data = json!({
+            "height": 1087,
+            "tx": "BwBKtJbhBYdn6SJx+oezzOb0KjQAhV2vh0pXlAsN3u0soZ1vsfjXvOK0TA6z9UnzQoIRj2entd3N2XUQ8qmFOYML/DuaygABAANBIIBqaHzVMKT/AvClrEuKY6/kwgtQmZmaOGSOrLqGEhrBVf62e/mcTkqIrUruBQ/xdtxDYs0tj/32zt+yVTJH7j8=",
+            "result": {
+                "gas_used": 905760
+                // Note: no "code" field - should default to 0
+            },
+            "events": [
+                {
+                    "key": "hash",
+                    "value": "13F2EF4097320B234DECCEF063FDAE6A0845AF4380CEC15F2185CE9FACC6EBD5"
+                },
+                {
+                    "key": "height",
+                    "value": "1087"
+                }
+            ]
+        });
+
+        let tx_event: TxEvent = serde_json::from_value(json_data).unwrap();
+
+        // Verify all fields are correctly deserialized
+        assert_eq!(tx_event.height, 1087);
+        assert!(tx_event.tx.is_some());
+
+        // Verify the result has default code of 0 (success)
+        let result = tx_event.result.unwrap();
+        assert_eq!(result.code, 0);
+
+        // Verify events are correctly parsed
+        let events = tx_event.events.unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].key, "hash");
+        assert_eq!(
+            events[0].value,
+            "13F2EF4097320B234DECCEF063FDAE6A0845AF4380CEC15F2185CE9FACC6EBD5"
+        );
+        assert_eq!(events[1].key, "height");
+        assert_eq!(events[1].value, "1087"); // String conversion of integer value
+    }
+
+    #[test]
+    fn test_full_websocket_message_deserialization() {
+        // This is the complete WebSocket message that was failing, including the outer JSON-RPC wrapper
+        let full_message = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "subscription_id": "",
+                "query": "tm.event = 'Tx'",
+                "data": {
+                    "type": "tendermint/event/Tx",
+                    "value": {
+                        "height": 1087,
+                        "tx": "BwBKtJbhBYdn6SJx+oezzOb0KjQAhV2vh0pXlAsN3u0soZ1vsfjXvOK0TA6z9UnzQoIRj2entd3N2XUQ8qmFOYML/DuaygABAANBIIBqaHzVMKT/AvClrEuKY6/kwgtQmZmaOGSOrLqGEhrBVf62e/mcTkqIrUruBQ/xdtxDYs0tj/32zt+yVTJH7j8=",
+                        "result": {
+                            "gas_used": 905760
+                        }
+                    }
+                },
+                "events": [
+                    {
+                        "type": "tm",
+                        "attributes": [
+                            {
+                                "key": "event",
+                                "value": "Tx",
+                                "index": false
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "hash",
+                                "value": "13F2EF4097320B234DECCEF063FDAE6A0845AF4380CEC15F2185CE9FACC6EBD5",
+                                "index": false
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "height",
+                                "value": "1087",
+                                "index": false
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+
+        // Test that the outer message parses correctly
+        let ws_message: TenderdashWsMessage = serde_json::from_str(full_message).unwrap();
+        assert_eq!(ws_message.jsonrpc, "2.0");
+        assert!(ws_message.result.is_some());
+
+        // Test that we can extract the inner tx event data
+        let result = ws_message.result.unwrap();
+        let data = result.get("data").unwrap();
+        let value = data.get("value").unwrap();
+
+        // This should deserialize without the "missing field `code`" error
+        let tx_event: TxEvent = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(tx_event.height, 1087);
+
+        // Verify the result defaults to code 0 when missing
+        let tx_result = tx_event.result.unwrap();
+        assert_eq!(tx_result.code, 0);
+    }
+
+    #[test]
+    fn test_hash_in_outer_events_websocket_message() {
+        // This reproduces the actual failing WebSocket message structure where the hash
+        // is in the outer events array, not in the inner tx_event.events
+        let full_message = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "subscription_id": "",
+                "query": "tm.event = 'Tx'",
+                "data": {
+                    "type": "tendermint/event/Tx",
+                    "value": {
+                        "height": 1143,
+                        "tx": "AwAEAAACAAAAABRoMDrccS7MNWBQ3j8+Irst5weWvAAAAQIAAQAAFDDoQkib1LvN+VIdf/tBEjPb8tmgAAACAgACAAAUjB/xAqiSZfRjX/0gvUCXATi06uQAAAMCAwEAABSqQPiOK2TfNerKRS3LkaD2x8G6GwAAxgEBcFMtXqPhk3AVd47C+6SSmXWl6BS8ehgBC6CSbbbU8hQBAAAAQCPGVEX1xA4ur9Iz2LdDyyfS8YE4x5Q6mYG/SS0xAGx6v3Gcn7oGsRFemDL+rYN5/cg3CqDLrXIl2SsotyB5BI79o8jb7Nf6MwHM0ZKU3ikwss37YUwNvJkZ57UZPf4txIqg7qN0oEjEynsX4tjv6BWrPlaEWTiyVjuYOCbuvHZBpPQ55cJ4+9ya/05J1C8KdIjaGuyB1r0yA6eLaXNBmu8DAAgAAXBTLV6j4ZNwFXeOwvukkpl1pegUvHoYAQugkm221PIUAQAAAGpHMEQCIC4nPoswVruvuSo5uIMs8vW7N1IowC8PxfjYlTnUy4fXAiAsgVn9e1kGYaunZI+LOeiJ1ghEMAS7u5WPP13tS7L9ZQEhA1xnCKgAxtiWPLxpfBMPmBetAiJKQn//lQLmSMatlduV/////wLA6iEBAAAAAAJqABiPRzkAAAAAGXapFDPxaffrRV2b5uJzofsIIsP3xBWiiKwAAAAAJAEBwOohAQAAAAAZdqkUtQHJZWYFWMlOKQjvCePbD4EAi8CIrAAAQR/5fcqaM3VWmUOBwWHSHQtbDNCKopIN/L6USHBk5jNp+gne/1nL/Cd0UjtaFGkuAkJbdLTgrDEIQU1rbtZQ3lBSMbRnV8B6UIWAY3z9q2tOSeTQ3FybD5iEd0Oo/dzJldM=",
+                        "result": {
+                            "gas_used": 130192500
+                        }
+                    }
+                },
+                "events": [
+                    {
+                        "type": "tm",
+                        "attributes": [
+                            {
+                                "key": "event",
+                                "value": "Tx",
+                                "index": false
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "hash",
+                                "value": "FCF3B0D09B8042B7A41F514107CBE1E09BD33C222005A8669A3EBE4B1D59BDDF",
+                                "index": false
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "height",
+                                "value": "1143",
+                                "index": false
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+
+        // Test that the outer message parses correctly
+        let ws_message: TenderdashWsMessage = serde_json::from_str(full_message).unwrap();
+        let result = ws_message.result.unwrap();
+        let data = result.get("data").unwrap();
+        let value = data.get("value").unwrap();
+
+        // The inner tx event should deserialize but won't have events
+        let tx_event: TxEvent = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(tx_event.height, 1143);
+
+        // The inner tx_event.events is None, but we should be able to extract hash from outer events
+        assert!(tx_event.events.is_none());
+
+        // Test that the modified extract_all_tx_hashes function now works with outer events
+        let client = TenderdashWebSocketClient::new("ws://test".to_string(), 100);
+        let hashes = client
+            .extract_all_tx_hashes(&tx_event.events, &result)
+            .unwrap();
+
+        assert_eq!(hashes.len(), 1);
+        assert_eq!(
+            hashes[0],
+            "FCF3B0D09B8042B7A41F514107CBE1E09BD33C222005A8669A3EBE4B1D59BDDF"
+        );
+    }
+
+    #[test]
+    fn test_multiple_hashes_in_websocket_message() {
+        // Test case where multiple tx events each contain a hash (edge case)
+        let multiple_hash_message = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "query": "tm.event = 'Tx'",
+                "data": {
+                    "type": "tendermint/event/Tx",
+                    "value": {
+                        "height": "200",
+                        "tx": "dGVzdA==",
+                        "result": {}
+                    }
+                },
+                "events": [
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "hash",
+                                "value": "HASH1",
+                                "index": false
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "hash", 
+                                "value": "HASH2",
+                                "index": false
+                            }
+                        ]
+                    },
+                    {
+                        "type": "tx",
+                        "attributes": [
+                            {
+                                "key": "height",
+                                "value": "200",
+                                "index": false
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+
+        let ws_message: TenderdashWsMessage = serde_json::from_str(multiple_hash_message).unwrap();
+        let result = ws_message.result.unwrap();
+        let data = result.get("data").unwrap();
+        let value = data.get("value").unwrap();
+
+        let tx_event: TxEvent = serde_json::from_value(value.clone()).unwrap();
+        let client = TenderdashWebSocketClient::new("ws://test".to_string(), 100);
+        let hashes = client
+            .extract_all_tx_hashes(&tx_event.events, &result)
+            .unwrap();
+
+        // Should find both hashes
+        assert_eq!(hashes.len(), 2);
+        assert_eq!(hashes[0], "HASH1");
+        assert_eq!(hashes[1], "HASH2");
+    }
+
+    #[test]
+    fn test_event_attribute_deserialization_with_integer_value() {
+        let json_data = json!({
+            "key": "hash",
+            "value": 1005
+        });
+
+        let event_attr: EventAttribute = serde_json::from_value(json_data).unwrap();
+        assert_eq!(event_attr.value, "1005");
+    }
+
+    #[test]
+    fn test_event_attribute_deserialization_with_string_value() {
+        let json_data = json!({
+            "key": "hash",
+            "value": "abc123"
+        });
+
+        let event_attr: EventAttribute = serde_json::from_value(json_data).unwrap();
+        assert_eq!(event_attr.value, "abc123");
     }
 }

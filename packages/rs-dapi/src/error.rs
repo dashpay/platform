@@ -1,5 +1,6 @@
 // Custom error types for rs-dapi using thiserror
 
+use sha2::Digest;
 use thiserror::Error;
 
 /// Main error type for DAPI operations
@@ -51,6 +52,12 @@ pub enum DapiError {
     #[error("URL parse error: {0}")]
     UrlParse(#[from] url::ParseError),
 
+    #[error("Base64 decode error: {0}")]
+    Base64Decode(#[from] base64::DecodeError),
+
+    #[error("Transaction hash not found in event attributes")]
+    TransactionHashNotFound,
+
     #[error("Invalid data: {0}")]
     InvalidData(String),
 
@@ -68,6 +75,9 @@ pub enum DapiError {
 
     #[error("Client is gone: {0}")]
     ClientGone(String),
+
+    #[error("No valid proof found for tx: {0}")]
+    NoValidTxProof(String),
 }
 
 /// Result type alias for DAPI operations
@@ -95,6 +105,18 @@ impl DapiError {
             DapiError::Status(status) => status.clone(),
             _ => tonic::Status::internal(self.to_string()),
         }
+    }
+
+    /// Create a no proof error for a transaction
+    pub fn no_valid_tx_proof(tx: &[u8]) -> Self {
+        let tx_hash = if tx.len() == sha2::Sha256::output_size() {
+            // possible false positive if tx is not a hash but still a 32-byte array
+            hex::encode(tx)
+        } else {
+            let digest = sha2::Sha256::digest(tx);
+            hex::encode(digest)
+        };
+        Self::NoValidTxProof(tx_hash)
     }
 
     /// Create a configuration error

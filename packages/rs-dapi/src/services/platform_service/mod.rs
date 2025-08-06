@@ -95,16 +95,36 @@ impl Platform for PlatformServiceImpl {
     }
 
     // State transition methods
-    drive_method!(
-        broadcast_state_transition,
-        BroadcastStateTransitionRequest,
-        BroadcastStateTransitionResponse
-    );
-    drive_method!(
-        wait_for_state_transition_result,
-        WaitForStateTransitionResultRequest,
-        WaitForStateTransitionResultResponse
-    );
+    /// Broadcast a state transition to the Dash Platform
+    ///
+    /// This method handles the complete broadcast flow including:
+    /// - State transition validation
+    /// - Broadcasting to Tenderdash
+    /// - Complex error handling and duplicate detection
+    ///
+    /// See [`PlatformServiceImpl::broadcast_state_transition_impl`] for implementation details.
+    async fn broadcast_state_transition(
+        &self,
+        request: Request<BroadcastStateTransitionRequest>,
+    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
+        tracing::trace!(?request, "Received broadcast_state_transition request");
+        self.broadcast_state_transition_impl(request).await
+    }
+
+    /// Implementation of waitForStateTransitionResult
+    ///
+    /// This method waits for a state transition to be processed and returns the result.
+    /// See [`PlatformServiceImpl::wait_for_state_transition_result_impl`] for implementation details.
+    async fn wait_for_state_transition_result(
+        &self,
+        request: Request<WaitForStateTransitionResultRequest>,
+    ) -> Result<Response<WaitForStateTransitionResultResponse>, Status> {
+        tracing::trace!(
+            ?request,
+            "Received wait_for_state_transition_result request"
+        );
+        self.wait_for_state_transition_result_impl(request).await
+    }
 
     // Identity-related methods
     drive_method!(

@@ -254,29 +254,36 @@ impl PlatformServiceImpl {
 
     async fn fetch_proof_for_state_transition(
         &self,
-        _tx_bytes: Vec<u8>,
+        tx_bytes: Vec<u8>,
     ) -> crate::DAPIResult<(Proof, ResponseMetadata)> {
-        // TODO: Implement actual proof fetching from Drive
-        // For now, return empty proof structures
-
-        let proof = Proof {
-            grovedb_proof: Vec::new(),
-            quorum_hash: Vec::new(),
-            signature: Vec::new(),
-            round: 0,
-            block_id_hash: Vec::new(),
-            quorum_type: 0,
+        // Create a GetProofsRequest with the state transition
+        let request = dapi_grpc::drive::v0::GetProofsRequest {
+            state_transition: tx_bytes.clone(),
         };
 
-        let metadata = ResponseMetadata {
-            height: 0,
-            core_chain_locked_height: 0,
-            epoch: 0,
-            time_ms: 0,
-            protocol_version: 0,
-            chain_id: String::new(),
-        };
+        // Get the internal client and make the request
+        let mut internal_client = self.drive_client.get_internal_client();
 
-        Ok((proof, metadata))
+        match internal_client.get_proofs(request).await {
+            Ok(response) => {
+                let inner = response.into_inner();
+
+                let proof = inner
+                    .proof
+                    .ok_or(crate::DapiError::no_valid_tx_proof(&tx_bytes))?;
+                let metadata = inner
+                    .metadata
+                    .ok_or(crate::DapiError::no_valid_tx_proof(&tx_bytes))?;
+
+                Ok((proof, metadata))
+            }
+            Err(e) => {
+                warn!("Failed to fetch proof from Drive: {}", e);
+                Err(crate::DapiError::Client(format!(
+                    "Failed to fetch proof: {}",
+                    e
+                )))
+            }
+        }
     }
 }
