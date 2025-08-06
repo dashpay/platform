@@ -28,7 +28,7 @@ pub async fn init_logging(
             Some(
                 AccessLogger::new(path.clone())
                     .await
-                    .map_err(|e| format!("Failed to create access logger: {}", e))?,
+                    .map_err(|e| format!("Failed to create access logger {}: {}", path, e))?,
             )
         } else {
             None
