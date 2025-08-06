@@ -13,14 +13,17 @@ def manual_extract_definitions(html_file):
     with open(html_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
-    # Extract the complete queryDefinitions block
-    query_start = content.find('const queryDefinitions = {')
-    if query_start == -1:
+    # Extract the complete queryDefinitions block (handle potential whitespace)
+    import re
+    query_match = re.search(r'\s*const queryDefinitions = \{', content)
+    if not query_match:
         return {}, {}
+    
+    query_start = query_match.start()
     
     # Find the end by counting braces
     brace_count = 0
-    pos = query_start + len('const queryDefinitions = ')
+    pos = query_match.end() - 1  # Start at the opening brace
     query_end = pos
     
     for i, char in enumerate(content[pos:], pos):
@@ -35,12 +38,14 @@ def manual_extract_definitions(html_file):
     query_block = content[pos:query_end]
     
     # Extract state transition definitions
-    trans_start = content.find('const stateTransitionDefinitions = {')
-    if trans_start == -1:
+    trans_match = re.search(r'\s*const stateTransitionDefinitions = \{', content)
+    if not trans_match:
         return {}, {}
     
+    trans_start = trans_match.start()
+    
     brace_count = 0
-    pos = trans_start + len('const stateTransitionDefinitions = ')
+    pos = trans_match.end() - 1  # Start at the opening brace
     trans_end = pos
     
     for i, char in enumerate(content[pos:], pos):
@@ -74,8 +79,9 @@ def parse_definition_block(block, item_type):
         
         # Skip if this looks like it's inside another structure
         # Check if the match is at the top level by ensuring no unclosed braces before it
+        # We expect exactly 1 unclosed brace (the opening brace of the main object)
         prefix = block[:match.start()]
-        if prefix.count('{') - prefix.count('}') > 0:
+        if prefix.count('{') - prefix.count('}') != 1:
             continue
         
         # Find this category's content
