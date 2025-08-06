@@ -449,6 +449,7 @@ COPY --parents \
     .cargo \
     packages/dapi-grpc \
     packages/rs-dapi-grpc-macros \
+    packages/rs-dapi \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
@@ -548,6 +549,7 @@ COPY --parents \
     Cargo.toml \
     rust-toolchain.toml \
     .cargo \
+    packages/rs-dapi \
     packages/rs-dpp \
     packages/rs-platform-value \
     packages/rs-platform-serialization \
