@@ -445,8 +445,6 @@ const testData = {
       getVotePollsByEndDate: {
         testnet: [
           {
-            startTimeMs: 1735689600000,
-            endTimeMs: 1754006400000,
             limit: 10,
             offset: 0,
             orderAscending: true

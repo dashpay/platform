@@ -804,17 +804,17 @@ test.describe('WASM SDK Query Execution Tests', () => {
           expect(typeof identityVotesData === 'object').toBe(true);
         }
       },
-      // { 
-      //   name: 'getVotePollsByEndDate', 
-      //   hasProofSupport: true, 
-      //   needsParameters: true,
-      //   validateFn: (result) => {
-      //     expect(() => JSON.parse(result)).not.toThrow();
-      //     const pollsData = JSON.parse(result);
-      //     expect(pollsData).toBeDefined();
-      //     expect(typeof pollsData === 'object').toBe(true);
-      //   }
-      // }
+      { 
+        name: 'getVotePollsByEndDate', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const pollsData = JSON.parse(result);
+          expect(pollsData).toBeDefined();
+          expect(typeof pollsData === 'object').toBe(true);
+        }
+      }
     ];
 
     votingQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
