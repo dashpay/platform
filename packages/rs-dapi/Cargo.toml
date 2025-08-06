@@ -7,6 +7,14 @@ edition = "2021"
 name = "rs-dapi"
 path = "src/main.rs"
 
+[[example]]
+name = "transaction_monitor"
+path = "examples/transaction_monitor.rs"
+
+[[example]]
+name = "state_transition_monitor"
+path = "examples/state_transition_monitor.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.47.0", features = ["full"] }
