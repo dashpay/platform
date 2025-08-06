@@ -62,6 +62,9 @@ jobs:
           - name: DAPI
             image_name: dapi
             target: dapi
+          - name: RS-DAPI
+            image_name: rs-dapi
+            target: rs-dapi
           - name: Dashmate helper
             image_name: dashmate-helper
             target: dashmate-helper
@@ -83,7 +86,7 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+      check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","rs-dapi","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
 
   rs-crates-security:
     name: Rust crates security audit

@@ -187,6 +187,18 @@ jobs:
       target: dapi
       tag: ${{ inputs.tag || github.event.release.tag_name }}
 
+  release-rs-dapi-image:
+    name: Release RS-DAPI image
+    if: ${{ !inputs.only_drive }}
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: RS-DAPI
+      image_org: dashpay
+      image_name: rs-dapi
+      target: rs-dapi
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
+
   release-test-suite-image:
     name: Release Test Suite image
     if: ${{ !inputs.only_drive }}

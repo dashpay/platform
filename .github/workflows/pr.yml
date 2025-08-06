@@ -33,6 +33,7 @@ jobs:
           # These are regex patterns auto-wrapped in `^ $`.
           scopes: |
             dapi
+            rs-dapi
             platform
             drive
             drive-abci
