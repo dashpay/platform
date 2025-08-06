@@ -1,3 +1,83 @@
+## [2.1.0-dev.2](https://github.com/dashevo/platform/compare/v2.1.0-dev.1...v2.1.0-dev.2) (2025-08-06)
+
+
+### Features
+
+* access logging
+* add wasm bindings for Drive verification functions ([#2660](https://github.com/dashevo/platform/issues/2660))
+* balance checker app ([#2688](https://github.com/dashevo/platform/issues/2688))
+* **dashmate:** allow configuring zmq using dashmate ([#2697](https://github.com/dashevo/platform/issues/2697))
+* **sdk:** add request settings in wasm sdk ([#2707](https://github.com/dashevo/platform/issues/2707))
+* **sdk:** add username search example in evo-sdk ([#2706](https://github.com/dashevo/platform/issues/2706))
+* **sdk:** adding a trusted context provider package ([#2687](https://github.com/dashevo/platform/issues/2687))
+* **sdk:** dpns sdk improvements ([#2692](https://github.com/dashevo/platform/issues/2692))
+* **sdk:** enable proof support for most queries ([#2718](https://github.com/dashevo/platform/issues/2718))
+* **sdk:** identity creation in wasm ([#2711](https://github.com/dashevo/platform/issues/2711))
+* **sdk:** make wasm sdk complete for all state transitions and most queries ([#2690](https://github.com/dashevo/platform/issues/2690))
+* **sdk:** wasm docs and fixes ([#2700](https://github.com/dashevo/platform/issues/2700))
+* **sdk:** wasm drive verify optimization ([#2683](https://github.com/dashevo/platform/issues/2683))
+* **sdk:** wasm sdk core and test suite ([#2709](https://github.com/dashevo/platform/issues/2709))
+
+
+### Bug Fixes
+
+* **sdk:** fix documentation examples ([#2710](https://github.com/dashevo/platform/issues/2710))
+* **sdk:** install wasm-opt from Github instead of apt ([#2701](https://github.com/dashevo/platform/issues/2701))
+* **sdk:** modifications to get wasm-sdk working again ([#2689](https://github.com/dashevo/platform/issues/2689))
+
+
+### Tests
+
+* **sdk:** automate wasm-sdk page UI testing (partial) ([#2715](https://github.com/dashevo/platform/issues/2715))
+
+
+### Build System
+
+* **deps:** update getrandom to v0.3
+
+
+### Continuous Integration
+
+* rs-dapi workflows
+
+
+### Miscellaneous Chores
+
+* at least compiles
+* better logging
+* cargo.lock version
+* cargo.toml reorder packages
+* cleanup deps
+* clippy
+* copy rs-dapi
+* dashmate impl
+* DESIGN - logging described
+* disable access log (doesn't work anyway)
+* example apps
+* fix env var name
+* identity create green
+* improve logging
+* minor fixes
+* move old dapi to /deprecated prefix
+* **platform:** add protocol version 10 support ([#2686](https://github.com/dashevo/platform/issues/2686))
+* progress, tenderdash to do
+* refactor of td client and websockets
+* replace sync zmq with async zeromq
+* rs-dapi verbose entrypoint
+* rs-dapi, wip
+* **sdk:** use correct port for evo-sdk mainnet ([#2699](https://github.com/dashevo/platform/issues/2699))
+* some logs
+* tracing logging
+* try to fix logging
+* wip
+* wip
+* wip
+* zeromq improvements
+* zmq
+* zmq details
+* zmq reconnecting
+* zmq to test
+
 ## [2.1.0-dev.1](https://github.com/dashpay/platform/compare/v2.0.0...v2.1.0-dev.1) (2025-07-11)
 
 
