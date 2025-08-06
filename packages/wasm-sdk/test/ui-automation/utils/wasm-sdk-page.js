@@ -6,7 +6,8 @@ const DYNAMIC_ARRAY_PARAMETERS = {
   'ids': true,
   'identityIds': true,
   'identitiesIds': true,
-  'tokenIds': true
+  'tokenIds': true,
+  'indexValues': true
 };
 
 /**

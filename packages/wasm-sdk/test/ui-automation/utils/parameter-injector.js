@@ -90,6 +90,7 @@ class ParameterInjector {
       // Voting parameters
       'documentTypeName': ['#documentTypeName', '[name="documentTypeName"]'],
       'indexName': ['#indexName', '[name="indexName"]'],
+      'indexValues': ['#indexValues', '[name="indexValues"]', 'textarea[name="indexValues"]', 'input[placeholder*="indexValues"]'],
       'resultType': ['#resultType', '[name="resultType"]'],
       'contestantId': ['#contestantId', '[name="contestantId"]'],
       'allowIncludeLockedAndAbstainingVoteTally': ['#allowIncludeLockedAndAbstainingVoteTally', '[name="allowIncludeLockedAndAbstainingVoteTally"]', 'input[type="checkbox"][name="allowIncludeLockedAndAbstainingVoteTally"]'],
