@@ -61,7 +61,7 @@ pub unsafe extern "C" fn dash_sdk_token_freeze(
     };
 
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
-    let signer = unsafe { &*(signer_handle as *const crate::signer::IOSSigner) };
+    let signer = unsafe { &*(signer_handle as *const crate::signer::VTableSigner) };
     let params = unsafe { &*params };
 
     // Validate contract parameters

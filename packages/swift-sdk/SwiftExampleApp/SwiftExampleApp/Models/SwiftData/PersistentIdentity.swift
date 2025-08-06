@@ -14,8 +14,7 @@ final class PersistentIdentity {
     var dpnsName: String?
     var identityType: String
     
-    // MARK: - Key Storage
-    @Relationship(deleteRule: .cascade) var privateKeys: [PersistentPrivateKey]
+    // MARK: - Special Key Storage (stored in keychain)
     var votingPrivateKeyIdentifier: String?
     var ownerPrivateKeyIdentifier: String?
     var payoutPrivateKeyIdentifier: String?
@@ -32,7 +31,7 @@ final class PersistentIdentity {
     var network: String
     
     // MARK: - Relationships
-    @Relationship(deleteRule: .cascade) var documents: [PersistentDocument]
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) var tokenBalances: [PersistentTokenBalance]
     
     // MARK: - Initialization
@@ -44,7 +43,6 @@ final class PersistentIdentity {
         alias: String? = nil,
         dpnsName: String? = nil,
         identityType: IdentityType = .user,
-        privateKeys: [PersistentPrivateKey] = [],
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
@@ -57,7 +55,6 @@ final class PersistentIdentity {
         self.alias = alias
         self.dpnsName = dpnsName
         self.identityType = identityType.rawValue
-        self.privateKeys = privateKeys
         self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
         self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
         self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
@@ -122,10 +119,11 @@ extension PersistentIdentity {
     func toIdentityModel() -> IdentityModel {
         let publicKeyModels = publicKeys.compactMap { $0.toIdentityPublicKey() }
         
-        // Convert PersistentPrivateKey array to Data array by retrieving from keychain
-        let privateKeyData = privateKeys
-            .sorted(by: { $0.keyIndex < $1.keyIndex })
-            .compactMap { $0.getKeyData() }
+        // Convert public keys with private keys to Data array by retrieving from keychain
+        let privateKeyData = publicKeys
+            .filter { $0.hasPrivateKey }
+            .sorted(by: { $0.keyId < $1.keyId })
+            .compactMap { $0.getPrivateKeyData() }
         
         // Retrieve special keys from keychain
         let votingKey = votingPrivateKeyIdentifier != nil ? 
@@ -176,30 +174,34 @@ extension PersistentIdentity {
             alias: model.alias,
             dpnsName: model.dpnsName,
             identityType: model.type,
-            privateKeys: [],  // Initialize empty, will add below
             votingPrivateKeyIdentifier: votingKeyId,
             ownerPrivateKeyIdentifier: ownerKeyId,
             payoutPrivateKeyIdentifier: payoutKeyId,
             network: network
         )
         
-        // Add private keys
-        for (index, keyData) in model.privateKeys.enumerated() {
-            // Store in keychain
-            if let keychainId = KeychainManager.shared.storePrivateKey(keyData, identityId: model.id, keyIndex: Int32(index)) {
-                let persistentPrivateKey = PersistentPrivateKey(
-                    identityId: model.id,
-                    keyIndex: Int32(index),
-                    keychainIdentifier: keychainId
-                )
-                persistent.privateKeys.append(persistentPrivateKey)
-            }
-        }
-        
         // Add public keys
         for publicKey in model.publicKeys {
             if let persistentKey = PersistentPublicKey.from(publicKey, identityId: model.idString) {
                 persistent.addPublicKey(persistentKey)
+            }
+        }
+        
+        // Handle private keys - match them to their corresponding public keys using cryptographic validation
+        for privateKeyData in model.privateKeys {
+            // Find which public key this private key corresponds to
+            if let matchingPublicKey = KeyValidation.matchPrivateKeyToPublicKeys(
+                privateKeyData: privateKeyData,
+                publicKeys: model.publicKeys,
+                isTestnet: network == "testnet"
+            ) {
+                // Find the corresponding persistent public key
+                if let persistentKey = persistent.publicKeys.first(where: { $0.keyId == matchingPublicKey.id }) {
+                    // Store the private key for this specific public key
+                    if let keychainId = KeychainManager.shared.storePrivateKey(privateKeyData, identityId: model.id, keyIndex: persistentKey.keyId) {
+                        persistentKey.privateKeyKeychainIdentifier = keychainId
+                    }
+                }
             }
         }
         

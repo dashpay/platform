@@ -176,7 +176,9 @@ struct PrivateKeyView: View {
     let keyId: UInt32
     let onCopy: (Int) -> Void
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var appState: AppState
     @State private var showingPrivateKey = false
+    @State private var showForgetKeyAlert = false
     
     var body: some View {
         let _ = print("🔑 PrivateKeyView initialized for keyId: \(keyId)")
@@ -299,6 +301,15 @@ struct PrivateKeyView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
+                            
+                            Button(action: {
+                                showForgetKeyAlert = true
+                            }) {
+                                Label("Forget Private Key", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundColor(.red)
                         }
                     } else {
                         Text("Private key not available")
@@ -328,6 +339,25 @@ struct PrivateKeyView: View {
                     }
                 }
             }
+            .alert("Forget Private Key?", isPresented: $showForgetKeyAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Forget", role: .destructive) {
+                    forgetPrivateKey()
+                }
+            } message: {
+                Text("Are you sure you want to forget this private key? This action cannot be undone and you will need to re-enter the key to use it again.")
+            }
+        }
+    }
+    
+    private func forgetPrivateKey() {
+        // Remove from keychain
+        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
+        
+        if removed {
+            // Update the persistent public key to clear the reference
+            appState.removePrivateKeyReference(identityId: identity.id, keyId: Int32(keyId))
+            dismiss()
         }
     }
     

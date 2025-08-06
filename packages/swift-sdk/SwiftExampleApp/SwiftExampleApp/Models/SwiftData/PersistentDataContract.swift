@@ -9,9 +9,39 @@ final class PersistentDataContract {
     var createdAt: Date
     var lastAccessedAt: Date
     
+    // Version info
+    var version: Int?
+    var ownerId: Data?
+    
+    // Contract configuration
+    var canBeDeleted: Bool
+    var readonly: Bool
+    var keepsHistory: Bool
+    var schemaDefs: Int?
+    
+    // Document defaults
+    var documentsKeepHistoryContractDefault: Bool
+    var documentsMutableContractDefault: Bool
+    var documentsCanBeDeletedContractDefault: Bool
+    
+    // Relationships with cascade delete
+    @Relationship(deleteRule: .cascade, inverse: \PersistentToken.dataContract)
+    var tokens: [PersistentToken]?
+    
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDocumentType.dataContract)
+    var documentTypes: [PersistentDocumentType]?
+    
     // Computed properties
     var idBase58: String {
         id.toBase58String()
+    }
+    
+    var ownerIdBase58: String? {
+        ownerId?.toBase58String()
+    }
+    
+    var parsedContract: [String: Any]? {
+        try? JSONSerialization.jsonObject(with: serializedContract, options: []) as? [String: Any]
     }
     
     init(id: Data, name: String, serializedContract: Data) {
@@ -20,6 +50,14 @@ final class PersistentDataContract {
         self.serializedContract = serializedContract
         self.createdAt = Date()
         self.lastAccessedAt = Date()
+        
+        // Default values for contract configuration
+        self.canBeDeleted = false
+        self.readonly = false
+        self.keepsHistory = false
+        self.documentsKeepHistoryContractDefault = false
+        self.documentsMutableContractDefault = true
+        self.documentsCanBeDeletedContractDefault = true
     }
     
     func updateLastAccessed() {

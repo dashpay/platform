@@ -55,4 +55,29 @@ enum KeyValidation {
         
         return resultStr == "true"
     }
+    
+    /// Match a private key to its corresponding public key in a list of public keys
+    /// Returns the matching public key or nil if no match found
+    static func matchPrivateKeyToPublicKeys(
+        privateKeyData: Data,
+        publicKeys: [IdentityPublicKey],
+        isTestnet: Bool = true
+    ) -> IdentityPublicKey? {
+        let privateKeyHex = privateKeyData.toHexString()
+        
+        for publicKey in publicKeys {
+            let publicKeyHex = publicKey.data.toHexString()
+            
+            if validatePrivateKeyForPublicKey(
+                privateKeyHex: privateKeyHex,
+                publicKeyHex: publicKeyHex,
+                keyType: publicKey.keyType,
+                isTestnet: isTestnet
+            ) {
+                return publicKey
+            }
+        }
+        
+        return nil
+    }
 }

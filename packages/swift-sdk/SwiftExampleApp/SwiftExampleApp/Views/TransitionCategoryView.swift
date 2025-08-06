@@ -33,9 +33,11 @@ struct TransitionCategoryView: View {
                 ("tokenMint", "Mint Tokens", "Create new tokens"),
                 ("tokenBurn", "Burn Tokens", "Destroy existing tokens"),
                 ("tokenTransfer", "Transfer Tokens", "Transfer tokens between identities"),
+                ("tokenClaim", "Claim Tokens", "Claim tokens from a distribution"),
                 ("tokenFreeze", "Freeze Tokens", "Freeze token transfers"),
                 ("tokenUnfreeze", "Unfreeze Tokens", "Unfreeze token transfers"),
-                ("tokenDestroyFrozen", "Destroy Frozen Tokens", "Destroy frozen tokens")
+                ("tokenDestroyFrozenFunds", "Destroy Frozen Tokens", "Destroy frozen tokens"),
+                ("tokenSetPrice", "Set Token Price", "Set or update token pricing")
             ]
         case .voting:
             return [

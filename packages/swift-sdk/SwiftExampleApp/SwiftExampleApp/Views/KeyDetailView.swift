@@ -8,11 +8,14 @@ struct KeyDetailView: View {
     @State private var isValidating = false
     @State private var validationError: String?
     @State private var showSuccessAlert = false
+    @State private var showForgetKeyAlert = false
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
     
     var hasPrivateKey: Bool {
-        KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
+        let result = KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
+        print("🔑 KeyDetailView: hasPrivateKey for key \(publicKey.id) = \(result)")
+        return result
     }
     
     var body: some View {
@@ -66,6 +69,11 @@ struct KeyDetailView: View {
                     Button(action: viewPrivateKey) {
                         Label("View Private Key", systemImage: "eye.fill")
                     }
+                    
+                    Button(action: { showForgetKeyAlert = true }) {
+                        Label("Forget Private Key", systemImage: "trash")
+                    }
+                    .foregroundColor(.red)
                 }
             } else {
                 Section("Add Private Key") {
@@ -110,6 +118,14 @@ struct KeyDetailView: View {
             }
         } message: {
             Text("Private key validated and stored successfully")
+        }
+        .alert("Forget Private Key?", isPresented: $showForgetKeyAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Forget", role: .destructive) {
+                forgetPrivateKey()
+            }
+        } message: {
+            Text("Are you sure you want to forget this private key? This action cannot be undone and you will need to re-enter the key to use it again.")
         }
     }
     
@@ -222,6 +238,17 @@ struct KeyDetailView: View {
             return privateKey.count == 32 // 256 bits
         case .eddsa25519Hash160:
             return privateKey.count == 32 // 256 bits
+        }
+    }
+    
+    private func forgetPrivateKey() {
+        // Remove from keychain
+        let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
+        
+        if removed {
+            // Update the persistent public key to clear the reference
+            appState.removePrivateKeyReference(identityId: identity.id, keyId: Int32(publicKey.id))
+            dismiss()
         }
     }
 }

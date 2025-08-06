@@ -163,7 +163,9 @@ final class PersistentContract {
     }
     
     func removeDocument(withId documentId: String) {
-        documents.removeAll { $0.documentId == documentId }
+        if let docIdData = Data.identifier(fromBase58: documentId) {
+            documents.removeAll { $0.id == docIdData }
+        }
         lastUpdated = Date()
     }
 }

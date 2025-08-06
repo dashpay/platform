@@ -25,6 +25,7 @@ final class PersistentTokenBalance {
     
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify) var identity: PersistentIdentity?
+    @Relationship(inverse: \PersistentToken.balances) var token: PersistentToken?
     
     // MARK: - Initialization
     init(

@@ -260,6 +260,18 @@ class AppState: ObservableObject {
         }
     }
     
+    func removePrivateKeyReference(identityId: Data, keyId: Int32) {
+        guard let dataManager = dataManager else { return }
+        
+        Task {
+            do {
+                try dataManager.removePrivateKeyReference(identityId: identityId, keyId: keyId)
+            } catch {
+                print("Error removing private key reference: \(error)")
+            }
+        }
+    }
+    
     func updateIdentityPublicKeys(id: Data, publicKeys: [IdentityPublicKey]) {
         print("🔵 updateIdentityPublicKeys called with \(publicKeys.count) keys for identity \(id.toHexString())")
         guard let dataManager = dataManager else { 

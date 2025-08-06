@@ -26,17 +26,29 @@ final class DataManager: ObservableObject {
             existingIdentity.alias = identity.alias
             existingIdentity.dpnsName = identity.dpnsName
             existingIdentity.isLocal = identity.isLocal
-            // Update private keys
-            existingIdentity.privateKeys.removeAll()
-            for (index, keyData) in identity.privateKeys.enumerated() {
-                // Store in keychain
-                if let keychainId = KeychainManager.shared.storePrivateKey(keyData, identityId: identity.id, keyIndex: Int32(index)) {
-                    let persistentPrivateKey = PersistentPrivateKey(
-                        identityId: identity.id,
-                        keyIndex: Int32(index),
-                        keychainIdentifier: keychainId
-                    )
-                    existingIdentity.privateKeys.append(persistentPrivateKey)
+            // Update public keys
+            existingIdentity.publicKeys.removeAll()
+            for publicKey in identity.publicKeys {
+                if let persistentKey = PersistentPublicKey.from(publicKey, identityId: identity.idString) {
+                    existingIdentity.addPublicKey(persistentKey)
+                }
+            }
+            
+            // Handle private keys - match them to their corresponding public keys using cryptographic validation
+            for privateKeyData in identity.privateKeys {
+                // Find which public key this private key corresponds to
+                if let matchingPublicKey = KeyValidation.matchPrivateKeyToPublicKeys(
+                    privateKeyData: privateKeyData,
+                    publicKeys: identity.publicKeys,
+                    isTestnet: currentNetwork == .testnet
+                ) {
+                    // Find the corresponding persistent public key
+                    if let persistentKey = existingIdentity.publicKeys.first(where: { $0.keyId == matchingPublicKey.id }) {
+                        // Store the private key for this specific public key
+                        if let keychainId = KeychainManager.shared.storePrivateKey(privateKeyData, identityId: identity.id, keyIndex: persistentKey.keyId) {
+                            persistentKey.privateKeyKeychainIdentifier = keychainId
+                        }
+                    }
                 }
             }
             
@@ -51,14 +63,6 @@ final class DataManager: ObservableObject {
                 existingIdentity.payoutPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(payoutKey, identityId: identity.id, keyType: .payout)
             }
             existingIdentity.lastUpdated = Date()
-            
-            // Update public keys
-            existingIdentity.publicKeys.removeAll()
-            for publicKey in identity.publicKeys {
-                if let persistentKey = PersistentPublicKey.from(publicKey, identityId: identity.idString) {
-                    existingIdentity.addPublicKey(persistentKey)
-                }
-            }
         } else {
             // Create new identity
             let persistentIdentity = PersistentIdentity.from(identity, network: currentNetwork.rawValue)
@@ -108,12 +112,16 @@ final class DataManager: ObservableObject {
         
         if let existingDocument = try modelContext.fetch(descriptor).first {
             // Update existing document
-            existingDocument.updateProperties(document.data)
+            let dataToStore = (try? JSONSerialization.data(withJSONObject: document.data, options: [])) ?? Data()
+            existingDocument.updateProperties(dataToStore)
             existingDocument.updateRevision(Int64(document.revision))
         } else {
             // Create new document
             let persistentDocument = PersistentDocument.from(document)
             modelContext.insert(persistentDocument)
+            
+            // Link to local identity if the owner is local
+            persistentDocument.linkToLocalIdentityIfNeeded(in: modelContext)
         }
         
         try modelContext.save()
@@ -299,5 +307,17 @@ final class DataManager: ObservableObject {
         let tokenBalanceCount = try modelContext.fetchCount(FetchDescriptor<PersistentTokenBalance>())
         
         return (identities: identityCount, documents: documentCount, contracts: contractCount, tokenBalances: tokenBalanceCount)
+    }
+    
+    /// Remove private key reference from a public key
+    func removePrivateKeyReference(identityId: Data, keyId: Int32) throws {
+        let predicate = PersistentIdentity.predicate(identityId: identityId)
+        let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
+        
+        if let identity = try modelContext.fetch(descriptor).first,
+           let publicKey = identity.publicKeys.first(where: { $0.keyId == keyId }) {
+            publicKey.privateKeyKeychainIdentifier = nil
+            try modelContext.save()
+        }
     }
 }

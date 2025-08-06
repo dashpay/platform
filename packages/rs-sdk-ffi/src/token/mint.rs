@@ -32,7 +32,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
     state_transition_creation_options: *const DashSDKStateTransitionCreationOptions,
 ) -> DashSDKResult {
     eprintln!("🟦 FFI TOKEN MINT: Function called");
-    
+
     // Validate parameters
     if sdk_handle.is_null()
         || transition_owner_id.is_null()
@@ -42,9 +42,15 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
     {
         eprintln!("❌ FFI TOKEN MINT: One or more required parameters is null");
         eprintln!("  - sdk_handle is null: {}", sdk_handle.is_null());
-        eprintln!("  - transition_owner_id is null: {}", transition_owner_id.is_null());
+        eprintln!(
+            "  - transition_owner_id is null: {}",
+            transition_owner_id.is_null()
+        );
         eprintln!("  - params is null: {}", params.is_null());
-        eprintln!("  - identity_public_key_handle is null: {}", identity_public_key_handle.is_null());
+        eprintln!(
+            "  - identity_public_key_handle is null: {}",
+            identity_public_key_handle.is_null()
+        );
         eprintln!("  - signer_handle is null: {}", signer_handle.is_null());
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
@@ -56,7 +62,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
     // SAFETY: We've verified all pointers are non-null above
     let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
-    let signer = unsafe { &*(signer_handle as *const crate::signer::IOSSigner) };
+    let signer = unsafe { &*(signer_handle as *const crate::signer::VTableSigner) };
     let params = unsafe { &*params };
 
     eprintln!("🟦 FFI TOKEN MINT: Converting transition owner ID from bytes");
@@ -66,13 +72,13 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
         Ok(id) => {
             eprintln!("✅ FFI TOKEN MINT: Minter ID: {}", id);
             id
-        },
+        }
         Err(e) => {
             eprintln!("❌ FFI TOKEN MINT: Invalid transition owner ID: {}", e);
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 format!("Invalid transition owner ID: {}", e),
-            ))
+            ));
         }
     };
 
@@ -84,9 +90,12 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
         params.serialized_contract_len,
     ) {
         Ok(result) => {
-            eprintln!("✅ FFI TOKEN MINT: Contract params validated, has_serialized_contract: {}", result);
+            eprintln!(
+                "✅ FFI TOKEN MINT: Contract params validated, has_serialized_contract: {}",
+                result
+            );
             result
-        },
+        }
         Err(e) => {
             eprintln!("❌ FFI TOKEN MINT: Contract validation error: {:?}", e);
             return DashSDKResult::error(e.into());
@@ -103,7 +112,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
             Ok(id) => {
                 eprintln!("✅ FFI TOKEN MINT: Recipient ID: {}", id);
                 Some(id)
-            },
+            }
             Err(e) => {
                 eprintln!("❌ FFI TOKEN MINT: Failed to parse recipient ID: {:?}", e);
                 return DashSDKResult::error(e.into());
@@ -121,25 +130,28 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
                 eprintln!("🟦 FFI TOKEN MINT: No note provided");
             }
             note
-        },
+        }
         Err(e) => {
             eprintln!("❌ FFI TOKEN MINT: Failed to parse note: {:?}", e);
             return DashSDKResult::error(e.into());
         }
     };
 
-    eprintln!("🟦 FFI TOKEN MINT: Token position: {}", params.token_position);
+    eprintln!(
+        "🟦 FFI TOKEN MINT: Token position: {}",
+        params.token_position
+    );
     eprintln!("🟦 FFI TOKEN MINT: Amount: {}", params.amount);
 
     eprintln!("🟦 FFI TOKEN MINT: Starting async block");
     let result: Result<MintResult, FFIError> = wrapper.runtime.block_on(async {
         eprintln!("🟦 FFI TOKEN MINT: Inside async block");
-        
+
         // Convert FFI types to Rust types
         let settings = crate::identity::convert_put_settings(put_settings);
         let creation_options = convert_state_transition_creation_options(state_transition_creation_options);
         let user_fee_increase = extract_user_fee_increase(put_settings);
-        
+
         eprintln!("🟦 FFI TOKEN MINT: Converted settings, user_fee_increase: {}", user_fee_increase);
 
         // Get the data contract either by fetching or deserializing
@@ -268,7 +280,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
         Ok(_mint_result) => {
             eprintln!("✅ FFI TOKEN MINT: Returning success result");
             DashSDKResult::success(std::ptr::null_mut())
-        },
+        }
         Err(e) => {
             eprintln!("❌ FFI TOKEN MINT: Returning error result: {:?}", e);
             DashSDKResult::error(e.into())

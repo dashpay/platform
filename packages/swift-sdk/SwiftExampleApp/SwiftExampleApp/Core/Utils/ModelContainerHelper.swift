@@ -17,7 +17,10 @@ public struct ModelContainerHelper {
             PersistentContract.self,
             PersistentDocument.self,
             PersistentTokenBalance.self,
-            PersistentDataContract.self
+            PersistentDataContract.self,
+            PersistentToken.self,
+            PersistentDocumentType.self,
+            PersistentTokenHistoryEvent.self
         ])
         
         let modelConfiguration = ModelConfiguration(

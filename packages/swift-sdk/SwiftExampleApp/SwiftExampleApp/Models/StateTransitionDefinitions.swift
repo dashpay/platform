@@ -397,15 +397,9 @@ struct TransitionDefinitions {
             description: "Burn tokens",
             inputs: [
                 TransitionInput(
-                    name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
-                    required: true
-                ),
-                TransitionInput(
-                    name: "tokenPosition",
-                    type: "number",
-                    label: "Token Contract Position",
+                    name: "token",
+                    type: "burnableToken",
+                    label: "Select Token",
                     required: true
                 ),
                 TransitionInput(
@@ -429,15 +423,9 @@ struct TransitionDefinitions {
             description: "Mint new tokens",
             inputs: [
                 TransitionInput(
-                    name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
-                    required: true
-                ),
-                TransitionInput(
-                    name: "tokenPosition",
-                    type: "number",
-                    label: "Token Contract Position",
+                    name: "token",
+                    type: "mintableToken",
+                    label: "Select Token",
                     required: true
                 ),
                 TransitionInput(
@@ -467,15 +455,9 @@ struct TransitionDefinitions {
             description: "Claim tokens from a distribution",
             inputs: [
                 TransitionInput(
-                    name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
-                    required: true
-                ),
-                TransitionInput(
-                    name: "tokenPosition",
-                    type: "number",
-                    label: "Token Contract Position",
+                    name: "token",
+                    type: "anyToken",
+                    label: "Select Token",
                     required: true
                 ),
                 TransitionInput(
@@ -503,15 +485,9 @@ struct TransitionDefinitions {
             description: "Set or update the price for direct token purchases",
             inputs: [
                 TransitionInput(
-                    name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
-                    required: true
-                ),
-                TransitionInput(
-                    name: "tokenPosition",
-                    type: "number",
-                    label: "Token Contract Position",
+                    name: "token",
+                    type: "anyToken",
+                    label: "Select Token",
                     required: true
                 ),
                 TransitionInput(
@@ -535,6 +511,120 @@ struct TransitionDefinitions {
                     name: "publicNote",
                     type: "text",
                     label: "Public Note",
+                    required: false
+                )
+            ]
+        ),
+        
+        "tokenFreeze": TransitionDefinition(
+            key: "tokenFreeze",
+            label: "Token Freeze",
+            description: "Freeze tokens for a specific identity",
+            inputs: [
+                TransitionInput(
+                    name: "token",
+                    type: "freezableToken",
+                    label: "Select Token",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "targetIdentityId",
+                    type: "text",
+                    label: "Target Identity ID",
+                    required: true,
+                    placeholder: "Identity ID to freeze tokens for"
+                ),
+                TransitionInput(
+                    name: "note",
+                    type: "text",
+                    label: "Note",
+                    required: false
+                )
+            ]
+        ),
+        
+        "tokenUnfreeze": TransitionDefinition(
+            key: "tokenUnfreeze",
+            label: "Token Unfreeze",
+            description: "Unfreeze tokens for a specific identity",
+            inputs: [
+                TransitionInput(
+                    name: "token",
+                    type: "freezableToken",
+                    label: "Select Token",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "targetIdentityId",
+                    type: "text",
+                    label: "Target Identity ID",
+                    required: true,
+                    placeholder: "Identity ID to unfreeze tokens for"
+                ),
+                TransitionInput(
+                    name: "note",
+                    type: "text",
+                    label: "Note",
+                    required: false
+                )
+            ]
+        ),
+        
+        "tokenDestroyFrozenFunds": TransitionDefinition(
+            key: "tokenDestroyFrozenFunds",
+            label: "Token Destroy Frozen Funds",
+            description: "Destroy frozen funds for a specific identity",
+            inputs: [
+                TransitionInput(
+                    name: "token",
+                    type: "freezableToken",
+                    label: "Select Token",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "frozenIdentityId",
+                    type: "text",
+                    label: "Frozen Identity ID",
+                    required: true,
+                    placeholder: "Identity ID with frozen tokens to destroy"
+                ),
+                TransitionInput(
+                    name: "note",
+                    type: "text",
+                    label: "Note",
+                    required: false
+                )
+            ]
+        ),
+        
+        "tokenTransfer": TransitionDefinition(
+            key: "tokenTransfer",
+            label: "Token Transfer",
+            description: "Transfer tokens to another identity",
+            inputs: [
+                TransitionInput(
+                    name: "token",
+                    type: "anyToken",
+                    label: "Select Token",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "recipientId",
+                    type: "text",
+                    label: "Recipient Identity ID",
+                    required: true,
+                    placeholder: "Identity ID to transfer tokens to"
+                ),
+                TransitionInput(
+                    name: "amount",
+                    type: "text",
+                    label: "Amount to Transfer",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "note",
+                    type: "text",
+                    label: "Note",
                     required: false
                 )
             ]

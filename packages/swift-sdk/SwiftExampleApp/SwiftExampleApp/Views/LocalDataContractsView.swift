@@ -82,11 +82,30 @@ struct DataContractRow: View {
     let contract: PersistentDataContract
     @State private var showingDetails = false
     
+    var displayName: String {
+        // Check if this is a token-only contract
+        if let tokens = contract.tokens,
+           tokens.count == 1,
+           let documentTypes = contract.documentTypes,
+           documentTypes.isEmpty,
+           let token = tokens.first {
+            // Use the token's singular form for display
+            if let singularName = token.getSingularForm(languageCode: "en") {
+                return "\(singularName) Token Contract"
+            } else {
+                return "Token Contract"
+            }
+        }
+        
+        // Otherwise use the stored name
+        return contract.name
+    }
+    
     var body: some View {
         Button(action: { showingDetails = true }) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(contract.name)
+                    Text(displayName)
                         .font(.headline)
                         .foregroundColor(.primary)
                     Spacer()
@@ -335,11 +354,38 @@ struct LoadDataContractView: View {
             // Determine name
             var finalName = contractName.trimmingCharacters(in: .whitespacesAndNewlines)
             if finalName.isEmpty {
-                // Try to extract name from documents
-                if let documents = contractData["documents"] as? [String: Any],
-                   let firstDocType = documents.keys.first {
+                // Check if it's a token-only contract
+                let documents = contractData["documents"] as? [String: Any] ?? contractData["documentSchemas"] as? [String: Any] ?? [:]
+                let tokens = contractData["tokens"] as? [String: Any] ?? [:]
+                
+                if documents.isEmpty && tokens.count == 1,
+                   let tokenData = tokens.values.first as? [String: Any] {
+                    // Extract token name
+                    var tokenName: String? = nil
+                    
+                    // Try to get localized name first
+                    if let conventions = tokenData["conventions"] as? [String: Any],
+                       let localizations = conventions["localizations"] as? [String: Any],
+                       let enLocalization = localizations["en"] as? [String: Any],
+                       let singularForm = enLocalization["singularForm"] as? String {
+                        tokenName = singularForm
+                    }
+                    
+                    // Fallback to description or generic name
+                    if tokenName == nil {
+                        tokenName = tokenData["description"] as? String ?? tokenData["name"] as? String
+                    }
+                    
+                    if let tokenName = tokenName {
+                        finalName = "\(tokenName) Token Contract"
+                    } else {
+                        finalName = "Token Contract"
+                    }
+                } else if let firstDocType = documents.keys.first {
+                    // Has documents
                     finalName = "Contract with \(firstDocType)"
                 } else {
+                    // Fallback
                     finalName = "Contract \(trimmedId.prefix(8))..."
                 }
             }
@@ -352,6 +398,16 @@ struct LoadDataContractView: View {
             )
             
             modelContext.insert(persistentContract)
+            try modelContext.save()
+            
+            // Parse tokens and document types from the contract
+            try DataContractParser.parseDataContract(
+                contractData: contractData,
+                contractId: contractIdData,
+                modelContext: modelContext
+            )
+            
+            // Save again to persist relationships
             try modelContext.save()
             
             await MainActor.run {

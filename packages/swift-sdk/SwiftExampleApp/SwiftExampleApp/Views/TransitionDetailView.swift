@@ -306,6 +306,15 @@ struct TransitionDetailView: View {
         case "tokenDestroyFrozenFunds":
             return try await executeTokenDestroyFrozenFunds(sdk: sdk)
             
+        case "tokenClaim":
+            return try await executeTokenClaim(sdk: sdk)
+            
+        case "tokenTransfer":
+            return try await executeTokenTransfer(sdk: sdk)
+            
+        case "tokenSetPrice":
+            return try await executeTokenSetPrice(sdk: sdk)
+            
         default:
             throw SDKError.notImplemented("State transition '\(transitionKey)' not yet implemented")
         }
@@ -560,17 +569,24 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("No identity selected")
         }
         
-        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
-            throw SDKError.invalidParameter("Contract ID is required")
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
         }
         
-        guard let recipientIdString = formInputs["recipientId"], !recipientIdString.isEmpty else {
-            throw SDKError.invalidParameter("Recipient identity ID is required")
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
         }
+        
+        let contractId = String(components[0])
         
         guard let amountString = formInputs["amount"], !amountString.isEmpty else {
             throw SDKError.invalidParameter("Amount is required")
         }
+        
+        // The issuedToIdentityId is optional - if not provided, tokens go to the contract owner
+        let recipientIdString = formInputs["issuedToIdentityId"]?.isEmpty == false ? formInputs["issuedToIdentityId"] : nil
         
         // Parse amount based on whether it contains a decimal
         let amount: UInt64
@@ -589,15 +605,24 @@ struct TransitionDetailView: View {
             amount = intValue
         }
         
-        // Find the minting key (usually the first key with OWNER purpose)
-        // For tokens, we typically need an OWNER key to mint
+        // Find the minting key - for tokens, we need a critical security level key
+        // First try to find a critical key with OWNER purpose, then fall back to critical AUTHENTICATION
+        
+        // Debug: log all available keys
+        print("🔑 TOKEN MINT: Available keys for identity:")
+        for key in identity.publicKeys {
+            print("  - Key \(key.id): purpose=\(key.purpose), securityLevel=\(key.securityLevel)")
+        }
+        
         let mintingKey = identity.publicKeys.first { key in
-            key.purpose == .owner || key.purpose == .authentication
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
         }
         
         guard let mintingKey = mintingKey else {
-            throw SDKError.invalidParameter("No suitable key found for minting. Need OWNER or AUTHENTICATION key.")
+            throw SDKError.invalidParameter("No suitable key found for minting. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
         }
+        
+        print("🔑 TOKEN MINT: Selected key \(mintingKey.id) with purpose \(mintingKey.purpose) and security level \(mintingKey.securityLevel)")
         
         // Get the private key from keychain
         guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
@@ -632,13 +657,14 @@ struct TransitionDetailView: View {
             revision: 0
         )
         
-        let note = formInputs["note"]?.isEmpty == false ? formInputs["note"] : nil
+        let note = formInputs["publicNote"]?.isEmpty == false ? formInputs["publicNote"] : nil
         
         let result = try await sdk.tokenMint(
             contractId: contractId,
             recipientId: recipientIdString,
             amount: amount,
             ownerIdentity: dppIdentity,
+            keyId: mintingKey.id,
             signer: OpaquePointer(signer)!,
             note: note
         )
@@ -652,9 +678,17 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("No identity selected")
         }
         
-        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
-            throw SDKError.invalidParameter("Contract ID is required")
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
         }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
         
         guard let amountString = formInputs["amount"], !amountString.isEmpty else {
             throw SDKError.invalidParameter("Amount is required")
@@ -677,14 +711,14 @@ struct TransitionDetailView: View {
             amount = intValue
         }
         
-        // Find the burning key (usually the first key with OWNER purpose)
-        // For tokens, we typically need an OWNER key to burn
+        // Find the burning key - for tokens, we need a critical security level key
+        // First try to find a critical key with OWNER purpose, then fall back to critical AUTHENTICATION
         let burningKey = identity.publicKeys.first { key in
-            key.purpose == .owner || key.purpose == .authentication
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
         }
         
         guard let burningKey = burningKey else {
-            throw SDKError.invalidParameter("No suitable key found for burning. Need OWNER or AUTHENTICATION key.")
+            throw SDKError.invalidParameter("No suitable key found for burning. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
         }
         
         // Get the private key from keychain
@@ -726,6 +760,7 @@ struct TransitionDetailView: View {
             contractId: contractId,
             amount: amount,
             ownerIdentity: dppIdentity,
+            keyId: burningKey.id,
             signer: OpaquePointer(signer)!,
             note: note
         )
@@ -739,22 +774,30 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("No identity selected")
         }
         
-        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
-            throw SDKError.invalidParameter("Contract ID is required")
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
         }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
         
         guard let targetIdentityId = formInputs["targetIdentityId"], !targetIdentityId.isEmpty else {
             throw SDKError.invalidParameter("Target identity ID is required")
         }
         
-        // Find the freezing key (usually the first key with OWNER purpose)
-        // For tokens, we typically need an OWNER key to freeze
+        // Find the freezing key - for tokens, we need a critical security level key
+        // First try to find a critical key with OWNER purpose, then fall back to critical AUTHENTICATION
         let freezingKey = identity.publicKeys.first { key in
-            key.purpose == .owner || key.purpose == .authentication
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
         }
         
         guard let freezingKey = freezingKey else {
-            throw SDKError.invalidParameter("No suitable key found for freezing. Need OWNER or AUTHENTICATION key.")
+            throw SDKError.invalidParameter("No suitable key found for freezing. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
         }
         
         // Get the private key from keychain
@@ -796,6 +839,7 @@ struct TransitionDetailView: View {
             contractId: contractId,
             targetIdentityId: targetIdentityId,
             ownerIdentity: dppIdentity,
+            keyId: freezingKey.id,
             signer: OpaquePointer(signer)!,
             note: note
         )
@@ -804,11 +848,423 @@ struct TransitionDetailView: View {
     }
     
     private func executeTokenUnfreeze(sdk: SDK) async throws -> Any {
-        throw SDKError.notImplemented("Token unfreeze not yet implemented")
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
+        }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
+        
+        guard let targetIdentityId = formInputs["targetIdentityId"], !targetIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("Target identity ID is required")
+        }
+        
+        // Find the unfreezing key - for tokens, we need a critical security level key
+        // First try to find a critical key with OWNER purpose, then fall back to critical AUTHENTICATION
+        let unfreezingKey = identity.publicKeys.first { key in
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
+        }
+        
+        guard let unfreezingKey = unfreezingKey else {
+            throw SDKError.invalidParameter("No suitable key found for unfreezing. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: identity.id,
+            keyIndex: Int32(unfreezingKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for unfreezing key #\(unfreezingKey.id). Please add the private key first.")
+        }
+        
+        // Create signer
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signerHandle = signerResult.data else {
+            let errorString = signerResult.error?.pointee.message != nil ?
+                String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+            dash_sdk_error_free(signerResult.error)
+            throw SDKError.internalError(errorString)
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signerHandle))
+        }
+        
+        // Use the DPPIdentity for unfreezing
+        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+            id: identity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+            balance: identity.balance,
+            revision: 0
+        )
+        
+        let result = try await sdk.tokenUnfreeze(
+            contractId: contractId,
+            targetIdentityId: targetIdentityId,
+            ownerIdentity: dppIdentity,
+            keyId: unfreezingKey.id,
+            signer: OpaquePointer(signerHandle)!,
+            note: formInputs["note"]
+        )
+        
+        return result
     }
     
     private func executeTokenDestroyFrozenFunds(sdk: SDK) async throws -> Any {
-        throw SDKError.notImplemented("Token destroy frozen funds not yet implemented")
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
+        }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
+        
+        guard let frozenIdentityId = formInputs["frozenIdentityId"], !frozenIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("Frozen identity ID is required")
+        }
+        
+        // Find the destroy frozen funds key - for tokens, we need a critical security level key
+        // First try to find a critical key with OWNER purpose, then fall back to critical AUTHENTICATION
+        let destroyKey = identity.publicKeys.first { key in
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
+        }
+        
+        guard let destroyKey = destroyKey else {
+            throw SDKError.invalidParameter("No suitable key found for destroying frozen funds. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: identity.id,
+            keyIndex: Int32(destroyKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for destroy key #\(destroyKey.id). Please add the private key first.")
+        }
+        
+        // Create signer
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signerHandle = signerResult.data else {
+            let errorString = signerResult.error?.pointee.message != nil ?
+                String(cString: signerResult.error!.pointee.message) : "Failed to create signer"
+            dash_sdk_error_free(signerResult.error)
+            throw SDKError.internalError(errorString)
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signerHandle))
+        }
+        
+        // Use the DPPIdentity for destroying frozen funds
+        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+            id: identity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+            balance: identity.balance,
+            revision: 0
+        )
+        
+        let result = try await sdk.tokenDestroyFrozenFunds(
+            contractId: contractId,
+            frozenIdentityId: frozenIdentityId,
+            ownerIdentity: dppIdentity,
+            keyId: destroyKey.id,
+            signer: OpaquePointer(signerHandle)!,
+            note: formInputs["note"]
+        )
+        
+        return result
+    }
+    
+    private func executeTokenClaim(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
+        }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
+        
+        guard let distributionType = formInputs["distributionType"], !distributionType.isEmpty else {
+            throw SDKError.invalidParameter("Distribution type is required")
+        }
+        
+        // Find the claiming key - for tokens, we need a critical security level key
+        let claimingKey = identity.publicKeys.first { key in
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
+        }
+        
+        guard let claimingKey = claimingKey else {
+            throw SDKError.invalidParameter("No suitable key found for claiming. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: identity.id,
+            keyIndex: Int32(claimingKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for claiming key #\(claimingKey.id). Please add the private key first.")
+        }
+        
+        // Create signer using the same pattern as other token operations
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the DPPIdentity for claiming
+        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+            id: identity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+            balance: identity.balance,
+            revision: 0
+        )
+        
+        let note = formInputs["publicNote"]?.isEmpty == false ? formInputs["publicNote"] : nil
+        
+        let result = try await sdk.tokenClaim(
+            contractId: contractId,
+            distributionType: distributionType,
+            ownerIdentity: dppIdentity,
+            keyId: claimingKey.id,
+            signer: OpaquePointer(signer)!,
+            note: note
+        )
+        
+        return result
+    }
+    
+    private func executeTokenTransfer(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
+        }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
+        
+        guard let recipientId = formInputs["recipientId"], !recipientId.isEmpty else {
+            throw SDKError.invalidParameter("Recipient identity ID is required")
+        }
+        
+        guard let amountString = formInputs["amount"], !amountString.isEmpty else {
+            throw SDKError.invalidParameter("Amount is required")
+        }
+        
+        // Parse amount based on whether it contains a decimal
+        let amount: UInt64
+        if amountString.contains(".") {
+            // Handle decimal input (e.g., "1.5" tokens)
+            guard let doubleValue = Double(amountString) else {
+                throw SDKError.invalidParameter("Invalid amount format")
+            }
+            // Convert to smallest unit (assuming 8 decimal places like Dash)
+            amount = UInt64(doubleValue * 100_000_000)
+        } else {
+            // Handle integer input
+            guard let intValue = UInt64(amountString) else {
+                throw SDKError.invalidParameter("Invalid amount format")
+            }
+            amount = intValue
+        }
+        
+        // Find the transfer key - for tokens, we need a critical security level key
+        let transferKey = identity.publicKeys.first { key in
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
+        }
+        
+        guard let transferKey = transferKey else {
+            throw SDKError.invalidParameter("No suitable key found for transfer. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: identity.id,
+            keyIndex: Int32(transferKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for transfer key #\(transferKey.id). Please add the private key first.")
+        }
+        
+        // Create signer using the same pattern as other token operations
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the DPPIdentity for transfer
+        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+            id: identity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+            balance: identity.balance,
+            revision: 0
+        )
+        
+        let note = formInputs["note"]?.isEmpty == false ? formInputs["note"] : nil
+        
+        let result = try await sdk.tokenTransfer(
+            contractId: contractId,
+            recipientId: recipientId,
+            amount: amount,
+            ownerIdentity: dppIdentity,
+            keyId: transferKey.id,
+            signer: OpaquePointer(signer)!,
+            note: note
+        )
+        
+        return result
+    }
+    
+    private func executeTokenSetPrice(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // Parse the token selection (format: "contractId:position")
+        guard let tokenSelection = formInputs["token"], !tokenSelection.isEmpty else {
+            throw SDKError.invalidParameter("No token selected")
+        }
+        
+        let components = tokenSelection.split(separator: ":")
+        guard components.count == 2 else {
+            throw SDKError.invalidParameter("Invalid token selection format")
+        }
+        
+        let contractId = String(components[0])
+        
+        guard let priceType = formInputs["priceType"], !priceType.isEmpty else {
+            throw SDKError.invalidParameter("Price type is required")
+        }
+        
+        // Price data is optional - empty means remove pricing
+        let priceData = formInputs["priceData"]?.isEmpty == false ? formInputs["priceData"] : nil
+        
+        // Find the pricing key - for tokens, we need a critical security level key
+        let pricingKey = identity.publicKeys.first { key in
+            key.securityLevel == .critical && (key.purpose == .owner || key.purpose == .authentication)
+        }
+        
+        guard let pricingKey = pricingKey else {
+            throw SDKError.invalidParameter("No suitable key found for setting price. Need a CRITICAL security level key with OWNER or AUTHENTICATION purpose.")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: identity.id,
+            keyIndex: Int32(pricingKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for pricing key #\(pricingKey.id). Please add the private key first.")
+        }
+        
+        // Create signer using the same pattern as other token operations
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the DPPIdentity for setting price
+        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+            id: identity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+            balance: identity.balance,
+            revision: 0
+        )
+        
+        let note = formInputs["publicNote"]?.isEmpty == false ? formInputs["publicNote"] : nil
+        
+        let result = try await sdk.tokenSetPrice(
+            contractId: contractId,
+            pricingType: priceType,
+            priceData: priceData,
+            ownerIdentity: dppIdentity,
+            keyId: pricingKey.id,
+            signer: OpaquePointer(signer)!,
+            note: note
+        )
+        
+        return result
     }
     
     // MARK: - Helper Functions

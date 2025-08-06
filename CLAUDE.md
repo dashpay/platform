@@ -135,6 +135,8 @@ Platform uses data contracts to define application data schemas:
 
 See [packages/swift-sdk/BUILD_GUIDE_FOR_AI.md](packages/swift-sdk/BUILD_GUIDE_FOR_AI.md) for detailed instructions on building the iOS components.
 
+For SwiftExampleApp-specific guidance including token querying and data models, see [packages/swift-sdk/SwiftExampleApp/CLAUDE.md](packages/swift-sdk/SwiftExampleApp/CLAUDE.md).
+
 Quick build commands:
 ```bash
 # Build unified iOS framework (includes Core + Platform)

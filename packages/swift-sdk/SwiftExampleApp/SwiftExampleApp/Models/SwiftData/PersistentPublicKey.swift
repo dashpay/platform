@@ -19,9 +19,17 @@ final class PersistentPublicKey {
     // MARK: - Contract Bounds
     var contractBoundsData: Data?
     
+    // MARK: - Private Key Reference (optional)
+    var privateKeyKeychainIdentifier: String?
+    
     // MARK: - Metadata
     var identityId: String
     var createdAt: Date
+    var lastAccessed: Date?
+    
+    // MARK: - Relationships
+    @Relationship(inverse: \PersistentIdentity.publicKeys)
+    var identity: PersistentIdentity?
     
     // MARK: - Initialization
     init(
@@ -49,6 +57,41 @@ final class PersistentPublicKey {
         }
         self.identityId = identityId
         self.createdAt = Date()
+    }
+    
+    // MARK: - Private Key Methods
+    /// Check if this public key has an associated private key
+    var hasPrivateKey: Bool {
+        privateKeyKeychainIdentifier != nil && isPrivateKeyAvailable
+    }
+    
+    /// Check if the private key is still available in keychain
+    var isPrivateKeyAvailable: Bool {
+        guard let keychainId = privateKeyKeychainIdentifier else { return false }
+        return KeychainManager.shared.hasPrivateKey(identityId: Data.identifier(fromBase58: identityId) ?? Data(), keyIndex: keyId)
+    }
+    
+    /// Retrieve the private key data from keychain
+    func getPrivateKeyData() -> Data? {
+        guard let identityData = Data.identifier(fromBase58: identityId) else { return nil }
+        lastAccessed = Date()
+        return KeychainManager.shared.retrievePrivateKey(identityId: identityData, keyIndex: keyId)
+    }
+    
+    /// Store a private key for this public key
+    func setPrivateKey(_ privateKeyData: Data) {
+        guard let identityData = Data.identifier(fromBase58: identityId) else { return }
+        if let keychainId = KeychainManager.shared.storePrivateKey(privateKeyData, identityId: identityData, keyIndex: keyId) {
+            self.privateKeyKeychainIdentifier = keychainId
+            self.lastAccessed = Date()
+        }
+    }
+    
+    /// Remove the private key from keychain
+    func removePrivateKey() {
+        guard let identityData = Data.identifier(fromBase58: identityId) else { return }
+        KeychainManager.shared.deletePrivateKey(identityId: identityData, keyIndex: keyId)
+        self.privateKeyKeychainIdentifier = nil
     }
     
     // MARK: - Computed Properties

@@ -107,8 +107,8 @@ public class SDK {
         }
         
         config.skip_asset_lock_proof_verification = false
-        config.request_retry_count = 3
-        config.request_timeout_ms = 30000 // 30 seconds
+        config.request_retry_count = 1
+        config.request_timeout_ms = 8000 // 8 seconds
         
         // Create SDK with trusted setup
         print("🔵 SDK.init: Creating SDK with trusted setup...")
