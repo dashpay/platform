@@ -60,9 +60,8 @@ fn setup_application_logging(
         &std::env::var("RUST_LOG").unwrap_or_else(|_| "rs_dapi=info,warn".to_string())
     };
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new(env_filter))
-        .map_err(|e| format!("Invalid log filter: {}", e))?;
+    let env_filter =
+        EnvFilter::try_new(env_filter).map_err(|e| format!("Invalid log filter: {}", e))?;
 
     let registry = Registry::default().with(env_filter);
 
