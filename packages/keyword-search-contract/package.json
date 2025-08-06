@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/keyword-search-contract",
-  "version": "2.1.0-dev.1",
+  "version": "2.1.0-dev.2",
   "description": "A contract that allows searching for contracts",
   "scripts": {
     "lint": "eslint .",
