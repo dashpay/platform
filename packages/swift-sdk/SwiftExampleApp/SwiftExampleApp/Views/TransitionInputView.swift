@@ -8,6 +8,12 @@ struct TransitionInputView: View {
     let onSpecialAction: (String) -> Void
     
     @Query private var dataContracts: [PersistentDataContract]
+    @Query private var contracts: [PersistentContract]
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    // State for dynamic selections
+    @State private var selectedContractId: String = ""
+    @State private var selectedDocumentType: String = ""
     
     // Computed property to get mintable tokens
     var mintableTokens: [(token: PersistentToken, contract: PersistentDataContract)] {
@@ -152,6 +158,18 @@ struct TransitionInputView: View {
             case "anyToken":
                 tokenSelector(tokens: allTokens, emptyMessage: "No tokens available")
                 
+            case "contractPicker":
+                contractPicker()
+                
+            case "documentTypePicker":
+                documentTypePicker()
+                
+            case "identityPicker":
+                identityPicker()
+                
+            case "documentPicker":
+                documentPicker()
+                
             default:
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -210,5 +228,128 @@ struct TransitionInputView: View {
         
         // Otherwise use the stored name
         return contract.name
+    }
+    
+    // MARK: - New Picker Components
+    
+    @ViewBuilder
+    private func contractPicker() -> some View {
+        if contracts.isEmpty {
+            Text("No contracts available")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+        } else {
+            Picker("Select Contract", selection: $value) {
+                Text("Select a contract...").tag("")
+                ForEach(contracts, id: \.contractId) { contract in
+                    Text(contract.name)
+                        .tag(contract.contractId)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+            .padding()
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(8)
+            .onChange(of: value) { newValue in
+                selectedContractId = newValue
+                // Notify parent to update related fields
+                onSpecialAction("contractSelected:\(newValue)")
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func documentTypePicker() -> some View {
+        // Get the selected contract from parent's form data
+        let contractId = input.placeholder ?? selectedContractId
+        
+        if contractId.isEmpty {
+            Text("Please select a contract first")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+        } else if let contract = contracts.first(where: { $0.contractId == contractId }) {
+            let docTypes = contract.documentTypes
+            if docTypes.isEmpty {
+                Text("No document types in selected contract")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+            } else {
+                Picker("Select Document Type", selection: $value) {
+                    Text("Select a type...").tag("")
+                    ForEach(docTypes, id: \.self) { docType in
+                        Text(docType).tag(docType)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(8)
+                .onChange(of: value) { newValue in
+                    selectedDocumentType = newValue
+                    // Notify parent to update schema
+                    onSpecialAction("documentTypeSelected:\(newValue)")
+                }
+            }
+        } else {
+            Text("Invalid contract selected")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(8)
+        }
+    }
+    
+    @ViewBuilder
+    private func identityPicker() -> some View {
+        let identities = appState.platformState.identities
+        
+        if identities.isEmpty {
+            Text("No identities available")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+        } else {
+            Picker("Select Identity", selection: $value) {
+                Text("Select an identity...").tag("")
+                ForEach(identities, id: \.idString) { identity in
+                    Text(identity.displayName)
+                        .tag(identity.idString)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+            .padding()
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(8)
+        }
+    }
+    
+    @ViewBuilder
+    private func documentPicker() -> some View {
+        // This would need contract and document type context
+        // For now, just show a text field with placeholder
+        VStack(alignment: .leading, spacing: 4) {
+            TextField(input.placeholder ?? "Enter document ID", text: $value)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            Text("Document search coming soon")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
     }
 }

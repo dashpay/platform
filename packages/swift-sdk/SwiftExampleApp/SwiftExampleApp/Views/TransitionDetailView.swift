@@ -16,6 +16,8 @@ struct TransitionDetailView: View {
     // Dynamic form inputs
     @State private var formInputs: [String: String] = [:]
     @State private var checkboxInputs: [String: Bool] = [:]
+    @State private var selectedContractId: String = ""
+    @State private var selectedDocumentType: String = ""
     
     var needsIdentitySelection: Bool {
         transitionKey != "identityCreate"
@@ -44,11 +46,12 @@ struct TransitionDetailView: View {
                     VStack(spacing: 16) {
                         ForEach(transition.inputs, id: \.name) { input in
                             TransitionInputView(
-                                input: input,
+                                input: enrichedInput(for: input),
                                 value: binding(for: input),
                                 checkboxValue: checkboxBinding(for: input),
                                 onSpecialAction: handleSpecialAction
                             )
+                            .environmentObject(appState)
                         }
                     }
                     .padding(.horizontal)
@@ -215,21 +218,37 @@ struct TransitionDetailView: View {
     }
     
     private func handleSpecialAction(_ action: String) {
-        switch action {
-        case "generateTestSeed":
-            // Generate a test seed phrase
-            formInputs["seedPhrase"] = generateTestSeedPhrase()
-        case "fetchDocumentSchema":
-            // TODO: Fetch document schema
-            break
-        case "loadExistingDocument":
-            // TODO: Load existing document
-            break
-        case "fetchContestedResources":
-            // TODO: Fetch contested resources
-            break
-        default:
-            break
+        if action.starts(with: "contractSelected:") {
+            let contractId = String(action.dropFirst("contractSelected:".count))
+            selectedContractId = contractId
+            formInputs["contractId"] = contractId
+            // Clear document type when contract changes
+            selectedDocumentType = ""
+            formInputs["documentType"] = ""
+        } else if action.starts(with: "documentTypeSelected:") {
+            let docType = String(action.dropFirst("documentTypeSelected:".count))
+            selectedDocumentType = docType
+            formInputs["documentType"] = docType
+            // Fetch schema for the selected document type
+            fetchDocumentSchema(contractId: selectedContractId, documentType: docType)
+        } else {
+            switch action {
+            case "generateTestSeed":
+                // Generate a test seed phrase
+                formInputs["seedPhrase"] = generateTestSeedPhrase()
+            case "fetchDocumentSchema":
+                if !selectedContractId.isEmpty && !selectedDocumentType.isEmpty {
+                    fetchDocumentSchema(contractId: selectedContractId, documentType: selectedDocumentType)
+                }
+            case "loadExistingDocument":
+                // TODO: Load existing document
+                break
+            case "fetchContestedResources":
+                // TODO: Fetch contested resources
+                break
+            default:
+                break
+            }
         }
     }
     
@@ -542,7 +561,7 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("No identity selected")
         }
         
-        guard let contractId = formInputs["dataContractId"], !contractId.isEmpty else {
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
             throw SDKError.invalidParameter("Data contract ID is required")
         }
         
@@ -550,7 +569,7 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Document type is required")
         }
         
-        guard let propertiesJson = formInputs["properties"], !propertiesJson.isEmpty else {
+        guard let propertiesJson = formInputs["documentFields"], !propertiesJson.isEmpty else {
             throw SDKError.invalidParameter("Document properties are required")
         }
         
@@ -560,7 +579,156 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Invalid JSON in properties field")
         }
         
-        throw SDKError.notImplemented("Document creation not yet implemented")
+        // Find a key for signing - prefer authentication or transfer key
+        let signingKey = ownerIdentity.publicKeys.first { key in
+            key.purpose == .authentication || key.purpose == .transfer
+        }
+        
+        guard let signingKey = signingKey else {
+            throw SDKError.invalidParameter("No suitable key found for signing")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: ownerIdentity.id,
+            keyIndex: Int32(signingKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for key #\(signingKey.id). Please add the private key first.")
+        }
+        
+        // Create signer
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the DPPIdentity for document creation
+        let dppIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+            id: ownerIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: ownerIdentity.balance,
+            revision: 0
+        )
+        
+        let result = try await sdk.documentCreate(
+            contractId: contractId,
+            documentType: documentType,
+            ownerIdentity: dppIdentity,
+            properties: properties,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return result
+    }
+    
+    private func executeDocumentReplace(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+            throw SDKError.invalidParameter("Document ID is required")
+        }
+        
+        guard let propertiesJson = formInputs["documentFields"], !propertiesJson.isEmpty else {
+            throw SDKError.invalidParameter("Document properties are required")
+        }
+        
+        // Parse the JSON properties
+        guard let propertiesData = propertiesJson.data(using: .utf8),
+              let _ = try? JSONSerialization.jsonObject(with: propertiesData) as? [String: Any] else {
+            throw SDKError.invalidParameter("Invalid JSON in properties field")
+        }
+        
+        throw SDKError.notImplemented("Document replace is prepared but FFI bindings not yet exposed to Swift")
+    }
+    
+    private func executeDocumentDelete(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+            throw SDKError.invalidParameter("Document ID is required")
+        }
+        
+        throw SDKError.notImplemented("Document delete is prepared but FFI bindings not yet exposed to Swift")
+    }
+    
+    private func executeDocumentTransfer(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+            throw SDKError.invalidParameter("Document ID is required")
+        }
+        
+        guard let recipientId = formInputs["recipientId"], !recipientId.isEmpty else {
+            throw SDKError.invalidParameter("Recipient identity is required")
+        }
+        
+        throw SDKError.notImplemented("Document transfer is prepared but FFI bindings not yet exposed to Swift")
+    }
+    
+    private func executeDocumentPurchase(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+            throw SDKError.invalidParameter("Document ID is required")
+        }
+        
+        guard let priceString = formInputs["price"],
+              let _ = UInt64(priceString) else {
+            throw SDKError.invalidParameter("Invalid price")
+        }
+        
+        throw SDKError.notImplemented("Document purchase is prepared but FFI bindings not yet exposed to Swift")
     }
     
     private func executeTokenMint(sdk: SDK) async throws -> Any {
@@ -1268,6 +1436,49 @@ struct TransitionDetailView: View {
     }
     
     // MARK: - Helper Functions
+    
+    private func enrichedInput(for input: TransitionInput) -> TransitionInput {
+        // For document type picker, pass the selected contract ID in placeholder
+        if input.name == "documentType" && input.type == "documentTypePicker" {
+            return TransitionInput(
+                name: input.name,
+                type: input.type,
+                label: input.label,
+                required: input.required,
+                placeholder: selectedContractId.isEmpty ? formInputs["contractId"] : selectedContractId,
+                help: input.help,
+                defaultValue: input.defaultValue,
+                options: input.options,
+                action: input.action,
+                min: input.min,
+                max: input.max
+            )
+        }
+        return input
+    }
+    
+    private func fetchDocumentSchema(contractId: String, documentType: String) {
+        // TODO: Implement fetching schema and generating dynamic form
+        // For now, provide a template based on common patterns
+        var schemaTemplate = "{\n"
+        
+        // Common document type templates
+        switch documentType.lowercased() {
+        case "note", "message":
+            schemaTemplate += "  \"message\": \"Enter your message here\"\n"
+        case "profile", "user":
+            schemaTemplate += "  \"displayName\": \"John Doe\",\n"
+            schemaTemplate += "  \"bio\": \"About me...\"\n"
+        case "post":
+            schemaTemplate += "  \"title\": \"Post title\",\n"
+            schemaTemplate += "  \"content\": \"Post content...\"\n"
+        default:
+            schemaTemplate += "  // Add document fields here\n"
+        }
+        
+        schemaTemplate += "}"
+        formInputs["documentFields"] = schemaTemplate
+    }
     
     private func normalizeIdentityId(_ identityId: String) -> String {
         // Remove any prefix

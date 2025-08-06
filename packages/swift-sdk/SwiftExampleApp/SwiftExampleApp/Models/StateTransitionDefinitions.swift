@@ -91,10 +91,10 @@ struct TransitionDefinitions {
             inputs: [
                 TransitionInput(
                     name: "toIdentityId",
-                    type: "text",
-                    label: "Recipient Identity ID",
+                    type: "identityPicker",
+                    label: "Recipient Identity",
                     required: true,
-                    placeholder: "Enter recipient identity ID"
+                    placeholder: "Select recipient identity"
                 ),
                 TransitionInput(
                     name: "amount",
@@ -231,31 +231,25 @@ struct TransitionDefinitions {
             inputs: [
                 TransitionInput(
                     name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
+                    type: "contractPicker",
+                    label: "Data Contract",
                     required: true,
-                    placeholder: "Enter data contract ID"
+                    placeholder: "Select a contract"
                 ),
                 TransitionInput(
                     name: "documentType",
-                    type: "text",
+                    type: "documentTypePicker",
                     label: "Document Type",
                     required: true,
-                    placeholder: "e.g., 'note'"
-                ),
-                TransitionInput(
-                    name: "fetchSchema",
-                    type: "button",
-                    label: "Fetch Schema",
-                    required: false,
-                    action: "fetchDocumentSchema"
+                    placeholder: "" // Will be filled with selected contractId
                 ),
                 TransitionInput(
                     name: "documentFields",
                     type: "json",
                     label: "Document Data",
                     required: true,
-                    placeholder: "{\n  \"message\": \"Hello World\"\n}"
+                    placeholder: "{\n  \"message\": \"Hello World\"\n}",
+                    help: "Enter the document data as JSON. The required fields depend on the selected document type."
                 )
             ]
         ),
@@ -267,35 +261,31 @@ struct TransitionDefinitions {
             inputs: [
                 TransitionInput(
                     name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
+                    type: "contractPicker",
+                    label: "Data Contract",
                     required: true
                 ),
                 TransitionInput(
                     name: "documentType",
-                    type: "text",
+                    type: "documentTypePicker",
                     label: "Document Type",
-                    required: true
+                    required: true,
+                    placeholder: "" // Will be filled with selected contractId
                 ),
                 TransitionInput(
                     name: "documentId",
-                    type: "text",
+                    type: "documentPicker",
                     label: "Document ID",
-                    required: true
-                ),
-                TransitionInput(
-                    name: "loadDocument",
-                    type: "button",
-                    label: "Load Document",
-                    required: false,
-                    action: "loadExistingDocument"
+                    required: true,
+                    placeholder: "Enter or search for document ID"
                 ),
                 TransitionInput(
                     name: "documentFields",
                     type: "json",
                     label: "Document Data",
                     required: true,
-                    placeholder: "{\n  \"message\": \"Updated message\"\n}"
+                    placeholder: "{\n  \"message\": \"Updated message\"\n}",
+                    help: "Enter the updated document data as JSON"
                 )
             ]
         ),
@@ -307,21 +297,23 @@ struct TransitionDefinitions {
             inputs: [
                 TransitionInput(
                     name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
+                    type: "contractPicker",
+                    label: "Data Contract",
                     required: true
                 ),
                 TransitionInput(
                     name: "documentType",
-                    type: "text",
+                    type: "documentTypePicker",
                     label: "Document Type",
-                    required: true
+                    required: true,
+                    placeholder: "" // Will be filled with selected contractId
                 ),
                 TransitionInput(
                     name: "documentId",
-                    type: "text",
+                    type: "documentPicker",
                     label: "Document ID",
-                    required: true
+                    required: true,
+                    placeholder: "Enter or search for document ID"
                 )
             ]
         ),
@@ -333,26 +325,28 @@ struct TransitionDefinitions {
             inputs: [
                 TransitionInput(
                     name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
+                    type: "contractPicker",
+                    label: "Data Contract",
                     required: true
                 ),
                 TransitionInput(
                     name: "documentType",
-                    type: "text",
+                    type: "documentTypePicker",
                     label: "Document Type",
-                    required: true
+                    required: true,
+                    placeholder: "" // Will be filled with selected contractId
                 ),
                 TransitionInput(
                     name: "documentId",
-                    type: "text",
+                    type: "documentPicker",
                     label: "Document ID",
-                    required: true
+                    required: true,
+                    placeholder: "Enter or search for document ID"
                 ),
                 TransitionInput(
                     name: "recipientId",
-                    type: "text",
-                    label: "Recipient Identity ID",
+                    type: "identityPicker",
+                    label: "Recipient Identity",
                     required: true
                 )
             ]
@@ -365,27 +359,30 @@ struct TransitionDefinitions {
             inputs: [
                 TransitionInput(
                     name: "contractId",
-                    type: "text",
-                    label: "Data Contract ID",
+                    type: "contractPicker",
+                    label: "Data Contract",
                     required: true
                 ),
                 TransitionInput(
                     name: "documentType",
-                    type: "text",
+                    type: "documentTypePicker",
                     label: "Document Type",
-                    required: true
+                    required: true,
+                    placeholder: "" // Will be filled with selected contractId
                 ),
                 TransitionInput(
                     name: "documentId",
-                    type: "text",
+                    type: "documentPicker",
                     label: "Document ID",
-                    required: true
+                    required: true,
+                    placeholder: "Enter or search for document ID"
                 ),
                 TransitionInput(
                     name: "price",
                     type: "number",
                     label: "Price (credits)",
-                    required: true
+                    required: true,
+                    help: "The price to pay for the document in credits"
                 )
             ]
         ),
@@ -656,10 +653,10 @@ struct TransitionDefinitions {
                 ),
                 TransitionInput(
                     name: "targetIdentity",
-                    type: "text",
-                    label: "Target Identity ID (if voting for identity)",
+                    type: "identityPicker",
+                    label: "Target Identity (if voting for identity)",
                     required: false,
-                    placeholder: "Identity ID to vote for"
+                    placeholder: "Select identity to vote for"
                 )
             ]
         ),
@@ -714,10 +711,10 @@ struct TransitionDefinitions {
                 ),
                 TransitionInput(
                     name: "targetIdentity",
-                    type: "text",
-                    label: "Target Identity ID (if voting for identity)",
+                    type: "identityPicker",
+                    label: "Target Identity (if voting for identity)",
                     required: false,
-                    placeholder: "Identity ID to vote for"
+                    placeholder: "Select identity to vote for"
                 )
             ]
         )
