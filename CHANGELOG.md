@@ -1,3 +1,14 @@
+### [2.0.1](https://github.com/dashpay/platform/compare/v2.0.0...v2.0.1) (2025-07-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update keyword search contract ID and owner ID bytes (#2693)
+
+### Bug Fixes
+
+* **platform:** update keyword search contract ID and owner ID bytes ([#2693](https://github.com/dashpay/platform/issues/2693))
+
 ## [2.0.0](https://github.com/dashpay/platform/compare/v2.0.0-rc.16...v2.0.0) (2025-06-26)
 
 
