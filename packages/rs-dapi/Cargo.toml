@@ -24,7 +24,7 @@ tokio-util = "0.7.15"
 
 # gRPC framework
 tonic = "0.13.0"
-tonic-web = "0.13.0"
+
 
 # HTTP framework for REST/JSON-RPC
 axum = "0.8.4"
@@ -44,7 +44,6 @@ dotenvy = { version = "0.15.7" }
 # Logging
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
-tracing-appender = "0.2"
 
 # Error handling
 thiserror = "2.0.12"
@@ -52,16 +51,10 @@ thiserror = "2.0.12"
 # Time handling
 chrono = { version = "0.4.41", features = ["serde"] }
 
-# UUID generation for correlation IDs
-uuid = { version = "1.0", features = ["v4", "serde"] }
-
 # HTTP client for external API calls
 reqwest = { version = "0.12", features = ["json"] }
 reqwest-middleware = "0.4"
 reqwest-tracing = "0.5"
-
-# Caching
-moka = { version = "0.12", features = ["future"] }
 
 # Hex encoding/decoding
 hex = "0.4"
@@ -92,8 +85,6 @@ zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "b0787de310befaedd1f762e
 
 # Dash Platform dependencies (using workspace versions)
 dapi-grpc = { path = "../dapi-grpc", features = ["server", "client", "serde"] }
-prost-types = "0.14.1"
-pin-project = "1.1"
 
 [build-dependencies]
 tonic-build = "0.14.0"
