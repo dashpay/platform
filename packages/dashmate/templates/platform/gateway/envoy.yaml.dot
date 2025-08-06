@@ -111,36 +111,30 @@
           - name: http_services
             domains: [ "*" ]
             routes:
-              # rs-dapi core streaming endpoints  
+              # rs-dapi core streaming endpoints (now exposed directly)
               - match:
-                  prefix: "/rs-dapi/org.dash.platform.dapi.v0.Core/subscribeTo"
+                  prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: rs_dapi
                   idle_timeout: 300s
-                  # Strip /rs-dapi prefix when forwarding to backend
-                  prefix_rewrite: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                   # Upstream response timeout
                   timeout: 600s
                   max_stream_duration:
                     # Entire stream/request timeout
                     max_stream_duration: 600s
                     grpc_timeout_header_max: 600s
-              # rs-dapi Core endpoints
+              # rs-dapi Core endpoints (now exposed directly)
               - match:
-                  prefix: "/rs-dapi/org.dash.platform.dapi.v0.Core"
+                  prefix: "/org.dash.platform.dapi.v0.Core"
                 route:
                   cluster: rs_dapi
-                  # Strip /rs-dapi prefix when forwarding to backend
-                  prefix_rewrite: "/org.dash.platform.dapi.v0.Core"
                   # Upstream response timeout
                   timeout: 15s
-              # rs-dapi waitForStateTransitionResult endpoint with bigger timeout
+              # rs-dapi waitForStateTransitionResult endpoint with bigger timeout (now exposed directly)
               - match:
-                  path: "/rs-dapi/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                  path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
                   cluster: rs_dapi
-                  # Strip /rs-dapi prefix when forwarding to backend
-                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                   idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
                   # Upstream response timeout
                   timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
@@ -148,23 +142,23 @@
                     # Entire stream/request timeout
                     max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
                     grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-              # rs-dapi Platform endpoints  
+              # rs-dapi Platform endpoints (now exposed directly)
               - match:
-                  prefix: "/rs-dapi/org.dash.platform.dapi.v0.Platform"
+                  prefix: "/org.dash.platform.dapi.v0.Platform"
                 route:
                   cluster: rs_dapi
-                  # Strip /rs-dapi prefix when forwarding to backend
-                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform"
                   # Upstream response timeout
                   timeout: 10s
               
-              # Original DAPI routes (unchanged)
+              # Deprecated DAPI routes (moved under /deprecated prefix)
               # DAPI core streaming endpoints
               - match:
-                  prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
+                  prefix: "/deprecated/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: dapi_core_streams
                   idle_timeout: 300s
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                   # Upstream response timeout
                   timeout: 600s
                   max_stream_duration:
@@ -173,16 +167,20 @@
                     grpc_timeout_header_max: 600s
               # Other DAPI Core endpoints
               - match:
-                  prefix: "/org.dash.platform.dapi.v0.Core"
+                  prefix: "/deprecated/org.dash.platform.dapi.v0.Core"
                 route:
                   cluster: dapi_api
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Core"
                   # Upstream response timeout
                   timeout: 15s
               # DAPI waitForStateTransitionResult endpoint with bigger timeout
               - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                  path: "/deprecated/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
                   cluster: dapi_api
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                   idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
                   # Upstream response timeout
                   timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
@@ -192,30 +190,38 @@
                     grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
               # DAPI getConsensusParams endpoint
               - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/getConsensusParams"
+                  path: "/deprecated/org.dash.platform.dapi.v0.Platform/getConsensusParams"
                 route:
                   cluster: dapi_api
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform/getConsensusParams"
                   # Upstream response timeout
                   timeout: 10s
               # DAPI broadcastStateTransition endpoint
               - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"
+                  path: "/deprecated/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"
                 route:
                   cluster: dapi_api
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"
                   # Upstream response timeout
                   timeout: 10s
-              # DAPI broadcastStateTransition endpoint
+              # DAPI getStatus endpoint
               - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/getStatus"
+                  path: "/deprecated/org.dash.platform.dapi.v0.Platform/getStatus"
                 route:
                   cluster: dapi_api
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform/getStatus"
                   # Upstream response timeout
                   timeout: 10s
-              # Drive gRPC endpoints
+              # Deprecated Drive gRPC endpoints
               - match:
-                  prefix: "/org.dash.platform.dapi.v0.Platform"
+                  prefix: "/deprecated/org.dash.platform.dapi.v0.Platform"
                 route:
                   cluster: drive_grpc
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform"
                   # Upstream response timeout
                   timeout: 10s
               # Static responses of unsupported api versions
@@ -235,20 +241,20 @@
                       value: "Specified service version is not supported"
                 direct_response:
                   status: 204
-              # rs-dapi JSON RPC endpoints 
-              - match:
-                  path: "/rs-dapi"
-                route:
-                  cluster: rs_dapi_json_rpc
-                  # Strip /rs-dapi prefix when forwarding to backend
-                  prefix_rewrite: "/"
-                  # Upstream response timeout
-                  timeout: 10s
-              # JSON RPC endpoints
+              # JSON RPC endpoints (rs-dapi now exposed directly)
               - match:
                   path: "/"
                 route:
+                  cluster: rs_dapi_json_rpc
+                  # Upstream response timeout
+                  timeout: 10s
+              # Deprecated JSON RPC endpoints
+              - match:
+                  path: "/deprecated"
+                route:
                   cluster: dapi_json_rpc
+                  # Strip /deprecated prefix when forwarding to backend
+                  prefix_rewrite: "/"
                   # Upstream response timeout
                   timeout: 10s
             {{? it.platform.gateway.rateLimiter.enabled }}
