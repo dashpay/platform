@@ -411,6 +411,7 @@ const testData = {
             dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             documentTypeName: "domain",
             indexName: "parentNameAndLabel",
+            indexValues: ["dash", "alice"],
             resultType: "contenders",
             allowIncludeLockedAndAbstainingVoteTally: false,
             count: 10,

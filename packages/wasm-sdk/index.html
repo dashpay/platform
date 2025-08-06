@@ -1994,6 +1994,7 @@
               { name: "dataContractId", type: "text", label: "Data Contract ID", required: true },
               { name: "documentTypeName", type: "text", label: "Document Type Name", required: true },
               { name: "indexName", type: "text", label: "Index Name", required: true },
+              { name: "indexValues", type: "array", label: "Index Values", required: true, placeholder: "[\"dash\", \"alice\"]" },
               { name: "resultType", type: "select", label: "Result Type", required: true,
                 options: [
                   { value: "contenders", label: "Contenders" },
@@ -4400,6 +4401,7 @@ ${indentStr}]`;
               values.dataContractId,
               values.documentTypeName,
               values.indexName,
+              values.indexValues,
               values.resultType,
               values.allowIncludeLockedAndAbstainingVoteTally,
               values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,
@@ -4412,6 +4414,7 @@ ${indentStr}]`;
               values.dataContractId,
               values.documentTypeName,
               values.indexName,
+              values.indexValues,
               values.resultType,
               values.allowIncludeLockedAndAbstainingVoteTally,
               values.startAtIdentifierInfo ? JSON.stringify(values.startAtIdentifierInfo) : undefined,

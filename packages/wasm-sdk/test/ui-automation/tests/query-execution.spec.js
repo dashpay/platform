@@ -772,17 +772,17 @@ test.describe('WASM SDK Query Execution Tests', () => {
         }
       },
       // TODO: Fix the following tests. They fail to execute for some reason
-      // { 
-      //   name: 'getContestedResourceVoteState', 
-      //   hasProofSupport: true, 
-      //   needsParameters: true,
-      //   validateFn: (result) => {
-      //     expect(() => JSON.parse(result)).not.toThrow();
-      //     const voteStateData = JSON.parse(result);
-      //     expect(voteStateData).toBeDefined();
-      //     expect(typeof voteStateData === 'object').toBe(true);
-      //   }
-      // },
+      { 
+        name: 'getContestedResourceVoteState', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const voteStateData = JSON.parse(result);
+          expect(voteStateData).toBeDefined();
+          expect(typeof voteStateData === 'object').toBe(true);
+        }
+      },
       // { 
       //   name: 'getContestedResourceVotersForIdentity', 
       //   hasProofSupport: true, 
