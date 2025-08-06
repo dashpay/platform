@@ -214,16 +214,32 @@ class BaseTest {
     // Click execute button
     await executeButton.click();
     
-    // Wait for status banner to show loading
-    await this.page.locator('#statusBanner.loading').waitFor({ state: 'visible' });
+    const statusBanner = this.page.locator('#statusBanner');
     
-    // Wait for loading to complete (either success or error)
-    await this.page.locator('#statusBanner.loading').waitFor({ state: 'hidden', timeout: 30000 });
+    // Try waiting for loading state, but handle queries that execute instantly
+    try {
+      // Wait for status banner to show loading
+      await this.page.locator('#statusBanner.loading').waitFor({ state: 'visible', timeout: 5000 });
+      
+      // Wait for loading to complete (either success or error)
+      await this.page.locator('#statusBanner.loading').waitFor({ state: 'hidden', timeout: 30000 });
+    } catch (error) {
+      // Some queries execute so quickly they never show loading state
+      // Check if the query already completed successfully or with an error
+      const currentStatus = await statusBanner.getAttribute('class');
+      if (currentStatus && (currentStatus.includes('success') || currentStatus.includes('error'))) {
+        // Query completed without showing loading state - this is okay for fast queries
+        console.log('Query executed');
+        return currentStatus.includes('success');
+      }
+      
+      // If not in a final state, re-throw the timeout error
+      throw error;
+    }
     
     console.log('Query executed');
     
     // Return whether it was successful
-    const statusBanner = this.page.locator('#statusBanner');
     const statusClass = await statusBanner.getAttribute('class');
     return statusClass && statusClass.includes('success');
   }
