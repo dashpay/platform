@@ -19,7 +19,7 @@ if (!global.crypto) {
 }
 
 // Import WASM SDK
-import init, * as wasmSdk from './pkg/wasm_sdk.js';
+import init, * as wasmSdk from '../pkg/wasm_sdk.js';
 
 // Initialize WASM
 console.log('Initializing WASM SDK...');

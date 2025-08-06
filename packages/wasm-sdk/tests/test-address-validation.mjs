@@ -15,7 +15,7 @@ if (!global.crypto) {
     });
 }
 
-import init, * as wasmSdk from './pkg/wasm_sdk.js';
+import init, * as wasmSdk from '../pkg/wasm_sdk.js';
 
 const wasmPath = join(__dirname, 'pkg/wasm_sdk_bg.wasm');
 const wasmBuffer = readFileSync(wasmPath);
