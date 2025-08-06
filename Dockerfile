@@ -902,7 +902,7 @@ RUN addgroup -g $USER_GID $USERNAME && \
 USER $USERNAME
 
 WORKDIR /app
-ENTRYPOINT ["/usr/bin/rs-dapi", "-vvv"]
+ENTRYPOINT ["/usr/bin/rs-dapi", "start", "-vvv"]
 
 # Default gRPC port
 EXPOSE 3010

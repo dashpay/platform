@@ -153,14 +153,18 @@ impl Default for CoreConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LoggingConfig {
-    /// Main application log level
+    /// Main application log level; TODO: not supported yet
     #[serde(rename = "dapi_logging_level")]
     pub level: String,
     /// Enable structured JSON logging for application logs
-    #[serde(rename = "dapi_logging_json_format", deserialize_with = "from_str_or_bool")]
+    #[serde(
+        rename = "dapi_logging_json_format",
+        deserialize_with = "from_str_or_bool"
+    )]
     pub json_format: bool,
     /// Path to access log file. If set to non-empty value, access logging is enabled.
-    #[serde(rename = "dapi_logging_access_log_path")]  
+    /// TODO: Implement access logging
+    #[serde(rename = "dapi_logging_access_log_path")]
     pub access_log_path: Option<String>,
     /// Access log format. Currently supports "combined" (Apache Common Log Format)
     #[serde(rename = "dapi_logging_access_log_format")]
@@ -228,9 +232,12 @@ impl Config {
     }
 
     pub fn grpc_server_addr(&self) -> SocketAddr {
-        format!("{}:{}", self.server.bind_address, self.server.grpc_server_port)
-            .parse()
-            .expect("Invalid gRPC server address")
+        format!(
+            "{}:{}",
+            self.server.bind_address, self.server.grpc_server_port
+        )
+        .parse()
+        .expect("Invalid gRPC server address")
     }
 
     pub fn json_rpc_addr(&self) -> SocketAddr {
