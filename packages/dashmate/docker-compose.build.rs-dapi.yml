@@ -3,8 +3,8 @@
 services:
   rs_dapi:
     build:
-      context: ${PLATFORM_DAPI_RSDAPI_DOCKER_BUILD_CONTEXT:?err}
-      dockerfile: ${PLATFORM_DAPI_RSDAPI_DOCKER_BUILD_DOCKER_FILE:?err}
+      context: ${PLATFORM_DAPI_RS_DAPI_DOCKER_BUILD_CONTEXT:?err}
+      dockerfile: ${PLATFORM_DAPI_RS_DAPI_DOCKER_BUILD_DOCKER_FILE:?err}
       target: rs-dapi
       args:
         RUSTC_WRAPPER: ${RUSTC_WRAPPER}
@@ -16,7 +16,7 @@ services:
         SCCACHE_REGION: ${SCCACHE_REGION}
         SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
       cache_from:
-        - ${CACHE_RSDAPI_FROM:-${PLATFORM_DAPI_RSDAPI_DOCKER_IMAGE}}
+        - ${CACHE_RS_DAPI_FROM:-${PLATFORM_DAPI_RS_DAPI_DOCKER_IMAGE}}
       cache_to:
-        - ${CACHE_RSDAPI_TO:-type=inline}
+        - ${CACHE_RS_DAPI_TO:-type=inline}
     image: rs-dapi:local

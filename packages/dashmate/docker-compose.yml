@@ -194,7 +194,7 @@ services:
 
   # Uses existing configuration variables but deploys on different port (3010)
   rs_dapi:
-    image: ${PLATFORM_DAPI_RSDAPI_DOCKER_IMAGE:?err}
+    image: ${PLATFORM_DAPI_RS_DAPI_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "rs-dapi (Rust DAPI)"
     restart: unless-stopped
