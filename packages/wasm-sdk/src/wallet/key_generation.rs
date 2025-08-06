@@ -1,13 +1,13 @@
 //! Key generation functionality for wallets
-//! 
+//!
 //! Provides key generation and address derivation without full HD wallet support
 
-use wasm_bindgen::prelude::*;
-use serde::{Serialize, Deserialize};
-use dashcore::{Network, PrivateKey, PublicKey, Address};
+use dashcore::hashes::{sha256, Hash};
 use dashcore::secp256k1::{Secp256k1, SecretKey};
-use dashcore::hashes::{Hash, sha256};
+use dashcore::{Address, Network, PrivateKey, PublicKey};
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use wasm_bindgen::prelude::*;
 
 /// Key pair information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub fn generate_key_pair(network: &str) -> Result<JsValue, JsError> {
 
     // Generate random 32 bytes
     let mut key_bytes = [0u8; 32];
-    getrandom::getrandom(&mut key_bytes)
+    getrandom::fill(&mut key_bytes)
         .map_err(|e| JsError::new(&format!("Failed to generate random bytes: {}", e)))?;
 
     // Create private key
@@ -50,8 +50,11 @@ pub fn generate_key_pair(network: &str) -> Result<JsValue, JsError> {
     let public_key_bytes = public_key.serialize();
 
     // Get address
-    let address = Address::p2pkh(&PublicKey::from_slice(&public_key_bytes)
-        .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?, net);
+    let address = Address::p2pkh(
+        &PublicKey::from_slice(&public_key_bytes)
+            .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?,
+        net,
+    );
 
     let key_pair = KeyPair {
         private_key_wif: private_key.to_wif(),
@@ -99,9 +102,11 @@ pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, JsError> {
     let public_key_bytes = public_key.serialize();
 
     // Get address
-    let address = Address::p2pkh(&PublicKey::from_slice(&public_key_bytes)
-        .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?, 
-        private_key.network);
+    let address = Address::p2pkh(
+        &PublicKey::from_slice(&public_key_bytes)
+            .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?,
+        private_key.network,
+    );
 
     let key_pair = KeyPair {
         private_key_wif: private_key_wif.to_string(),
@@ -119,7 +124,9 @@ pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, JsError> {
 #[wasm_bindgen]
 pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue, JsError> {
     if private_key_hex.len() != 64 {
-        return Err(JsError::new("Private key hex must be exactly 64 characters"));
+        return Err(JsError::new(
+            "Private key hex must be exactly 64 characters",
+        ));
     }
 
     let net = match network {
@@ -128,8 +135,8 @@ pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue
         _ => return Err(JsError::new("Invalid network. Use 'mainnet' or 'testnet'")),
     };
 
-    let key_bytes = hex::decode(private_key_hex)
-        .map_err(|e| JsError::new(&format!("Invalid hex: {}", e)))?;
+    let key_bytes =
+        hex::decode(private_key_hex).map_err(|e| JsError::new(&format!("Invalid hex: {}", e)))?;
 
     let private_key = PrivateKey::from_slice(&key_bytes, net)
         .map_err(|e| JsError::new(&format!("Failed to create private key: {}", e)))?;
@@ -146,8 +153,8 @@ pub fn pubkey_to_address(pubkey_hex: &str, network: &str) -> Result<String, JsEr
         _ => return Err(JsError::new("Invalid network. Use 'mainnet' or 'testnet'")),
     };
 
-    let pubkey_bytes = hex::decode(pubkey_hex)
-        .map_err(|e| JsError::new(&format!("Invalid hex: {}", e)))?;
+    let pubkey_bytes =
+        hex::decode(pubkey_hex).map_err(|e| JsError::new(&format!("Invalid hex: {}", e)))?;
 
     let public_key = PublicKey::from_slice(&pubkey_bytes)
         .map_err(|e| JsError::new(&format!("Invalid public key: {}", e)))?;
@@ -184,7 +191,7 @@ pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, JsEr
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(&private_key.inner.secret_bytes())
         .map_err(|e| JsError::new(&format!("Invalid secret key: {}", e)))?;
-    
+
     let message_hash = dashcore::secp256k1::Message::from_digest(hash.to_byte_array());
     let signature = secp.sign_ecdsa(&message_hash, &secret_key);
 
