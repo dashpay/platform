@@ -150,8 +150,14 @@ function validateDocumentResult(resultStr) {
   // Documents can be arrays or single objects
   if (Array.isArray(documentData)) {
     expect(documentData.length).toBeGreaterThanOrEqual(0);
+    // Validate each document in the array has ownerId
+    documentData.forEach(document => {
+      expect(document).toHaveProperty('ownerId');
+    });
   } else {
     expect(documentData).toBeInstanceOf(Object);
+    // Validate single document has ownerId
+    expect(documentData).toHaveProperty('ownerId');
   }
 }
 
@@ -183,6 +189,10 @@ function validateKeysResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const keysData = JSON.parse(resultStr);
   expect(keysData).toBeDefined();
+  keysData.forEach(key => {
+      expect(key).toHaveProperty('keyId')
+      expect(key).toHaveProperty('purpose')
+    });
 }
 
 function validateIdentitiesResult(resultStr) {
@@ -208,6 +218,10 @@ function validateBalancesResult(resultStr) {
   expect(balancesData).toBeDefined();
   if (Array.isArray(balancesData)) {
     expect(balancesData.length).toBeGreaterThanOrEqual(0);
+    // Validate each balance object in the array
+    balancesData.forEach(balanceObj => {
+      expect(balanceObj).toHaveProperty('balance');
+    });
   }
 }
 
@@ -216,18 +230,26 @@ function validateBalanceAndRevisionResult(resultStr) {
   const data = JSON.parse(resultStr);
   expect(data).toBeDefined();
   expect(data).toBeInstanceOf(Object);
+  expect(data).toHaveProperty('balance');
+  expect(data).toHaveProperty('revision');
 }
 
 function validateTokenBalanceResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const tokenData = JSON.parse(resultStr);
   expect(tokenData).toBeDefined();
+  tokenData.forEach(token => {
+    expect(token).toHaveProperty('balance');
+  });
 }
 
 function validateTokenInfoResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const tokenInfoData = JSON.parse(resultStr);
   expect(tokenInfoData).toBeDefined();
+  tokenInfoData.forEach(token => {
+    expect(token).toHaveProperty('isFrozen');
+  });
 }
 
 test.describe('WASM SDK Query Execution Tests', () => {
@@ -273,6 +295,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(() => JSON.parse(result.result)).not.toThrow();
       const contractsData = JSON.parse(result.result);
       expect(contractsData).toBeDefined();
+      expect(contractsData).toHaveProperty('dataContracts');
+      expect(typeof contractsData.dataContracts).toBe('object');
+      
+      // Validate each contract using validateContractResult
+      Object.values(contractsData.dataContracts).forEach(contract => {
+        validateContractResult(JSON.stringify(contract));
+      });
       
       console.log('✅ getDataContracts single view without proof confirmed');
     });
@@ -336,6 +365,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(() => JSON.parse(result.result)).not.toThrow();
       const contractsData = JSON.parse(result.result);
       expect(contractsData).toBeDefined();
+      expect(contractsData).toHaveProperty('dataContracts');
+      expect(typeof contractsData.dataContracts).toBe('object');
+      
+      // Validate each contract using validateContractResult
+      Object.values(contractsData.dataContracts).forEach(contract => {
+        validateContractResult(JSON.stringify(contract));
+      });
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
@@ -661,7 +697,11 @@ test.describe('WASM SDK Query Execution Tests', () => {
           expect(() => JSON.parse(result)).not.toThrow();
           const tokenStatuses = JSON.parse(result);
           expect(tokenStatuses).toBeDefined();
-          expect(typeof tokenStatuses === 'object').toBe(true);
+          expect(Array.isArray(tokenStatuses)).toBe(true);
+          tokenStatuses.forEach(token => {
+            expect(token).toHaveProperty('isPaused');
+            expect(typeof token.isPaused).toBe('boolean');
+          });
         }
       },
       { 
@@ -672,7 +712,10 @@ test.describe('WASM SDK Query Execution Tests', () => {
           expect(() => JSON.parse(result)).not.toThrow();
           const priceData = JSON.parse(result);
           expect(priceData).toBeDefined();
-          expect(typeof priceData === 'object').toBe(true);
+          expect(Array.isArray(priceData)).toBe(true);
+          priceData.forEach(token => {
+            expect(token).toHaveProperty('basePrice');
+          });
         }
       },
       { 
@@ -684,6 +727,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
           const contractInfo = JSON.parse(result);
           expect(contractInfo).toBeDefined();
           expect(typeof contractInfo === 'object').toBe(true);
+          expect(contractInfo).toHaveProperty('contractId');
         }
       },
       { 
@@ -706,6 +750,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
           const supplyData = JSON.parse(result);
           expect(supplyData).toBeDefined();
           expect(typeof supplyData === 'object').toBe(true);
+          expect(supplyData).toHaveProperty('totalSupply');
         }
       }
     ];
@@ -1118,7 +1163,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
           const usernameData = JSON.parse(result);
           expect(usernameData).toBeDefined();
           if (Array.isArray(usernameData)) {
-            expect(usernameData.length).toBeGreaterThanOrEqual(0);
+            expect(usernameData.length).toBeGreaterThanOrEqual(1);
           }
         }
       },
@@ -1140,7 +1185,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
           const resolveData = JSON.parse(result);
-          expect(resolveData).toBeDefined();
+          expect(resolveData).toHaveProperty('name');
         }
       },
       { 

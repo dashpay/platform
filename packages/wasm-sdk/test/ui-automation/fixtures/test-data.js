@@ -332,7 +332,7 @@ const testData = {
       },
       dpnsResolve: {
         testnet: [
-          { name: "alice" },
+          { name: "therea1s11mshaddy5" },
           { name: "alice.dash" },
           { name: "test-name" }
         ]
