@@ -1,9 +1,7 @@
-use std::{
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use dapi_grpc::platform::v0::{platform_client::PlatformClient, GetStatusRequest};
 use dapi_grpc::drive::v0::drive_internal_client::DriveInternalClient;
+use dapi_grpc::platform::v0::{platform_client::PlatformClient, GetStatusRequest};
 use serde::{Deserialize, Serialize};
 
 use tower::ServiceBuilder;

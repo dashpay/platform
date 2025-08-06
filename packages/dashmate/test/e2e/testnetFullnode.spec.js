@@ -85,6 +85,7 @@ describe('Testnet Fullnode', function main() {
         config.set('dashmate.helper.docker.build.enabled', true);
         config.set('platform.drive.abci.docker.build.enabled', true);
         config.set('platform.dapi.api.docker.build.enabled', true);
+        config.set('platform.dapi.rsDapi.docker.build.enabled', true);
       }
 
       config.set('docker.network.subnet', '172.27.24.0/24');

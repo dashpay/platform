@@ -841,8 +841,40 @@ export default {
               required: ['docker', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
+            rsDapi: {
+              type: 'object',
+              properties: {
+                docker: {
+                  type: 'object',
+                  properties: {
+                    image: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    deploy: {
+                      type: 'object',
+                      properties: {
+                        replicas: {
+                          type: 'integer',
+                          minimum: 0,
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['replicas'],
+                    },
+                    build: {
+                      $ref: '#/definitions/dockerBuild',
+                    },
+                  },
+                  required: ['image', 'build', 'deploy'],
+                  additionalProperties: false,
+                },
+              },
+              required: ['docker'],
+              additionalProperties: false,
+            },
           },
-          required: ['api'],
+          required: ['api', 'rsDapi'],
           additionalProperties: false,
         },
         drive: {

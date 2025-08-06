@@ -111,6 +111,54 @@
           - name: http_services
             domains: [ "*" ]
             routes:
+              # rs-dapi core streaming endpoints  
+              - match:
+                  prefix: "/rs-dapi/org.dash.platform.dapi.v0.Core/subscribeTo"
+                route:
+                  cluster: rs_dapi
+                  idle_timeout: 300s
+                  # Strip /rs-dapi prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Core/subscribeTo"
+                  # Upstream response timeout
+                  timeout: 600s
+                  max_stream_duration:
+                    # Entire stream/request timeout
+                    max_stream_duration: 600s
+                    grpc_timeout_header_max: 600s
+              # rs-dapi Core endpoints
+              - match:
+                  prefix: "/rs-dapi/org.dash.platform.dapi.v0.Core"
+                route:
+                  cluster: rs_dapi
+                  # Strip /rs-dapi prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Core"
+                  # Upstream response timeout
+                  timeout: 15s
+              # rs-dapi waitForStateTransitionResult endpoint with bigger timeout
+              - match:
+                  path: "/rs-dapi/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                route:
+                  cluster: rs_dapi
+                  # Strip /rs-dapi prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                  idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  # Upstream response timeout
+                  timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  max_stream_duration:
+                    # Entire stream/request timeout
+                    max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                    grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+              # rs-dapi Platform endpoints  
+              - match:
+                  prefix: "/rs-dapi/org.dash.platform.dapi.v0.Platform"
+                route:
+                  cluster: rs_dapi
+                  # Strip /rs-dapi prefix when forwarding to backend
+                  prefix_rewrite: "/org.dash.platform.dapi.v0.Platform"
+                  # Upstream response timeout
+                  timeout: 10s
+              
+              # Original DAPI routes (unchanged)
               # DAPI core streaming endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
@@ -187,6 +235,15 @@
                       value: "Specified service version is not supported"
                 direct_response:
                   status: 204
+              # rs-dapi JSON RPC endpoints 
+              - match:
+                  path: "/rs-dapi"
+                route:
+                  cluster: rs_dapi_json_rpc
+                  # Strip /rs-dapi prefix when forwarding to backend
+                  prefix_rewrite: "/"
+                  # Upstream response timeout
+                  timeout: 10s
               # JSON RPC endpoints
               - match:
                   path: "/"
@@ -286,6 +343,32 @@ static_resources:
                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
     {{?}}
   clusters:
+    - name: rs_dapi
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              initial_stream_window_size: 65536  # 64 KiB
+              initial_connection_window_size: 1048576  # 1 MiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of parallel requests
+            max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
+      load_assignment:
+        cluster_name: rs_dapi
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: rs_dapi
+                  port_value: 3010
+
+    # Depcreated DAPI
     - name: dapi_api
       type: STRICT_DNS
       per_connection_buffer_limit_bytes: 32768  # 32 KiB
@@ -352,6 +435,28 @@ static_resources:
                     socket_address:
                       address: dapi_api
                       port_value: 3004
+
+    # rs-dapi JSON-RPC cluster
+    - name: rs_dapi_json_rpc
+      type: STRICT_DNS
+      per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            # The maximum number of parallel connections
+            max_connections: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
+            # The maximum number of parallel requests
+            max_requests: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
+      load_assignment:
+        cluster_name: rs_dapi_json_rpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: rs_dapi
+                      port_value: 3009
+
     - name: drive_grpc
       type: STRICT_DNS
       per_connection_buffer_limit_bytes: 32768  # 32 KiB
