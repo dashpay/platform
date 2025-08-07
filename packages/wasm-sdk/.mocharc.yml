@@ -4,10 +4,9 @@ timeout: 30000
 recursive: true
 spec:
   - "test/unit/**/*.spec.js"
+  - "test/functional/**/*.spec.js"
   - "test/integration/**/*.spec.js"
   - "test/e2e/**/*.spec.js"
-  - "test/helpers/**/*.spec.js"
-  - "test/fixtures/**/*.spec.js"
 ignore:
   - "test/ui-automation/**/*"
 reporter: spec
