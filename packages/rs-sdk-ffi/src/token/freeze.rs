@@ -258,11 +258,23 @@ mod tests {
     }
 
     // Helper function to create a mock signer
-    fn create_mock_signer() -> Box<crate::signer::IOSSigner> {
-        Box::new(crate::signer::IOSSigner::new(
-            mock_sign_callback,
-            mock_can_sign_callback,
-        ))
+    fn create_mock_signer() -> Box<crate::signer::VTableSigner> {
+        // Create a mock signer vtable
+        let vtable = Box::new(crate::signer::SignerVTable {
+            sign: mock_sign_callback,
+            can_sign_with: mock_can_sign_callback,
+            destroy: mock_destroy_callback,
+        });
+        
+        Box::new(crate::signer::VTableSigner {
+            signer_ptr: std::ptr::null_mut(),
+            vtable: Box::into_raw(vtable),
+        })
+    }
+    
+    // Mock destroy callback
+    unsafe extern "C" fn mock_destroy_callback(_signer: *mut std::os::raw::c_void) {
+        // No-op for mock
     }
 
     fn create_valid_transition_owner_id() -> [u8; 32] {
@@ -388,7 +400,7 @@ mod tests {
         unsafe {
             cleanup_freeze_params(&params);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -429,7 +441,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -468,7 +480,7 @@ mod tests {
         // Clean up
         unsafe {
             cleanup_freeze_params(&params);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -562,7 +574,7 @@ mod tests {
                 let _ = CString::from_raw(params.token_contract_id as *mut std::os::raw::c_char);
             }
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -607,7 +619,7 @@ mod tests {
         unsafe {
             cleanup_freeze_params(&params);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -653,7 +665,7 @@ mod tests {
             let _ = CString::from_raw(params.token_contract_id as *mut std::os::raw::c_char);
             let _ = Box::from_raw(params.target_identity_id as *mut [u8; 32]);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -700,7 +712,7 @@ mod tests {
             unsafe {
                 cleanup_freeze_params(&params);
                 let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-                let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+                let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
             }
         }
 

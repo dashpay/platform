@@ -341,7 +341,7 @@ extension SDK {
         print("📝 [DOCUMENT CREATE] Document Type: \(documentType)")
         print("📝 [DOCUMENT CREATE] Owner ID: \(ownerIdentity.idString)")
         
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
                     print("❌ [DOCUMENT CREATE] SDK not initialized")
@@ -395,31 +395,55 @@ extension SDK {
                     return
                 }
                 
-                guard createResult.data_type == DashSDKFFI.ResultDocumentHandle,
-                      let documentHandle = createResult.data else {
+                // Extract the document handle and entropy from the result
+                guard let resultData = createResult.data else {
                     print("❌ [DOCUMENT CREATE] Invalid document result type")
                     continuation.resume(throwing: SDKError.internalError("Invalid document result type"))
                     return
                 }
-                print("✅ [DOCUMENT CREATE] Document handle created")
+                
+                // Cast the result data to DashSDKDocumentCreateResult pointer
+                let createResultPtr = UnsafeMutablePointer<DashSDKDocumentCreateResult>(OpaquePointer(resultData))
+                let createResultStruct = createResultPtr.pointee
+                let documentHandle = createResultStruct.document_handle
+                let entropy = createResultStruct.entropy
+                
+                // Free the create result structure (but keep the document handle)
+                dash_sdk_document_create_result_free(createResultPtr)
+                
+                print("✅ [DOCUMENT CREATE] Document handle created with entropy")
                 
                 defer {
                     // Clean up document handle when done
-                    dash_sdk_document_handle_destroy(OpaquePointer(documentHandle))
+                    dash_sdk_document_handle_destroy(documentHandle)
                 }
                 
                 // 2. Create identity public key handle directly from our local data (no network fetch)
                 print("📝 [DOCUMENT CREATE] Getting public key handle...")
-                let authKey = ownerIdentity.publicKeys.values.first { key in
+                
+                // IMPORTANT: We need to use the key that we actually have the private key for
+                // Look for the critical key (ID 1) first, since that's typically what we have the private key for
+                let criticalKey = ownerIdentity.publicKeys.values.first { key in
+                    key.id == 1 && key.securityLevel == .critical
+                }
+                
+                // Fall back to authentication key, then any key
+                let keyToUse = criticalKey ?? ownerIdentity.publicKeys.values.first { key in
                     key.purpose == .authentication
                 } ?? ownerIdentity.publicKeys.values.first
                 
-                guard let keyToUse = authKey else {
+                guard let keyToUse = keyToUse else {
                     print("❌ [DOCUMENT CREATE] No public key found for identity")
                     continuation.resume(throwing: SDKError.invalidParameter("No public key found for identity"))
                     return
                 }
-                print("📝 [DOCUMENT CREATE] Using key ID: \(keyToUse.id), purpose: \(keyToUse.purpose), type: \(keyToUse.keyType), security: \(keyToUse.securityLevel)")
+                
+                if criticalKey != nil {
+                    print("📝 [DOCUMENT CREATE] Using CRITICAL key (ID 1) - ID: \(keyToUse.id), purpose: \(keyToUse.purpose), type: \(keyToUse.keyType), security: \(keyToUse.securityLevel)")
+                } else {
+                    print("⚠️ [DOCUMENT CREATE] WARNING: Using non-critical key - ID: \(keyToUse.id), purpose: \(keyToUse.purpose), type: \(keyToUse.keyType), security: \(keyToUse.securityLevel)")
+                    print("⚠️ [DOCUMENT CREATE] This may fail if you don't have the private key for this key!")
+                }
                 
                 // Create public key handle directly from our local data
                 let keyData = keyToUse.data
@@ -484,27 +508,19 @@ extension SDK {
                 let tokenPaymentInfo: UnsafePointer<DashSDKTokenPaymentInfo>? = nil
                 let stateTransitionOptions: UnsafePointer<DashSDKStateTransitionCreationOptions>? = nil
                 
-                // Generate entropy for document ID
-                var entropy = (
-                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
-                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
-                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
-                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0)
-                )
-                withUnsafeMutableBytes(of: &entropy) { entropyBytes in
-                    _ = SecRandomCopyBytes(kSecRandomDefault, 32, entropyBytes.baseAddress!)
-                }
+                // Use the entropy from document creation (already generated)
                 
                 // 5. Put document to platform and wait (using contract ID from trusted context)
                 print("🚀 [DOCUMENT CREATE] Submitting document to platform...")
                 print("🚀 [DOCUMENT CREATE] This is the NETWORK CALL - using contract from trusted context...")
                 let putStart = Date()
-                let putResult = withUnsafePointer(to: &entropy) { entropyPtr in
+                var mutableEntropy = entropy  // Create mutable copy for withUnsafePointer
+                let putResult = withUnsafePointer(to: &mutableEntropy) { entropyPtr in
                     contractId.withCString { contractIdCStr in
                         documentType.withCString { docTypeCStr in
                             dash_sdk_document_put_to_platform_and_wait(
                                 handle,
-                                OpaquePointer(documentHandle),
+                                documentHandle,
                                 contractIdCStr,
                                 docTypeCStr,
                                 entropyPtr,

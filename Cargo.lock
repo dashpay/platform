@@ -5101,6 +5101,7 @@ dependencies = [
  "ed25519-dalek",
  "env_logger 0.11.8",
  "envy",
+ "getrandom 0.2.16",
  "hex",
  "key-wallet",
  "libc",

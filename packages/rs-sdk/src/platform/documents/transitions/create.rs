@@ -14,6 +14,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
+use dpp::serialization::PlatformSerializable;
 use std::sync::Arc;
 
 /// A builder to configure and broadcast document create transitions
@@ -212,6 +213,11 @@ impl Sdk {
         let state_transition = create_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
+
+        // Log the state transition for debugging
+        eprintln!("📝 [DOCUMENT CREATE] State transition created and signed");
+        eprintln!("📝 [DOCUMENT CREATE] State transition hex: {}", hex::encode(state_transition.serialize_to_bytes()?));
+        eprintln!("📝 [DOCUMENT CREATE] State transition type: {:?}", state_transition);
 
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)

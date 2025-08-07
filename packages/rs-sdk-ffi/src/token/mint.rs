@@ -343,11 +343,50 @@ mod tests {
     }
 
     // Helper function to create a mock signer
-    fn create_mock_signer() -> Box<crate::signer::IOSSigner> {
-        Box::new(crate::signer::IOSSigner::new(
-            mock_sign_callback,
-            mock_can_sign_callback,
-        ))
+    fn create_mock_signer() -> Box<crate::signer::VTableSigner> {
+        // Create a mock signer vtable
+        let vtable = Box::new(crate::signer::SignerVTable {
+            sign: mock_sign_vtable_callback,
+            can_sign_with: mock_can_sign_vtable_callback,
+            destroy: mock_destroy_callback,
+        });
+        
+        Box::new(crate::signer::VTableSigner {
+            signer_ptr: std::ptr::null_mut(),
+            vtable: Box::into_raw(vtable),
+        })
+    }
+    
+    // Mock sign callback for vtable
+    unsafe extern "C" fn mock_sign_vtable_callback(
+        _signer: *const std::os::raw::c_void,
+        _identity_public_key_bytes: *const u8,
+        _identity_public_key_len: usize,
+        _data: *const u8,
+        _data_len: usize,
+        result_len: *mut usize,
+    ) -> *mut u8 {
+        let signature = vec![0u8; 64];
+        *result_len = signature.len();
+        let ptr = libc::malloc(signature.len()) as *mut u8;
+        if !ptr.is_null() {
+            std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
+        }
+        ptr
+    }
+    
+    // Mock can sign callback for vtable
+    unsafe extern "C" fn mock_can_sign_vtable_callback(
+        _signer: *const std::os::raw::c_void,
+        _identity_public_key_bytes: *const u8,
+        _identity_public_key_len: usize,
+    ) -> bool {
+        true
+    }
+    
+    // Mock destroy callback
+    unsafe extern "C" fn mock_destroy_callback(_signer: *mut std::os::raw::c_void) {
+        // No-op for mock
     }
 
     fn create_valid_transition_owner_id() -> [u8; 32] {

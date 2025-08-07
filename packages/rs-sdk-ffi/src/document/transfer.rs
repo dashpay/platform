@@ -66,7 +66,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let recipient_id_str = match CStr::from_ptr(recipient_id).to_str() {
         Ok(s) => s,
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
     let document = &*(document_handle as *const Document);
     let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let recipient_id_str = match CStr::from_ptr(recipient_id).to_str() {
         Ok(s) => s,
@@ -389,7 +389,7 @@ mod tests {
             let _ = Box::from_raw(document_handle as *mut Document);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
     }
 
@@ -434,7 +434,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -482,7 +482,7 @@ mod tests {
             let _ = Box::from_raw(document_handle as *mut Document);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -533,7 +533,7 @@ mod tests {
             let _ = Box::from_raw(document_handle as *mut Document);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -579,7 +579,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -627,7 +627,7 @@ mod tests {
             let _ = Box::from_raw(document_handle as *mut Document);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -677,7 +677,7 @@ mod tests {
             let _ = Box::from_raw(document_handle as *mut Document);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }

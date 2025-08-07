@@ -1,7 +1,7 @@
 use crate::sdk::SDKWrapper;
 use crate::{
     DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, DataContractHandle,
-    FFIError, IOSSigner, SDKHandle, SignerHandle,
+    FFIError, VTableSigner, SDKHandle, SignerHandle,
 };
 use dash_sdk::platform::{DataContract, IdentityPublicKey};
 
@@ -28,7 +28,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
-    let signer = &*(signer_handle as *const IOSSigner);
+    let signer = &*(signer_handle as *const VTableSigner);
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Put data contract to platform using the PutContract trait
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform_and_wait(
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
-    let signer = &*(signer_handle as *const IOSSigner);
+    let signer = &*(signer_handle as *const VTableSigner);
 
     let result: Result<DataContract, FFIError> = wrapper.runtime.block_on(async {
         // Put data contract to platform and wait for response
@@ -151,7 +151,7 @@ mod tests {
             // Clean up
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
 
             // Test with null data contract handle
             let sdk_handle = create_mock_sdk_handle();
@@ -175,7 +175,7 @@ mod tests {
             // Clean up
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
 
             // Test with null identity public key handle
             let sdk_handle = create_mock_sdk_handle();
@@ -198,7 +198,7 @@ mod tests {
             // Clean up
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
 
             // Test with null signer handle
             let sdk_handle = create_mock_sdk_handle();
@@ -252,7 +252,7 @@ mod tests {
             // Clean up
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
 
             // Test with null data contract handle
             let sdk_handle = create_mock_sdk_handle();
@@ -276,7 +276,7 @@ mod tests {
             // Clean up
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
 
             // Test with null identity public key handle
             let sdk_handle = create_mock_sdk_handle();
@@ -299,7 +299,7 @@ mod tests {
             // Clean up
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
 
             // Test with null signer handle
             let sdk_handle = create_mock_sdk_handle();
@@ -356,7 +356,7 @@ mod tests {
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
         }
     }
 
@@ -389,7 +389,7 @@ mod tests {
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
         }
     }
 
@@ -420,7 +420,7 @@ mod tests {
             destroy_mock_sdk_handle(sdk_handle);
             let _ = Box::from_raw(data_contract_handle as *mut DataContract);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut VTableSigner);
         }
     }
 }

@@ -279,7 +279,7 @@ mod tests {
         unsafe {
             cleanup_burn_params(&params);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -320,7 +320,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -359,7 +359,7 @@ mod tests {
         // Clean up
         unsafe {
             cleanup_burn_params(&params);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -469,7 +469,7 @@ mod tests {
         unsafe {
             cleanup_burn_params(&params);
             let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
-            let _ = Box::from_raw(signer_handle as *mut crate::signer::IOSSigner);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }

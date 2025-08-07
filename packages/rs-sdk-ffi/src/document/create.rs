@@ -1,6 +1,6 @@
 //! Document creation operations
 
-use dash_sdk::dpp::document::{document_factory::DocumentFactory, Document};
+use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Value;
@@ -9,10 +9,20 @@ use drive_proof_verifier::ContextProvider;
 use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::sdk::SDKWrapper;
 use crate::types::{DataContractHandle, DashSDKResultDataType, DocumentHandle, IdentityHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+
+/// Document creation result containing handle and entropy
+#[repr(C)]
+pub struct DashSDKDocumentCreateResult {
+    /// Handle to the created document
+    pub document_handle: *mut DocumentHandle,
+    /// Entropy used for document ID generation (32 bytes)
+    pub entropy: [u8; 32],
+}
 
 /// Document creation parameters
 #[repr(C)]
@@ -96,7 +106,7 @@ pub unsafe extern "C" fn dash_sdk_document_create(
         }
     };
 
-    let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+    let result: Result<(Document, [u8; 32]), FFIError> = wrapper.runtime.block_on(async {
         // Parse contract ID (base58 encoded)
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
@@ -127,86 +137,86 @@ pub unsafe extern "C" fn dash_sdk_document_create(
                 .collect(),
         );
 
-        // Create document factory
-        let factory = DocumentFactory::new(platform_version.protocol_version)
-            .map_err(|e| FFIError::InternalError(format!("Failed to create factory: {}", e)))?;
+        // Generate entropy for document ID (32 random bytes)
+        let mut entropy = [0u8; 32];
+        getrandom::getrandom(&mut entropy)
+            .map_err(|e| FFIError::InternalError(format!("Failed to generate entropy: {}", e)))?;
 
-        // Create document using the contract from trusted context
-        let document = factory
-            .create_document(
-                &*data_contract,
-                owner_id,
-                document_type.to_string(),
-                data,
-            )
-            .map_err(|e| FFIError::InternalError(format!("Failed to create document: {}", e)))?;
+        let document_type_ref = data_contract
+            .document_type_borrowed_for_name(document_type)
+            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
 
-        Ok(document)
+        // Create document with entropy - this will generate the document ID internally
+        let document = document_type_ref.create_document_from_data(
+            data,
+            owner_id,
+            0,  // block_height - will be set by platform
+            0,  // core_block_height - will be set by platform
+            entropy,
+            platform_version,
+        ).map_err(|e| FFIError::InternalError(format!("Failed to create document: {}", e)))?;
+
+        Ok((document, entropy))
     });
 
     match result {
-        Ok(document) => {
+        Ok((document, entropy)) => {
             let handle = Box::into_raw(Box::new(document)) as *mut DocumentHandle;
-            DashSDKResult::success_handle(
-                handle as *mut std::os::raw::c_void, 
-                DashSDKResultDataType::ResultDocumentHandle
+            let create_result = Box::new(DashSDKDocumentCreateResult {
+                document_handle: handle,
+                entropy,
+            });
+            DashSDKResult::success(
+                Box::into_raw(create_result) as *mut std::os::raw::c_void
             )
         }
         Err(e) => DashSDKResult::error(e.into()),
     }
 }
 
+/// Free a document creation result
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_document_create_result_free(result: *mut DashSDKDocumentCreateResult) {
+    if !result.is_null() {
+        let _ = Box::from_raw(result);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::test_utils;
     use crate::test_utils::test_utils::*;
     use crate::DashSDKErrorCode;
-    use dash_sdk::dpp::identity::{Identity, IdentityV0};
-    use dash_sdk::dpp::prelude::Identifier;
-    use std::collections::BTreeMap;
     use std::ffi::{CStr, CString};
     use std::ptr;
 
-    // Helper function to create a mock identity
-    fn create_mock_identity() -> Box<Identity> {
-        let id = Identifier::from_bytes(&[1u8; 32]).unwrap();
-        let identity = Identity::V0(IdentityV0 {
-            id,
-            public_keys: BTreeMap::new(),
-            balance: 0,
-            revision: 0,
-        });
-        Box::new(identity)
-    }
-
     // Helper function to create valid document create params
-    fn create_valid_document_params(
-        data_contract_handle: *const DataContractHandle,
-        owner_identity_handle: *const IdentityHandle,
-    ) -> (DashSDKDocumentCreateParams, CString, CString) {
+    fn create_valid_document_params() -> (
+        DashSDKDocumentCreateParams,
+        CString,
+        CString,
+        CString,
+        CString,
+    ) {
+        let data_contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let owner_identity_id = CString::new("BhC9M3fQHyUCyuxH4WHdhn1VGgJ4JTLmer8qmTTHkYTe").unwrap();
         let document_type = CString::new("testDoc").unwrap();
         let properties_json = CString::new(r#"{"name": "John Doe", "age": 30}"#).unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle,
+            data_contract_id: data_contract_id.as_ptr(),
             document_type: document_type.as_ptr(),
-            owner_identity_handle,
+            owner_identity_id: owner_identity_id.as_ptr(),
             properties_json: properties_json.as_ptr(),
         };
 
-        (params, document_type, properties_json)
+        (params, data_contract_id, owner_identity_id, document_type, properties_json)
     }
 
     #[test]
     fn test_document_create_with_null_sdk_handle() {
-        let data_contract = test_utils::create_mock_data_contract();
-        let owner_identity = create_mock_identity();
-        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
-        let owner_identity_handle = Box::into_raw(owner_identity) as *const IdentityHandle;
-
-        let (params, _document_type, _properties_json) =
-            create_valid_document_params(data_contract_handle, owner_identity_handle);
+        let (params, _contract_id, _owner_id, _document_type, _properties_json) =
+            create_valid_document_params();
 
         let result = unsafe {
             dash_sdk_document_create(
@@ -221,12 +231,6 @@ mod tests {
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
             let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(error_msg.contains("null"));
-        }
-
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(owner_identity_handle as *mut Identity);
         }
     }
 
@@ -253,18 +257,16 @@ mod tests {
     }
 
     #[test]
-    fn test_document_create_with_null_data_contract() {
+    fn test_document_create_with_null_data_contract_id() {
         let sdk_handle = create_mock_sdk_handle();
-        let owner_identity = create_mock_identity();
-        let owner_identity_handle = Box::into_raw(owner_identity) as *const IdentityHandle;
-
+        let owner_identity_id = CString::new("BhC9M3fQHyUCyuxH4WHdhn1VGgJ4JTLmer8qmTTHkYTe").unwrap();
         let document_type = CString::new("testDoc").unwrap();
         let properties_json = CString::new(r#"{"name": "John Doe"}"#).unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle: ptr::null(),
+            data_contract_id: ptr::null(),
             document_type: document_type.as_ptr(),
-            owner_identity_handle,
+            owner_identity_id: owner_identity_id.as_ptr(),
             properties_json: properties_json.as_ptr(),
         };
 
@@ -278,27 +280,20 @@ mod tests {
             assert!(error_msg.contains("Required parameter is null"));
         }
 
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(owner_identity_handle as *mut Identity);
-        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
     fn test_document_create_with_null_document_type() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = test_utils::create_mock_data_contract();
-        let owner_identity = create_mock_identity();
-        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
-        let owner_identity_handle = Box::into_raw(owner_identity) as *const IdentityHandle;
-
+        let data_contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let owner_identity_id = CString::new("BhC9M3fQHyUCyuxH4WHdhn1VGgJ4JTLmer8qmTTHkYTe").unwrap();
         let properties_json = CString::new(r#"{"name": "John Doe"}"#).unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle,
+            data_contract_id: data_contract_id.as_ptr(),
             document_type: ptr::null(),
-            owner_identity_handle,
+            owner_identity_id: owner_identity_id.as_ptr(),
             properties_json: properties_json.as_ptr(),
         };
 
@@ -310,27 +305,20 @@ mod tests {
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
         }
 
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(owner_identity_handle as *mut Identity);
-        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
-    fn test_document_create_with_null_owner_identity() {
+    fn test_document_create_with_null_owner_identity_id() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = test_utils::create_mock_data_contract();
-        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
-
+        let data_contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let document_type = CString::new("testDoc").unwrap();
         let properties_json = CString::new(r#"{"name": "John Doe"}"#).unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle,
+            data_contract_id: data_contract_id.as_ptr(),
             document_type: document_type.as_ptr(),
-            owner_identity_handle: ptr::null(),
+            owner_identity_id: ptr::null(),
             properties_json: properties_json.as_ptr(),
         };
 
@@ -342,27 +330,20 @@ mod tests {
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
         }
 
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
     fn test_document_create_with_null_properties_json() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = test_utils::create_mock_data_contract();
-        let owner_identity = create_mock_identity();
-        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
-        let owner_identity_handle = Box::into_raw(owner_identity) as *const IdentityHandle;
-
+        let data_contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let owner_identity_id = CString::new("BhC9M3fQHyUCyuxH4WHdhn1VGgJ4JTLmer8qmTTHkYTe").unwrap();
         let document_type = CString::new("testDoc").unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle,
+            data_contract_id: data_contract_id.as_ptr(),
             document_type: document_type.as_ptr(),
-            owner_identity_handle,
+            owner_identity_id: owner_identity_id.as_ptr(),
             properties_json: ptr::null(),
         };
 
@@ -374,29 +355,21 @@ mod tests {
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
         }
 
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(owner_identity_handle as *mut Identity);
-        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
     fn test_document_create_with_invalid_json() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = test_utils::create_mock_data_contract();
-        let owner_identity = create_mock_identity();
-        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
-        let owner_identity_handle = Box::into_raw(owner_identity) as *const IdentityHandle;
-
+        let data_contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let owner_identity_id = CString::new("BhC9M3fQHyUCyuxH4WHdhn1VGgJ4JTLmer8qmTTHkYTe").unwrap();
         let document_type = CString::new("testDoc").unwrap();
         let properties_json = CString::new("{invalid json}").unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle,
+            data_contract_id: data_contract_id.as_ptr(),
             document_type: document_type.as_ptr(),
-            owner_identity_handle,
+            owner_identity_id: owner_identity_id.as_ptr(),
             properties_json: properties_json.as_ptr(),
         };
 
@@ -410,11 +383,6 @@ mod tests {
             assert!(error_msg.contains("Invalid properties JSON"));
         }
 
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(owner_identity_handle as *mut Identity);
-        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 
@@ -426,18 +394,15 @@ mod tests {
     #[test]
     fn test_document_create_with_unknown_document_type() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = test_utils::create_mock_data_contract();
-        let owner_identity = create_mock_identity();
-        let data_contract_handle = Box::into_raw(data_contract) as *const DataContractHandle;
-        let owner_identity_handle = Box::into_raw(owner_identity) as *const IdentityHandle;
-
+        let data_contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let owner_identity_id = CString::new("BhC9M3fQHyUCyuxH4WHdhn1VGgJ4JTLmer8qmTTHkYTe").unwrap();
         let document_type = CString::new("unknownType").unwrap();
         let properties_json = CString::new(r#"{"name": "John Doe"}"#).unwrap();
 
         let params = DashSDKDocumentCreateParams {
-            data_contract_handle,
+            data_contract_id: data_contract_id.as_ptr(),
             document_type: document_type.as_ptr(),
-            owner_identity_handle,
+            owner_identity_id: owner_identity_id.as_ptr(),
             properties_json: properties_json.as_ptr(),
         };
 
@@ -448,14 +413,9 @@ mod tests {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InternalError);
             let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
-            assert!(error_msg.contains("Failed to create document"));
+            assert!(error_msg.contains("Failed to") || error_msg.contains("not found"));
         }
 
-        // Clean up
-        unsafe {
-            let _ = Box::from_raw(data_contract_handle as *mut DataContract);
-            let _ = Box::from_raw(owner_identity_handle as *mut Identity);
-        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 }

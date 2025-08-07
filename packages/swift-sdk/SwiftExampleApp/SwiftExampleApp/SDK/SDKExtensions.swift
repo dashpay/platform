@@ -22,42 +22,6 @@ protocol Signer {
 // Global signer storage for C callbacks
 private var globalSignerStorage: Signer?
 
-// C function callbacks that use the global signer
-private let globalSignCallback: IOSSignCallback = { identityPublicKeyBytes, identityPublicKeyLen, dataBytes, dataLen, resultLenPtr in
-    guard let identityPublicKeyBytes = identityPublicKeyBytes,
-          let dataBytes = dataBytes,
-          let resultLenPtr = resultLenPtr,
-          let signer = globalSignerStorage else {
-        return nil
-    }
-    
-    let identityPublicKey = Data(bytes: identityPublicKeyBytes, count: Int(identityPublicKeyLen))
-    let data = Data(bytes: dataBytes, count: Int(dataLen))
-    
-    guard let signature = signer.sign(identityPublicKey: identityPublicKey, data: data) else {
-        return nil
-    }
-    
-    // Allocate memory for the result and copy the signature
-    let result = UnsafeMutablePointer<UInt8>.allocate(capacity: signature.count)
-    signature.withUnsafeBytes { bytes in
-        result.initialize(from: bytes.bindMemory(to: UInt8.self).baseAddress!, count: signature.count)
-    }
-    
-    resultLenPtr.pointee = UInt(signature.count)
-    return result
-}
-
-private let globalCanSignCallback: IOSCanSignCallback = { identityPublicKeyBytes, identityPublicKeyLen in
-    guard let identityPublicKeyBytes = identityPublicKeyBytes,
-          let signer = globalSignerStorage else {
-        return false
-    }
-    
-    let identityPublicKey = Data(bytes: identityPublicKeyBytes, count: Int(identityPublicKeyLen))
-    return signer.canSign(identityPublicKey: identityPublicKey)
-}
-
 // MARK: - SDK Extensions for the example app
 extension SDK {
     /// Initialize SDK with a custom signer for the example app
@@ -65,14 +29,7 @@ extension SDK {
         // Store the signer globally for C callbacks
         globalSignerStorage = signer
         
-        // Create the signer handle
-        let signerHandle = dash_sdk_signer_create(globalSignCallback, globalCanSignCallback)
-        
         // Initialize the SDK normally
         try self.init(network: network)
-        
-        // TODO: Connect the signer to the SDK instance
-        // The signer handle should be passed to the SDK, but this API may not be exposed yet
-        // For now, we'll rely on the SDK's default behavior
     }
 }

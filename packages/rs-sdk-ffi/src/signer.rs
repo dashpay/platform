@@ -1,132 +1,11 @@
 //! Signer interface for iOS FFI
 
-use crate::signer_simple;
 use crate::types::SignerHandle;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::{IdentityPublicKey, ProtocolError};
 use simple_signer::SingleKeySigner;
-
-/// Function pointer type for iOS signing callback
-/// Returns pointer to allocated byte array (caller must free with dash_sdk_bytes_free)
-/// Returns null on error
-pub type IOSSignCallback = unsafe extern "C" fn(
-    identity_public_key_bytes: *const u8,
-    identity_public_key_len: usize,
-    data: *const u8,
-    data_len: usize,
-    result_len: *mut usize,
-) -> *mut u8;
-
-/// Function pointer type for iOS can_sign_with callback
-pub type IOSCanSignCallback = unsafe extern "C" fn(
-    identity_public_key_bytes: *const u8,
-    identity_public_key_len: usize,
-) -> bool;
-
-/// iOS FFI Signer that bridges to iOS signing callbacks
-#[derive(Debug, Clone, Copy)]
-pub struct IOSSigner {
-    sign_callback: IOSSignCallback,
-    can_sign_callback: IOSCanSignCallback,
-}
-
-impl IOSSigner {
-    pub fn new(sign_callback: IOSSignCallback, can_sign_callback: IOSCanSignCallback) -> Self {
-        IOSSigner {
-            sign_callback,
-            can_sign_callback,
-        }
-    }
-}
-
-impl Signer for IOSSigner {
-    fn sign(
-        &self,
-        identity_public_key: &IdentityPublicKey,
-        data: &[u8],
-    ) -> Result<BinaryData, ProtocolError> {
-        let key_bytes = identity_public_key.data().as_slice();
-        let mut result_len: usize = 0;
-
-        let result_ptr = unsafe {
-            (self.sign_callback)(
-                key_bytes.as_ptr(),
-                key_bytes.len(),
-                data.as_ptr(),
-                data.len(),
-                &mut result_len,
-            )
-        };
-
-        if result_ptr.is_null() {
-            return Err(ProtocolError::Generic(
-                "iOS signing callback returned null".to_string(),
-            ));
-        }
-
-        // Convert the result to BinaryData
-        let signature_bytes =
-            unsafe { std::slice::from_raw_parts(result_ptr, result_len).to_vec() };
-
-        // Free the memory allocated by iOS
-        unsafe {
-            dash_sdk_bytes_free(result_ptr);
-        }
-
-        Ok(signature_bytes.into())
-    }
-
-    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
-        let key_bytes = identity_public_key.data().as_slice();
-
-        unsafe { (self.can_sign_callback)(key_bytes.as_ptr(), key_bytes.len()) }
-    }
-}
-
-/// Create a new iOS signer
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_signer_create(
-    sign_callback: IOSSignCallback,
-    can_sign_callback: IOSCanSignCallback,
-) -> *mut SignerHandle {
-    let signer = IOSSigner::new(sign_callback, can_sign_callback);
-
-    // Create a VTableSigner that wraps the IOSSigner
-    let vtable_signer = VTableSigner {
-        signer_ptr: Box::into_raw(Box::new(signer)) as *mut std::os::raw::c_void,
-        vtable: &IOS_SIGNER_VTABLE,
-    };
-
-    Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle
-}
-
-/// Destroy a signer
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
-    if !handle.is_null() {
-        // Try to cast as VTableSigner first
-        let vtable_signer = Box::from_raw(handle as *mut VTableSigner);
-
-        // Call the destructor through the vtable
-        if !vtable_signer.vtable.is_null() {
-            ((*vtable_signer.vtable).destroy)(vtable_signer.signer_ptr);
-        }
-
-        // The VTableSigner itself is dropped here
-    }
-}
-
-/// Free bytes allocated by iOS callbacks
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_bytes_free(bytes: *mut u8) {
-    if !bytes.is_null() {
-        // Note: This assumes iOS allocates with malloc/calloc
-        // If iOS uses a different allocator, this function needs to be updated
-        libc::free(bytes as *mut libc::c_void);
-    }
-}
 
 /// C-compatible vtable for signers
 #[repr(C)]
@@ -232,6 +111,101 @@ impl Signer for VTableSigner {
     }
 }
 
+/// Function pointer type for signing callback from iOS/external code
+/// Returns pointer to allocated byte array (caller must free with dash_sdk_bytes_free)
+/// Returns null on error
+pub type SignCallback = unsafe extern "C" fn(
+    signer: *const std::os::raw::c_void,
+    identity_public_key_bytes: *const u8,
+    identity_public_key_len: usize,
+    data: *const u8,
+    data_len: usize,
+    result_len: *mut usize,
+) -> *mut u8;
+
+/// Function pointer type for can_sign_with callback from iOS/external code
+pub type CanSignCallback = unsafe extern "C" fn(
+    signer: *const std::os::raw::c_void,
+    identity_public_key_bytes: *const u8,
+    identity_public_key_len: usize,
+) -> bool;
+
+/// Function pointer type for destructor callback  
+/// This is an Option to allow for NULL pointers from C
+pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw::c_void)>;
+
+/// Create a new signer with callbacks from iOS/external code
+/// 
+/// This creates a VTableSigner that can be used for all state transitions.
+/// The callbacks should handle the actual signing logic.
+/// 
+/// # Parameters
+/// - `sign_callback`: Function to sign data
+/// - `can_sign_callback`: Function to check if can sign with a key
+/// - `destroy_callback`: Optional destructor (can be NULL)
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_signer_create(
+    sign_callback: SignCallback,
+    can_sign_callback: CanSignCallback,
+    destroy_callback: DestroyCallback,  // Option type handles NULL automatically
+) -> *mut SignerHandle {
+    // Create a vtable on the heap so it persists
+    let vtable = Box::new(SignerVTable {
+        sign: sign_callback,
+        can_sign_with: can_sign_callback,
+        destroy: destroy_callback.unwrap_or(default_destroy),
+    });
+    
+    let vtable_ptr = Box::into_raw(vtable);
+    
+    // Create the VTableSigner
+    let vtable_signer = VTableSigner {
+        signer_ptr: std::ptr::null_mut(), // iOS doesn't need a separate signer_ptr since callbacks handle everything
+        vtable: vtable_ptr,
+    };
+
+    Box::into_raw(Box::new(vtable_signer)) as *mut SignerHandle
+}
+
+/// Default destroy function that does nothing
+unsafe extern "C" fn default_destroy(_signer: *mut std::os::raw::c_void) {
+    // No-op for iOS signers that don't need cleanup
+}
+
+/// Destroy a signer
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
+    if !handle.is_null() {
+        let vtable_signer = Box::from_raw(handle as *mut VTableSigner);
+        
+        // Call the destructor through the vtable
+        if !vtable_signer.vtable.is_null() {
+            ((*vtable_signer.vtable).destroy)(vtable_signer.signer_ptr);
+            
+            // Only free the vtable if it's not a static vtable
+            // Static vtables (like SINGLE_KEY_SIGNER_VTABLE) should not be freed
+            // We can check if it's the static vtable by comparing the address
+            let static_vtable_ptr = &SINGLE_KEY_SIGNER_VTABLE as *const SignerVTable;
+            if vtable_signer.vtable != static_vtable_ptr {
+                // This is a heap-allocated vtable from dash_sdk_signer_create
+                let _ = Box::from_raw(vtable_signer.vtable as *mut SignerVTable);
+            }
+        }
+        
+        // The VTableSigner itself is dropped here
+    }
+}
+
+/// Free bytes allocated by callbacks
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_bytes_free(bytes: *mut u8) {
+    if !bytes.is_null() {
+        // Note: This assumes iOS/external code allocates with malloc/calloc
+        // If a different allocator is used, this function needs to be updated
+        libc::free(bytes as *mut libc::c_void);
+    }
+}
+
 // Vtable implementation for SingleKeySigner
 unsafe extern "C" fn single_key_signer_sign(
     signer: *const std::os::raw::c_void,
@@ -296,66 +270,4 @@ pub static SINGLE_KEY_SIGNER_VTABLE: SignerVTable = SignerVTable {
     sign: single_key_signer_sign,
     can_sign_with: single_key_signer_can_sign_with,
     destroy: single_key_signer_destroy,
-};
-
-// Vtable implementation for IOSSigner
-unsafe extern "C" fn ios_signer_sign(
-    signer: *const std::os::raw::c_void,
-    identity_public_key_bytes: *const u8,
-    identity_public_key_len: usize,
-    data: *const u8,
-    data_len: usize,
-    result_len: *mut usize,
-) -> *mut u8 {
-    let signer = &*(signer as *const IOSSigner);
-
-    // Deserialize the public key
-    let key_bytes = std::slice::from_raw_parts(identity_public_key_bytes, identity_public_key_len);
-    let identity_public_key = match bincode::decode_from_slice::<IdentityPublicKey, _>(
-        key_bytes,
-        bincode::config::standard(),
-    ) {
-        Ok((key, _)) => key,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let data_slice = std::slice::from_raw_parts(data, data_len);
-
-    match signer.sign(&identity_public_key, data_slice) {
-        Ok(signature) => {
-            let sig_vec = signature.to_vec();
-            *result_len = sig_vec.len();
-            // IOSSigner already returns malloc'd memory, so we use its callback directly
-            (signer.sign_callback)(
-                identity_public_key_bytes,
-                identity_public_key_len,
-                data,
-                data_len,
-                result_len,
-            )
-        }
-        Err(_) => std::ptr::null_mut(),
-    }
-}
-
-unsafe extern "C" fn ios_signer_can_sign_with(
-    signer: *const std::os::raw::c_void,
-    identity_public_key_bytes: *const u8,
-    identity_public_key_len: usize,
-) -> bool {
-    let signer = &*(signer as *const IOSSigner);
-    (signer.can_sign_callback)(identity_public_key_bytes, identity_public_key_len)
-}
-
-unsafe extern "C" fn ios_signer_destroy(signer: *mut std::os::raw::c_void) {
-    if !signer.is_null() {
-        let _ = Box::from_raw(signer as *mut IOSSigner);
-    }
-}
-
-/// Static vtable for IOSSigner
-pub static IOS_SIGNER_VTABLE: SignerVTable = SignerVTable {
-    sign: ios_signer_sign,
-    can_sign_with: ios_signer_can_sign_with,
-    destroy: ios_signer_destroy,
 };

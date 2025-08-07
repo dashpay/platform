@@ -11,7 +11,7 @@ use std::os::raw::c_char;
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKPutSettings, IdentityHandle, SDKHandle};
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, IOSSigner};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, VTableSigner};
 use dash_sdk::dpp::identity::signer::Signer;
 
 /// Result structure for credit transfer operations

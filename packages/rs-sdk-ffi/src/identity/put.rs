@@ -48,7 +48,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Create instant asset lock proof
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
         // Create instant asset lock proof
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
         // Create chain asset lock proof
@@ -289,7 +289,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock_and_w
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
-    let signer = &*(signer_handle as *const crate::signer::IOSSigner);
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
         // Create chain asset lock proof
