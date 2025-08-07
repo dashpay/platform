@@ -95,8 +95,8 @@ pub unsafe extern "C" fn dash_sdk_document_create(
         }
     };
 
-    // Convert JSON to platform Value
-    let properties = match serde_json::from_value::<BTreeMap<String, Value>>(properties_value) {
+    // Convert JSON to platform Value - handle hex strings for byte arrays
+    let mut properties = match serde_json::from_value::<BTreeMap<String, Value>>(properties_value) {
         Ok(map) => map,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
@@ -129,14 +129,6 @@ pub unsafe extern "C" fn dash_sdk_document_create(
         // Get platform version
         let platform_version = wrapper.sdk.version();
 
-        // Convert properties to platform Value
-        let data = Value::Map(
-            properties
-                .into_iter()
-                .map(|(k, v)| (Value::Text(k), v))
-                .collect(),
-        );
-
         // Generate entropy for document ID (32 random bytes)
         let mut entropy = [0u8; 32];
         getrandom::getrandom(&mut entropy)
@@ -146,9 +138,14 @@ pub unsafe extern "C" fn dash_sdk_document_create(
             .document_type_borrowed_for_name(document_type)
             .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
 
+        // Sanitize document properties (convert hex/base64 to bytes, base58 to identifiers, etc.)
+        use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+        document_type_ref.sanitize_document_properties(&mut properties);
+        eprintln!("📝 [DOCUMENT CREATE] Sanitized document properties");
+
         // Create document with entropy - this will generate the document ID internally
         let document = document_type_ref.create_document_from_data(
-            data,
+            properties.into(),
             owner_id,
             0,  // block_height - will be set by platform
             0,  // core_block_height - will be set by platform

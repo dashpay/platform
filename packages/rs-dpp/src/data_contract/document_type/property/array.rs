@@ -16,6 +16,134 @@ pub enum ArrayItemType {
 }
 
 impl ArrayItemType {
+    /// Sanitize a value to match the expected array item type
+    pub fn sanitize_value_mut(&self, value: &mut Value) {
+        match (self, value.clone()) {
+            // Convert hex or base64 strings to byte arrays for ByteArray items
+            (ArrayItemType::ByteArray(min_size, max_size), Value::Text(str_value)) => {
+                // Try to decode the string
+                let decoded_bytes = if let Ok(bytes) = hex::decode(str_value.as_str()) {
+                    Some(bytes)
+                } else {
+                    // If hex fails, try base64 decoding
+                    use base64::{Engine as _, engine::general_purpose};
+                    general_purpose::STANDARD.decode(str_value.as_str()).ok()
+                };
+                
+                if let Some(bytes) = decoded_bytes {
+                    let byte_len = bytes.len();
+                    
+                    // Check if the decoded bytes meet the size constraints
+                    let size_ok = match (*min_size, *max_size) {
+                        (Some(min), Some(max)) => byte_len >= min && byte_len <= max,
+                        (Some(min), None) => byte_len >= min,
+                        (None, Some(max)) => byte_len <= max,
+                        (None, None) => true,
+                    };
+                    
+                    if size_ok {
+                        // Use specific byte array types for exact sizes
+                        match bytes.len() {
+                            20 => {
+                                if let Ok(arr) = bytes.try_into() {
+                                    *value = Value::Bytes20(arr);
+                                }
+                            }
+                            32 => {
+                                if let Ok(arr) = bytes.try_into() {
+                                    *value = Value::Bytes32(arr);
+                                }
+                            }
+                            36 => {
+                                if let Ok(arr) = bytes.try_into() {
+                                    *value = Value::Bytes36(arr);
+                                }
+                            }
+                            _ => {
+                                *value = Value::Bytes(bytes);
+                            }
+                        }
+                    }
+                    // If size constraints are not met, leave the value as is
+                }
+                // If decoding fails, leave the value as is (validation will catch it later)
+            }
+            
+            // Convert hex or base58 strings to identifiers for Identifier items
+            (ArrayItemType::Identifier, Value::Text(str_value)) => {
+                use platform_value::Identifier;
+                // First try base58 decoding (most common for identifiers)
+                if let Ok(id) = Identifier::from_string(&str_value, platform_value::string_encoding::Encoding::Base58) {
+                    *value = Value::Identifier(id.into_buffer());
+                } else {
+                    // If base58 fails, try hex decoding
+                    // Remove any spaces or non-hex characters
+                    let clean_hex: String = str_value.chars()
+                        .filter(|c| c.is_ascii_hexdigit())
+                        .collect();
+                    
+                    // Try to decode hex string to identifier
+                    if clean_hex.len() == 64 {  // 32 bytes = 64 hex chars
+                        if let Ok(bytes) = hex::decode(&clean_hex) {
+                            if let Ok(id) = Identifier::try_from(bytes.as_slice()) {
+                                *value = Value::Identifier(id.into_buffer());
+                            }
+                        }
+                    }
+                }
+                // If both conversions fail, leave the value as is (validation will catch it later)
+            }
+            
+            // Convert positive I64 to U64 for Date items
+            (ArrayItemType::Date, Value::I64(timestamp)) if timestamp >= 0 => {
+                *value = Value::U64(timestamp as u64);
+            }
+            
+            // Ensure integers are converted properly
+            (ArrayItemType::Integer, Value::U64(n)) if n <= i64::MAX as u64 => {
+                *value = Value::I64(n as i64);
+            }
+            (ArrayItemType::Integer, Value::U32(n)) => {
+                *value = Value::I64(n as i64);
+            }
+            (ArrayItemType::Integer, Value::U16(n)) => {
+                *value = Value::I64(n as i64);
+            }
+            (ArrayItemType::Integer, Value::U8(n)) => {
+                *value = Value::I64(n as i64);
+            }
+            
+            // Ensure numbers are converted to F64
+            (ArrayItemType::Number, Value::I64(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::U64(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::I32(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::U32(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::I16(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::U16(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::I8(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            (ArrayItemType::Number, Value::U8(n)) => {
+                *value = Value::Float(n as f64);
+            }
+            
+            // For all other cases, leave the value as is
+            _ => {}
+        }
+    }
+    
     pub fn encode_value_with_size(&self, value: Value) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ArrayItemType::String(_, _) => {

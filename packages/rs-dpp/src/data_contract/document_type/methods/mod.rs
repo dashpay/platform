@@ -330,4 +330,17 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             }),
         }
     }
+
+    fn sanitize_document_properties(&self, properties: &mut BTreeMap<String, Value>) {
+        // Iterate through each property in the document
+        for (field_name, field_value) in properties.iter_mut() {
+            // Get the property definition from the document type schema
+            if let Some(property_def) = self.properties().get(field_name) {
+                // Sanitize the value based on its property type
+                property_def.property_type.sanitize_value_mut(field_value);
+            }
+            // If the property is not in the schema, leave it as is
+            // (validation will catch unknown properties later)
+        }
+    }
 }
