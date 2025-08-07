@@ -54,7 +54,7 @@ tonic = { version = "0.13.0", features = [
   "codegen",
   "prost",
 ], default-features = false }
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tonic = { version = "0.13.0", features = [

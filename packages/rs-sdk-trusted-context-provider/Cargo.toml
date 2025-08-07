@@ -8,7 +8,9 @@ description = "Trusted HTTP-based context provider for Dash Platform SDK"
 
 [dependencies]
 dash-context-provider = { path = "../rs-context-provider" }
-dpp = { path = "../rs-dpp", default-features = false, features = ["dash-sdk-features"] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "dash-sdk-features",
+] }
 reqwest = { version = "0.12", features = ["json"], default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -18,7 +20,9 @@ lru = "0.12.5"
 arc-swap = "1.7.1"
 async-trait = "0.1.83"
 hex = "0.4.3"
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = ["bls-signatures"], tag = "v0.39.6" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+    "bls-signatures",
+], tag = "v0.39.6" }
 futures = "0.3"
 url = "2.5"
 
@@ -33,7 +37,7 @@ all-system-contracts = [
     "dashpay-contract",
     "wallet-utils-contract",
     "token-history-contract",
-    "keywords-contract"
+    "keywords-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP

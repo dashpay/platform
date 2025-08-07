@@ -220,6 +220,6 @@ pub fn get_withdrawal_document_fixture(
 
 fn get_random_10_bytes() -> Vec<u8> {
     let mut buffer = [0u8; 10];
-    let _ = getrandom::fill(&mut buffer);
+    let _ = getrandom::getrandom(&mut buffer);
     buffer.to_vec()
 }

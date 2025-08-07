@@ -31,6 +31,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "serde",
 ], default-features = false, tag = "v0.39.6" }
 env_logger = { version = "0.11" }
+getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.13" }
@@ -62,11 +63,6 @@ indexmap = { version = "2.7.0", features = ["serde"] }
 strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
-getrandom = { version = "0.3" }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
-
 
 [dev-dependencies]
 test-case = { version = "3.3" }

@@ -41,7 +41,7 @@ pub fn get_dpns_parent_document_fixture(
     let document_factory =
         DocumentFactory::new(protocol_version).expect("expected to get document factory");
     let mut pre_order_salt = [0u8; 32];
-    let _ = getrandom::fill(&mut pre_order_salt);
+    let _ = getrandom::getrandom(&mut pre_order_salt);
 
     let normalized_label = convert_to_homograph_safe_chars(options.label.as_str());
 
@@ -93,7 +93,7 @@ pub fn get_dpns_parent_extended_document_fixture(
     let document_factory =
         DocumentFactory::new(protocol_version).expect("expected to get document factory");
     let mut pre_order_salt = [0u8; 32];
-    let _ = getrandom::fill(&mut pre_order_salt);
+    let _ = getrandom::getrandom(&mut pre_order_salt);
 
     let normalized_label = convert_to_homograph_safe_chars(options.label.as_str());
 
