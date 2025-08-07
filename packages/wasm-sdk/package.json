@@ -5,10 +5,23 @@
   "scripts": {
     "build": "./build.sh",
     "build:release": "./build-optimized.sh",
-    "test": "echo 'Tests run from web interface at index.html'",
+    "test": "mocha",
+    "test:unit": "mocha 'test/unit/**/*.spec.js' 'test/unit/**/*.spec.mjs'",
+    "test:integration": "mocha 'test/integration/**/*.spec.js' 'test/integration/**/*.spec.mjs'",
+    "test:e2e": "mocha 'test/e2e/**/*.spec.js' 'test/e2e/**/*.spec.mjs'",
+    "test:watch": "mocha --watch",
+    "test:coverage": "nyc mocha",
     "prepublishOnly": "echo 'Publishing handled by pkg/package.json'"
   },
   "ultra": {
     "concurrent": ["test"]
+  },
+  "devDependencies": {
+    "mocha": "^11.1.0",
+    "chai": "^4.3.10",
+    "sinon": "^15.0.0",
+    "nyc": "^15.1.0",
+    "@types/mocha": "^10.0.0",
+    "@types/chai": "^4.3.0"
   }
 }
