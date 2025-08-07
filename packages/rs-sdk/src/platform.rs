@@ -7,12 +7,15 @@
 
 pub mod block_info_from_metadata;
 mod delegate;
+pub mod document_proof;
 mod fetch;
 pub mod fetch_current_no_parameters;
 mod fetch_many;
 mod fetch_unproved;
 mod identities_contract_keys_query;
+pub mod proof_data;
 pub mod query;
+pub mod signature_utils;
 pub mod transition;
 pub mod types;
 
@@ -25,6 +28,7 @@ pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use document_proof::{fetch_document_with_proof, DocumentWithProof};
 pub use documents::document_query::DocumentQuery;
 pub use dpp::{
     self as dpp,
@@ -37,6 +41,7 @@ pub use {
     fetch::Fetch,
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,
+    proof_data::{DocumentFetchManyWithProofs, DocumentsWithProofData, FetchWithProof, ProofData},
     query::{
         LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT,
     },
