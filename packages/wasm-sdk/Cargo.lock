@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "2.0.0"
+version = "2.1.0-dev.2"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1121,6 +1121,7 @@ dependencies = [
  "derive_more 1.0.0",
  "env_logger",
  "getrandom 0.2.16",
+ "getrandom 0.3.3",
  "hex",
  "indexmap 2.10.0",
  "integer-encoding",
@@ -3195,7 +3196,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "2.0.0"
+version = "2.1.0-dev.2"
 dependencies = [
  "backon",
  "chrono",
