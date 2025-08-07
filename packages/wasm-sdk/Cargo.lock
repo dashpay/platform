@@ -1121,7 +1121,6 @@ dependencies = [
  "derive_more 1.0.0",
  "env_logger",
  "getrandom 0.2.16",
- "getrandom 0.3.3",
  "hex",
  "indexmap 2.10.0",
  "integer-encoding",
@@ -1570,11 +1569,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
 dependencies = [
  "cfg-if 1.0.1",
- "js-sys",
  "libc",
  "r-efi",
  "wasi 0.14.2+wasi-0.2.4",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -4578,7 +4575,7 @@ dependencies = [
  "dashcore 0.39.6 (git+https://github.com/dashpay/rust-dashcore?branch=v0.40-dev)",
  "drive",
  "drive-proof-verifier",
- "getrandom 0.3.3",
+ "getrandom 0.2.16",
  "hex",
  "hmac",
  "js-sys",

@@ -35,7 +35,7 @@ pub fn generate_key_pair(network: &str) -> Result<JsValue, JsError> {
 
     // Generate random 32 bytes
     let mut key_bytes = [0u8; 32];
-    getrandom::fill(&mut key_bytes)
+    getrandom::getrandom(&mut key_bytes)
         .map_err(|e| JsError::new(&format!("Failed to generate random bytes: {}", e)))?;
 
     // Create private key
