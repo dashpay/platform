@@ -88,7 +88,7 @@ const TestAssertions = {
     isValidWIF(value) {
         expect(value).to.be.a('string');
         expect(value).to.have.length.greaterThan(50);
-        expect(value).to.match(/^[XL][A-Za-z0-9]+$/);
+        expect(value).to.match(/^[XLc][A-Za-z0-9]+$/); // X/L for mainnet, c for testnet
     },
     
     /**
