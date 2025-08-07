@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 use dash_sdk::dpp::dashcore::Network;
+use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
 use std::ffi::CStr;
@@ -617,6 +618,114 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashS
         Network::Devnet => DashSDKNetwork::SDKDevnet,
         _ => DashSDKNetwork::SDKLocal, // Fallback for any other network types
     }
+}
+
+/// Add known contracts to the SDK's trusted context provider
+///
+/// This allows pre-loading data contracts into the trusted provider's cache,
+/// avoiding network calls for these contracts.
+///
+/// # Safety
+/// - `handle` must be a valid SDK handle created with dash_sdk_create_trusted
+/// - `contract_ids` must be a valid comma-separated list of contract IDs
+/// - `serialized_contracts` must be a valid pointer to an array of serialized contract data
+/// - `contract_lengths` must be a valid pointer to an array of contract data lengths
+/// - `contract_count` must match the actual number of contracts provided
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_add_known_contracts(
+    handle: *const SDKHandle,
+    contract_ids: *const std::os::raw::c_char,
+    serialized_contracts: *const *const u8,
+    contract_lengths: *const usize,
+    contract_count: usize,
+) -> DashSDKResult {
+    if handle.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK handle is null".to_string(),
+        ));
+    }
+
+    if contract_ids.is_null() || serialized_contracts.is_null() || contract_lengths.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Invalid parameters".to_string(),
+        ));
+    }
+
+    let wrapper = &*(handle as *const SDKWrapper);
+
+    // Check if this SDK has a trusted provider
+    let provider = match &wrapper.trusted_provider {
+        Some(p) => p.clone(),
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidState,
+                "SDK does not have a trusted context provider. Use dash_sdk_create_trusted to create an SDK with trusted provider.".to_string(),
+            ));
+        }
+    };
+
+    // Parse contract IDs
+    let ids_str = match CStr::from_ptr(contract_ids).to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid contract IDs string: {}", e),
+            ));
+        }
+    };
+
+    let ids: Vec<&str> = ids_str.split(',').map(|s| s.trim()).collect();
+
+    if ids.len() != contract_count {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!(
+                "Contract ID count mismatch: expected {}, got {}",
+                contract_count,
+                ids.len()
+            ),
+        ));
+    }
+
+    // Deserialize and add contracts
+    let mut contracts = Vec::new();
+    for i in 0..contract_count {
+        let contract_data =
+            std::slice::from_raw_parts(*serialized_contracts.add(i), *contract_lengths.add(i));
+
+        // Deserialize the contract using DPP
+        let platform_version = wrapper.sdk.version();
+        match dash_sdk::dpp::data_contract::DataContract::versioned_deserialize(
+            contract_data,
+            false, // don't validate (we trust the data)
+            &platform_version,
+        ) {
+            Ok(contract) => {
+                eprintln!("✅ Successfully deserialized contract: {}", ids[i]);
+                contracts.push(contract);
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to deserialize contract {}: {}", ids[i], e);
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::SerializationError,
+                    format!("Failed to deserialize contract {}: {}", ids[i], e),
+                ));
+            }
+        }
+    }
+
+    // Add all contracts to the provider
+    provider.add_known_contracts(contracts);
+
+    eprintln!(
+        "✅ Added {} known contracts to trusted provider",
+        contract_count
+    );
+
+    DashSDKResult::success(std::ptr::null_mut())
 }
 
 /// Create a mock SDK instance with a dump directory (for offline testing)

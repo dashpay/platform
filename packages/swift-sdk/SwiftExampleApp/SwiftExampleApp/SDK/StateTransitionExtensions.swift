@@ -335,38 +335,56 @@ extension SDK {
         properties: [String: Any],
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let startTime = Date()
+        print("📝 [DOCUMENT CREATE] Starting at \(startTime)")
+        print("📝 [DOCUMENT CREATE] Contract ID: \(contractId)")
+        print("📝 [DOCUMENT CREATE] Document Type: \(documentType)")
+        print("📝 [DOCUMENT CREATE] Owner ID: \(ownerIdentity.idString)")
+        
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
+                    print("❌ [DOCUMENT CREATE] SDK not initialized")
                     continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
                     return
                 }
                 
                 // Convert properties to JSON
+                print("📝 [DOCUMENT CREATE] Converting properties to JSON...")
                 guard let propertiesData = try? JSONSerialization.data(withJSONObject: properties),
                       let propertiesJson = String(data: propertiesData, encoding: .utf8) else {
+                    print("❌ [DOCUMENT CREATE] Failed to serialize properties")
                     continuation.resume(throwing: SDKError.invalidParameter("Failed to serialize properties to JSON"))
                     return
                 }
+                print("✅ [DOCUMENT CREATE] Properties JSON created: \(propertiesJson.prefix(100))...")
                 
                 // 1. Fetch the data contract handle
+                print("📝 [DOCUMENT CREATE] Fetching data contract handle...")
+                let contractFetchStart = Date()
                 let contractResult = contractId.withCString { contractIdCStr in
                     dash_sdk_data_contract_fetch(handle, contractIdCStr)
                 }
+                let contractFetchTime = Date().timeIntervalSince(contractFetchStart)
+                print("⏱️ [DOCUMENT CREATE] Contract fetch took \(contractFetchTime) seconds")
                 
                 guard contractResult.error == nil else {
                     let errorString = contractResult.error?.pointee.message != nil ?
                         String(cString: contractResult.error!.pointee.message) : "Failed to fetch data contract"
+                    print("❌ [DOCUMENT CREATE] Contract fetch failed: \(errorString)")
+                    print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
                     dash_sdk_error_free(contractResult.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                     return
                 }
                 
-                guard contractResult.data_type == DashSDKResultDataType_ResultDataContractHandle,
+                guard contractResult.data_type == DashSDKFFI.ResultDataContractHandle,
                       let contractHandle = contractResult.data else {
+                    print("❌ [DOCUMENT CREATE] Invalid contract result type")
                     continuation.resume(throwing: SDKError.internalError("Invalid data contract result type"))
                     return
                 }
+                print("✅ [DOCUMENT CREATE] Contract handle obtained")
                 
                 defer {
                     // Clean up contract handle when done
@@ -374,24 +392,33 @@ extension SDK {
                 }
                 
                 // 2. Fetch the identity handle
+                print("📝 [DOCUMENT CREATE] Fetching identity handle...")
                 let identityIdString = ownerIdentity.id.toBase58String()
+                print("📝 [DOCUMENT CREATE] Identity ID (base58): \(identityIdString)")
+                let identityFetchStart = Date()
                 let identityResult = identityIdString.withCString { identityIdCStr in
                     dash_sdk_identity_fetch_handle(handle, identityIdCStr)
                 }
+                let identityFetchTime = Date().timeIntervalSince(identityFetchStart)
+                print("⏱️ [DOCUMENT CREATE] Identity fetch took \(identityFetchTime) seconds")
                 
                 guard identityResult.error == nil else {
                     let errorString = identityResult.error?.pointee.message != nil ?
                         String(cString: identityResult.error!.pointee.message) : "Failed to fetch identity"
+                    print("❌ [DOCUMENT CREATE] Identity fetch failed: \(errorString)")
+                    print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
                     dash_sdk_error_free(identityResult.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                     return
                 }
                 
-                guard identityResult.data_type == DashSDKResultDataType_ResultIdentityHandle,
+                guard identityResult.data_type == DashSDKFFI.ResultIdentityHandle,
                       let identityHandle = identityResult.data else {
+                    print("❌ [DOCUMENT CREATE] Invalid identity result type")
                     continuation.resume(throwing: SDKError.internalError("Invalid identity result type"))
                     return
                 }
+                print("✅ [DOCUMENT CREATE] Identity handle obtained")
                 
                 defer {
                     // Clean up identity handle when done
@@ -399,12 +426,14 @@ extension SDK {
                 }
                 
                 // 3. Create document parameters and create the document
+                print("📝 [DOCUMENT CREATE] Creating document with parameters...")
+                let createStart = Date()
                 let createResult = documentType.withCString { docTypeCStr in
                     propertiesJson.withCString { propsCStr in
                         var createParams = DashSDKDocumentCreateParams(
-                            data_contract_handle: UnsafePointer(OpaquePointer(contractHandle)),
+                            data_contract_handle: OpaquePointer(contractHandle),
                             document_type: docTypeCStr,
-                            owner_identity_handle: UnsafePointer(OpaquePointer(identityHandle)),
+                            owner_identity_handle: OpaquePointer(identityHandle),
                             properties_json: propsCStr
                         )
                         return withUnsafePointer(to: &createParams) { paramsPtr in
@@ -412,20 +441,26 @@ extension SDK {
                         }
                     }
                 }
+                let createTime = Date().timeIntervalSince(createStart)
+                print("⏱️ [DOCUMENT CREATE] Document creation took \(createTime) seconds")
                 
                 guard createResult.error == nil else {
                     let errorString = createResult.error?.pointee.message != nil ?
                         String(cString: createResult.error!.pointee.message) : "Failed to create document"
+                    print("❌ [DOCUMENT CREATE] Document creation failed: \(errorString)")
+                    print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
                     dash_sdk_error_free(createResult.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                     return
                 }
                 
-                guard createResult.data_type == DashSDKResultDataType_ResultDocumentHandle,
+                guard createResult.data_type == DashSDKFFI.ResultDocumentHandle,
                       let documentHandle = createResult.data else {
+                    print("❌ [DOCUMENT CREATE] Invalid document result type")
                     continuation.resume(throwing: SDKError.internalError("Invalid document result type"))
                     return
                 }
+                print("✅ [DOCUMENT CREATE] Document handle created")
                 
                 defer {
                     // Clean up document handle when done
@@ -433,34 +468,44 @@ extension SDK {
                 }
                 
                 // 5. Get identity public key handle (we'll use the first authentication key)
+                print("📝 [DOCUMENT CREATE] Getting public key handle...")
                 let authKey = ownerIdentity.publicKeys.values.first { key in
                     key.purpose == .authentication
                 } ?? ownerIdentity.publicKeys.values.first
                 
                 guard let keyToUse = authKey else {
+                    print("❌ [DOCUMENT CREATE] No public key found for identity")
                     continuation.resume(throwing: SDKError.invalidParameter("No public key found for identity"))
                     return
                 }
+                print("📝 [DOCUMENT CREATE] Using key ID: \(keyToUse.id), purpose: \(keyToUse.purpose)")
                 
                 // Get public key handle from identity handle
+                let keyFetchStart = Date()
                 let keyResult = dash_sdk_identity_get_public_key_by_id(
                     OpaquePointer(identityHandle),
                     UInt8(keyToUse.id)
                 )
+                let keyFetchTime = Date().timeIntervalSince(keyFetchStart)
+                print("⏱️ [DOCUMENT CREATE] Key fetch took \(keyFetchTime) seconds")
                 
                 guard keyResult.error == nil else {
                     let errorString = keyResult.error?.pointee.message != nil ?
                         String(cString: keyResult.error!.pointee.message) : "Failed to get public key"
+                    print("❌ [DOCUMENT CREATE] Key fetch failed: \(errorString)")
+                    print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
                     dash_sdk_error_free(keyResult.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                     return
                 }
                 
-                guard keyResult.data_type == DashSDKResultDataType_ResultIdentityPublicKeyHandle,
+                guard keyResult.data_type == DashSDKFFI.ResultPublicKeyHandle,
                       let keyHandle = keyResult.data else {
+                    print("❌ [DOCUMENT CREATE] Invalid public key result type")
                     continuation.resume(throwing: SDKError.internalError("Invalid public key result type"))
                     return
                 }
+                print("✅ [DOCUMENT CREATE] Public key handle obtained")
                 
                 defer {
                     // Clean up key handle
@@ -473,11 +518,21 @@ extension SDK {
                 let stateTransitionOptions: UnsafePointer<DashSDKStateTransitionCreationOptions>? = nil
                 
                 // Generate entropy for document ID
-                var entropy: [UInt8] = Array(repeating: 0, count: 32)
-                _ = SecRandomCopyBytes(kSecRandomDefault, 32, &entropy)
+                var entropy = (
+                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                    UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0)
+                )
+                withUnsafeMutableBytes(of: &entropy) { entropyBytes in
+                    _ = SecRandomCopyBytes(kSecRandomDefault, 32, entropyBytes.baseAddress!)
+                }
                 
                 // 7. Put document to platform and wait
-                let putResult = withUnsafePointer(to: entropy) { entropyPtr in
+                print("🚀 [DOCUMENT CREATE] Submitting document to platform...")
+                print("🚀 [DOCUMENT CREATE] This is the NETWORK CALL - monitoring for timeout...")
+                let putStart = Date()
+                let putResult = withUnsafePointer(to: &entropy) { entropyPtr in
                     documentType.withCString { docTypeCStr in
                         dash_sdk_document_put_to_platform_and_wait(
                             handle,
@@ -493,17 +548,25 @@ extension SDK {
                         )
                     }
                 }
+                let putTime = Date().timeIntervalSince(putStart)
+                print("⏱️ [DOCUMENT CREATE] Platform submission took \(putTime) seconds")
+                print("✅ [DOCUMENT CREATE] Received response from platform (no timeout!)")
                 
                 if let error = putResult.error {
                     let errorString = error.pointee.message != nil ?
                         String(cString: error.pointee.message) : "Failed to put document to platform"
+                    print("❌ [DOCUMENT CREATE] Platform submission failed: \(errorString)")
+                    print("⏱️ [DOCUMENT CREATE] Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
                     dash_sdk_error_free(error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
-                } else if putResult.data_type == DashSDKResultDataType_ResultJson,
+                } else if putResult.data_type == DashSDKFFI.String,
                           let jsonData = putResult.data {
                     // Parse the returned JSON
                     let jsonString = String(cString: UnsafePointer<CChar>(OpaquePointer(jsonData)))
                     dash_sdk_string_free(UnsafeMutablePointer<CChar>(mutating: UnsafePointer<CChar>(OpaquePointer(jsonData))))
+                    
+                    print("✅ [DOCUMENT CREATE] Success! Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
+                    print("📝 [DOCUMENT CREATE] Response: \(jsonString.prefix(200))...")
                     
                     if let data = jsonString.data(using: .utf8),
                        let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -512,6 +575,7 @@ extension SDK {
                         continuation.resume(returning: ["status": "success", "raw": jsonString])
                     }
                 } else {
+                    print("✅ [DOCUMENT CREATE] Success! Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
                     continuation.resume(returning: ["status": "success", "message": "Document created successfully"])
                 }
             }
@@ -527,6 +591,10 @@ extension SDK {
         properties: [String: Any],
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let startTime = Date()
+        print("📝 [DOCUMENT REPLACE] Starting at \(startTime)")
+        print("📝 [DOCUMENT REPLACE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
+        
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -535,6 +603,8 @@ extension SDK {
                 }
                 
                 // 1. Fetch the document first
+                print("📝 [DOCUMENT REPLACE] Fetching existing document...")
+                let docFetchStart = Date()
                 let documentResult = documentId.withCString { docIdCStr in
                     contractId.withCString { contractIdCStr in
                         documentType.withCString { docTypeCStr in
@@ -543,7 +613,11 @@ extension SDK {
                     }
                 }
                 
+                let docFetchTime = Date().timeIntervalSince(docFetchStart)
+                print("⏱️ [DOCUMENT REPLACE] Document fetch took \(docFetchTime) seconds")
+                
                 guard documentResult.error == nil else {
+                    print("❌ [DOCUMENT REPLACE] Failed to fetch document after \(docFetchTime) seconds")
                     let errorString = documentResult.error?.pointee.message != nil ?
                         String(cString: documentResult.error!.pointee.message) : "Failed to fetch document"
                     dash_sdk_error_free(documentResult.error)
@@ -551,7 +625,7 @@ extension SDK {
                     return
                 }
                 
-                guard documentResult.data_type == DashSDKResultDataType_ResultDocumentHandle,
+                guard documentResult.data_type == DashSDKFFI.ResultDocumentHandle,
                       let documentHandle = documentResult.data else {
                     continuation.resume(throwing: SDKError.internalError("Invalid document result type"))
                     return
@@ -561,13 +635,20 @@ extension SDK {
                     dash_sdk_document_handle_destroy(OpaquePointer(documentHandle))
                 }
                 
+                print("✅ [DOCUMENT REPLACE] Document fetched successfully")
+                
                 // 2. Fetch the data contract handle
+                print("📝 [DOCUMENT REPLACE] Fetching data contract...")
+                let contractFetchStart = Date()
                 let contractResult = contractId.withCString { contractIdCStr in
                     dash_sdk_data_contract_fetch(handle, contractIdCStr)
                 }
                 
+                let contractFetchTime = Date().timeIntervalSince(contractFetchStart)
+                print("⏱️ [DOCUMENT REPLACE] Contract fetch took \(contractFetchTime) seconds")
+                
                 guard contractResult.error == nil,
-                      contractResult.data_type == DashSDKResultDataType_ResultDataContractHandle,
+                      contractResult.data_type == DashSDKFFI.ResultDataContractHandle,
                       let contractHandle = contractResult.data else {
                     if contractResult.error != nil {
                         let errorString = String(cString: contractResult.error!.pointee.message)
@@ -583,14 +664,21 @@ extension SDK {
                     dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
                 }
                 
+                print("✅ [DOCUMENT REPLACE] Contract fetched successfully")
+                
                 // 3. Fetch the identity handle
+                print("📝 [DOCUMENT REPLACE] Fetching identity handle...")
+                let identityFetchStart = Date()
                 let identityIdString = ownerIdentity.id.toBase58String()
                 let identityResult = identityIdString.withCString { identityIdCStr in
                     dash_sdk_identity_fetch_handle(handle, identityIdCStr)
                 }
                 
+                let identityFetchTime = Date().timeIntervalSince(identityFetchStart)
+                print("⏱️ [DOCUMENT REPLACE] Identity fetch took \(identityFetchTime) seconds")
+                
                 guard identityResult.error == nil,
-                      identityResult.data_type == DashSDKResultDataType_ResultIdentityHandle,
+                      identityResult.data_type == DashSDKFFI.ResultIdentityHandle,
                       let identityHandle = identityResult.data else {
                     if identityResult.error != nil {
                         let errorString = String(cString: identityResult.error!.pointee.message)
@@ -606,7 +694,11 @@ extension SDK {
                     dash_sdk_identity_destroy(OpaquePointer(identityHandle))
                 }
                 
+                print("✅ [DOCUMENT REPLACE] Identity fetched successfully")
+                
                 // 4. Get public key handle
+                print("📝 [DOCUMENT REPLACE] Getting public key handle...")
+                let keyFetchStart = Date()
                 let authKey = ownerIdentity.publicKeys.values.first { key in
                     key.purpose == .authentication
                 } ?? ownerIdentity.publicKeys.values.first
@@ -621,8 +713,11 @@ extension SDK {
                     UInt8(keyToUse.id)
                 )
                 
+                let keyFetchTime = Date().timeIntervalSince(keyFetchStart)
+                print("⏱️ [DOCUMENT REPLACE] Key fetch took \(keyFetchTime) seconds")
+                
                 guard keyResult.error == nil,
-                      keyResult.data_type == DashSDKResultDataType_ResultIdentityPublicKeyHandle,
+                      keyResult.data_type == DashSDKFFI.ResultPublicKeyHandle,
                       let keyHandle = keyResult.data else {
                     if keyResult.error != nil {
                         let errorString = String(cString: keyResult.error!.pointee.message)
@@ -638,7 +733,11 @@ extension SDK {
                     dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle))
                 }
                 
+                print("✅ [DOCUMENT REPLACE] Public key fetched successfully")
+                
                 // 5. Replace document on platform
+                print("🚀 [DOCUMENT REPLACE] This is the NETWORK CALL - monitoring for timeout...")
+                let replaceStart = Date()
                 let putResult = documentType.withCString { docTypeCStr in
                     dash_sdk_document_replace_on_platform_and_wait(
                         handle,
@@ -653,22 +752,35 @@ extension SDK {
                     )
                 }
                 
+                let replaceTime = Date().timeIntervalSince(replaceStart)
+                print("⏱️ [DOCUMENT REPLACE] Platform submission took \(replaceTime) seconds")
+                
                 if let error = putResult.error {
+                    print("❌ [DOCUMENT REPLACE] Network call failed after \(replaceTime) seconds")
                     let errorString = String(cString: error.pointee.message)
                     dash_sdk_error_free(error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
-                } else if putResult.data_type == DashSDKResultDataType_ResultJson,
+                } else if putResult.data_type == DashSDKFFI.String,
                           let jsonData = putResult.data {
                     let jsonString = String(cString: UnsafePointer<CChar>(OpaquePointer(jsonData)))
                     dash_sdk_string_free(UnsafeMutablePointer<CChar>(mutating: UnsafePointer<CChar>(OpaquePointer(jsonData))))
                     
                     if let data = jsonString.data(using: .utf8),
                        let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        let totalTime = Date().timeIntervalSince(startTime)
+                        print("✅ [DOCUMENT REPLACE] Response received - document replaced successfully")
+                        print("✅ [DOCUMENT REPLACE] Total operation time: \(totalTime) seconds")
                         continuation.resume(returning: jsonObject)
                     } else {
+                        let totalTime = Date().timeIntervalSince(startTime)
+                        print("✅ [DOCUMENT REPLACE] Response received - document replaced successfully")
+                        print("✅ [DOCUMENT REPLACE] Total operation time: \(totalTime) seconds")
                         continuation.resume(returning: ["status": "success", "raw": jsonString])
                     }
                 } else {
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("✅ [DOCUMENT REPLACE] Document replaced successfully")
+                    print("✅ [DOCUMENT REPLACE] Total operation time: \(totalTime) seconds")
                     continuation.resume(returning: ["status": "success", "message": "Document replaced successfully"])
                 }
             }
@@ -683,6 +795,10 @@ extension SDK {
         ownerIdentity: DPPIdentity,
         signer: OpaquePointer
     ) async throws {
+        let startTime = Date()
+        print("🗑️ [DOCUMENT DELETE] Starting at \(startTime)")
+        print("🗑️ [DOCUMENT DELETE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
+        
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -690,10 +806,17 @@ extension SDK {
                     return
                 }
                 
-                // Similar setup as replace - fetch document, contract, identity, and key handles
-                // Then call dash_sdk_document_delete_and_wait
+                // TODO: Implement full document delete with logging similar to documentReplace:
+                // 1. Fetch document with timing
+                // 2. Fetch contract with timing
+                // 3. Fetch identity with timing
+                // 4. Get public key with timing
+                // 5. Call dash_sdk_document_delete_and_wait with network timing
                 
-                // For brevity, using simplified error handling
+                print("⚠️ [DOCUMENT DELETE] Not fully implemented yet")
+                let totalTime = Date().timeIntervalSince(startTime)
+                print("⚠️ [DOCUMENT DELETE] Total time: \(totalTime) seconds")
+                
                 continuation.resume(throwing: SDKError.notImplemented(
                     "Document delete implementation similar to replace - handles are available"
                 ))
@@ -710,6 +833,11 @@ extension SDK {
         toIdentityId: String,
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let startTime = Date()
+        print("🔁 [DOCUMENT TRANSFER] Starting at \(startTime)")
+        print("🔁 [DOCUMENT TRANSFER] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
+        print("🔁 [DOCUMENT TRANSFER] From: \(fromIdentity.id.toBase58String()), To: \(toIdentityId)")
+        
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -717,8 +845,17 @@ extension SDK {
                     return
                 }
                 
-                // Similar setup as replace - fetch document, contract, identity, and key handles
-                // Then call dash_sdk_document_transfer_to_identity_and_wait with recipient ID
+                // TODO: Implement full document transfer with logging:
+                // 1. Fetch document with timing
+                // 2. Fetch contract with timing
+                // 3. Fetch from identity with timing
+                // 4. Fetch to identity with timing
+                // 5. Get public key with timing
+                // 6. Call dash_sdk_document_transfer_to_identity_and_wait with network timing
+                
+                print("⚠️ [DOCUMENT TRANSFER] Not fully implemented yet")
+                let totalTime = Date().timeIntervalSince(startTime)
+                print("⚠️ [DOCUMENT TRANSFER] Total time: \(totalTime) seconds")
                 
                 continuation.resume(throwing: SDKError.notImplemented(
                     "Document transfer implementation similar to replace - handles are available"
@@ -736,6 +873,11 @@ extension SDK {
         price: UInt64,
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let startTime = Date()
+        print("🛍️ [DOCUMENT PURCHASE] Starting at \(startTime)")
+        print("🛍️ [DOCUMENT PURCHASE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
+        print("🛍️ [DOCUMENT PURCHASE] Purchaser: \(purchaserIdentity.id.toBase58String()), Price: \(price)")
+        
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -743,8 +885,16 @@ extension SDK {
                     return
                 }
                 
-                // Similar setup as replace - fetch document, contract, identity, and key handles
-                // Then call dash_sdk_document_purchase_and_wait with price
+                // TODO: Implement full document purchase with logging:
+                // 1. Fetch document with timing
+                // 2. Fetch contract with timing
+                // 3. Fetch purchaser identity with timing
+                // 4. Get public key with timing
+                // 5. Call dash_sdk_document_purchase_and_wait with network timing
+                
+                print("⚠️ [DOCUMENT PURCHASE] Not fully implemented yet")
+                let totalTime = Date().timeIntervalSince(startTime)
+                print("⚠️ [DOCUMENT PURCHASE] Total time: \(totalTime) seconds")
                 
                 continuation.resume(throwing: SDKError.notImplemented(
                     "Document purchase implementation similar to replace - handles are available"
@@ -890,8 +1040,10 @@ extension SDK {
                                 return note.withCString { noteCStr in
                                     params.public_note = noteCStr
                                     
-                                    print("🟦 TOKEN MINT: Calling dash_sdk_token_mint WITH note")
-                                    return dash_sdk_token_mint(
+                                    print("🚀 [TOKEN MINT] Submitting to platform WITH note...")
+                                    print("🚀 [TOKEN MINT] This is the NETWORK CALL - monitoring for timeout...")
+                                    let mintStart = Date()
+                                    let result = dash_sdk_token_mint(
                                         handle,
                                         ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                         &params,
@@ -900,6 +1052,10 @@ extension SDK {
                                         nil,  // Default put settings
                                         nil   // Default state transition options
                                     )
+                                    let mintTime = Date().timeIntervalSince(mintStart)
+                                    print("⏱️ [TOKEN MINT] Network call took \(mintTime) seconds")
+                                    print("✅ [TOKEN MINT] Received response from platform (no timeout!)")
+                                    return result
                                 }
                             } else {
                                 params.public_note = nil

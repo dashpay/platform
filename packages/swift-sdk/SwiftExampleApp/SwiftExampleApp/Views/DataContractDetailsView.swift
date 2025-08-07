@@ -7,6 +7,7 @@ struct DataContractDetailsView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
+    @State private var showCopiedAlert = false
     
     var displayName: String {
         // Check if this is a token-only contract
@@ -49,6 +50,11 @@ struct DataContractDetailsView: View {
                 if let url = exportContract() {
                     ShareSheet(items: [url])
                 }
+            }
+            .alert("Copied to Clipboard", isPresented: $showCopiedAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Contract hex has been copied to your clipboard")
             }
         }
         .onAppear {
@@ -131,7 +137,12 @@ struct DataContractDetailsView: View {
                     InfoRow(label: "Owner:", value: ownerId, font: .caption, truncate: true)
                 }
                 
-                InfoRow(label: "Size:", value: ByteCountFormatter.string(fromByteCount: Int64(contract.serializedContract.count), countStyle: .binary))
+                InfoRow(label: "JSON Size:", value: ByteCountFormatter.string(fromByteCount: Int64(contract.serializedContract.count), countStyle: .binary))
+                
+                if let binaryData = contract.binarySerialization {
+                    InfoRow(label: "Binary Size:", value: ByteCountFormatter.string(fromByteCount: Int64(binaryData.count), countStyle: .binary))
+                }
+                
                 InfoRow(label: "Created:", value: contract.createdAt, style: .date)
                 InfoRow(label: "Last Used:", value: contract.lastAccessedAt, style: .relative)
             }
@@ -172,10 +183,26 @@ struct DataContractDetailsView: View {
                 Label("Export Contract", systemImage: "square.and.arrow.up")
                     .foregroundColor(.blue)
             }
+            
+            if contract.binarySerializationHex != nil {
+                Button(action: copyContractHex) {
+                    Label("Copy Contract Hex", systemImage: "doc.on.doc")
+                        .foregroundColor(.blue)
+                }
+            }
         }
     }
     
     // MARK: - Helper Methods
+    
+    private func copyContractHex() {
+        guard let hexString = contract.binarySerializationHex else { return }
+        
+        UIPasteboard.general.string = hexString
+        showCopiedAlert = true
+        
+        print("📋 Copied contract hex to clipboard: \(hexString.prefix(20))...")
+    }
     
     private func exportContract() -> URL? {
         do {

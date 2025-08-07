@@ -185,6 +185,15 @@ impl TrustedHttpContextProvider {
         known.insert(id, Arc::new(contract));
     }
 
+    /// Add multiple data contracts to the known contracts cache
+    pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
+        let mut known = self.known_contracts.lock().unwrap();
+        for contract in contracts {
+            let id = contract.id();
+            known.insert(id, Arc::new(contract));
+        }
+    }
+
     /// Update the quorum caches by fetching current and previous quorums
     pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
         // Fetch current quorums

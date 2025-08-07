@@ -146,6 +146,58 @@ public class SDK {
         handle = OpaquePointer(result.data)
     }
     
+    /// Load known contracts into the trusted context provider
+    /// This avoids network calls for these contracts when they're needed
+    public func loadKnownContracts(_ contracts: [(id: String, data: Data)]) throws {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        guard !contracts.isEmpty else {
+            return // Nothing to do
+        }
+        
+        // Prepare contract IDs as comma-separated string
+        let contractIds = contracts.map { $0.id }.joined(separator: ",")
+        
+        // Prepare arrays of contract data
+        let contractDataPointers = contracts.map { contract in
+            contract.data.withUnsafeBytes { bytes in
+                bytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            }
+        }
+        
+        let contractLengths = contracts.map { $0.data.count }
+        
+        // Call the FFI function
+        let result = contractIds.withCString { idsCStr in
+            contractDataPointers.withUnsafeBufferPointer { dataPointers in
+                contractLengths.withUnsafeBufferPointer { lengths in
+                    dash_sdk_add_known_contracts(
+                        handle,
+                        idsCStr,
+                        dataPointers.baseAddress,
+                        lengths.baseAddress,
+                        UInt(contracts.count)
+                    )
+                }
+            }
+        }
+        
+        // Check for errors
+        if result.error != nil {
+            let error = result.error!.pointee
+            let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+            defer {
+                dash_sdk_error_free(result.error)
+            }
+            
+            throw SDKError.internalError("Failed to add known contracts: \(errorMessage)")
+        }
+        
+        print("✅ Successfully loaded \(contracts.count) known contracts into SDK")
+    }
+    
     deinit {
         if let handle = handle {
             // The handle is already the correct type for the C function

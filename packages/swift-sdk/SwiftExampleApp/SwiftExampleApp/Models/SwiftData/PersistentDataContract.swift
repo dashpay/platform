@@ -9,6 +9,9 @@ final class PersistentDataContract {
     var createdAt: Date
     var lastAccessedAt: Date
     
+    // Binary serialization (CBOR format)
+    var binarySerialization: Data?
+    
     // Version info
     var version: Int?
     var ownerId: Data?
@@ -42,6 +45,10 @@ final class PersistentDataContract {
     
     var parsedContract: [String: Any]? {
         try? JSONSerialization.jsonObject(with: serializedContract, options: []) as? [String: Any]
+    }
+    
+    var binarySerializationHex: String? {
+        binarySerialization?.toHexString()
     }
     
     init(id: Data, name: String, serializedContract: Data) {

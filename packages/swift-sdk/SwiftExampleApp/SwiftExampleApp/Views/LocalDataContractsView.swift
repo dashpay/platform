@@ -311,17 +311,59 @@ struct LoadDataContractView: View {
                 return
             }
             
-            // Fetch the contract - SDK expects a Base58 string
-            let contractData = try await sdk.dataContractGet(id: trimmedId)
+            // Fetch the contract with both JSON and binary serialization
+            guard let handle = sdk.handle else {
+                throw SDKError.invalidState("SDK not initialized")
+            }
+            
+            let result = trimmedId.withCString { idCStr in
+                dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
+            }
+            
+            // Check for error
+            if let error = result.error {
+                let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+                dash_sdk_error_free(error)
+                throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
+            }
+            
+            // Get the JSON string
+            guard result.json_string != nil else {
+                throw SDKError.internalError("No JSON data returned from contract fetch")
+            }
+            
+            let jsonString = String(cString: result.json_string!)
+            
+            // Get the binary serialization
+            var binaryData: Data? = nil
+            if result.serialized_data != nil && result.serialized_data_len > 0 {
+                binaryData = Data(bytes: result.serialized_data, count: Int(result.serialized_data_len))
+            }
+            
+            // Clean up the contract handle if it was returned
+            defer {
+                if result.contract_handle != nil {
+                    dash_sdk_data_contract_destroy(result.contract_handle)
+                }
+            }
+            
+            // Parse the JSON
+            guard let jsonData = jsonString.data(using: String.Encoding.utf8),
+                  let contractData = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
+                throw SDKError.serializationError("Failed to parse contract JSON")
+            }
+            
             print("✅ Contract fetched successfully")
+            if let binaryData = binaryData {
+                print("📦 Binary serialization size: \(binaryData.count) bytes")
+            }
             
             await MainActor.run {
                 fetchedContract = contractData
             }
             
-            // Extract contract details - the response contains the serialized contract data
-            // We need to serialize the entire contract response for storage
-            let serializedContract = try JSONSerialization.data(withJSONObject: contractData, options: [])
+            // Store the JSON for the contract
+            let serializedContract = jsonData
             
             // Get the contract ID from the response or convert from the input
             let contractIdData: Data
@@ -396,6 +438,9 @@ struct LoadDataContractView: View {
                 name: finalName,
                 serializedContract: serializedContract
             )
+            
+            // Add the binary serialization if available
+            persistentContract.binarySerialization = binaryData
             
             modelContext.insert(persistentContract)
             try modelContext.save()

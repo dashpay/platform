@@ -272,8 +272,36 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        let result = dash_sdk_data_contract_fetch_json(handle, id)
-        return try processJSONResult(result)
+        // Use the new unified function with return_json = true, return_serialized = false
+        let result = id.withCString { idCStr in
+            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, false)
+        }
+        
+        // Check for error
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
+        }
+        
+        // Get the JSON string
+        guard result.json_string != nil else {
+            throw SDKError.internalError("No JSON data returned from contract fetch")
+        }
+        
+        let jsonString = String(cString: result.json_string!)
+        
+        // Free the result
+        var mutableResult = result
+        dash_sdk_data_contract_fetch_result_free(&mutableResult)
+        
+        // Parse the JSON
+        guard let jsonData = jsonString.data(using: .utf8),
+              let jsonObject = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse contract JSON")
+        }
+        
+        return jsonObject
     }
     
     /// Get data contract history

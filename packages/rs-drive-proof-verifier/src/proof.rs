@@ -879,6 +879,53 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     }
 }
 
+impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
+    type Request = platform::GetDataContractRequest;
+    type Response = platform::GetDataContractResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        DataContract: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_data_contract_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
+            }
+        }?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_contract) = Drive::verify_contract_return_serialization(
+            &proof.grovedb_proof,
+            None,
+            false,
+            false,
+            id.into_buffer(),
+            platform_version,
+        )
+            .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((maybe_contract, mtd.clone(), proof.clone()))
+    }
+}
+
 impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     type Request = platform::GetDataContractsRequest;
     type Response = platform::GetDataContractsResponse;

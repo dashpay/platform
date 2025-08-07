@@ -8,12 +8,12 @@ struct TransitionInputView: View {
     let onSpecialAction: (String) -> Void
     
     @Query private var dataContracts: [PersistentDataContract]
-    @Query private var contracts: [PersistentContract]
     @EnvironmentObject var appState: UnifiedAppState
     
     // State for dynamic selections
     @State private var selectedContractId: String = ""
     @State private var selectedDocumentType: String = ""
+    @State private var useManualEntry: Bool = false
     
     // Computed property to get mintable tokens
     var mintableTokens: [(token: PersistentToken, contract: PersistentDataContract)] {
@@ -165,7 +165,11 @@ struct TransitionInputView: View {
                 documentTypePicker()
                 
             case "identityPicker":
-                identityPicker()
+                if input.name == "toIdentityId" {
+                    recipientIdentityPicker()
+                } else {
+                    identityPicker()
+                }
                 
             case "documentPicker":
                 documentPicker()
@@ -234,7 +238,7 @@ struct TransitionInputView: View {
     
     @ViewBuilder
     private func contractPicker() -> some View {
-        if contracts.isEmpty {
+        if dataContracts.isEmpty {
             Text("No contracts available")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -245,13 +249,14 @@ struct TransitionInputView: View {
         } else {
             Picker("Select Contract", selection: $value) {
                 Text("Select a contract...").tag("")
-                ForEach(contracts, id: \.contractId) { contract in
-                    Text(contract.name)
-                        .tag(contract.contractId)
+                ForEach(dataContracts, id: \.idBase58) { contract in
+                    Text(getContractDisplayName(contract))
+                        .tag(contract.idBase58)
                 }
             }
             .pickerStyle(MenuPickerStyle())
             .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
             .onChange(of: value) { newValue in
@@ -272,28 +277,20 @@ struct TransitionInputView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding()
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.orange.opacity(0.1))
                 .cornerRadius(8)
-        } else if let contract = contracts.first(where: { $0.contractId == contractId }) {
-            let docTypes = contract.documentTypes
-            if docTypes.isEmpty {
-                Text("No document types in selected contract")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(8)
-            } else {
+        } else if let contract = dataContracts.first(where: { $0.idBase58 == contractId }) {
+            if let docTypes = contract.documentTypes, !docTypes.isEmpty {
                 Picker("Select Document Type", selection: $value) {
                     Text("Select a type...").tag("")
-                    ForEach(docTypes, id: \.self) { docType in
-                        Text(docType).tag(docType)
+                    ForEach(Array(docTypes), id: \.name) { docType in
+                        Text(docType.name).tag(docType.name)
                     }
                 }
                 .pickerStyle(MenuPickerStyle())
                 .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(8)
                 .onChange(of: value) { newValue in
@@ -301,13 +298,21 @@ struct TransitionInputView: View {
                     // Notify parent to update schema
                     onSpecialAction("documentTypeSelected:\(newValue)")
                 }
+            } else {
+                Text("No document types in selected contract")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
             }
         } else {
             Text("Invalid contract selected")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding()
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.red.opacity(0.1))
                 .cornerRadius(8)
         }
@@ -322,7 +327,7 @@ struct TransitionInputView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding()
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.orange.opacity(0.1))
                 .cornerRadius(8)
         } else {
@@ -335,8 +340,79 @@ struct TransitionInputView: View {
             }
             .pickerStyle(MenuPickerStyle())
             .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
+        }
+    }
+    
+    @ViewBuilder
+    private func recipientIdentityPicker() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Get the sender identity from the parent's selectedIdentityId
+            let senderIdentityId = input.placeholder ?? ""
+            let identities = appState.platformState.identities.filter { $0.idString != senderIdentityId }
+            
+            if !useManualEntry {
+                if identities.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("No other identities available")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                        
+                        Button(action: {
+                            useManualEntry = true
+                        }) {
+                            Text("💳 Manually Enter Recipient")
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                        }
+                    }
+                } else {
+                    Picker("Select Identity", selection: $value) {
+                        Text("Select an identity...").tag("")
+                        ForEach(identities, id: \.idString) { identity in
+                            Text(identity.displayName)
+                                .tag(identity.idString)
+                        }
+                        Text("💳 Manually Enter Recipient").tag("__manual__")
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                    .onChange(of: value) { newValue in
+                        if newValue == "__manual__" {
+                            value = ""
+                            useManualEntry = true
+                        }
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Enter recipient identity ID", text: $value)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    
+                    if !identities.isEmpty {
+                        Button(action: {
+                            useManualEntry = false
+                            value = ""
+                        }) {
+                            Text("← Back to identity list")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+            }
         }
     }
     

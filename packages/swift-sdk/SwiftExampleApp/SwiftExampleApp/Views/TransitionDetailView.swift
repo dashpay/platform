@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftDashSDK
 import DashSDKFFI
+import SwiftData
 
 struct TransitionDetailView: View {
     let transitionKey: String
@@ -18,6 +19,10 @@ struct TransitionDetailView: View {
     @State private var checkboxInputs: [String: Bool] = [:]
     @State private var selectedContractId: String = ""
     @State private var selectedDocumentType: String = ""
+    @State private var documentFieldValues: [String: Any] = [:]
+    
+    // Query for data contracts
+    @Query private var dataContracts: [PersistentDataContract]
     
     var needsIdentitySelection: Bool {
         transitionKey != "identityCreate"
@@ -25,12 +30,13 @@ struct TransitionDetailView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {
                 // Description
                 if let transition = getTransitionDefinition(transitionKey) {
                     Text(transition.description)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal)
                         .padding(.top)
                 }
@@ -43,15 +49,20 @@ struct TransitionDetailView: View {
                 
                 // Dynamic Form Inputs
                 if let transition = getTransitionDefinition(transitionKey) {
-                    VStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 16) {
                         ForEach(transition.inputs, id: \.name) { input in
-                            TransitionInputView(
-                                input: enrichedInput(for: input),
-                                value: binding(for: input),
-                                checkboxValue: checkboxBinding(for: input),
-                                onSpecialAction: handleSpecialAction
-                            )
-                            .environmentObject(appState)
+                            // Special handling for document fields
+                            if input.name == "documentFields" && input.type == "json" {
+                                documentFieldsInput(for: input)
+                            } else {
+                                TransitionInputView(
+                                    input: enrichedInput(for: input),
+                                    value: binding(for: input),
+                                    checkboxValue: checkboxBinding(for: input),
+                                    onSpecialAction: handleSpecialAction
+                                )
+                                .environmentObject(appState)
+                            }
                         }
                     }
                     .padding(.horizontal)
@@ -90,12 +101,11 @@ struct TransitionDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding()
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.1))
                     .cornerRadius(8)
             } else {
                 Picker("Identity", selection: $selectedIdentityId) {
-                    Text("Select Identity...").tag("")
                     ForEach(appState.platformState.identities, id: \.idString) { identity in
                         Text(identity.displayName)
                             .tag(identity.idString)
@@ -103,6 +113,7 @@ struct TransitionDetailView: View {
                 }
                 .pickerStyle(MenuPickerStyle())
                 .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(8)
             }
@@ -163,6 +174,85 @@ struct TransitionDetailView: View {
         .cornerRadius(10)
     }
     
+    // MARK: - Document Fields Input
+    
+    @ViewBuilder
+    private func documentFieldsInput(for input: TransitionInput) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(input.label)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                if input.required {
+                    Text("*")
+                        .foregroundColor(.red)
+                }
+            }
+            
+            let contractId = formInputs["contractId"] ?? selectedContractId
+            let documentTypeName = formInputs["documentType"] ?? selectedDocumentType
+            
+            if contractId.isEmpty || documentTypeName.isEmpty {
+                Text("Please select a contract and document type first")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+            } else if let contract = dataContracts.first(where: { $0.idBase58 == contractId }),
+                      let documentTypes = contract.documentTypes {
+                // Debug logging
+                let _ = print("📱 Contract has \(documentTypes.count) document types")
+                let _ = documentTypes.forEach { dt in
+                    print("📱 Document type: \(dt.name) - \(type(of: dt))")
+                }
+                
+                if let documentType = documentTypes.first(where: { $0.name == documentTypeName }) {
+                    let _ = print("📱 Selected document type: \(documentType.name)")
+                    let _ = print("📱 Document type class: \(type(of: documentType))")
+                    
+                    DocumentFieldsView(
+                        documentType: documentType,
+                        fieldValues: Binding(
+                            get: { documentFieldValues },
+                            set: { newValues in
+                                documentFieldValues = newValues
+                                // Convert to JSON string for the form
+                                if let jsonData = try? JSONSerialization.data(withJSONObject: newValues, options: [.prettyPrinted]),
+                                   let jsonString = String(data: jsonData, encoding: .utf8) {
+                                    formInputs["documentFields"] = jsonString
+                                }
+                            }
+                        )
+                    )
+                } else {
+                    Text("Document type '\(documentTypeName)' not found in contract")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(8)
+                }
+            } else {
+                Text("Invalid contract or document type selected")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            
+            if let help = input.help {
+                Text(help)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
     // MARK: - Helper Methods
     
     private func binding(for input: TransitionInput) -> Binding<String> {
@@ -190,6 +280,11 @@ struct TransitionDetailView: View {
                     formInputs[input.name] = defaultValue
                 }
             }
+        }
+        
+        // Set the first identity as default if we need identity selection
+        if needsIdentitySelection && !appState.platformState.identities.isEmpty {
+            selectedIdentityId = appState.platformState.identities.first?.idString ?? ""
         }
         
         showResult = false
@@ -579,28 +674,115 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Invalid JSON in properties field")
         }
         
-        // Find a key for signing - prefer authentication or transfer key
-        let signingKey = ownerIdentity.publicKeys.first { key in
-            key.purpose == .authentication || key.purpose == .transfer
+        // Determine the required security level for this document type
+        var requiredSecurityLevel: SecurityLevel = .high // Default to HIGH as per DPP
+        
+        // Try to get the document type's security requirement from persistent storage
+        // Convert contractId (base58 string) to Data for comparison
+        let contractIdData = Data.identifier(fromBase58: contractId) ?? Data()
+        let descriptor = FetchDescriptor<PersistentDataContract>(
+            predicate: #Predicate { $0.id == contractIdData }
+        )
+        if let persistentContract = try? appState.modelContainer.mainContext.fetch(descriptor).first,
+           let documentTypes = persistentContract.documentTypes,
+           let docType = documentTypes.first(where: { $0.name == documentType }) {
+            // Security level in storage: 0=MASTER, 1=CRITICAL, 2=HIGH, 3=MEDIUM
+            requiredSecurityLevel = SecurityLevel(rawValue: UInt8(docType.securityLevel)) ?? .high
+            print("📋 Document type '\(documentType)' requires security level: \(requiredSecurityLevel.name)")
+        } else {
+            print("⚠️ Could not determine security level for document type '\(documentType)', using default: HIGH")
         }
         
-        guard let signingKey = signingKey else {
-            throw SDKError.invalidParameter("No suitable key found for signing")
+        // Find a key for signing - must meet security requirements
+        print("🔑 Available keys for identity:")
+        for key in ownerIdentity.publicKeys {
+            print("  - ID: \(key.id), Purpose: \(key.purpose.name), Security: \(key.securityLevel.name), Disabled: \(key.isDisabled)")
         }
         
-        // Get the private key from keychain
-        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
-            identityId: ownerIdentity.id,
-            keyIndex: Int32(signingKey.id)
-        ) else {
-            throw SDKError.invalidParameter("Private key not found for key #\(signingKey.id). Please add the private key first.")
+        // For document operations, we need AUTHENTICATION purpose keys
+        // The key's security level must be equal to or stronger than the document's requirement
+        let suitableKeys = ownerIdentity.publicKeys.filter { key in
+            // Never use disabled keys
+            guard !key.isDisabled else { return false }
+            
+            // Must be AUTHENTICATION purpose for document operations
+            guard key.purpose == .authentication else { return false }
+            
+            // Security level must meet or exceed requirement (lower rawValue = higher security)
+            guard key.securityLevel.rawValue <= requiredSecurityLevel.rawValue else { return false }
+            
+            return true
+        }.sorted { k1, k2 in
+            // Sort by security level preference:
+            // 1. Exact match (e.g., MEDIUM for MEDIUM requirement)
+            // 2. Next level up (e.g., HIGH for MEDIUM requirement)
+            // 3. Higher levels (e.g., CRITICAL for MEDIUM requirement)
+            
+            // If one matches exactly and the other doesn't, prefer exact match
+            if k1.securityLevel == requiredSecurityLevel && k2.securityLevel != requiredSecurityLevel {
+                return true
+            }
+            if k1.securityLevel != requiredSecurityLevel && k2.securityLevel == requiredSecurityLevel {
+                return false
+            }
+            
+            // If neither matches exactly, prefer the one closer to the requirement
+            // (higher rawValue = lower security, so we want the highest rawValue that still meets the requirement)
+            if k1.securityLevel != requiredSecurityLevel && k2.securityLevel != requiredSecurityLevel {
+                // Both are stronger than required, prefer the weaker (closer to requirement)
+                if k1.securityLevel.rawValue > k2.securityLevel.rawValue {
+                    return true
+                } else if k1.securityLevel.rawValue < k2.securityLevel.rawValue {
+                    return false
+                }
+            }
+            
+            // If same security level, prefer lower ID (non-master keys)
+            return k1.id < k2.id
         }
         
-        // Create signer
-        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+        // Try to find a key with its private key available
+        var finalSigningKey: IdentityPublicKey? = nil
+        var privateKeyData: Data? = nil
+        
+        for key in suitableKeys {
+            print("🔑 Trying key: ID: \(key.id), Purpose: \(key.purpose.name), Security: \(key.securityLevel.name)")
+            
+            // Try to get the private key from keychain
+            if let keyData = KeychainManager.shared.retrievePrivateKey(
+                identityId: ownerIdentity.id,
+                keyIndex: Int32(key.id)
+            ) {
+                print("✅ Found private key for key #\(key.id)")
+                finalSigningKey = key
+                privateKeyData = keyData
+                break
+            } else {
+                print("⚠️ Private key not found for key #\(key.id), trying next suitable key...")
+            }
+        }
+        
+        guard let selectedKey = finalSigningKey, let keyData = privateKeyData else {
+            let availableKeys = ownerIdentity.publicKeys.map { 
+                "ID: \($0.id), Purpose: \($0.purpose.name), Security: \($0.securityLevel.name)" 
+            }.joined(separator: "\n  ")
+            
+            let triedKeys = suitableKeys.map { 
+                "ID: \($0.id) (\($0.securityLevel.name))" 
+            }.joined(separator: ", ")
+            
+            throw SDKError.invalidParameter(
+                "No suitable key with available private key found for signing document type '\(documentType)' (requires \(requiredSecurityLevel.name) security with AUTHENTICATION purpose).\n\nTried keys: \(triedKeys)\n\nAll available keys:\n  \(availableKeys)\n\nPlease add the private key for one of the suitable keys."
+            )
+        }
+        
+        print("🔑 Selected signing key: ID: \(selectedKey.id), Purpose: \(selectedKey.purpose.name), Security: \(selectedKey.securityLevel.name)")
+        
+        // Create signer using the already retrieved private key data
+        let signerResult = keyData.withUnsafeBytes { keyBytes in
             dash_sdk_signer_create_from_private_key(
                 keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                UInt(privateKeyData.count)
+                UInt(keyData.count)
             )
         }
         
@@ -1454,6 +1636,24 @@ struct TransitionDetailView: View {
                 max: input.max
             )
         }
+        
+        // For recipient identity picker in credit transfer, pass the sender identity ID
+        if input.name == "toIdentityId" && input.type == "identityPicker" && transitionKey == "identityCreditTransfer" {
+            return TransitionInput(
+                name: input.name,
+                type: input.type,
+                label: input.label,
+                required: input.required,
+                placeholder: selectedIdentityId,  // Pass sender identity ID to exclude it from recipients
+                help: input.help,
+                defaultValue: input.defaultValue,
+                options: input.options,
+                action: input.action,
+                min: input.min,
+                max: input.max
+            )
+        }
+        
         return input
     }
     

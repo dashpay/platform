@@ -125,12 +125,12 @@ struct DataContractParser {
                 continue
             }
             
-            // Extract schema
-            let schema = typeDict["properties"] as? [String: Any] ?? typeDict
-            let schemaJSON = try JSONSerialization.data(withJSONObject: schema, options: [])
+            // Extract schema - make sure we store the whole typeDict as schema
+            // and only properties as the properties field
+            let schemaJSON = try JSONSerialization.data(withJSONObject: typeDict, options: [])
             
-            // Extract flattened properties if available
-            let properties = typeDict["flattenedProperties"] as? [String: Any] ?? schema
+            // Extract actual properties for the form
+            let properties = typeDict["properties"] as? [String: Any] ?? [:]
             let propertiesJSON = try JSONSerialization.data(withJSONObject: properties, options: [])
             
             // Create document type
@@ -177,9 +177,15 @@ struct DataContractParser {
                 docType.requiredFieldsJSON = try? JSONSerialization.data(withJSONObject: required, options: [])
             }
             
-            // Security level
-            if let securityLevel = typeDict["securityLevelRequirement"] as? Int {
+            // Security level - the field name in contracts is "signatureSecurityLevelRequirement"
+            if let securityLevel = typeDict["signatureSecurityLevelRequirement"] as? Int {
                 docType.securityLevel = securityLevel
+            } else if let securityLevel = typeDict["securityLevelRequirement"] as? Int {
+                // Fallback to old name for compatibility
+                docType.securityLevel = securityLevel
+            } else {
+                // Default to HIGH (value 2) as per DPP specification
+                docType.securityLevel = 2
             }
             
             // Link to contract
@@ -284,8 +290,20 @@ struct DataContractParser {
                 property.format = format
             }
             
-            if let contentEncoding = propertyDict["contentEncoding"] as? String {
-                property.contentEncoding = contentEncoding
+            if let contentMediaType = propertyDict["contentMediaType"] as? String {
+                property.contentMediaType = contentMediaType
+            }
+            
+            if let byteArray = propertyDict["byteArray"] as? Bool {
+                property.byteArray = byteArray
+            }
+            
+            if let minItems = propertyDict["minItems"] as? Int {
+                property.minItems = minItems
+            }
+            
+            if let maxItems = propertyDict["maxItems"] as? Int {
+                property.maxItems = maxItems
             }
             
             if let pattern = propertyDict["pattern"] as? String {
@@ -313,7 +331,10 @@ struct DataContractParser {
             }
             
             if let description = propertyDict["description"] as? String {
-                property.propertyDescription = description
+                property.fieldDescription = description
+                print("  📝 Property \(propertyName) has description: \(description)")
+            } else {
+                print("  ⚠️ Property \(propertyName) has no description")
             }
             
             if let transient = propertyDict["transient"] as? Bool {

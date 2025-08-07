@@ -64,6 +64,9 @@ class AppState: ObservableObject {
                 sdk = newSDK
                 NSLog("✅ AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
                 
+                // Load known contracts into the SDK's trusted provider
+                await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+                
                 // Load persisted data first
                 await loadPersistedData()
                 
@@ -345,6 +348,50 @@ class AppState: ObservableObject {
                     print("Error saving document: \(error)")
                 }
             }
+        }
+    }
+    
+    // MARK: - Contract Loading
+    
+    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) async {
+        do {
+            // Fetch all stored contracts from SwiftData
+            let descriptor = FetchDescriptor<PersistentDataContract>()
+            let storedContracts = try modelContext.fetch(descriptor)
+            
+            guard !storedContracts.isEmpty else {
+                NSLog("📦 No stored contracts to load into SDK")
+                return
+            }
+            
+            NSLog("📦 Loading \(storedContracts.count) known contracts into SDK...")
+            
+            // Prepare contracts for loading
+            var contractsToLoad: [(id: String, data: Data)] = []
+            
+            for persistentContract in storedContracts {
+                // Use binary serialization if available, otherwise skip
+                guard let binaryData = persistentContract.binarySerialization else {
+                    NSLog("⚠️ Contract \(persistentContract.idBase58) has no binary serialization, skipping")
+                    continue
+                }
+                
+                contractsToLoad.append((
+                    id: persistentContract.idBase58,
+                    data: binaryData
+                ))
+            }
+            
+            if !contractsToLoad.isEmpty {
+                try sdk.loadKnownContracts(contractsToLoad)
+                NSLog("✅ Successfully loaded \(contractsToLoad.count) contracts into SDK's trusted provider")
+            } else {
+                NSLog("⚠️ No contracts with binary serialization to load")
+            }
+            
+        } catch {
+            NSLog("❌ Failed to load known contracts: \(error)")
+            // Don't throw - this is not critical for SDK operation
         }
     }
     

@@ -74,7 +74,9 @@ struct DynamicDocumentFormView: View {
             }
             
             // Field description/help
-            if let description = schema["description"] as? String {
+            if let description = schema["description"] as? String,
+               !description.contains("NSManagedObject"),
+               !description.contains("@property") {
                 Text(description)
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -155,17 +157,83 @@ struct DynamicDocumentFormView: View {
     @ViewBuilder
     private func arrayField(for fieldName: String, schema: [String: Any]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Simple comma-separated input for now
-            TextField("Enter comma-separated values", text: arrayBinding(for: fieldName))
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            
-            if let items = schema["items"] as? [String: Any],
-               let itemType = items["type"] as? String {
-                Text("Item type: \(itemType)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+            // Check if this is a byte array
+            if schema["byteArray"] as? Bool == true {
+                byteArrayField(for: fieldName, schema: schema)
+            } else {
+                // Regular array - simple comma-separated input for now
+                TextField("Enter comma-separated values", text: arrayBinding(for: fieldName))
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                
+                if let items = schema["items"] as? [String: Any],
+                   let itemType = items["type"] as? String {
+                    Text("Item type: \(itemType)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
         }
+    }
+    
+    @ViewBuilder
+    private func byteArrayField(for fieldName: String, schema: [String: Any]) -> some View {
+        let minItems = schema["minItems"] as? Int
+        let maxItems = schema["maxItems"] as? Int
+        let expectedBytes = minItems ?? maxItems ?? 32 // Default to 32 if not specified
+        let expectedHexLength = expectedBytes * 2
+        
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Hex Data", text: binding(for: fieldName))
+                    .font(.system(.body, design: .monospaced))
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .onChange(of: stringValues[fieldName] ?? "") { newValue in
+                        // Remove any non-hex characters and convert to lowercase
+                        let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
+                        if cleaned != newValue {
+                            stringValues[fieldName] = cleaned
+                        }
+                    }
+                
+                // Validation indicator
+                if let currentValue = stringValues[fieldName], !currentValue.isEmpty {
+                    Image(systemName: isValidHex(currentValue, expectedLength: expectedHexLength) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(isValidHex(currentValue, expectedLength: expectedHexLength) ? .green : .red)
+                }
+            }
+            
+            // Help text
+            Text("Enter a valid \(expectedBytes) byte array in hex format (\(expectedHexLength) characters)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            
+            // Current status
+            if let currentValue = stringValues[fieldName], !currentValue.isEmpty {
+                HStack {
+                    Text("\(currentValue.count)/\(expectedHexLength) characters")
+                        .font(.caption2)
+                        .foregroundColor(currentValue.count == expectedHexLength ? .green : .orange)
+                    
+                    Spacer()
+                    
+                    if currentValue.count == expectedHexLength {
+                        Text("✓ Valid hex data")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func isValidHex(_ string: String, expectedLength: Int) -> Bool {
+        // Check if string contains only hex characters
+        let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        let stringCharacterSet = CharacterSet(charactersIn: string)
+        
+        return stringCharacterSet.isSubset(of: hexCharacterSet) && string.count == expectedLength
     }
     
     @ViewBuilder
@@ -236,7 +304,18 @@ struct DynamicDocumentFormView: View {
                     case "boolean":
                         boolValues[fieldName] = existingValue as? Bool ?? false
                     case "array":
-                        if let array = existingValue as? [String] {
+                        // Check if it's a byte array
+                        if schema["byteArray"] as? Bool == true {
+                            // Convert byte array to hex string for display
+                            if let byteArray = existingValue as? [UInt8] {
+                                let data = Data(byteArray)
+                                stringValues[fieldName] = data.toHexString()
+                            } else if let intArray = existingValue as? [Int] {
+                                let byteArray = intArray.map { UInt8($0 & 0xFF) }
+                                let data = Data(byteArray)
+                                stringValues[fieldName] = data.toHexString()
+                            }
+                        } else if let array = existingValue as? [String] {
                             arrayValues[fieldName] = array
                         }
                     default:
@@ -252,7 +331,13 @@ struct DynamicDocumentFormView: View {
                     case "boolean":
                         boolValues[fieldName] = false
                     case "array":
-                        arrayValues[fieldName] = []
+                        // Check if it's a byte array
+                        if schema["byteArray"] as? Bool == true {
+                            // Store hex string in stringValues for byte arrays
+                            stringValues[fieldName] = ""
+                        } else {
+                            arrayValues[fieldName] = []
+                        }
                     default:
                         stringValues[fieldName] = ""
                     }
@@ -264,10 +349,30 @@ struct DynamicDocumentFormView: View {
     private func updateDocumentData() {
         var newData: [String: Any] = [:]
         
-        // Collect all field values
-        for (key, value) in stringValues {
-            if !value.isEmpty {
-                newData[key] = value
+        // Process string values, checking if they're byte arrays
+        if let properties = getProperties() {
+            for (key, value) in stringValues {
+                if !value.isEmpty {
+                    // Check if this field is a byte array
+                    if let fieldSchema = properties[key] as? [String: Any],
+                       fieldSchema["type"] as? String == "array",
+                       fieldSchema["byteArray"] as? Bool == true {
+                        // Convert hex string to byte array
+                        if let data = Data(hexString: value) {
+                            // Convert to array of bytes for JSON
+                            newData[key] = Array(data)
+                        }
+                    } else {
+                        newData[key] = value
+                    }
+                }
+            }
+        } else {
+            // Fallback if we can't get properties
+            for (key, value) in stringValues {
+                if !value.isEmpty {
+                    newData[key] = value
+                }
             }
         }
         

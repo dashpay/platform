@@ -11,13 +11,16 @@ final class PersistentProperty {
     // Property type and constraints
     var type: String
     var format: String?
-    var contentEncoding: String?
+    var contentMediaType: String?
+    var byteArray: Bool
+    var minItems: Int?
+    var maxItems: Int?
     var pattern: String?
     var minLength: Int?
     var maxLength: Int?
     var minValue: Int?
     var maxValue: Int?
-    var propertyDescription: String?
+    var fieldDescription: String?
     
     // Property attributes
     var transient: Bool
@@ -40,6 +43,7 @@ final class PersistentProperty {
         self.documentTypeName = documentTypeName
         self.name = name
         self.type = type
+        self.byteArray = false
         self.transient = false
         self.isRequired = false
         self.createdAt = Date()

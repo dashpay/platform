@@ -190,6 +190,21 @@ impl MockResponse for DataContract {
     }
 }
 
+// FIXME: Seems that DataContract doesn't implement PlatformVersionedDecode + PlatformVersionEncode,
+// so we just use some methods implemented directly on these objects.
+impl MockResponse for (DataContract, Vec<u8>) {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.1.clone()
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        (DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data"), buf.to_vec())
+    }
+}
+
 // FIXME: Seems that Document doesn't implement PlatformVersionedDecode + PlatformVersionEncode,
 // so we use cbor.
 impl MockResponse for Document {
