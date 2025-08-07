@@ -1,3 +1,15 @@
+## [2.1.0-dev.3](https://github.com/dashevo/platform/compare/v2.1.0-dev.2...v2.1.0-dev.3) (2025-08-07)
+
+
+### Miscellaneous Chores
+
+* fix wasm-sdk build
+* getrandom downgrade continued
+* getrandom downgrade, continued
+* trying to build
+* update some deps
+* wasm-sdk deps update
+
 ## [2.1.0-dev.2](https://github.com/dashevo/platform/compare/v2.1.0-dev.1...v2.1.0-dev.2) (2025-08-06)
 
 
