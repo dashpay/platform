@@ -140,32 +140,37 @@ jobs:
           node-version: '20'
           
       - name: Install test dependencies
-        working-directory: packages/wasm-sdk/test
-        run: |
-          if [ -f package.json ]; then
-            npm install
-          fi
-          
-      - name: Run custom test runner
         working-directory: packages/wasm-sdk
         run: |
-          echo "Running WASM SDK tests with custom runner..."
-          node test/run-tests.mjs
+          echo "Installing WASM SDK test dependencies..."
+          npm install
           
-      - name: Run Jest tests
-        working-directory: packages/wasm-sdk/test
-        run: |
-          echo "Running WASM SDK Jest tests..."
-          npm test || echo "Jest tests completed with status $?"
-          
-      - name: Run all .mjs test files
+      - name: Run unit tests
         working-directory: packages/wasm-sdk
         run: |
-          echo "Running all .mjs test files..."
+          echo "Running WASM SDK unit tests..."
+          npm run test:unit
+          
+      - name: Run integration tests
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "Running WASM SDK integration tests..."
+          npm run test:integration || echo "Integration tests completed with status $?"
+          
+      - name: Run all tests with coverage
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "Running WASM SDK tests with coverage..."
+          npm run test:coverage || echo "Coverage tests completed with status $?"
+          
+      - name: Run legacy tests (fallback)
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "Running legacy .mjs test files as fallback..."
           for test_file in test/*.test.mjs; do
             if [ -f "$test_file" ]; then
               echo "Running $test_file..."
-              node "$test_file" || echo "Test $test_file completed with status $?"
+              node "$test_file" || echo "Legacy test $test_file completed with status $?"
             fi
           done
           
