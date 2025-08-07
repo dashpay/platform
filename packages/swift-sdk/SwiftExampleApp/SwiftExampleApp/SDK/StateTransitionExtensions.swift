@@ -359,85 +359,26 @@ extension SDK {
                 }
                 print("✅ [DOCUMENT CREATE] Properties JSON created: \(propertiesJson.prefix(100))...")
                 
-                // 1. Fetch the data contract handle
-                print("📝 [DOCUMENT CREATE] Fetching data contract handle...")
-                let contractFetchStart = Date()
-                let contractResult = contractId.withCString { contractIdCStr in
-                    dash_sdk_data_contract_fetch(handle, contractIdCStr)
-                }
-                let contractFetchTime = Date().timeIntervalSince(contractFetchStart)
-                print("⏱️ [DOCUMENT CREATE] Contract fetch took \(contractFetchTime) seconds")
-                
-                guard contractResult.error == nil else {
-                    let errorString = contractResult.error?.pointee.message != nil ?
-                        String(cString: contractResult.error!.pointee.message) : "Failed to fetch data contract"
-                    print("❌ [DOCUMENT CREATE] Contract fetch failed: \(errorString)")
-                    print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
-                    dash_sdk_error_free(contractResult.error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                    return
-                }
-                
-                guard contractResult.data_type == DashSDKFFI.ResultDataContractHandle,
-                      let contractHandle = contractResult.data else {
-                    print("❌ [DOCUMENT CREATE] Invalid contract result type")
-                    continuation.resume(throwing: SDKError.internalError("Invalid data contract result type"))
-                    return
-                }
-                print("✅ [DOCUMENT CREATE] Contract handle obtained")
-                
-                defer {
-                    // Clean up contract handle when done
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
-                }
-                
-                // 2. Fetch the identity handle
-                print("📝 [DOCUMENT CREATE] Fetching identity handle...")
+                // 1. Create document using contract from trusted context (no network fetches needed)
+                print("📝 [DOCUMENT CREATE] Creating document with contract from trusted context...")
                 let identityIdString = ownerIdentity.id.toBase58String()
                 print("📝 [DOCUMENT CREATE] Identity ID (base58): \(identityIdString)")
-                let identityFetchStart = Date()
-                let identityResult = identityIdString.withCString { identityIdCStr in
-                    dash_sdk_identity_fetch_handle(handle, identityIdCStr)
-                }
-                let identityFetchTime = Date().timeIntervalSince(identityFetchStart)
-                print("⏱️ [DOCUMENT CREATE] Identity fetch took \(identityFetchTime) seconds")
                 
-                guard identityResult.error == nil else {
-                    let errorString = identityResult.error?.pointee.message != nil ?
-                        String(cString: identityResult.error!.pointee.message) : "Failed to fetch identity"
-                    print("❌ [DOCUMENT CREATE] Identity fetch failed: \(errorString)")
-                    print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
-                    dash_sdk_error_free(identityResult.error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                    return
-                }
-                
-                guard identityResult.data_type == DashSDKFFI.ResultIdentityHandle,
-                      let identityHandle = identityResult.data else {
-                    print("❌ [DOCUMENT CREATE] Invalid identity result type")
-                    continuation.resume(throwing: SDKError.internalError("Invalid identity result type"))
-                    return
-                }
-                print("✅ [DOCUMENT CREATE] Identity handle obtained")
-                
-                defer {
-                    // Clean up identity handle when done
-                    dash_sdk_identity_destroy(OpaquePointer(identityHandle))
-                }
-                
-                // 3. Create document parameters and create the document
-                print("📝 [DOCUMENT CREATE] Creating document with parameters...")
                 let createStart = Date()
-                let createResult = documentType.withCString { docTypeCStr in
-                    propertiesJson.withCString { propsCStr in
-                        var createParams = DashSDKDocumentCreateParams(
-                            data_contract_handle: OpaquePointer(contractHandle),
-                            document_type: docTypeCStr,
-                            owner_identity_handle: OpaquePointer(identityHandle),
-                            properties_json: propsCStr
-                        )
-                        return withUnsafePointer(to: &createParams) { paramsPtr in
-                            dash_sdk_document_create(handle, paramsPtr)
+                let createResult = contractId.withCString { contractIdCStr in
+                    documentType.withCString { docTypeCStr in
+                        identityIdString.withCString { identityIdCStr in
+                            propertiesJson.withCString { propsCStr in
+                                var createParams = DashSDKDocumentCreateParams(
+                                    data_contract_id: contractIdCStr,
+                                    document_type: docTypeCStr,
+                                    owner_identity_id: identityIdCStr,
+                                    properties_json: propsCStr
+                                )
+                                return withUnsafePointer(to: &createParams) { paramsPtr in
+                                    dash_sdk_document_create(handle, paramsPtr)
+                                }
+                            }
                         }
                     }
                 }
@@ -467,7 +408,7 @@ extension SDK {
                     dash_sdk_document_handle_destroy(OpaquePointer(documentHandle))
                 }
                 
-                // 5. Get identity public key handle (we'll use the first authentication key)
+                // 2. Create identity public key handle directly from our local data (no network fetch)
                 print("📝 [DOCUMENT CREATE] Getting public key handle...")
                 let authKey = ownerIdentity.publicKeys.values.first { key in
                     key.purpose == .authentication
@@ -478,41 +419,67 @@ extension SDK {
                     continuation.resume(throwing: SDKError.invalidParameter("No public key found for identity"))
                     return
                 }
-                print("📝 [DOCUMENT CREATE] Using key ID: \(keyToUse.id), purpose: \(keyToUse.purpose)")
+                print("📝 [DOCUMENT CREATE] Using key ID: \(keyToUse.id), purpose: \(keyToUse.purpose), type: \(keyToUse.keyType), security: \(keyToUse.securityLevel)")
                 
-                // Get public key handle from identity handle
-                let keyFetchStart = Date()
-                let keyResult = dash_sdk_identity_get_public_key_by_id(
-                    OpaquePointer(identityHandle),
-                    UInt8(keyToUse.id)
-                )
-                let keyFetchTime = Date().timeIntervalSince(keyFetchStart)
-                print("⏱️ [DOCUMENT CREATE] Key fetch took \(keyFetchTime) seconds")
+                // Create public key handle directly from our local data
+                let keyData = keyToUse.data
+                let keyType: UInt8 = UInt8(keyToUse.keyType.rawValue)
+                let purpose: UInt8 = {
+                    switch keyToUse.purpose {
+                    case .authentication: return 0
+                    case .encryption: return 1
+                    case .decryption: return 2
+                    case .transfer: return 3
+                    case .system: return 4
+                    case .voting: return 5
+                    case .owner: return 6
+                    }
+                }()
+                let securityLevel: UInt8 = {
+                    switch keyToUse.securityLevel {
+                    case .master: return 0
+                    case .critical: return 1
+                    case .high: return 2
+                    case .medium: return 3
+                    }
+                }()
+                
+                let keyResult = keyData.withUnsafeBytes { dataPtr in
+                    dash_sdk_identity_public_key_create_from_data(
+                        UInt32(keyToUse.id),
+                        keyType,
+                        purpose,
+                        securityLevel,
+                        dataPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        UInt(keyData.count),
+                        keyToUse.readOnly,
+                        keyToUse.disabledAt ?? 0
+                    )
+                }
                 
                 guard keyResult.error == nil else {
                     let errorString = keyResult.error?.pointee.message != nil ?
-                        String(cString: keyResult.error!.pointee.message) : "Failed to get public key"
-                    print("❌ [DOCUMENT CREATE] Key fetch failed: \(errorString)")
+                        String(cString: keyResult.error!.pointee.message) : "Failed to create public key handle"
+                    print("❌ [DOCUMENT CREATE] Key handle creation failed: \(errorString)")
                     print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
                     dash_sdk_error_free(keyResult.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                     return
                 }
                 
-                guard keyResult.data_type == DashSDKFFI.ResultPublicKeyHandle,
-                      let keyHandle = keyResult.data else {
-                    print("❌ [DOCUMENT CREATE] Invalid public key result type")
-                    continuation.resume(throwing: SDKError.internalError("Invalid public key result type"))
+                guard let keyHandle = keyResult.data else {
+                    print("❌ [DOCUMENT CREATE] Invalid public key handle")
+                    continuation.resume(throwing: SDKError.internalError("Invalid public key handle"))
                     return
                 }
-                print("✅ [DOCUMENT CREATE] Public key handle obtained")
+                print("✅ [DOCUMENT CREATE] Public key handle created from local data (no network fetch!)")
                 
                 defer {
-                    // Clean up key handle
+                    // Clean up key handle  
                     dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle))
                 }
                 
-                // 6. Create put settings (null for defaults)
+                // 4. Create put settings (null for defaults)
                 let putSettings: UnsafePointer<DashSDKPutSettings>? = nil
                 let tokenPaymentInfo: UnsafePointer<DashSDKTokenPaymentInfo>? = nil
                 let stateTransitionOptions: UnsafePointer<DashSDKStateTransitionCreationOptions>? = nil
@@ -528,24 +495,26 @@ extension SDK {
                     _ = SecRandomCopyBytes(kSecRandomDefault, 32, entropyBytes.baseAddress!)
                 }
                 
-                // 7. Put document to platform and wait
+                // 5. Put document to platform and wait (using contract ID from trusted context)
                 print("🚀 [DOCUMENT CREATE] Submitting document to platform...")
-                print("🚀 [DOCUMENT CREATE] This is the NETWORK CALL - monitoring for timeout...")
+                print("🚀 [DOCUMENT CREATE] This is the NETWORK CALL - using contract from trusted context...")
                 let putStart = Date()
                 let putResult = withUnsafePointer(to: &entropy) { entropyPtr in
-                    documentType.withCString { docTypeCStr in
-                        dash_sdk_document_put_to_platform_and_wait(
-                            handle,
-                            OpaquePointer(documentHandle),
-                            OpaquePointer(contractHandle),
-                            docTypeCStr,
-                            entropyPtr,
-                            OpaquePointer(keyHandle),
-                            signer,
-                            tokenPaymentInfo,
-                            putSettings,
-                            stateTransitionOptions
-                        )
+                    contractId.withCString { contractIdCStr in
+                        documentType.withCString { docTypeCStr in
+                            dash_sdk_document_put_to_platform_and_wait(
+                                handle,
+                                OpaquePointer(documentHandle),
+                                contractIdCStr,
+                                docTypeCStr,
+                                entropyPtr,
+                                OpaquePointer(keyHandle),
+                                signer,
+                                tokenPaymentInfo,
+                                putSettings,
+                                stateTransitionOptions
+                            )
+                        }
                     }
                 }
                 let putTime = Date().timeIntervalSince(putStart)

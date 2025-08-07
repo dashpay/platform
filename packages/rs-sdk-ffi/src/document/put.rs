@@ -1,11 +1,13 @@
 //! Document put-to-platform operations
 
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
-use dash_sdk::dpp::prelude::{DataContract, UserFeeIncrease};
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::{
     DocumentCreateTransitionBuilder, DocumentReplaceTransitionBuilder,
 };
 use dash_sdk::platform::IdentityPublicKey;
+use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
@@ -25,7 +27,7 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
     sdk_handle: *mut SDKHandle,
     document_handle: *const DocumentHandle,
-    data_contract_handle: *const DataContractHandle,
+    data_contract_id: *const c_char,
     document_type_name: *const c_char,
     entropy: *const [u8; 32],
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
@@ -37,7 +39,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
     // Validate required parameters
     if sdk_handle.is_null()
         || document_handle.is_null()
-        || data_contract_handle.is_null()
+        || data_contract_id.is_null()
         || document_type_name.is_null()
         || entropy.is_null()
         || identity_public_key_handle.is_null()
@@ -51,10 +53,14 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
-    let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::IOSSigner);
     let entropy_bytes = *entropy;
+
+    let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
         Ok(s) => s,
@@ -62,6 +68,21 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
     };
 
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Parse contract ID (base58 encoded)
+        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
+            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+
+        // Get contract from trusted context provider
+        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+            let platform_version = wrapper.sdk.version();
+            provider
+                .get_data_contract(&contract_id, platform_version)
+                .map_err(|e| FFIError::InternalError(format!("Failed to get contract from context: {}", e)))?
+                .ok_or_else(|| FFIError::InternalError(format!("Contract {} not found in trusted context", contract_id_str)))?
+        } else {
+            return Err(FFIError::InternalError("No trusted context provider configured".to_string()));
+        };
+
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -79,7 +100,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
         let state_transition = if document.revision().unwrap_or(0) == 1 {
             // Create transition for new documents
             let mut builder = DocumentCreateTransitionBuilder::new(
-                Arc::new(data_contract.clone()),
+                data_contract.clone(),
                 document_type_name_str.to_string(),
                 document.clone(),
                 entropy_bytes,
@@ -112,7 +133,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
         } else {
             // Replace transition for existing documents
             let mut builder = DocumentReplaceTransitionBuilder::new(
-                Arc::new(data_contract.clone()),
+                data_contract.clone(),
                 document_type_name_str.to_string(),
                 document.clone(),
             );
@@ -164,7 +185,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
 pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
     sdk_handle: *mut SDKHandle,
     document_handle: *const DocumentHandle,
-    data_contract_handle: *const DataContractHandle,
+    data_contract_id: *const c_char,
     document_type_name: *const c_char,
     entropy: *const [u8; 32],
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
@@ -176,7 +197,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
     // Validate required parameters
     if sdk_handle.is_null()
         || document_handle.is_null()
-        || data_contract_handle.is_null()
+        || data_contract_id.is_null()
         || document_type_name.is_null()
         || entropy.is_null()
         || identity_public_key_handle.is_null()
@@ -190,10 +211,14 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
-    let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::IOSSigner);
     let entropy_bytes = *entropy;
+
+    let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
         Ok(s) => s,
@@ -201,6 +226,21 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
     };
 
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Parse contract ID (base58 encoded)
+        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
+            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+
+        // Get contract from trusted context provider
+        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+            let platform_version = wrapper.sdk.version();
+            provider
+                .get_data_contract(&contract_id, platform_version)
+                .map_err(|e| FFIError::InternalError(format!("Failed to get contract from context: {}", e)))?
+                .ok_or_else(|| FFIError::InternalError(format!("Contract {} not found in trusted context", contract_id_str)))?
+        } else {
+            return Err(FFIError::InternalError("No trusted context provider configured".to_string()));
+        };
+
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -218,7 +258,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
         let confirmed_document = if document.revision().unwrap_or(0) == 1 {
             // Create transition for new documents
             let mut builder = DocumentCreateTransitionBuilder::new(
-                Arc::new(data_contract.clone()),
+                data_contract.clone(),
                 document_type_name_str.to_string(),
                 document.clone(),
                 entropy_bytes,
@@ -256,7 +296,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
         } else {
             // Replace transition for existing documents
             let mut builder = DocumentReplaceTransitionBuilder::new(
-                Arc::new(data_contract.clone()),
+                data_contract.clone(),
                 document_type_name_str.to_string(),
                 document.clone(),
             );
@@ -369,12 +409,13 @@ mod tests {
         let document_type_name = CString::new("testDoc").unwrap();
         let entropy = create_valid_entropy();
         let put_settings = create_put_settings();
+        let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
         let result = unsafe {
             dash_sdk_document_put_to_platform(
                 ptr::null_mut(), // null SDK handle
                 document_handle,
-                data_contract_handle,
+                contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
                 identity_public_key_handle,
@@ -417,12 +458,13 @@ mod tests {
         let document_type_name = CString::new("testDoc").unwrap();
         let entropy = create_valid_entropy();
         let put_settings = create_put_settings();
+        let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
         let result = unsafe {
             dash_sdk_document_put_to_platform(
                 sdk_handle,
                 ptr::null(), // null document
-                data_contract_handle,
+                contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
                 identity_public_key_handle,
@@ -464,12 +506,13 @@ mod tests {
 
         let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
+        let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
         let result = unsafe {
             dash_sdk_document_put_to_platform(
                 sdk_handle,
                 document_handle,
-                data_contract_handle,
+                contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 ptr::null(), // null entropy
                 identity_public_key_handle,
@@ -514,12 +557,13 @@ mod tests {
         let document_type_name = CString::new("testDoc").unwrap();
         let entropy = create_valid_entropy();
         let put_settings = create_put_settings();
+        let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
         let result = unsafe {
             dash_sdk_document_put_to_platform(
                 sdk_handle,
                 document_handle,
-                data_contract_handle,
+                contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
                 identity_public_key_handle,
@@ -565,12 +609,13 @@ mod tests {
         let document_type_name = CString::new("testDoc").unwrap();
         let entropy = create_valid_entropy();
         let put_settings = create_put_settings();
+        let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
         let result = unsafe {
             dash_sdk_document_put_to_platform(
                 sdk_handle,
                 document_handle,
-                data_contract_handle,
+                contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
                 identity_public_key_handle,
@@ -612,13 +657,14 @@ mod tests {
         let document_type_name = CString::new("testDoc").unwrap();
         let entropy = create_valid_entropy();
         let put_settings = create_put_settings();
+        let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
         // Test with null SDK handle
         let result = unsafe {
             dash_sdk_document_put_to_platform_and_wait(
                 ptr::null_mut(),
                 document_handle,
-                data_contract_handle,
+                contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
                 identity_public_key_handle,

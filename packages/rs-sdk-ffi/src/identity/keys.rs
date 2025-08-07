@@ -140,6 +140,109 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_get_id(
     key.id().into()
 }
 
+/// Create an identity public key handle from key data
+///
+/// This function creates an identity public key handle from the raw key data
+/// without needing to fetch the identity from the network.
+///
+/// # Parameters
+/// - `key_id`: The key ID
+/// - `key_type`: The key type (0 = ECDSA_SECP256K1, 1 = BLS12_381, 2 = ECDSA_HASH160, 3 = BIP13_SCRIPT_HASH, 4 = ED25519_HASH160)
+/// - `purpose`: The key purpose (0 = Authentication, 1 = Encryption, 2 = Decryption, 3 = Transfer, 4 = SystemTransfer, 5 = Voting)
+/// - `security_level`: The security level (0 = Master, 1 = Critical, 2 = High, 3 = Medium)
+/// - `public_key_data`: The public key data
+/// - `public_key_data_len`: Length of the public key data
+/// - `read_only`: Whether the key is read-only
+/// - `disabled_at`: Optional timestamp when the key was disabled (0 if not disabled)
+///
+/// # Returns
+/// - Handle to the identity public key on success
+/// - Error if parameters are invalid
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
+    key_id: u32,
+    key_type: u8,
+    purpose: u8,
+    security_level: u8, 
+    public_key_data: *const u8,
+    public_key_data_len: usize,
+    read_only: bool,
+    disabled_at: u64,
+) -> DashSDKResult {
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dash_sdk::dpp::identity::{KeyType, Purpose as DPPPurpose, SecurityLevel as DPPSecurityLevel};
+    
+    if public_key_data.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Public key data is null".to_string(),
+        ));
+    }
+
+    // Convert key type
+    let key_type = match key_type {
+        0 => KeyType::ECDSA_SECP256K1,
+        1 => KeyType::BLS12_381,
+        2 => KeyType::ECDSA_HASH160,
+        3 => KeyType::BIP13_SCRIPT_HASH,
+        4 => KeyType::EDDSA_25519_HASH160,
+        _ => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid key type: {}", key_type),
+            ))
+        }
+    };
+
+    // Convert purpose
+    let purpose = match purpose {
+        0 => DPPPurpose::AUTHENTICATION,
+        1 => DPPPurpose::ENCRYPTION,
+        2 => DPPPurpose::DECRYPTION,
+        3 => DPPPurpose::TRANSFER,
+        4 => DPPPurpose::SYSTEM,
+        5 => DPPPurpose::VOTING,
+        _ => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid purpose: {}", purpose),
+            ))
+        }
+    };
+
+    // Convert security level
+    let security_level = match security_level {
+        0 => DPPSecurityLevel::MASTER,
+        1 => DPPSecurityLevel::CRITICAL,
+        2 => DPPSecurityLevel::HIGH,
+        3 => DPPSecurityLevel::MEDIUM,
+        _ => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid security level: {}", security_level),
+            ))
+        }
+    };
+
+    // Copy public key data
+    let key_data = std::slice::from_raw_parts(public_key_data, public_key_data_len).to_vec();
+
+    // Create the identity public key
+    let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+        id: key_id.into(),
+        key_type,
+        purpose,
+        security_level,
+        data: key_data.into(),
+        read_only,
+        disabled_at: if disabled_at > 0 { Some(disabled_at) } else { None },
+        contract_bounds: None,
+    });
+
+    let handle = Box::into_raw(Box::new(public_key)) as *mut IdentityPublicKeyHandle;
+    DashSDKResult::success(handle as *mut std::os::raw::c_void)
+}
+
 /// Free an identity public key handle
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_public_key_destroy(
