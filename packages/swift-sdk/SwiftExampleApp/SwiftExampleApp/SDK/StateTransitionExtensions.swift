@@ -2,6 +2,73 @@ import Foundation
 import SwiftDashSDK
 import DashSDKFFI
 
+// MARK: - Key Selection Helpers
+
+/// Helper to select the appropriate key for signing operations
+/// Returns the key we most likely have the private key for
+private func selectSigningKey(from identity: DPPIdentity, operation: String) -> IdentityPublicKey? {
+    // IMPORTANT: We need to use the key that we actually have the private key for
+    // Look for the critical key (ID 1) first, since that's typically what we have the private key for
+    let criticalKey = identity.publicKeys.values.first { key in
+        key.id == 1 && key.securityLevel == .critical
+    }
+    
+    // Fall back to authentication key, then any key
+    let keyToUse = criticalKey ?? identity.publicKeys.values.first { key in
+        key.purpose == .authentication
+    } ?? identity.publicKeys.values.first
+    
+    if let key = keyToUse {
+        if criticalKey != nil {
+            print("📝 [\(operation)] Using CRITICAL key (ID 1) - ID: \(key.id), purpose: \(key.purpose), type: \(key.keyType), security: \(key.securityLevel)")
+        } else {
+            print("⚠️ [\(operation)] WARNING: Using non-critical key - ID: \(key.id), purpose: \(key.purpose), type: \(key.keyType), security: \(key.securityLevel)")
+            print("⚠️ [\(operation)] This may fail if you don't have the private key for this key!")
+        }
+    } else {
+        print("❌ [\(operation)] No public key found for identity")
+    }
+    
+    return keyToUse
+}
+
+/// Helper to create a public key handle from an IdentityPublicKey
+private func createPublicKeyHandle(from key: IdentityPublicKey, operation: String) -> OpaquePointer? {
+    let keyData = key.data
+    let keyType = key.keyType.ffiValue
+    let purpose = key.purpose.ffiValue
+    let securityLevel = key.securityLevel.ffiValue
+    
+    let keyResult = keyData.withUnsafeBytes { dataPtr in
+        dash_sdk_identity_public_key_create_from_data(
+            UInt32(key.id),
+            keyType,
+            purpose,
+            securityLevel,
+            dataPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+            UInt(keyData.count),
+            key.readOnly,
+            key.disabledAt ?? 0
+        )
+    }
+    
+    guard keyResult.error == nil else {
+        let errorString = keyResult.error?.pointee.message != nil ?
+            String(cString: keyResult.error!.pointee.message) : "Failed to create public key handle"
+        print("❌ [\(operation)] Key handle creation failed: \(errorString)")
+        dash_sdk_error_free(keyResult.error)
+        return nil
+    }
+    
+    guard let keyHandle = keyResult.data else {
+        print("❌ [\(operation)] Invalid public key handle")
+        return nil
+    }
+    
+    print("✅ [\(operation)] Public key handle created from local data")
+    return OpaquePointer(keyHandle)
+}
+
 // MARK: - State Transition Extensions
 
 extension SDK {
@@ -22,36 +89,9 @@ extension SDK {
             let keyData = key.data
             
             // Map Swift enums to C values
-            let purpose: UInt8 = {
-                switch key.purpose {
-                case .authentication: return 0
-                case .encryption: return 1
-                case .decryption: return 2
-                case .transfer: return 3
-                case .system: return 4
-                case .voting: return 5
-                case .owner: return 6
-                }
-            }()
-            
-            let securityLevel: UInt8 = {
-                switch key.securityLevel {
-                case .master: return 0
-                case .critical: return 1
-                case .high: return 2
-                case .medium: return 3
-                }
-            }()
-            
-            let keyType: UInt8 = {
-                switch key.keyType {
-                case .ecdsaSecp256k1: return 0
-                case .bls12_381: return 1
-                case .ecdsaHash160: return 2
-                case .bip13ScriptHash: return 3
-                case .eddsa25519Hash160: return 4
-                }
-            }()
+            let purpose = key.purpose.ffiValue
+            let securityLevel = key.securityLevel.ffiValue
+            let keyType = key.keyType.ffiValue
             
             return DashSDKPublicKeyData(
                 id: UInt8(key.id),
@@ -421,86 +461,22 @@ extension SDK {
                 // 2. Create identity public key handle directly from our local data (no network fetch)
                 print("📝 [DOCUMENT CREATE] Getting public key handle...")
                 
-                // IMPORTANT: We need to use the key that we actually have the private key for
-                // Look for the critical key (ID 1) first, since that's typically what we have the private key for
-                let criticalKey = ownerIdentity.publicKeys.values.first { key in
-                    key.id == 1 && key.securityLevel == .critical
-                }
-                
-                // Fall back to authentication key, then any key
-                let keyToUse = criticalKey ?? ownerIdentity.publicKeys.values.first { key in
-                    key.purpose == .authentication
-                } ?? ownerIdentity.publicKeys.values.first
-                
-                guard let keyToUse = keyToUse else {
-                    print("❌ [DOCUMENT CREATE] No public key found for identity")
+                // Select the appropriate key for signing
+                guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT CREATE") else {
                     continuation.resume(throwing: SDKError.invalidParameter("No public key found for identity"))
                     return
                 }
                 
-                if criticalKey != nil {
-                    print("📝 [DOCUMENT CREATE] Using CRITICAL key (ID 1) - ID: \(keyToUse.id), purpose: \(keyToUse.purpose), type: \(keyToUse.keyType), security: \(keyToUse.securityLevel)")
-                } else {
-                    print("⚠️ [DOCUMENT CREATE] WARNING: Using non-critical key - ID: \(keyToUse.id), purpose: \(keyToUse.purpose), type: \(keyToUse.keyType), security: \(keyToUse.securityLevel)")
-                    print("⚠️ [DOCUMENT CREATE] This may fail if you don't have the private key for this key!")
-                }
-                
-                // Create public key handle directly from our local data
-                let keyData = keyToUse.data
-                let keyType: UInt8 = UInt8(keyToUse.keyType.rawValue)
-                let purpose: UInt8 = {
-                    switch keyToUse.purpose {
-                    case .authentication: return 0
-                    case .encryption: return 1
-                    case .decryption: return 2
-                    case .transfer: return 3
-                    case .system: return 4
-                    case .voting: return 5
-                    case .owner: return 6
-                    }
-                }()
-                let securityLevel: UInt8 = {
-                    switch keyToUse.securityLevel {
-                    case .master: return 0
-                    case .critical: return 1
-                    case .high: return 2
-                    case .medium: return 3
-                    }
-                }()
-                
-                let keyResult = keyData.withUnsafeBytes { dataPtr in
-                    dash_sdk_identity_public_key_create_from_data(
-                        UInt32(keyToUse.id),
-                        keyType,
-                        purpose,
-                        securityLevel,
-                        dataPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        UInt(keyData.count),
-                        keyToUse.readOnly,
-                        keyToUse.disabledAt ?? 0
-                    )
-                }
-                
-                guard keyResult.error == nil else {
-                    let errorString = keyResult.error?.pointee.message != nil ?
-                        String(cString: keyResult.error!.pointee.message) : "Failed to create public key handle"
-                    print("❌ [DOCUMENT CREATE] Key handle creation failed: \(errorString)")
+                // Create public key handle
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT CREATE") else {
                     print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
-                    dash_sdk_error_free(keyResult.error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: SDKError.internalError("Failed to create public key handle"))
                     return
                 }
-                
-                guard let keyHandle = keyResult.data else {
-                    print("❌ [DOCUMENT CREATE] Invalid public key handle")
-                    continuation.resume(throwing: SDKError.internalError("Invalid public key handle"))
-                    return
-                }
-                print("✅ [DOCUMENT CREATE] Public key handle created from local data (no network fetch!)")
                 
                 defer {
-                    // Clean up key handle  
-                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle))
+                    // Clean up key handle
+                    dash_sdk_identity_public_key_destroy(keyHandle)
                 }
                 
                 // 4. Create put settings (null for defaults)
@@ -524,7 +500,7 @@ extension SDK {
                                 contractIdCStr,
                                 docTypeCStr,
                                 entropyPtr,
-                                OpaquePointer(keyHandle),
+                                keyHandle,
                                 signer,
                                 tokenPaymentInfo,
                                 putSettings,
@@ -587,181 +563,139 @@ extension SDK {
                     return
                 }
                 
-                // 1. Fetch the document first
+                // MARK: - Document Replace
+                print("📝 [DOCUMENT REPLACE] Starting at \(Date())...")
+                let startTime = Date()
+                
+                // 1. Fetch the existing document using the new function
                 print("📝 [DOCUMENT REPLACE] Fetching existing document...")
-                let docFetchStart = Date()
-                let documentResult = documentId.withCString { docIdCStr in
-                    contractId.withCString { contractIdCStr in
-                        documentType.withCString { docTypeCStr in
-                            dash_sdk_document_fetch(handle, nil, docTypeCStr, docIdCStr)
-                        }
-                    }
-                }
+                let fetchStart = Date()
                 
-                let docFetchTime = Date().timeIntervalSince(docFetchStart)
-                print("⏱️ [DOCUMENT REPLACE] Document fetch took \(docFetchTime) seconds")
-                
-                guard documentResult.error == nil else {
-                    print("❌ [DOCUMENT REPLACE] Failed to fetch document after \(docFetchTime) seconds")
-                    let errorString = documentResult.error?.pointee.message != nil ?
-                        String(cString: documentResult.error!.pointee.message) : "Failed to fetch document"
-                    dash_sdk_error_free(documentResult.error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
-                    return
-                }
-                
-                guard documentResult.data_type == DashSDKFFI.ResultDocumentHandle,
-                      let documentHandle = documentResult.data else {
-                    continuation.resume(throwing: SDKError.internalError("Invalid document result type"))
-                    return
-                }
-                
-                defer {
-                    dash_sdk_document_handle_destroy(OpaquePointer(documentHandle))
-                }
-                
-                print("✅ [DOCUMENT REPLACE] Document fetched successfully")
-                
-                // 2. Fetch the data contract handle
-                print("📝 [DOCUMENT REPLACE] Fetching data contract...")
-                let contractFetchStart = Date()
+                // First fetch the data contract
                 let contractResult = contractId.withCString { contractIdCStr in
                     dash_sdk_data_contract_fetch(handle, contractIdCStr)
                 }
                 
-                let contractFetchTime = Date().timeIntervalSince(contractFetchStart)
-                print("⏱️ [DOCUMENT REPLACE] Contract fetch took \(contractFetchTime) seconds")
-                
                 guard contractResult.error == nil,
-                      contractResult.data_type == DashSDKFFI.ResultDataContractHandle,
                       let contractHandle = contractResult.data else {
-                    if contractResult.error != nil {
-                        let errorString = String(cString: contractResult.error!.pointee.message)
-                        dash_sdk_error_free(contractResult.error)
-                        continuation.resume(throwing: SDKError.internalError(errorString))
+                    if let error = contractResult.error {
+                        let errorMsg = String(cString: error.pointee.message)
+                        print("❌ [DOCUMENT REPLACE] Failed to fetch contract: \(errorMsg)")
+                        continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     } else {
-                        continuation.resume(throwing: SDKError.internalError("Failed to fetch contract"))
+                        continuation.resume(throwing: SDKError.notFound("Contract not found"))
                     }
                     return
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle)!)
                 }
                 
-                print("✅ [DOCUMENT REPLACE] Contract fetched successfully")
-                
-                // 3. Fetch the identity handle
-                print("📝 [DOCUMENT REPLACE] Fetching identity handle...")
-                let identityFetchStart = Date()
-                let identityIdString = ownerIdentity.id.toBase58String()
-                let identityResult = identityIdString.withCString { identityIdCStr in
-                    dash_sdk_identity_fetch_handle(handle, identityIdCStr)
-                }
-                
-                let identityFetchTime = Date().timeIntervalSince(identityFetchStart)
-                print("⏱️ [DOCUMENT REPLACE] Identity fetch took \(identityFetchTime) seconds")
-                
-                guard identityResult.error == nil,
-                      identityResult.data_type == DashSDKFFI.ResultIdentityHandle,
-                      let identityHandle = identityResult.data else {
-                    if identityResult.error != nil {
-                        let errorString = String(cString: identityResult.error!.pointee.message)
-                        dash_sdk_error_free(identityResult.error)
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                    } else {
-                        continuation.resume(throwing: SDKError.internalError("Failed to fetch identity"))
+                // Now fetch the document using the contract handle
+                let fetchResult = documentType.withCString { docTypeCStr in
+                    documentId.withCString { docIdCStr in
+                        dash_sdk_document_fetch(
+                            handle,
+                            OpaquePointer(contractHandle),
+                            docTypeCStr,
+                            docIdCStr
+                        )
                     }
+                }
+                
+                let fetchTime = Date().timeIntervalSince(fetchStart)
+                print("⏱️ [DOCUMENT REPLACE] Document fetch took \(fetchTime) seconds")
+                
+                guard fetchResult.error == nil else {
+                    let errorString = fetchResult.error?.pointee.message != nil ?
+                        String(cString: fetchResult.error!.pointee.message) : "Failed to fetch document"
+                    dash_sdk_error_free(fetchResult.error)
+                    print("❌ [DOCUMENT REPLACE] Failed to fetch document: \(errorString)")
+                    continuation.resume(throwing: SDKError.internalError("Failed to fetch document: \(errorString)"))
+                    return
+                }
+                
+                guard let documentHandle = fetchResult.data else {
+                    print("❌ [DOCUMENT REPLACE] Document not found")
+                    continuation.resume(throwing: SDKError.notFound("Document not found"))
                     return
                 }
                 
                 defer {
-                    dash_sdk_identity_destroy(OpaquePointer(identityHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
                 
-                print("✅ [DOCUMENT REPLACE] Identity fetched successfully")
+                print("✅ [DOCUMENT REPLACE] Document fetched successfully")
                 
-                // 4. Get public key handle
+                // 2. Update the document properties
+                // Convert properties to JSON and set on the document
+                guard let propertiesData = try? JSONSerialization.data(withJSONObject: properties),
+                      let propertiesJson = String(data: propertiesData, encoding: .utf8) else {
+                    continuation.resume(throwing: SDKError.invalidParameter("Failed to serialize properties to JSON"))
+                    return
+                }
+                
+                propertiesJson.withCString { propsCStr in
+                    dash_sdk_document_set_properties(OpaquePointer(documentHandle), propsCStr)
+                }
+                
+                // 3. Get appropriate key for signing
                 print("📝 [DOCUMENT REPLACE] Getting public key handle...")
-                let keyFetchStart = Date()
-                let authKey = ownerIdentity.publicKeys.values.first { key in
-                    key.purpose == .authentication
-                } ?? ownerIdentity.publicKeys.values.first
                 
-                guard let keyToUse = authKey else {
+                // Select the appropriate key for signing
+                guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT REPLACE") else {
                     continuation.resume(throwing: SDKError.invalidParameter("No public key found"))
                     return
                 }
                 
-                let keyResult = dash_sdk_identity_get_public_key_by_id(
-                    OpaquePointer(identityHandle),
-                    UInt8(keyToUse.id)
-                )
-                
-                let keyFetchTime = Date().timeIntervalSince(keyFetchStart)
-                print("⏱️ [DOCUMENT REPLACE] Key fetch took \(keyFetchTime) seconds")
-                
-                guard keyResult.error == nil,
-                      keyResult.data_type == DashSDKFFI.ResultPublicKeyHandle,
-                      let keyHandle = keyResult.data else {
-                    if keyResult.error != nil {
-                        let errorString = String(cString: keyResult.error!.pointee.message)
-                        dash_sdk_error_free(keyResult.error)
-                        continuation.resume(throwing: SDKError.internalError(errorString))
-                    } else {
-                        continuation.resume(throwing: SDKError.internalError("Failed to get public key"))
-                    }
+                // Create public key handle
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT REPLACE") else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create public key handle"))
                     return
                 }
                 
                 defer {
-                    dash_sdk_identity_public_key_destroy(OpaquePointer(keyHandle))
+                    dash_sdk_identity_public_key_destroy(keyHandle)
                 }
                 
-                print("✅ [DOCUMENT REPLACE] Public key fetched successfully")
-                
                 // 5. Replace document on platform
-                print("🚀 [DOCUMENT REPLACE] This is the NETWORK CALL - monitoring for timeout...")
+                print("🚀 [DOCUMENT REPLACE] Submitting document replace to platform...")
                 let replaceStart = Date()
-                let putResult = documentType.withCString { docTypeCStr in
-                    dash_sdk_document_replace_on_platform_and_wait(
-                        handle,
-                        OpaquePointer(documentHandle),
-                        OpaquePointer(contractHandle),
-                        docTypeCStr,
-                        OpaquePointer(keyHandle),
-                        signer,
-                        nil, // token payment info
-                        nil, // put settings
-                        nil  // state transition options
-                    )
+                
+                let replaceResult = contractId.withCString { contractIdCStr in
+                    documentType.withCString { docTypeCStr in
+                        dash_sdk_document_replace_on_platform_and_wait(
+                            handle,
+                            OpaquePointer(documentHandle),
+                            contractIdCStr,
+                            docTypeCStr,
+                            keyHandle,
+                            signer,
+                            nil, // token payment info
+                            nil, // put settings
+                            nil  // state transition options
+                        )
+                    }
                 }
                 
                 let replaceTime = Date().timeIntervalSince(replaceStart)
                 print("⏱️ [DOCUMENT REPLACE] Platform submission took \(replaceTime) seconds")
                 
-                if let error = putResult.error {
-                    print("❌ [DOCUMENT REPLACE] Network call failed after \(replaceTime) seconds")
+                if let error = replaceResult.error {
+                    print("❌ [DOCUMENT REPLACE] Replace failed after \(replaceTime) seconds")
                     let errorString = String(cString: error.pointee.message)
                     dash_sdk_error_free(error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
-                } else if putResult.data_type == DashSDKFFI.String,
-                          let jsonData = putResult.data {
-                    let jsonString = String(cString: UnsafePointer<CChar>(OpaquePointer(jsonData)))
-                    dash_sdk_string_free(UnsafeMutablePointer<CChar>(mutating: UnsafePointer<CChar>(OpaquePointer(jsonData))))
+                } else if replaceResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                          let resultHandle = replaceResult.data {
+                    // Document was successfully replaced
+                    dash_sdk_document_free(OpaquePointer(resultHandle))
                     
-                    if let data = jsonString.data(using: .utf8),
-                       let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        let totalTime = Date().timeIntervalSince(startTime)
-                        print("✅ [DOCUMENT REPLACE] Response received - document replaced successfully")
-                        print("✅ [DOCUMENT REPLACE] Total operation time: \(totalTime) seconds")
-                        continuation.resume(returning: jsonObject)
-                    } else {
-                        let totalTime = Date().timeIntervalSince(startTime)
-                        print("✅ [DOCUMENT REPLACE] Response received - document replaced successfully")
-                        print("✅ [DOCUMENT REPLACE] Total operation time: \(totalTime) seconds")
-                        continuation.resume(returning: ["status": "success", "raw": jsonString])
-                    }
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("✅ [DOCUMENT REPLACE] Document replaced successfully")
+                    print("✅ [DOCUMENT REPLACE] Total operation time: \(totalTime) seconds")
+                    continuation.resume(returning: ["status": "success", "message": "Document replaced successfully"])
                 } else {
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("✅ [DOCUMENT REPLACE] Document replaced successfully")
@@ -784,27 +718,73 @@ extension SDK {
         print("🗑️ [DOCUMENT DELETE] Starting at \(startTime)")
         print("🗑️ [DOCUMENT DELETE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
         
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
                     continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
                     return
                 }
                 
-                // TODO: Implement full document delete with logging similar to documentReplace:
-                // 1. Fetch document with timing
-                // 2. Fetch contract with timing
-                // 3. Fetch identity with timing
-                // 4. Get public key with timing
-                // 5. Call dash_sdk_document_delete_and_wait with network timing
-                
-                print("⚠️ [DOCUMENT DELETE] Not fully implemented yet")
-                let totalTime = Date().timeIntervalSince(startTime)
-                print("⚠️ [DOCUMENT DELETE] Total time: \(totalTime) seconds")
-                
-                continuation.resume(throwing: SDKError.notImplemented(
-                    "Document delete implementation similar to replace - handles are available"
-                ))
+                do {
+                    // Prepare C strings
+                    guard let documentIdCString = documentId.cString(using: .utf8),
+                          let ownerIdCString = ownerIdentity.id.toBase58String().cString(using: .utf8),
+                          let contractIdCString = contractId.cString(using: .utf8),
+                          let documentTypeCString = documentType.cString(using: .utf8) else {
+                        throw SDKError.serializationError("Failed to encode strings to C strings")
+                    }
+                    
+                    // Select the signing key using the helper
+                    guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT DELETE") else {
+                        throw SDKError.protocolError("No suitable key found for signing")
+                    }
+                    
+                    // Create public key handle
+                    guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT DELETE") else {
+                        throw SDKError.protocolError("Failed to create public key handle")
+                    }
+                    
+                    defer {
+                        dash_sdk_identity_public_key_destroy(keyHandle)
+                    }
+                    
+                    // Call the FFI function with network timing
+                    let networkStartTime = Date()
+                    print("🗑️ [DOCUMENT DELETE] Calling dash_sdk_document_delete_and_wait...")
+                    print("🗑️ [DOCUMENT DELETE] Document ID: \(documentId)")
+                    print("🗑️ [DOCUMENT DELETE] Owner ID: \(ownerIdentity.id.toBase58String())")
+                    
+                    let result = dash_sdk_document_delete_and_wait(
+                        handle,
+                        documentIdCString,
+                        ownerIdCString,
+                        contractIdCString,
+                        documentTypeCString,
+                        keyHandle,
+                        signer,
+                        nil,  // token_payment_info
+                        nil,  // put_settings
+                        nil   // state_transition_creation_options
+                    )
+                    
+                    let networkTime = Date().timeIntervalSince(networkStartTime)
+                    print("🗑️ [DOCUMENT DELETE] Network call completed in \(networkTime) seconds")
+                    
+                    if let error = result.error {
+                        let errorMessage = String(cString: error.pointee.message)
+                        dash_sdk_error_free(error)
+                        throw SDKError.protocolError(errorMessage)
+                    }
+                    
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("✅ [DOCUMENT DELETE] Success! Total time: \(totalTime) seconds")
+                    
+                    continuation.resume()
+                } catch {
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("❌ [DOCUMENT DELETE] Failed after \(totalTime) seconds: \(error)")
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -823,28 +803,131 @@ extension SDK {
         print("🔁 [DOCUMENT TRANSFER] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
         print("🔁 [DOCUMENT TRANSFER] From: \(fromIdentity.id.toBase58String()), To: \(toIdentityId)")
         
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
                     continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
                     return
                 }
                 
-                // TODO: Implement full document transfer with logging:
-                // 1. Fetch document with timing
-                // 2. Fetch contract with timing
-                // 3. Fetch from identity with timing
-                // 4. Fetch to identity with timing
-                // 5. Get public key with timing
-                // 6. Call dash_sdk_document_transfer_to_identity_and_wait with network timing
+                // Convert strings to C strings
+                guard let contractIdCString = contractId.cString(using: .utf8),
+                      let documentTypeCString = documentType.cString(using: .utf8),
+                      let documentIdCString = documentId.cString(using: .utf8),
+                      let toIdentityCString = toIdentityId.cString(using: .utf8) else {
+                    continuation.resume(throwing: SDKError.serializationError("Failed to convert strings to C strings"))
+                    return
+                }
                 
-                print("⚠️ [DOCUMENT TRANSFER] Not fully implemented yet")
+                // Select signing key
+                guard let keyToUse = selectSigningKey(from: fromIdentity, operation: "DOCUMENT TRANSFER") else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No suitable key found for signing"))
+                    return
+                }
+                
+                // Create public key handle
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT TRANSFER") else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create key handle"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_identity_public_key_destroy(keyHandle)
+                }
+                
+                print("📝 [DOCUMENT TRANSFER] Step 1: Fetching contract...")
+                let contractFetchStartTime = Date()
+                
+                // First fetch the data contract
+                let contractResult = dash_sdk_data_contract_fetch(handle, contractIdCString)
+                
+                guard contractResult.error == nil,
+                      let contractHandle = contractResult.data else {
+                    if let error = contractResult.error {
+                        let errorMsg = String(cString: error.pointee.message)
+                        print("❌ [DOCUMENT TRANSFER] Failed to fetch contract: \(errorMsg)")
+                        continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    } else {
+                        continuation.resume(throwing: SDKError.notFound("Contract not found"))
+                    }
+                    return
+                }
+                
+                defer {
+                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle)!)
+                }
+                
+                let contractFetchTime = Date().timeIntervalSince(contractFetchStartTime)
+                print("✅ [DOCUMENT TRANSFER] Contract fetched in \(contractFetchTime) seconds")
+                
+                print("📝 [DOCUMENT TRANSFER] Step 2: Fetching document...")
+                let docFetchStartTime = Date()
+                
+                // Now fetch the document using the contract handle
+                let fetchResult = dash_sdk_document_fetch(
+                    handle,
+                    OpaquePointer(contractHandle),
+                    documentTypeCString,
+                    documentIdCString
+                )
+                
+                let docFetchTime = Date().timeIntervalSince(docFetchStartTime)
+                print("📝 [DOCUMENT TRANSFER] Document fetch took \(docFetchTime) seconds")
+                
+                guard fetchResult.error == nil,
+                      let documentHandle = fetchResult.data else {
+                    let error = fetchResult.error.pointee
+                    let errorMsg = String(cString: error.message)
+                    print("❌ [DOCUMENT TRANSFER] Failed to fetch document: \(errorMsg)")
+                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle)!)
+                }
+                
+                print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
+                print("🔄 [DOCUMENT TRANSFER] Step 3: Creating transfer transition...")
+                
+                let transferStartTime = Date()
+                
+                // Call the transfer function
+                let result = dash_sdk_document_transfer_to_identity_and_wait(
+                    handle,
+                    OpaquePointer(documentHandle),
+                    toIdentityCString,
+                    contractIdCString,
+                    documentTypeCString,
+                    keyHandle,
+                    signer,
+                    nil,  // token_payment_info
+                    nil,  // put_settings
+                    nil   // state_transition_creation_options
+                )
+                
+                let transferTime = Date().timeIntervalSince(transferStartTime)
+                print("🔄 [DOCUMENT TRANSFER] Transfer operation took \(transferTime) seconds")
+                
+                guard result.error == nil else {
+                    let error = result.error.pointee
+                    let errorMsg = String(cString: error.message)
+                    print("❌ [DOCUMENT TRANSFER] Transfer failed: \(errorMsg)")
+                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    return
+                }
+                
+                // Document transfer was successful
                 let totalTime = Date().timeIntervalSince(startTime)
-                print("⚠️ [DOCUMENT TRANSFER] Total time: \(totalTime) seconds")
+                print("✅ [DOCUMENT TRANSFER] Successfully transferred in \(totalTime) seconds")
                 
-                continuation.resume(throwing: SDKError.notImplemented(
-                    "Document transfer implementation similar to replace - handles are available"
-                ))
+                // Return a success message
+                continuation.resume(returning: [
+                    "success": true,
+                    "message": "Document successfully transferred",
+                    "documentId": documentId,
+                    "toIdentity": toIdentityId
+                ])
             }
         }
     }

@@ -150,17 +150,33 @@ struct DataContractParser {
                 docType.documentsMutable = mutable
             }
             
-            if let canDelete = typeDict["documentsCanBeDeleted"] as? Bool {
+            // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
+            if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
             }
             
-            if let transferable = typeDict["documentsTransferable"] as? Bool {
-                docType.documentsTransferable = transferable
+            // The actual field name is "transferable" and it can be an integer (0 = false, non-zero = true)
+            if let transferable = typeDict["transferable"] {
+                // Handle both boolean and integer values (0 = false, non-zero = true)
+                if let boolValue = transferable as? Bool {
+                    docType.documentsTransferable = boolValue
+                } else if let intValue = transferable as? Int {
+                    docType.documentsTransferable = intValue != 0
+                }
             }
             
-            // Trade mode
-            if let tradeMode = typeDict["tradeMode"] as? Bool {
-                docType.tradeMode = tradeMode
+            // Trade mode - can be integer or boolean
+            if let tradeMode = typeDict["tradeMode"] {
+                if let intValue = tradeMode as? Int {
+                    docType.tradeMode = intValue
+                } else if let boolValue = tradeMode as? Bool {
+                    docType.tradeMode = boolValue ? 1 : 0
+                }
+            }
+            
+            // Creation restriction mode
+            if let creationRestrictionMode = typeDict["creationRestrictionMode"] as? Int {
+                docType.creationRestrictionMode = creationRestrictionMode
             }
             
             // Identity encryption keys

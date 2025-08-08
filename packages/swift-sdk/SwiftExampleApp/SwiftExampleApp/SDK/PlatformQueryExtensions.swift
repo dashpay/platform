@@ -264,6 +264,53 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
     
+    // MARK: - Trusted Context Management
+    
+    /// Add a data contract to the trusted context provider cache
+    /// This allows the SDK to use the contract without fetching it from the network
+    public func addContractToContext(_ contractJSON: String) throws {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Convert JSON string to serialized bytes
+        guard let jsonData = contractJSON.data(using: .utf8) else {
+            throw SDKError.serializationError("Failed to convert contract JSON to data")
+        }
+        
+        // The Rust FFI expects comma-separated contract IDs and serialized contract data
+        // For a single contract, we need to extract the ID from the JSON
+        guard let jsonObject = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let contractId = jsonObject["id"] as? String else {
+            throw SDKError.serializationError("Failed to extract contract ID from JSON")
+        }
+        
+        // Convert to C strings and data
+        let contractIdCString = contractId.cString(using: .utf8)!
+        let serializedData = [UInt8](jsonData)
+        
+        var dataPointer: UnsafePointer<UInt8>? = serializedData.withUnsafeBufferPointer { $0.baseAddress }
+        var lengthPointer = serializedData.count
+        
+        // Call the FFI function
+        let result = dash_sdk_add_known_contracts(
+            handle,
+            contractIdCString,
+            &dataPointer,
+            &lengthPointer,
+            1  // Single contract
+        )
+        
+        // Check for errors
+        if let error = result.error {
+            let errorMsg = String(cString: error.pointee.message)
+            dash_sdk_error_free(error)
+            throw SDKError.internalError("Failed to add contract to context: \(errorMsg)")
+        }
+        
+        print("✅ Added contract \(contractId) to trusted context")
+    }
+    
     // MARK: - Data Contract Queries
     
     /// Get a data contract by ID

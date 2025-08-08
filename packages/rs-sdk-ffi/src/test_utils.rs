@@ -75,13 +75,13 @@ pub mod test_utils {
             can_sign_with: mock_can_sign_vtable_callback,
             destroy: mock_destroy_callback,
         });
-        
+
         Box::new(VTableSigner {
             signer_ptr: std::ptr::null_mut(),
             vtable: Box::into_raw(vtable),
         })
     }
-    
+
     // Mock sign callback for vtable
     unsafe extern "C" fn mock_sign_vtable_callback(
         _signer: *const std::os::raw::c_void,
@@ -99,7 +99,7 @@ pub mod test_utils {
         }
         ptr
     }
-    
+
     // Mock can sign callback for vtable
     unsafe extern "C" fn mock_can_sign_vtable_callback(
         _signer: *const std::os::raw::c_void,
@@ -108,7 +108,7 @@ pub mod test_utils {
     ) -> bool {
         true
     }
-    
+
     // Mock destroy callback
     unsafe extern "C" fn mock_destroy_callback(_signer: *mut std::os::raw::c_void) {
         // No-op for mock

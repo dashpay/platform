@@ -2,9 +2,11 @@
 
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::fee::Credits;
-use dash_sdk::dpp::prelude::{DataContract, UserFeeIncrease};
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentSetPriceTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
+use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
@@ -15,7 +17,7 @@ use crate::document::helpers::{
 use crate::sdk::SDKWrapper;
 use crate::types::{
     DashSDKPutSettings, DashSDKResultDataType, DashSDKStateTransitionCreationOptions,
-    DashSDKTokenPaymentInfo, DataContractHandle, DocumentHandle, SDKHandle, SignerHandle,
+    DashSDKTokenPaymentInfo, DocumentHandle, SDKHandle, SignerHandle,
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
@@ -24,7 +26,7 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
     sdk_handle: *mut SDKHandle,
     document_handle: *const DocumentHandle,
-    data_contract_handle: *const DataContractHandle,
+    data_contract_id: *const c_char,
     document_type_name: *const c_char,
     price: u64,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
@@ -36,7 +38,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
     // Validate required parameters
     if sdk_handle.is_null()
         || document_handle.is_null()
-        || data_contract_handle.is_null()
+        || data_contract_id.is_null()
         || document_type_name.is_null()
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
@@ -49,16 +51,45 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
-    let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
+
+    // Parse data contract ID
+    let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
+
     let result: Result<Vec<u8>, FFIError> = wrapper.runtime.block_on(async {
+        // Parse contract ID (base58 encoded)
+        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
+            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+
+        // Get contract from trusted context provider
+        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+            let platform_version = wrapper.sdk.version();
+            provider
+                .get_data_contract(&contract_id, platform_version)
+                .map_err(|e| {
+                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
+                })?
+                .ok_or_else(|| {
+                    FFIError::InternalError(format!(
+                        "Contract {} not found in trusted context",
+                        contract_id_str
+                    ))
+                })?
+        } else {
+            return Err(FFIError::InternalError(
+                "No trusted context provider configured".to_string(),
+            ));
+        };
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -74,7 +105,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
 
         // Use the new DocumentSetPriceTransitionBuilder
         let mut builder = DocumentSetPriceTransitionBuilder::new(
-            Arc::new(data_contract.clone()),
+            data_contract.clone(),
             document_type_name_str.to_string(),
             document.clone(),
             price as Credits,
@@ -99,7 +130,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                identity_public_key,
+                &identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -126,7 +157,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
 pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
     sdk_handle: *mut SDKHandle,
     document_handle: *const DocumentHandle,
-    data_contract_handle: *const DataContractHandle,
+    data_contract_id: *const c_char,
     document_type_name: *const c_char,
     price: u64,
     identity_public_key_handle: *const crate::types::IdentityPublicKeyHandle,
@@ -138,7 +169,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
     // Validate required parameters
     if sdk_handle.is_null()
         || document_handle.is_null()
-        || data_contract_handle.is_null()
+        || data_contract_id.is_null()
         || document_type_name.is_null()
         || identity_public_key_handle.is_null()
         || signer_handle.is_null()
@@ -151,16 +182,45 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
-    let data_contract = &*(data_contract_handle as *const DataContract);
-    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
+
+    // Parse data contract ID
+    let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
 
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
+    let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
+
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {
+        // Parse contract ID (base58 encoded)
+        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
+            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+
+        // Get contract from trusted context provider
+        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+            let platform_version = wrapper.sdk.version();
+            provider
+                .get_data_contract(&contract_id, platform_version)
+                .map_err(|e| {
+                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
+                })?
+                .ok_or_else(|| {
+                    FFIError::InternalError(format!(
+                        "Contract {} not found in trusted context",
+                        contract_id_str
+                    ))
+                })?
+        } else {
+            return Err(FFIError::InternalError(
+                "No trusted context provider configured".to_string(),
+            ));
+        };
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -176,7 +236,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 
         // Use the new DocumentSetPriceTransitionBuilder with SDK method
         let mut builder = DocumentSetPriceTransitionBuilder::new(
-            Arc::new(data_contract.clone()),
+            data_contract.clone(),
             document_type_name_str.to_string(),
             document.clone(),
             price as Credits,
@@ -200,7 +260,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 
         let result = wrapper
             .sdk
-            .document_set_price(builder, identity_public_key, signer)
+            .document_set_price(builder, &identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to update document price and wait: {}", e))

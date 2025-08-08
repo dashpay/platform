@@ -163,15 +163,17 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
     key_id: u32,
     key_type: u8,
     purpose: u8,
-    security_level: u8, 
+    security_level: u8,
     public_key_data: *const u8,
     public_key_data_len: usize,
     read_only: bool,
     disabled_at: u64,
 ) -> DashSDKResult {
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dash_sdk::dpp::identity::{KeyType, Purpose as DPPPurpose, SecurityLevel as DPPSecurityLevel};
-    
+    use dash_sdk::dpp::identity::{
+        KeyType, Purpose as DPPPurpose, SecurityLevel as DPPSecurityLevel,
+    };
+
     if public_key_data.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
@@ -235,12 +237,51 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
         security_level,
         data: key_data.into(),
         read_only,
-        disabled_at: if disabled_at > 0 { Some(disabled_at) } else { None },
+        disabled_at: if disabled_at > 0 {
+            Some(disabled_at)
+        } else {
+            None
+        },
         contract_bounds: None,
     });
 
     let handle = Box::into_raw(Box::new(public_key)) as *mut IdentityPublicKeyHandle;
     DashSDKResult::success(handle as *mut std::os::raw::c_void)
+}
+
+/// Serialize an identity public key to bytes
+/// Returns the serialized bytes and their length
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_identity_public_key_to_bytes(
+    key_handle: *const IdentityPublicKeyHandle,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> DashSDKResult {
+    if key_handle.is_null() || out_bytes.is_null() || out_len.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Null parameter provided".to_string(),
+        ));
+    }
+
+    let key = &*(key_handle as *const IdentityPublicKey);
+
+    // Serialize using bincode
+    let config = bincode::config::standard();
+    match bincode::encode_to_vec(key, config) {
+        Ok(bytes) => {
+            let len = bytes.len();
+            let ptr = bytes.as_ptr() as *mut u8;
+            std::mem::forget(bytes); // Prevent deallocation
+            *out_bytes = ptr;
+            *out_len = len;
+            DashSDKResult::success(std::ptr::null_mut())
+        }
+        Err(e) => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InternalError,
+            format!("Failed to serialize public key: {}", e),
+        )),
+    }
 }
 
 /// Free an identity public key handle

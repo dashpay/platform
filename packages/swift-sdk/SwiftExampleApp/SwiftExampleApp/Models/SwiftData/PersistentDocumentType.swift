@@ -23,8 +23,9 @@ final class PersistentDocumentType {
     // Security
     var securityLevel: Int // 0 = lowest, higher numbers = more secure
     
-    // Trade mode
-    var tradeMode: Bool
+    // Trade and creation restrictions
+    var tradeMode: Int // 0 = None, 1 = Direct purchase
+    var creationRestrictionMode: Int // 0 = No restrictions, 1 = Owner only, 2 = No creation (System Only)
     
     // Identity encryption keys
     var requiresIdentityEncryptionBoundedKey: Bool
@@ -64,7 +65,8 @@ final class PersistentDocumentType {
         self.documentsCanBeDeleted = true
         self.documentsTransferable = false
         self.securityLevel = 0
-        self.tradeMode = false
+        self.tradeMode = 0
+        self.creationRestrictionMode = 0
         self.requiresIdentityEncryptionBoundedKey = false
         self.requiresIdentityDecryptionBoundedKey = false
         self.createdAt = Date()

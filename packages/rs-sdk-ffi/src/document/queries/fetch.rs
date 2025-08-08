@@ -4,6 +4,7 @@ use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{DataContract, Identifier};
 use dash_sdk::platform::{DocumentQuery, Fetch};
+use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -11,7 +12,95 @@ use crate::sdk::SDKWrapper;
 use crate::types::{DataContractHandle, DocumentHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
-/// Fetch a document by ID
+/// Fetch a document by ID using contract ID (gets contract from trusted provider)
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_document_fetch_by_contract_id(
+    sdk_handle: *mut SDKHandle,
+    contract_id: *const c_char,
+    document_type: *const c_char,
+    document_id: *const c_char,
+) -> DashSDKResult {
+    if sdk_handle.is_null()
+        || contract_id.is_null()
+        || document_type.is_null()
+        || document_id.is_null()
+    {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Invalid parameters".to_string(),
+        ));
+    }
+
+    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+
+    let contract_id_str = match CStr::from_ptr(contract_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let document_type_str = match CStr::from_ptr(document_type).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let document_id_str = match CStr::from_ptr(document_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let result = wrapper.runtime.block_on(async {
+        // Parse contract ID (base58 encoded)
+        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
+            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+
+        // Get contract from trusted context provider
+        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+            let platform_version = wrapper.sdk.version();
+            provider
+                .get_data_contract(&contract_id, platform_version)
+                .map_err(|e| {
+                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
+                })?
+                .ok_or_else(|| {
+                    FFIError::InternalError(format!(
+                        "Contract {} not found in trusted context",
+                        contract_id_str
+                    ))
+                })?
+        } else {
+            return Err(FFIError::InternalError(
+                "No trusted context provider configured".to_string(),
+            ));
+        };
+
+        // Parse document ID
+        let document_id = Identifier::from_string(document_id_str, Encoding::Base58)
+            .map_err(|e| FFIError::InternalError(format!("Invalid document ID: {}", e)))?;
+
+        // Create query and fetch document
+        let query = DocumentQuery::new(data_contract, document_type_str)
+            .map_err(|e| FFIError::InternalError(format!("Failed to create query: {}", e)))?
+            .with_document_id(&document_id);
+
+        Document::fetch(&wrapper.sdk, query)
+            .await
+            .map_err(FFIError::from)
+    });
+
+    match result {
+        Ok(Some(document)) => {
+            let handle = Box::into_raw(Box::new(document)) as *mut DocumentHandle;
+            DashSDKResult::success(handle as *mut std::os::raw::c_void)
+        }
+        Ok(None) => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::NotFound,
+            "Document not found".to_string(),
+        )),
+        Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+/// Fetch a document by ID (legacy - requires data contract handle)
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_fetch(
     sdk_handle: *const SDKHandle,

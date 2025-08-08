@@ -18,6 +18,11 @@ public enum KeyType: UInt8, CaseIterable, Codable {
         case .eddsa25519Hash160: return "EdDSA 25519 Hash160"
         }
     }
+    
+    /// FFI representation value
+    public var ffiValue: UInt8 {
+        return self.rawValue
+    }
 }
 
 // MARK: - Key Purpose
@@ -54,6 +59,11 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable {
         case .owner: return "Owner key (masternodes)"
         }
     }
+    
+    /// FFI representation value
+    public var ffiValue: UInt8 {
+        return self.rawValue
+    }
 }
 
 // MARK: - Security Level
@@ -84,6 +94,11 @@ public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable {
     
     public static func < (lhs: SecurityLevel, rhs: SecurityLevel) -> Bool {
         lhs.rawValue < rhs.rawValue
+    }
+    
+    /// FFI representation value
+    public var ffiValue: UInt8 {
+        return self.rawValue
     }
 }
 

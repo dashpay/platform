@@ -135,10 +135,10 @@ pub type CanSignCallback = unsafe extern "C" fn(
 pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw::c_void)>;
 
 /// Create a new signer with callbacks from iOS/external code
-/// 
+///
 /// This creates a VTableSigner that can be used for all state transitions.
 /// The callbacks should handle the actual signing logic.
-/// 
+///
 /// # Parameters
 /// - `sign_callback`: Function to sign data
 /// - `can_sign_callback`: Function to check if can sign with a key
@@ -147,7 +147,7 @@ pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw
 pub unsafe extern "C" fn dash_sdk_signer_create(
     sign_callback: SignCallback,
     can_sign_callback: CanSignCallback,
-    destroy_callback: DestroyCallback,  // Option type handles NULL automatically
+    destroy_callback: DestroyCallback, // Option type handles NULL automatically
 ) -> *mut SignerHandle {
     // Create a vtable on the heap so it persists
     let vtable = Box::new(SignerVTable {
@@ -155,9 +155,9 @@ pub unsafe extern "C" fn dash_sdk_signer_create(
         can_sign_with: can_sign_callback,
         destroy: destroy_callback.unwrap_or(default_destroy),
     });
-    
+
     let vtable_ptr = Box::into_raw(vtable);
-    
+
     // Create the VTableSigner
     let vtable_signer = VTableSigner {
         signer_ptr: std::ptr::null_mut(), // iOS doesn't need a separate signer_ptr since callbacks handle everything
@@ -177,11 +177,11 @@ unsafe extern "C" fn default_destroy(_signer: *mut std::os::raw::c_void) {
 pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
     if !handle.is_null() {
         let vtable_signer = Box::from_raw(handle as *mut VTableSigner);
-        
+
         // Call the destructor through the vtable
         if !vtable_signer.vtable.is_null() {
             ((*vtable_signer.vtable).destroy)(vtable_signer.signer_ptr);
-            
+
             // Only free the vtable if it's not a static vtable
             // Static vtables (like SINGLE_KEY_SIGNER_VTABLE) should not be freed
             // We can check if it's the static vtable by comparing the address
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
                 let _ = Box::from_raw(vtable_signer.vtable as *mut SignerVTable);
             }
         }
-        
+
         // The VTableSigner itself is dropped here
     }
 }

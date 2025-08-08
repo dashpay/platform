@@ -358,6 +358,15 @@ struct LoadDataContractView: View {
                 print("📦 Binary serialization size: \(binaryData.count) bytes")
             }
             
+            // Add the contract to the trusted context
+            do {
+                try sdk.addContractToContext(jsonString)
+                print("✅ Added contract to trusted context provider")
+            } catch {
+                print("⚠️ Failed to add contract to trusted context: \(error)")
+                // Continue even if adding to context fails
+            }
+            
             await MainActor.run {
                 fetchedContract = contractData
             }

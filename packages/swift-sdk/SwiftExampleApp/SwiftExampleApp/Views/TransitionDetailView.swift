@@ -202,16 +202,7 @@ struct TransitionDetailView: View {
                     .cornerRadius(8)
             } else if let contract = dataContracts.first(where: { $0.idBase58 == contractId }),
                       let documentTypes = contract.documentTypes {
-                // Debug logging
-                let _ = print("📱 Contract has \(documentTypes.count) document types")
-                let _ = documentTypes.forEach { dt in
-                    print("📱 Document type: \(dt.name) - \(type(of: dt))")
-                }
-                
                 if let documentType = documentTypes.first(where: { $0.name == documentTypeName }) {
-                    let _ = print("📱 Selected document type: \(documentType.name)")
-                    let _ = print("📱 Document type class: \(type(of: documentType))")
-                    
                     DocumentFieldsView(
                         documentType: documentType,
                         fieldValues: Binding(
@@ -404,6 +395,18 @@ struct TransitionDetailView: View {
             
         case "documentCreate":
             return try await executeDocumentCreate(sdk: sdk)
+            
+        case "documentReplace":
+            return try await executeDocumentReplace(sdk: sdk)
+            
+        case "documentDelete":
+            return try await executeDocumentDelete(sdk: sdk)
+            
+        case "documentTransfer":
+            return try await executeDocumentTransfer(sdk: sdk)
+            
+        case "documentPurchase":
+            return try await executeDocumentPurchase(sdk: sdk)
             
         case "tokenMint":
             return try await executeTokenMint(sdk: sdk)
@@ -814,38 +817,9 @@ struct TransitionDetailView: View {
         return result
     }
     
-    private func executeDocumentReplace(sdk: SDK) async throws -> Any {
-        guard !selectedIdentityId.isEmpty else {
-            throw SDKError.invalidParameter("No identity selected")
-        }
-        
-        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
-            throw SDKError.invalidParameter("Data contract is required")
-        }
-        
-        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
-            throw SDKError.invalidParameter("Document type is required")
-        }
-        
-        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
-            throw SDKError.invalidParameter("Document ID is required")
-        }
-        
-        guard let propertiesJson = formInputs["documentFields"], !propertiesJson.isEmpty else {
-            throw SDKError.invalidParameter("Document properties are required")
-        }
-        
-        // Parse the JSON properties
-        guard let propertiesData = propertiesJson.data(using: .utf8),
-              let _ = try? JSONSerialization.jsonObject(with: propertiesData) as? [String: Any] else {
-            throw SDKError.invalidParameter("Invalid JSON in properties field")
-        }
-        
-        throw SDKError.notImplemented("Document replace is prepared but FFI bindings not yet exposed to Swift")
-    }
-    
     private func executeDocumentDelete(sdk: SDK) async throws -> Any {
-        guard !selectedIdentityId.isEmpty else {
+        guard !selectedIdentityId.isEmpty,
+              let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
             throw SDKError.invalidParameter("No identity selected")
         }
         
@@ -861,7 +835,75 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Document ID is required")
         }
         
-        throw SDKError.notImplemented("Document delete is prepared but FFI bindings not yet exposed to Swift")
+        // Use the DPPIdentity
+        let dppIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+            id: ownerIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: ownerIdentity.balance,
+            revision: 0
+        )
+        
+        // Find a suitable signing key with private key available
+        // For delete, we typically use the critical key (ID 1)
+        var privateKeyData: Data?
+        var selectedKey: IdentityPublicKey?
+        
+        // First try to find the critical key (ID 1)
+        if let criticalKey = ownerIdentity.publicKeys.first(where: { $0.id == 1 && $0.securityLevel == .critical }) {
+            if let keyData = KeychainManager.shared.retrievePrivateKey(
+                identityId: ownerIdentity.id,
+                keyIndex: Int32(criticalKey.id)
+            ) {
+                selectedKey = criticalKey
+                privateKeyData = keyData
+            }
+        }
+        
+        // If critical key not found or no private key, try any authentication key
+        if selectedKey == nil {
+            for key in ownerIdentity.publicKeys.filter({ $0.purpose == .authentication }) {
+                if let keyData = KeychainManager.shared.retrievePrivateKey(
+                    identityId: ownerIdentity.id,
+                    keyIndex: Int32(key.id)
+                ) {
+                    selectedKey = key
+                    privateKeyData = keyData
+                    break
+                }
+            }
+        }
+        
+        guard let signingKey = selectedKey, let keyData = privateKeyData else {
+            throw SDKError.invalidParameter("No suitable key with available private key found for signing")
+        }
+        
+        // Create signer using the private key
+        let signerResult = keyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(keyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Call the document delete function
+        try await sdk.documentDelete(
+            contractId: contractId,
+            documentType: documentType,
+            documentId: documentId,
+            ownerIdentity: dppIdentity,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return ["message": "Document deleted successfully"]
     }
     
     private func executeDocumentTransfer(sdk: SDK) async throws -> Any {
@@ -885,7 +927,80 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Recipient identity is required")
         }
         
-        throw SDKError.notImplemented("Document transfer is prepared but FFI bindings not yet exposed to Swift")
+        // Get the owner identity from persistent storage
+        guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("Selected identity not found")
+        }
+        
+        // Use the DPPIdentity
+        let fromIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+            id: ownerIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: ownerIdentity.balance,
+            revision: 0
+        )
+        
+        // Find a suitable signing key with private key available
+        var privateKeyData: Data?
+        var selectedKey: IdentityPublicKey?
+        
+        // For transfer, try to find the critical key (ID 1) first
+        if let criticalKey = ownerIdentity.publicKeys.first(where: { $0.id == 1 && $0.securityLevel == .critical }) {
+            if let keyData = KeychainManager.shared.retrievePrivateKey(
+                identityId: ownerIdentity.id,
+                keyIndex: Int32(criticalKey.id)
+            ) {
+                selectedKey = criticalKey
+                privateKeyData = keyData
+            }
+        }
+        
+        // If critical key not found or no private key, try any authentication key
+        if selectedKey == nil {
+            for key in ownerIdentity.publicKeys.filter({ $0.purpose == .authentication }) {
+                if let keyData = KeychainManager.shared.retrievePrivateKey(
+                    identityId: ownerIdentity.id,
+                    keyIndex: Int32(key.id)
+                ) {
+                    selectedKey = key
+                    privateKeyData = keyData
+                    break
+                }
+            }
+        }
+        
+        guard let keyData = privateKeyData else {
+            throw SDKError.invalidParameter("No suitable key with available private key found for signing")
+        }
+        
+        // Create signer using the private key
+        let signerResult = keyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(keyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Call the document transfer function
+        let result = try await sdk.documentTransfer(
+            contractId: contractId,
+            documentType: documentType,
+            documentId: documentId,
+            fromIdentity: fromIdentity,
+            toIdentityId: recipientId,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return result
     }
     
     private func executeDocumentPurchase(sdk: SDK) async throws -> Any {
@@ -911,6 +1026,160 @@ struct TransitionDetailView: View {
         }
         
         throw SDKError.notImplemented("Document purchase is prepared but FFI bindings not yet exposed to Swift")
+    }
+    
+    private func executeDocumentReplace(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty,
+              let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract ID is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+            throw SDKError.invalidParameter("Document ID is required")
+        }
+        
+        guard let propertiesJson = formInputs["documentFields"], !propertiesJson.isEmpty else {
+            throw SDKError.invalidParameter("Document properties are required")
+        }
+        
+        // Parse the JSON properties
+        guard let propertiesData = propertiesJson.data(using: .utf8),
+              let properties = try? JSONSerialization.jsonObject(with: propertiesData) as? [String: Any] else {
+            throw SDKError.invalidParameter("Invalid JSON in properties field")
+        }
+        
+        // Determine the required security level for this document type (similar to create)
+        var requiredSecurityLevel: SecurityLevel = .high // Default to HIGH as per DPP
+        
+        // Try to get the document type's security requirement from persistent storage
+        let contractIdData = Data.identifier(fromBase58: contractId) ?? Data()
+        let descriptor = FetchDescriptor<PersistentDataContract>(
+            predicate: #Predicate { $0.id == contractIdData }
+        )
+        if let persistentContract = try? appState.modelContainer.mainContext.fetch(descriptor).first,
+           let documentTypes = persistentContract.documentTypes,
+           let docType = documentTypes.first(where: { $0.name == documentType }) {
+            requiredSecurityLevel = SecurityLevel(rawValue: UInt8(docType.securityLevel)) ?? .high
+            print("📋 Document type '\(documentType)' requires security level: \(requiredSecurityLevel.name)")
+        } else {
+            print("⚠️ Could not determine security level for document type '\(documentType)', using default: HIGH")
+        }
+        
+        // Find a key for signing - must meet security requirements
+        print("🔑 Available keys for identity:")
+        for key in ownerIdentity.publicKeys {
+            print("  - ID: \(key.id), Purpose: \(key.purpose.name), Security: \(key.securityLevel.name), Disabled: \(key.isDisabled)")
+        }
+        
+        // For document operations, we need AUTHENTICATION purpose keys
+        let suitableKeys = ownerIdentity.publicKeys.filter { key in
+            guard !key.isDisabled else { return false }
+            guard key.purpose == .authentication else { return false }
+            guard key.securityLevel.rawValue <= requiredSecurityLevel.rawValue else { return false }
+            return true
+        }.sorted { k1, k2 in
+            // Prefer exact match, then closer to requirement
+            if k1.securityLevel == requiredSecurityLevel && k2.securityLevel != requiredSecurityLevel {
+                return true
+            }
+            if k1.securityLevel != requiredSecurityLevel && k2.securityLevel == requiredSecurityLevel {
+                return false
+            }
+            if k1.securityLevel != requiredSecurityLevel && k2.securityLevel != requiredSecurityLevel {
+                if k1.securityLevel.rawValue > k2.securityLevel.rawValue {
+                    return true
+                }
+            }
+            return k1.id < k2.id
+        }
+        
+        guard !suitableKeys.isEmpty else {
+            print("❌ No suitable keys found for document type '\(documentType)' (requires \(requiredSecurityLevel.name) security)")
+            throw SDKError.invalidParameter(
+                "No suitable keys found for signing document type '\(documentType)' (requires \(requiredSecurityLevel.name) security with AUTHENTICATION purpose)"
+            )
+        }
+        
+        // Find a key with a private key available
+        var selectedKey: IdentityPublicKey?
+        var keyData: Data?
+        
+        for candidateKey in suitableKeys {
+            print("🔍 Checking key ID \(candidateKey.id) for private key...")
+            
+            // Get private key from keychain
+            if let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+                identityId: ownerIdentity.id,
+                keyIndex: Int32(candidateKey.id)
+            ) {
+                selectedKey = candidateKey
+                keyData = privateKeyData
+                print("✅ Found private key for key ID \(candidateKey.id)")
+                break
+            } else {
+                print("⚠️ No private key found for key ID \(candidateKey.id)")
+            }
+        }
+        
+        guard let selectedKey = selectedKey, let keyData = keyData else {
+            let availableKeys = ownerIdentity.publicKeys.map { 
+                "ID: \($0.id), Purpose: \($0.purpose.name), Security: \($0.securityLevel.name)" 
+            }.joined(separator: "\n  ")
+            
+            let triedKeys = suitableKeys.map { 
+                "ID: \($0.id) (\($0.securityLevel.name))" 
+            }.joined(separator: ", ")
+            
+            throw SDKError.invalidParameter(
+                "No suitable key with available private key found for signing document type '\(documentType)' (requires \(requiredSecurityLevel.name) security with AUTHENTICATION purpose).\n\nTried keys: \(triedKeys)\n\nAll available keys:\n  \(availableKeys)\n\nPlease add the private key for one of the suitable keys."
+            )
+        }
+        
+        print("🔑 Selected signing key: ID: \(selectedKey.id), Purpose: \(selectedKey.purpose.name), Security: \(selectedKey.securityLevel.name)")
+        
+        // Create signer using the already retrieved private key data
+        let signerResult = keyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(keyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the DPPIdentity for document replacement
+        let dppIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+            id: ownerIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: ownerIdentity.balance,
+            revision: 0
+        )
+        
+        let result = try await sdk.documentReplace(
+            contractId: contractId,
+            documentType: documentType,
+            documentId: documentId,
+            ownerIdentity: dppIdentity,
+            properties: properties,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return result
     }
     
     private func executeTokenMint(sdk: SDK) async throws -> Any {

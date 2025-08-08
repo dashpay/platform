@@ -78,9 +78,20 @@ struct DocumentTypeDetailsView: View {
                 }
                 
                 HStack {
-                    Label("Trade Mode", systemImage: documentType.tradeMode ? "cart.fill" : "cart")
-                        .foregroundColor(documentType.tradeMode ? .orange : .secondary)
+                    Label("Trade Mode", systemImage: documentType.tradeMode > 0 ? "cart.fill" : "cart")
+                        .foregroundColor(documentType.tradeMode > 0 ? .orange : .secondary)
                     Spacer()
+                }
+                
+                // Creation restrictions
+                if documentType.creationRestrictionMode > 0 {
+                    HStack {
+                        let restrictionText = documentType.creationRestrictionMode == 1 ? "Owner Only" : "System Only"
+                        let restrictionIcon = documentType.creationRestrictionMode == 1 ? "person.fill.checkmark" : "lock.fill"
+                        Label("Creation: \(restrictionText)", systemImage: restrictionIcon)
+                            .foregroundColor(documentType.creationRestrictionMode == 2 ? .red : .yellow)
+                        Spacer()
+                    }
                 }
                 
                 if documentType.requiresIdentityEncryptionBoundedKey || documentType.requiresIdentityDecryptionBoundedKey {

@@ -1,7 +1,7 @@
 use crate::sdk::SDKWrapper;
 use crate::{
     DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, DataContractHandle,
-    FFIError, VTableSigner, SDKHandle, SignerHandle,
+    FFIError, SDKHandle, SignerHandle, VTableSigner,
 };
 use dash_sdk::platform::{DataContract, IdentityPublicKey};
 

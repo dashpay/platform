@@ -246,13 +246,13 @@ mod tests {
             can_sign_with: mock_can_sign_callback,
             destroy: mock_destroy_callback,
         });
-        
+
         Box::new(crate::signer::VTableSigner {
             signer_ptr: std::ptr::null_mut(),
             vtable: Box::into_raw(vtable),
         })
     }
-    
+
     // Mock destroy callback
     unsafe extern "C" fn mock_destroy_callback(_signer: *mut std::os::raw::c_void) {
         // No-op for mock
