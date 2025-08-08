@@ -353,6 +353,41 @@ struct TransitionDefinitions {
             ]
         ),
         
+        "documentUpdatePrice": TransitionDefinition(
+            key: "documentUpdatePrice",
+            label: "Document Update Price",
+            description: "Update the price of a document for sale",
+            inputs: [
+                TransitionInput(
+                    name: "contractId",
+                    type: "contractPicker",
+                    label: "Data Contract",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "documentType",
+                    type: "documentTypePicker",
+                    label: "Document Type",
+                    required: true,
+                    placeholder: "" // Will be filled with selected contractId
+                ),
+                TransitionInput(
+                    name: "documentId",
+                    type: "documentPicker",
+                    label: "Document ID",
+                    required: true,
+                    placeholder: "Enter document ID to update price"
+                ),
+                TransitionInput(
+                    name: "newPrice",
+                    type: "number",
+                    label: "New Price (credits)",
+                    required: true,
+                    help: "The new price for the document in credits (0 to remove price)"
+                )
+            ]
+        ),
+        
         "documentPurchase": TransitionDefinition(
             key: "documentPurchase",
             label: "Document Purchase",

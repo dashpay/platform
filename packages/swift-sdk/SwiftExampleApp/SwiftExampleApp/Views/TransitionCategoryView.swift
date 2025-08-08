@@ -26,6 +26,7 @@ struct TransitionCategoryView: View {
                 ("documentReplace", "Replace Document", "Replace an existing document"),
                 ("documentDelete", "Delete Document", "Delete a document"),
                 ("documentTransfer", "Transfer Document", "Transfer document ownership"),
+                ("documentUpdatePrice", "Update Price", "Update document sale price"),
                 ("documentPurchase", "Purchase Document", "Purchase a document")
             ]
         case .token:

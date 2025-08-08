@@ -405,6 +405,9 @@ struct TransitionDetailView: View {
         case "documentTransfer":
             return try await executeDocumentTransfer(sdk: sdk)
             
+        case "documentUpdatePrice":
+            return try await executeDocumentUpdatePrice(sdk: sdk)
+            
         case "documentPurchase":
             return try await executeDocumentPurchase(sdk: sdk)
             
@@ -1002,6 +1005,107 @@ struct TransitionDetailView: View {
             documentId: documentId,
             fromIdentity: fromIdentity,
             toIdentityId: recipientId,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return result
+    }
+    
+    private func executeDocumentUpdatePrice(sdk: SDK) async throws -> Any {
+        guard !selectedIdentityId.isEmpty else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        guard let contractId = formInputs["contractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract is required")
+        }
+        
+        guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+            throw SDKError.invalidParameter("Document type is required")
+        }
+        
+        guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
+            throw SDKError.invalidParameter("Document ID is required")
+        }
+        
+        guard let newPriceStr = formInputs["newPrice"], !newPriceStr.isEmpty else {
+            throw SDKError.invalidParameter("New price is required")
+        }
+        
+        guard let newPrice = UInt64(newPriceStr) else {
+            throw SDKError.invalidParameter("Invalid price format")
+        }
+        
+        // Get the owner identity from persistent storage
+        guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("Selected identity not found")
+        }
+        
+        // Use the DPPIdentity
+        let ownerDPPIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+            id: ownerIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: ownerIdentity.balance,
+            revision: 0
+        )
+        
+        // Find a suitable signing key with private key available
+        var privateKeyData: Data?
+        var selectedKey: IdentityPublicKey?
+        
+        // For update price, try to find the critical key (ID 1) first
+        if let criticalKey = ownerIdentity.publicKeys.first(where: { $0.id == 1 && $0.securityLevel == .critical }) {
+            if let keyData = KeychainManager.shared.retrievePrivateKey(
+                identityId: ownerIdentity.id,
+                keyIndex: Int32(criticalKey.id)
+            ) {
+                selectedKey = criticalKey
+                privateKeyData = keyData
+            }
+        }
+        
+        // If critical key not found or no private key, try any authentication key
+        if selectedKey == nil {
+            for key in ownerIdentity.publicKeys.filter({ $0.purpose == .authentication }) {
+                if let keyData = KeychainManager.shared.retrievePrivateKey(
+                    identityId: ownerIdentity.id,
+                    keyIndex: Int32(key.id)
+                ) {
+                    selectedKey = key
+                    privateKeyData = keyData
+                    break
+                }
+            }
+        }
+        
+        guard let keyData = privateKeyData else {
+            throw SDKError.invalidParameter("No suitable key with available private key found for signing")
+        }
+        
+        // Create signer using the private key
+        let signerResult = keyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(keyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Call the document update price function
+        let result = try await sdk.documentUpdatePrice(
+            contractId: contractId,
+            documentType: documentType,
+            documentId: documentId,
+            newPrice: newPrice,
+            ownerIdentity: ownerDPPIdentity,
             signer: OpaquePointer(signer)!
         )
         

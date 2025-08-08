@@ -973,6 +973,140 @@ extension SDK {
         }
     }
     
+    /// Update document price
+    public func documentUpdatePrice(
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        newPrice: UInt64,
+        ownerIdentity: DPPIdentity,
+        signer: OpaquePointer
+    ) async throws -> [String: Any] {
+        let startTime = Date()
+        print("💰 [DOCUMENT UPDATE PRICE] Starting...")
+        print("💰 [DOCUMENT UPDATE PRICE] Contract: \(contractId), Type: \(documentType)")
+        print("💰 [DOCUMENT UPDATE PRICE] Document: \(documentId), New Price: \(newPrice)")
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                // Step 1: Fetch the contract
+                print("💰 [DOCUMENT UPDATE PRICE] Step 1: Fetching contract...")
+                let contractResult = contractId.withCString { contractIdCStr in
+                    dash_sdk_data_contract_fetch(handle, contractIdCStr)
+                }
+                
+                guard contractResult.error == nil else {
+                    let error = contractResult.error.pointee
+                    let errorMsg = String(cString: error.message)
+                    print("❌ [DOCUMENT UPDATE PRICE] Failed to fetch contract: \(errorMsg)")
+                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    return
+                }
+                
+                guard let contractHandle = contractResult.data else {
+                    print("❌ [DOCUMENT UPDATE PRICE] No contract handle returned")
+                    continuation.resume(throwing: SDKError.protocolError("No contract handle returned"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle)!)
+                }
+                
+                // Step 2: Fetch the document
+                print("💰 [DOCUMENT UPDATE PRICE] Step 2: Fetching document...")
+                let fetchResult = documentType.withCString { docTypeCStr in
+                    documentId.withCString { docIdCStr in
+                        dash_sdk_document_fetch(
+                            handle,
+                            OpaquePointer(contractHandle),
+                            docTypeCStr,
+                            docIdCStr
+                        )
+                    }
+                }
+                
+                guard fetchResult.error == nil else {
+                    let error = fetchResult.error.pointee
+                    let errorMsg = String(cString: error.message)
+                    print("❌ [DOCUMENT UPDATE PRICE] Failed to fetch document: \(errorMsg)")
+                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    return
+                }
+                
+                guard let documentHandle = fetchResult.data else {
+                    print("❌ [DOCUMENT UPDATE PRICE] No document handle returned")
+                    continuation.resume(throwing: SDKError.protocolError("No document handle returned"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle)!)
+                }
+                
+                print("✅ [DOCUMENT UPDATE PRICE] Document fetched successfully")
+                
+                // Step 3: Select signing key
+                print("💰 [DOCUMENT UPDATE PRICE] Step 3: Selecting signing key...")
+                guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "UPDATE_PRICE") else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No suitable signing key found"))
+                    return
+                }
+                
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "UPDATE_PRICE") else {
+                    continuation.resume(throwing: SDKError.serializationError("Failed to create key handle"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_identity_public_key_destroy(keyHandle)
+                }
+                
+                // Step 4: Update price and wait
+                print("💰 [DOCUMENT UPDATE PRICE] Step 4: Updating price...")
+                let updateResult = contractId.withCString { contractIdCStr in
+                    documentType.withCString { documentTypeCStr in
+                        dash_sdk_document_update_price_of_document_and_wait(
+                            handle,
+                            OpaquePointer(documentHandle),
+                            contractIdCStr,
+                            documentTypeCStr,
+                            newPrice,
+                            keyHandle,
+                            signer,
+                            nil,  // token_payment_info
+                            nil,  // put_settings
+                            nil   // state_transition_creation_options
+                        )
+                    }
+                }
+                
+                if updateResult.error != nil {
+                    let error = updateResult.error.pointee
+                    let errorMsg = String(cString: error.message)
+                    print("❌ [DOCUMENT UPDATE PRICE] Failed: \(errorMsg)")
+                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    return
+                }
+                
+                let totalTime = Date().timeIntervalSince(startTime)
+                print("✅ [DOCUMENT UPDATE PRICE] Successfully updated in \(totalTime) seconds")
+                
+                continuation.resume(returning: [
+                    "success": true,
+                    "message": "Document price updated successfully",
+                    "documentId": documentId,
+                    "newPrice": newPrice
+                ])
+            }
+        }
+    }
+    
     /// Purchase a document
     public func documentPurchase(
         contractId: String,
