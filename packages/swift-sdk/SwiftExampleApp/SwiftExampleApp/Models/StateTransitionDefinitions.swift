@@ -347,7 +347,8 @@ struct TransitionDefinitions {
                     name: "recipientId",
                     type: "identityPicker",
                     label: "Recipient Identity",
-                    required: true
+                    required: true,
+                    placeholder: "" // Will be filled with sender identity to exclude it
                 )
             ]
         ),

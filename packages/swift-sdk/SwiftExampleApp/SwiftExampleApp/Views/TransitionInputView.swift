@@ -165,7 +165,7 @@ struct TransitionInputView: View {
                 documentTypePicker()
                 
             case "identityPicker":
-                if input.name == "toIdentityId" {
+                if input.name == "toIdentityId" || input.name == "recipientId" {
                     recipientIdentityPicker()
                 } else {
                     identityPicker()
@@ -238,8 +238,26 @@ struct TransitionInputView: View {
     
     @ViewBuilder
     private func contractPicker() -> some View {
-        if dataContracts.isEmpty {
-            Text("No contracts available")
+        // Check if this is for document transfer
+        let isTransferOperation = input.action?.contains("documentTransfer") == true
+        
+        // Filter contracts if it's a transfer operation
+        let availableContracts: [PersistentDataContract] = {
+            if isTransferOperation {
+                // Only show contracts that have transferable document types
+                return dataContracts.filter { contract in
+                    if let docTypes = contract.documentTypes {
+                        return docTypes.contains { $0.documentsTransferable }
+                    }
+                    return false
+                }
+            } else {
+                return dataContracts
+            }
+        }()
+        
+        if availableContracts.isEmpty {
+            Text(isTransferOperation ? "No contracts with transferable documents" : "No contracts available")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding()
@@ -249,7 +267,7 @@ struct TransitionInputView: View {
         } else {
             Picker("Select Contract", selection: $value) {
                 Text("Select a contract...").tag("")
-                ForEach(dataContracts, id: \.idBase58) { contract in
+                ForEach(availableContracts, id: \.idBase58) { contract in
                     Text(getContractDisplayName(contract))
                         .tag(contract.idBase58)
                 }
@@ -272,6 +290,9 @@ struct TransitionInputView: View {
         // Get the selected contract from parent's form data
         let contractId = input.placeholder ?? selectedContractId
         
+        // Check if this is for document transfer
+        let isTransferOperation = input.action?.contains("documentTransfer") == true
+        
         if contractId.isEmpty {
             Text("Please select a contract first")
                 .font(.caption)
@@ -282,21 +303,36 @@ struct TransitionInputView: View {
                 .cornerRadius(8)
         } else if let contract = dataContracts.first(where: { $0.idBase58 == contractId }) {
             if let docTypes = contract.documentTypes, !docTypes.isEmpty {
-                Picker("Select Document Type", selection: $value) {
-                    Text("Select a type...").tag("")
-                    ForEach(Array(docTypes), id: \.name) { docType in
-                        Text(docType.name).tag(docType.name)
+                // Filter document types if it's a transfer operation
+                let availableDocTypes = isTransferOperation 
+                    ? docTypes.filter { $0.documentsTransferable }
+                    : Array(docTypes)
+                
+                if availableDocTypes.isEmpty {
+                    Text("No transferable document types in selected contract")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(8)
+                } else {
+                    Picker("Select Document Type", selection: $value) {
+                        Text("Select a type...").tag("")
+                        ForEach(availableDocTypes, id: \.name) { docType in
+                            Text(docType.name).tag(docType.name)
+                        }
                     }
-                }
-                .pickerStyle(MenuPickerStyle())
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-                .onChange(of: value) { newValue in
-                    selectedDocumentType = newValue
-                    // Notify parent to update schema
-                    onSpecialAction("documentTypeSelected:\(newValue)")
+                    .pickerStyle(MenuPickerStyle())
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                    .onChange(of: value) { newValue in
+                        selectedDocumentType = newValue
+                        // Notify parent to update schema
+                        onSpecialAction("documentTypeSelected:\(newValue)")
+                    }
                 }
             } else {
                 Text("No document types in selected contract")
@@ -418,14 +454,7 @@ struct TransitionInputView: View {
     
     @ViewBuilder
     private func documentPicker() -> some View {
-        // This would need contract and document type context
-        // For now, just show a text field with placeholder
-        VStack(alignment: .leading, spacing: 4) {
-            TextField(input.placeholder ?? "Enter document ID", text: $value)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            Text("Document search coming soon")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
+        TextField(input.placeholder ?? "Enter document ID", text: $value)
+            .textFieldStyle(RoundedBorderTextFieldStyle())
     }
 }

@@ -2,6 +2,7 @@
 
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentTransferTransitionBuilder;
@@ -98,6 +99,11 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
         // Parse contract ID (base58 encoded)
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+        
+        // Clone the document and bump its revision
+        let mut document_to_transfer = document.clone();
+        document_to_transfer.increment_revision()
+            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
@@ -132,18 +138,11 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
             (*put_settings).user_fee_increase
         };
 
-        // Get document type from data contract
-        let _document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
-
-        let _document_type_owned = _document_type.to_owned_document_type();
-
-        // Use the new DocumentTransferTransitionBuilder
+        // Use the new DocumentTransferTransitionBuilder with the bumped revision document
         let mut builder = DocumentTransferTransitionBuilder::new(
             data_contract.clone(),
             document_type_name_str.to_string(),
-            document.clone(),
+            document_to_transfer,
             recipient_identifier,
         );
 
@@ -265,6 +264,11 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
         // Parse contract ID (base58 encoded)
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+        
+        // Clone the document and bump its revision
+        let mut document_to_transfer = document.clone();
+        document_to_transfer.increment_revision()
+            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
@@ -299,18 +303,11 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
             (*put_settings).user_fee_increase
         };
 
-        // Get document type from data contract
-        let _document_type = data_contract
-            .document_type_for_name(document_type_name_str)
-            .map_err(|e| FFIError::InternalError(format!("Failed to get document type: {}", e)))?;
-
-        let _document_type_owned = _document_type.to_owned_document_type();
-
-        // Use the new DocumentTransferTransitionBuilder with SDK method
+        // Use the new DocumentTransferTransitionBuilder with SDK method and bumped revision document
         let mut builder = DocumentTransferTransitionBuilder::new(
             data_contract.clone(),
             document_type_name_str.to_string(),
-            document.clone(),
+            document_to_transfer,
             recipient_identifier,
         );
 

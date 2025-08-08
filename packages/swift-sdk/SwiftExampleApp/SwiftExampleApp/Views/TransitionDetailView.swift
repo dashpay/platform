@@ -927,6 +927,11 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Recipient identity is required")
         }
         
+        // Validate that recipient is not the same as sender
+        if recipientId == selectedIdentityId {
+            throw SDKError.invalidParameter("Cannot transfer document to yourself")
+        }
+        
         // Get the owner identity from persistent storage
         guard let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
             throw SDKError.invalidParameter("Selected identity not found")
@@ -1900,14 +1905,33 @@ struct TransitionDetailView: View {
                 help: input.help,
                 defaultValue: input.defaultValue,
                 options: input.options,
-                action: input.action,
+                action: "transition:\(transitionKey)",  // Pass the transition context
+                min: input.min,
+                max: input.max
+            )
+        }
+        
+        // For contract picker, pass the transition context
+        if input.name == "contractId" && input.type == "contractPicker" {
+            return TransitionInput(
+                name: input.name,
+                type: input.type,
+                label: input.label,
+                required: input.required,
+                placeholder: input.placeholder,
+                help: input.help,
+                defaultValue: input.defaultValue,
+                options: input.options,
+                action: "transition:\(transitionKey)",  // Pass the transition context
                 min: input.min,
                 max: input.max
             )
         }
         
         // For recipient identity picker in credit transfer, pass the sender identity ID
-        if input.name == "toIdentityId" && input.type == "identityPicker" && transitionKey == "identityCreditTransfer" {
+        // Pass sender identity ID to exclude it from recipients for transfers
+        if (input.name == "toIdentityId" && input.type == "identityPicker" && transitionKey == "identityCreditTransfer") ||
+           (input.name == "recipientId" && input.type == "identityPicker" && transitionKey == "documentTransfer") {
             return TransitionInput(
                 name: input.name,
                 type: input.type,

@@ -892,7 +892,32 @@ extension SDK {
                 
                 let transferStartTime = Date()
                 
-                // Call the transfer function
+                // First, try to create the state transition without waiting
+                print("🔄 [DOCUMENT TRANSFER] Creating state transition...")
+                let transitionResult = dash_sdk_document_transfer_to_identity(
+                    handle,
+                    OpaquePointer(documentHandle),
+                    toIdentityCString,
+                    contractIdCString,
+                    documentTypeCString,
+                    keyHandle,
+                    signer,
+                    nil,  // token_payment_info
+                    nil,  // put_settings
+                    nil   // state_transition_creation_options
+                )
+                
+                guard transitionResult.error == nil else {
+                    let error = transitionResult.error.pointee
+                    let errorMsg = String(cString: error.message)
+                    print("❌ [DOCUMENT TRANSFER] Failed to create transition: \(errorMsg)")
+                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    return
+                }
+                
+                
+                // Now try the _and_wait version which handles broadcasting internally
+                print("🔄 [DOCUMENT TRANSFER] Broadcasting and waiting for confirmation...")
                 let result = dash_sdk_document_transfer_to_identity_and_wait(
                     handle,
                     OpaquePointer(documentHandle),
@@ -909,10 +934,26 @@ extension SDK {
                 let transferTime = Date().timeIntervalSince(transferStartTime)
                 print("🔄 [DOCUMENT TRANSFER] Transfer operation took \(transferTime) seconds")
                 
-                guard result.error == nil else {
+                if result.error != nil {
                     let error = result.error.pointee
                     let errorMsg = String(cString: error.message)
-                    print("❌ [DOCUMENT TRANSFER] Transfer failed: \(errorMsg)")
+                    
+                    // Check if it's the "already in chain" error
+                    if errorMsg.contains("already in chain") || errorMsg.contains("AlreadyExists") {
+                        print("⚠️ [DOCUMENT TRANSFER] State transition already in chain - treating as success")
+                        let totalTime = Date().timeIntervalSince(startTime)
+                        print("✅ [DOCUMENT TRANSFER] Successfully transferred in \(totalTime) seconds")
+                        
+                        continuation.resume(returning: [
+                            "success": true,
+                            "message": "Document transfer already processed",
+                            "documentId": documentId,
+                            "toIdentity": toIdentityId
+                        ])
+                        return
+                    }
+                    
+                    print("❌ [DOCUMENT TRANSFER] Broadcast failed: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
                 }
