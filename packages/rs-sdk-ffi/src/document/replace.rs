@@ -10,7 +10,7 @@ use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
-
+use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
 };
@@ -239,6 +239,11 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
+        // Clone the document and bump its revision
+        let mut document_to_transfer = document.clone();
+        document_to_transfer.increment_revision()
+            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
+
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
             let platform_version = wrapper.sdk.version();
@@ -278,7 +283,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
         let mut builder = DocumentReplaceTransitionBuilder::new(
             data_contract.clone(),
             document_type_name_str.to_string(),
-            document.clone(),
+            document_to_transfer,
         );
 
         eprintln!("📝 [DOCUMENT REPLACE] Document ID: {}", document.id());

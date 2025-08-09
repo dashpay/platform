@@ -3,8 +3,6 @@ import SwiftDashSDK
 
 struct IdentitiesView: View {
     @EnvironmentObject var appState: AppState
-    @State private var showingAddIdentity = false
-    @State private var showingFetchIdentity = false
     @State private var showingLoadIdentity = false
     
     var body: some View {
@@ -31,29 +29,10 @@ struct IdentitiesView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(action: { showingLoadIdentity = true }) {
-                            Label("Load Identity", systemImage: "square.and.arrow.down")
-                        }
-                        Divider()
-                        Button(action: { showingAddIdentity = true }) {
-                            Label("Add Local Identity", systemImage: "plus")
-                        }
-                        Button(action: { showingFetchIdentity = true }) {
-                            Label("Fetch Identity", systemImage: "arrow.down.circle")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
+                    Button(action: { showingLoadIdentity = true }) {
+                        Image(systemName: "square.and.arrow.down")
                     }
                 }
-            }
-            .sheet(isPresented: $showingAddIdentity) {
-                AddIdentityView()
-                    .environmentObject(appState)
-            }
-            .sheet(isPresented: $showingFetchIdentity) {
-                FetchIdentityView()
-                    .environmentObject(appState)
             }
             .sheet(isPresented: $showingLoadIdentity) {
                 LoadIdentityView()
@@ -152,44 +131,42 @@ struct IdentityRow: View {
                     
                     Spacer()
                     
-                    if identity.type != .user {
-                        Text(identity.type.rawValue)
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(identity.type == .masternode ? Color.purple : Color.orange)
-                            .cornerRadius(4)
-                    }
-                    
-                    if identity.isLocal {
-                        Text("Local")
-                            .font(.caption)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(identity.formattedBalance)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("Dash Credits")
+                            .font(.caption2)
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(4)
                     }
                 }
                 
-                Text(identity.idHexString)
+                Text(identity.idString)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 
-                HStack {
-                    Text(identity.formattedBalance)
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                    
-                    Spacer()
-                    
-                    if !identity.isLocal {
+                if identity.isLocal {
+                    HStack {
+                        Image(systemName: "location")
+                            .font(.caption2)
+                        Text("Local Only")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.orange)
+                } else {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                        Text("On Network")
+                            .font(.caption2)
+                        
+                        Spacer()
+                        
                         Button(action: {
+                            isRefreshing = true
                             Task {
-                                isRefreshing = true
                                 await refreshBalance()
                                 isRefreshing = false
                             }
@@ -246,198 +223,6 @@ struct IdentityRow: View {
             if !identity.isLocal {
                 appState.showError(message: "Failed to refresh balance: \(error.localizedDescription)")
             }
-        }
-    }
-}
-
-struct AddIdentityView: View {
-    @EnvironmentObject var appState: AppState
-    @Environment(\.dismiss) var dismiss
-    @State private var identityId = ""
-    @State private var alias = ""
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section("Identity Details") {
-                    TextField("Identity ID", text: $identityId)
-                        .textContentType(.none)
-                        .autocapitalization(.none)
-                    
-                    TextField("Alias (Optional)", text: $alias)
-                        .textContentType(.name)
-                }
-                
-                Section {
-                    Text("Local identities are stored only in this app and can be used for testing token transfers.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .navigationTitle("Add Local Identity")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Add") {
-                        addLocalIdentity()
-                        dismiss()
-                    }
-                    .disabled(identityId.isEmpty)
-                }
-            }
-        }
-    }
-    
-    private func addLocalIdentity() {
-        guard let idData = Data(hexString: identityId), idData.count == 32 else {
-            appState.showError(message: "Invalid identity ID. Must be a 64-character hex string.")
-            return
-        }
-        
-        let identity = IdentityModel(
-            id: idData,
-            balance: 0,
-            isLocal: true,
-            alias: alias.isEmpty ? nil : alias
-        )
-        
-        appState.addIdentity(identity)
-    }
-}
-
-struct FetchIdentityView: View {
-    @EnvironmentObject var appState: AppState
-    @Environment(\.dismiss) var dismiss
-    @State private var identityId = ""
-    @State private var isLoading = false
-    @State private var fetchedIdentity: IdentityModel?
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section("Fetch Identity from Network") {
-                    TextField("Identity ID", text: $identityId)
-                        .textContentType(.none)
-                        .autocapitalization(.none)
-                }
-                
-                if isLoading {
-                    Section {
-                        HStack {
-                            ProgressView()
-                            Text("Fetching identity...")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                
-                if let fetchedIdentity = fetchedIdentity {
-                    Section("Fetched Identity") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("ID: \(fetchedIdentity.idHexString)")
-                                .font(.caption)
-                            Text("Balance: \(fetchedIdentity.formattedBalance)")
-                                .font(.subheadline)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Fetch Identity")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Fetch") {
-                        Task {
-                            await fetchIdentity()
-                        }
-                    }
-                    .disabled(identityId.isEmpty || isLoading)
-                }
-            }
-        }
-    }
-    
-    private func fetchIdentity() async {
-        guard let sdk = appState.sdk else {
-            appState.showError(message: "SDK not initialized")
-            return
-        }
-        
-        do {
-            isLoading = true
-            
-            // Validate identity ID
-            let trimmedId = identityId.trimmingCharacters(in: .whitespacesAndNewlines)
-            var idData: Data?
-            
-            // Try hex first, then Base58
-            if let hexData = Data(hexString: trimmedId), hexData.count == 32 {
-                idData = hexData
-            } else if let base58Data = Data.identifier(fromBase58: trimmedId), base58Data.count == 32 {
-                idData = base58Data
-            }
-            
-            guard let validIdData = idData else {
-                appState.showError(message: "Invalid identity ID format")
-                isLoading = false
-                return
-            }
-            
-            // Fetch identity from network
-            let identityData = try await sdk.identityGet(identityId: validIdData.toHexString())
-            
-            // Extract balance
-            var balance: UInt64 = 0
-            if let balanceValue = identityData["balance"] {
-                if let balanceNum = balanceValue as? NSNumber {
-                    balance = balanceNum.uint64Value
-                } else if let balanceString = balanceValue as? String,
-                          let balanceUInt = UInt64(balanceString) {
-                    balance = balanceUInt
-                }
-            }
-            
-            // Create identity model
-            let model = IdentityModel(
-                id: validIdData,
-                balance: balance,
-                isLocal: false
-            )
-            
-            fetchedIdentity = model
-            appState.addIdentity(model)
-            
-            // Also try to fetch DPNS name
-            Task {
-                do {
-                    let usernames = try await sdk.dpnsGetUsername(
-                        identityId: validIdData.toHexString(),
-                        limit: 1
-                    )
-                    
-                    if let firstUsername = usernames.first,
-                       let label = firstUsername["label"] as? String {
-                        appState.updateIdentityDPNSName(id: validIdData, dpnsName: label)
-                    }
-                } catch {
-                    // Silently fail - not all identities have DPNS names
-                }
-            }
-            
-            isLoading = false
-        } catch {
-            appState.showError(message: "Failed to fetch identity: \(error.localizedDescription)")
-            isLoading = false
         }
     }
 }

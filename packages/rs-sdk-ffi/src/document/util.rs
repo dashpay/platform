@@ -119,12 +119,5 @@ pub unsafe extern "C" fn dash_sdk_document_set_properties(
     // Set the properties on the document
     document.set_properties(properties_map);
 
-    // Increment revision for replace operation
-    if let Some(revision) = document.revision() {
-        document.set_revision(Some(revision + 1));
-    } else {
-        document.set_revision(Some(1));
-    }
-
     std::ptr::null_mut()
 }
