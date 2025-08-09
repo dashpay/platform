@@ -422,7 +422,6 @@ struct LoadIdentityView: View {
                     ownerPrivateKey: ownerKeyData,
                     payoutPrivateKey: payoutKeyData,
                     dpnsName: nil,
-                    dppIdentity: nil,
                     publicKeys: parsedPublicKeys
                 )
                 

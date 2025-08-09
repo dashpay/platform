@@ -1,6 +1,8 @@
 mod queries;
+mod contested_queries;
 
 pub use queries::DpnsUsername;
+pub use contested_queries::{ContestedDpnsUsername};
 
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::{Document, Fetch, FetchMany};

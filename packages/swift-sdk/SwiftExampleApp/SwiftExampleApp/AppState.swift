@@ -55,6 +55,10 @@ class AppState: ObservableObject {
                 // Initialize the SDK library
                 SDK.initialize()
                 
+                // Enable debug logging to see gRPC endpoints
+                SDK.enableLogging(level: .debug)
+                NSLog("🔵 AppState: Enabled debug logging for gRPC requests")
+                
                 NSLog("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
                 // Create SDK instance for current network
                 let sdkNetwork = currentNetwork.sdkNetwork
@@ -297,7 +301,6 @@ class AppState: ObservableObject {
                 ownerPrivateKey: oldIdentity.ownerPrivateKey,
                 payoutPrivateKey: oldIdentity.payoutPrivateKey,
                 dpnsName: oldIdentity.dpnsName,
-                dppIdentity: oldIdentity.dppIdentity,
                 publicKeys: publicKeys
             )
             identities[index] = updatedIdentity

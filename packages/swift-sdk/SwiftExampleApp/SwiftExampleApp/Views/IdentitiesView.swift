@@ -8,19 +8,11 @@ struct IdentitiesView: View {
     var body: some View {
         NavigationView {
             List {
-                Section("Local Identities") {
-                    ForEach(appState.identities.filter { $0.isLocal }) { identity in
-                        IdentityRow(identity: identity)
-                    }
-                    .onDelete { indexSet in
-                        deleteLocalIdentities(at: indexSet)
-                    }
+                ForEach(appState.identities) { identity in
+                    IdentityRow(identity: identity)
                 }
-                
-                Section("Fetched Identities") {
-                    ForEach(appState.identities.filter { !$0.isLocal }) { identity in
-                        IdentityRow(identity: identity)
-                    }
+                .onDelete { indexSet in
+                    deleteIdentities(at: indexSet)
                 }
             }
             .navigationTitle("Identities")
@@ -99,11 +91,10 @@ struct IdentitiesView: View {
         }
     }
     
-    private func deleteLocalIdentities(at offsets: IndexSet) {
-        let localIdentities = appState.identities.filter { $0.isLocal }
+    private func deleteIdentities(at offsets: IndexSet) {
         for index in offsets {
-            if index < localIdentities.count {
-                appState.removeIdentity(localIdentities[index])
+            if index < appState.identities.count {
+                appState.removeIdentity(appState.identities[index])
             }
         }
     }
@@ -113,35 +104,46 @@ struct IdentityRow: View {
     let identity: IdentityModel
     @EnvironmentObject var appState: AppState
     @State private var isRefreshing = false
+    @State private var currentIdentity: IdentityModel?
+    
+    private func formatBalanceShort(_ balance: UInt64) -> String {
+        let dashAmount = Double(balance) / 100_000_000_000 // 1 DASH = 100B credits
+        return String(format: "%.2f DASH", dashAmount)
+    }
     
     var body: some View {
-        NavigationLink(destination: IdentityDetailView(identityId: identity.id)) {
+        // Use currentIdentity if available, otherwise use the passed identity
+        let displayIdentity = currentIdentity ?? identity
+        
+        return NavigationLink(destination: IdentityDetailView(identityId: identity.id)) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(identity.alias ?? identity.dpnsName ?? "Identity")
-                            .font(.headline)
-                        
-                        if let dpnsName = identity.dpnsName, identity.alias != nil {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Show DPNS name if available, otherwise alias or "Identity"
+                        if let dpnsName = displayIdentity.dpnsName {
                             Text(dpnsName)
-                                .font(.caption)
+                                .font(.headline)
                                 .foregroundColor(.blue)
+                            
+                            if let alias = displayIdentity.alias {
+                                Text(alias)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Text(displayIdentity.alias ?? "Identity")
+                                .font(.headline)
                         }
                     }
                     
                     Spacer()
                     
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(identity.formattedBalance)
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        Text("Dash Credits")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    Text(formatBalanceShort(displayIdentity.balance))
+                        .font(.headline)
+                        .foregroundColor(.primary)
                 }
                 
-                Text(identity.idString)
+                Text(displayIdentity.idString)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -182,6 +184,18 @@ struct IdentityRow: View {
                 }
             }
             .padding(.vertical, 4)
+        }
+        .onAppear {
+            // Update currentIdentity from appState when the view appears
+            if let updatedIdentity = appState.identities.first(where: { $0.id == identity.id }) {
+                currentIdentity = updatedIdentity
+            }
+        }
+        .onReceive(appState.$identities) { updatedIdentities in
+            // Update currentIdentity when identities array changes
+            if let updatedIdentity = updatedIdentities.first(where: { $0.id == identity.id }) {
+                currentIdentity = updatedIdentity
+            }
         }
     }
     

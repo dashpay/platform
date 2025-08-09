@@ -13,6 +13,14 @@ struct SwiftExampleAppApp: App {
     @StateObject private var unifiedState = UnifiedAppState()
     @State private var shouldResetApp = false
     
+    init() {
+        // Suppress auto layout constraint warnings in debug builds
+        // These are typically harmless keyboard-related warnings
+        #if DEBUG
+        UserDefaults.standard.set(false, forKey: "_UIConstraintBasedLayoutLogUnsatisfiable")
+        #endif
+    }
+    
     var body: some Scene {
         WindowGroup {
             if shouldResetApp {

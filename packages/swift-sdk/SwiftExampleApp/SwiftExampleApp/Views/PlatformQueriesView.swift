@@ -161,7 +161,13 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getDpnsUsername", label: "Get DPNS Usernames", description: "Get DPNS usernames for an identity"),
                 QueryDefinition(name: "dpnsCheckAvailability", label: "DPNS Check Availability", description: "Check if a DPNS username is available"),
                 QueryDefinition(name: "dpnsResolve", label: "DPNS Resolve Name", description: "Resolve a DPNS name to an identity ID"),
-                QueryDefinition(name: "dpnsSearch", label: "DPNS Search", description: "Search for DPNS names by prefix")
+                QueryDefinition(name: "dpnsSearch", label: "DPNS Search", description: "Search for DPNS names by prefix"),
+                // Contested DPNS queries
+                QueryDefinition(name: "getContestedDpnsNames", label: "Get Contested DPNS Names", description: "Get list of contested DPNS names"),
+                QueryDefinition(name: "getContestedDpnsNameVoteState", label: "Get Contested DPNS Name Vote State", description: "Get the current vote state for a contested DPNS name"),
+                QueryDefinition(name: "getContestedDpnsNameVotersForIdentity", label: "Get Contested DPNS Name Voters for Identity", description: "Get voters who voted for a specific identity for a contested DPNS name"),
+                QueryDefinition(name: "getContestedDpnsNameIdentityVotes", label: "Get Contested DPNS Name Identity Votes", description: "Get all DPNS name votes cast by a specific identity"),
+                QueryDefinition(name: "getDpnsVotePollsByEndDate", label: "Get DPNS Vote Polls by End Date", description: "Get DPNS name vote polls within a time range")
             ]
             
         case .voting:

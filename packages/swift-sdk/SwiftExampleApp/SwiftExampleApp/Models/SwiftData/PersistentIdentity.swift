@@ -144,7 +144,6 @@ extension PersistentIdentity {
             ownerPrivateKey: ownerKey,
             payoutPrivateKey: payoutKey,
             dpnsName: dpnsName,
-            dppIdentity: nil, // Would need to reconstruct from data
             publicKeys: publicKeyModels
         )
     }
@@ -169,7 +168,7 @@ extension PersistentIdentity {
         let persistent = PersistentIdentity(
             identityId: model.id,
             balance: Int64(model.balance),
-            revision: Int64(model.dppIdentity?.revision ?? 0),
+            revision: 0, // Default revision, will be updated when fetched from network
             isLocal: model.isLocal,
             alias: model.alias,
             dpnsName: model.dpnsName,

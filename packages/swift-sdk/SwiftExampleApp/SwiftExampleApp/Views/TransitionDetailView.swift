@@ -545,7 +545,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the convenience method with DPPIdentity
-        let dppIdentity = fromIdentity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: fromIdentity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: fromIdentity.publicKeys.map { ($0.id, $0) }),
             balance: fromIdentity.balance,
@@ -626,7 +626,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for withdrawal
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -802,7 +802,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for document creation
-        let dppIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: ownerIdentity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
             balance: ownerIdentity.balance,
@@ -839,7 +839,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity
-        let dppIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: ownerIdentity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
             balance: ownerIdentity.balance,
@@ -941,7 +941,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity
-        let fromIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+        let fromIdentity = DPPIdentity(
             id: ownerIdentity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
             balance: ownerIdentity.balance,
@@ -1042,7 +1042,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity
-        let ownerDPPIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+        let ownerDPPIdentity = DPPIdentity(
             id: ownerIdentity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
             balance: ownerIdentity.balance,
@@ -1272,7 +1272,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for document replacement
-        let dppIdentity = ownerIdentity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: ownerIdentity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
             balance: ownerIdentity.balance,
@@ -1378,7 +1378,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for minting
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1475,7 +1475,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for burning
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1554,7 +1554,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for freezing
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1636,7 +1636,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for unfreezing
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1716,7 +1716,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for destroying frozen funds
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1792,7 +1792,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for claiming
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1891,7 +1891,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for transfer
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,
@@ -1973,7 +1973,7 @@ struct TransitionDetailView: View {
         }
         
         // Use the DPPIdentity for setting price
-        let dppIdentity = identity.dppIdentity ?? DPPIdentity(
+        let dppIdentity = DPPIdentity(
             id: identity.id,
             publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
             balance: identity.balance,

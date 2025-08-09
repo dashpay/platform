@@ -382,6 +382,136 @@ struct QueryDetailView: View {
             let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
             return try await sdk.dpnsSearch(prefix: prefix, limit: limit)
             
+        // Contested DPNS Queries
+        case "getContestedDpnsNames":
+            let startName = queryInputs["startName"]
+            let limitStr = queryInputs["limit"] ?? ""
+            let limit = limitStr.isEmpty ? 100 : (UInt32(limitStr) ?? 100)
+            
+            // Query contested resources for DPNS contract
+            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec" // DPNS contract ID
+            let result = try await sdk.getContestedResources(
+                documentTypeName: "domain",
+                dataContractId: dpnsContractId,
+                indexName: "parentNameAndLabel",
+                resultType: "contenders",
+                allowIncludeLockedAndAbstainingVoteTally: true,
+                startAtValue: startName,
+                limit: limit,
+                offset: 0,
+                orderAscending: true
+            )
+            return result
+            
+        case "getContestedDpnsNameVoteState":
+            let name = queryInputs["name"] ?? ""
+            guard !name.isEmpty else {
+                throw SDKError.internalError("DPNS name is required")
+            }
+            
+            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            
+            let result = try await sdk.getContestedResourceVoteState(
+                dataContractId: dpnsContractId,
+                documentTypeName: "domain",
+                indexName: "parentNameAndLabel",
+                indexValues: ["dash", name],
+                resultType: "contenders",
+                allowIncludeLockedAndAbstainingVoteTally: true,
+                startAtIdentifierInfo: nil,
+                count: 100,
+                orderAscending: true
+            )
+            return result
+            
+        case "getContestedDpnsNameVotersForIdentity":
+            let name = queryInputs["name"] ?? ""
+            let identityId = queryInputs["identityId"] ?? ""
+            guard !name.isEmpty else {
+                throw SDKError.internalError("DPNS name is required")
+            }
+            guard !identityId.isEmpty else {
+                throw SDKError.internalError("Identity ID is required")
+            }
+            
+            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            let result = try await sdk.getContestedResourceVotersForIdentity(
+                dataContractId: dpnsContractId,
+                documentTypeName: "domain",
+                indexName: "parentNameAndLabel",
+                indexValues: ["dash", name],
+                contestantId: identityId,
+                startAtIdentifierInfo: nil,
+                count: 100,
+                orderAscending: true
+            )
+            return result
+            
+        case "getContestedDpnsNameIdentityVotes":
+            let identityId = queryInputs["identityId"] ?? ""
+            let limitStr = queryInputs["limit"] ?? ""
+            let limit = limitStr.isEmpty ? 100 : (UInt32(limitStr) ?? 100)
+            let orderAscending = queryInputs["orderAscending"]?.lowercased() == "true"
+            
+            guard !identityId.isEmpty else {
+                throw SDKError.internalError("Identity ID is required")
+            }
+            
+            // Query all contested resource votes by this identity, filtered for DPNS
+            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            let result = try await sdk.getContestedResourceIdentityVotes(
+                identityId: identityId,
+                limit: limit,
+                offset: 0,
+                orderAscending: orderAscending
+            )
+            
+            // Filter results to only show DPNS-related votes
+            if let votes = result as? [[String: Any]] {
+                let dpnsVotes = votes.filter { vote in
+                    if let contractId = vote["contractId"] as? String {
+                        return contractId == dpnsContractId
+                    }
+                    return false
+                }
+                return dpnsVotes
+            }
+            return result
+            
+        case "getDpnsVotePollsByEndDate":
+            let startDateStr = queryInputs["startDate"] ?? ""
+            let endDateStr = queryInputs["endDate"] ?? ""
+            let limitStr = queryInputs["limit"] ?? ""
+            let limit = limitStr.isEmpty ? 100 : (UInt32(limitStr) ?? 100)
+            
+            // Parse dates if provided
+            let dateFormatter = ISO8601DateFormatter()
+            let startTimestamp: UInt64? = startDateStr.isEmpty ? nil : 
+                (dateFormatter.date(from: startDateStr)?.timeIntervalSince1970).map { UInt64($0 * 1000) }
+            let endTimestamp: UInt64? = endDateStr.isEmpty ? nil :
+                (dateFormatter.date(from: endDateStr)?.timeIntervalSince1970).map { UInt64($0 * 1000) }
+            
+            let result = try await sdk.getVotePollsByEndDate(
+                startTimeMs: startTimestamp,
+                endTimeMs: endTimestamp,
+                limit: limit,
+                offset: 0,
+                orderAscending: true
+            )
+            
+            // Filter to only DPNS-related polls
+            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+            if let polls = result as? [[String: Any]] {
+                let dpnsPolls = polls.filter { poll in
+                    if let contractId = poll["contractId"] as? String {
+                        return contractId == dpnsContractId
+                    }
+                    return false
+                }
+                return dpnsPolls
+            }
+            return result
+            
         // Voting & Contested Resources Queries
         case "getContestedResources":
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
@@ -781,6 +911,38 @@ struct QueryDetailView: View {
             return [
                 QueryInput(name: "prefix", label: "Name Prefix", required: true, placeholder: "e.g., ali"),
                 QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 10")
+            ]
+            
+        // Contested DPNS Queries
+        case "getContestedDpnsNames":
+            return [
+                QueryInput(name: "startName", label: "Start Name", required: false, placeholder: "Start from this name"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 100")
+            ]
+            
+        case "getContestedDpnsNameVoteState":
+            return [
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice")
+            ]
+            
+        case "getContestedDpnsNameVotersForIdentity":
+            return [
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice"),
+                QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID")
+            ]
+            
+        case "getContestedDpnsNameIdentityVotes":
+            return [
+                QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 100"),
+                QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
+            ]
+            
+        case "getDpnsVotePollsByEndDate":
+            return [
+                QueryInput(name: "startDate", label: "Start Date", required: false, placeholder: "ISO date"),
+                QueryInput(name: "endDate", label: "End Date", required: false, placeholder: "ISO date"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 100")
             ]
             
         // Voting & Contested Resources Queries

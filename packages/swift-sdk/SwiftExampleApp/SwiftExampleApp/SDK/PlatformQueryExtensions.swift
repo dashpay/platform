@@ -109,13 +109,23 @@ extension SDK {
         
         // Call the FFI function on a background queue with timeout
         return try await withCheckedThrowingContinuation { continuation in
+            // Use a flag to ensure continuation is only resumed once
+            let continuationResumed = NSLock()
+            var isResumed = false
+            
             DispatchQueue.global(qos: .userInitiated).async {
                 print("🔵 SDK.identityGet: On background queue, calling FFI...")
                 
                 // Create a timeout
                 let timeoutWorkItem = DispatchWorkItem {
-                    print("❌ SDK.identityGet: FFI call timed out after 30 seconds")
-                    continuation.resume(throwing: SDKError.timeout("Identity fetch timed out"))
+                    continuationResumed.lock()
+                    defer { continuationResumed.unlock() }
+                    
+                    if !isResumed {
+                        isResumed = true
+                        print("❌ SDK.identityGet: FFI call timed out after 30 seconds")
+                        continuation.resume(throwing: SDKError.timeout("Identity fetch timed out"))
+                    }
                 }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutWorkItem)
                 
@@ -127,13 +137,22 @@ extension SDK {
                 
                 print("🔵 SDK.identityGet: FFI call returned, processing result...")
                 
-                do {
-                    let jsonResult = try self.processJSONResult(result)
-                    print("✅ SDK.identityGet: Successfully processed result")
-                    continuation.resume(returning: jsonResult)
-                } catch {
-                    print("❌ SDK.identityGet: Error processing result: \(error)")
-                    continuation.resume(throwing: error)
+                // Try to resume with the result
+                continuationResumed.lock()
+                defer { continuationResumed.unlock() }
+                
+                if !isResumed {
+                    isResumed = true
+                    do {
+                        let jsonResult = try self.processJSONResult(result)
+                        print("✅ SDK.identityGet: Successfully processed result")
+                        continuation.resume(returning: jsonResult)
+                    } catch {
+                        print("❌ SDK.identityGet: Error processing result: \(error)")
+                        continuation.resume(throwing: error)
+                    }
+                } else {
+                    print("⚠️ SDK.identityGet: Continuation already resumed (likely from timeout), ignoring FFI result")
                 }
             }
         }

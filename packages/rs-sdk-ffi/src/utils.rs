@@ -145,3 +145,14 @@ pub unsafe extern "C" fn dash_sdk_utils_is_valid_base58(string: *const c_char) -
         Err(_) => 0,
     }
 }
+
+/// Helper function to create a C string from a Rust string
+pub fn c_string_from(s: String) -> Result<*mut c_char, DashSDKError> {
+    match CString::new(s) {
+        Ok(c_str) => Ok(Box::into_raw(c_str.into_boxed_c_str()) as *mut c_char),
+        Err(e) => Err(DashSDKError::new(
+            DashSDKErrorCode::InternalError,
+            format!("Failed to create C string: {}", e),
+        )),
+    }
+}

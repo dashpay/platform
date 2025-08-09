@@ -78,7 +78,3 @@ log = "0.4"
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
-
-[[bin]]
-name = "test_sdk"
-path = "src/bin/test_sdk.rs"

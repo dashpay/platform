@@ -67,15 +67,32 @@ public class SDK {
         dash_sdk_init()
     }
     
+    /// Log levels for SDK debugging
+    public enum LogLevel: UInt8 {
+        case error = 0
+        case warn = 1
+        case info = 2
+        case debug = 3
+        case trace = 4
+    }
+    
+    /// Enable logging for gRPC and SDK operations
+    /// This will log all network requests, including endpoints being contacted
+    public static func enableLogging(level: LogLevel = .debug) {
+        dash_sdk_enable_logging(level.rawValue)
+        print("🔵 SDK: Logging enabled at level: \(level)")
+    }
+    
     /// Testnet DAPI addresses from WASM SDK (verified working)
     private static let testnetDAPIAddresses = [
-        "https://52.12.176.90:1443",
-        "https://35.82.197.197:1443",
-        "https://44.240.98.102:1443",
-        "https://52.34.144.50:1443",
-        "https://44.239.39.153:1443",
-        "https://35.164.23.245:1443",
-        "https://54.149.33.167:1443"
+      "http://35.92.255.144:1443",
+//        "https://52.12.176.90:1443",
+//        "https://35.82.197.197:1443",
+//        "https://44.240.98.102:1443",
+//        "https://52.34.144.50:1443",
+//        "https://44.239.39.153:1443",
+//        "https://35.164.23.245:1443",
+//        "https://54.149.33.167:1443"
     ].joined(separator: ",")
     
     /// Create a new SDK instance with trusted setup
