@@ -678,6 +678,44 @@ extension SDK {
         return result
     }
     
+    /// Get the vote state for a contested DPNS username
+    public func dpnsGetContestedVoteState(name: String, limit: UInt32 = 100) async throws -> [String: Any] {
+        guard let handle = self.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = name.withCString { namePtr in
+                    dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit)
+                }
+                continuation.resume(returning: result)
+            }
+        }
+        
+        // Check for error
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+        
+        // Parse the JSON result
+        guard let dataPtr = result.data else {
+            throw SDKError.notFound("No data returned")
+        }
+        
+        let jsonString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr.assumingMemoryBound(to: CChar.self))
+        
+        guard let jsonData = jsonString.data(using: .utf8),
+              let voteState = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse vote state JSON")
+        }
+        
+        return voteState
+    }
+    
     /// Get contested DPNS usernames that are not yet resolved
     public func dpnsGetContestedNonResolvedUsernames(limit: UInt32 = 100) async throws -> [String: Any] {
         guard let handle = handle else {

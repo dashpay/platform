@@ -6,13 +6,30 @@ struct ContestDetailView: View {
     let contestInfo: [String: Any]
     let currentIdentityId: String
     
+    @EnvironmentObject var appState: AppState
     @State private var contenders: [(id: String, votes: String, isCurrentIdentity: Bool)] = []
     @State private var abstainVotes: Int? = nil
     @State private var lockVotes: Int? = nil
     @State private var endTime: Date? = nil
+    @State private var isRefreshing = false
     
     var body: some View {
         List {
+            // Show refresh indicator if refreshing
+            if isRefreshing {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                    Text("Refreshing...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 8)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            }
+            
             // Contest Header
             Section("Contest Information") {
                 HStack {
@@ -81,21 +98,52 @@ struct ContestDetailView: View {
             
             // Contenders Section
             Section("Contenders") {
-                // Show special message if this is a newly registered contest (only one contender and it's us)
+                // Show special message if this is a newly registered contest
+                // Check: only one contender, it's us, AND the contest was started very recently
                 if contenders.count == 1 && contenders.first?.isCurrentIdentity == true {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "sparkles")
-                                .foregroundColor(.yellow)
-                            Text("Newly Registered Contest")
-                                .font(.headline)
-                                .foregroundColor(.primary)
+                    // Calculate how long the contest has been running
+                    let totalDuration: TimeInterval = appState.currentNetwork == .mainnet ?
+                        (14 * 24 * 60 * 60) : // 14 days for mainnet
+                        (90 * 60) // 90 minutes for testnet
+                    
+                    let timeRemaining = endTime?.timeIntervalSinceNow ?? 0
+                    let elapsedTime = totalDuration - timeRemaining
+                    
+                    // Only show "newly registered" if less than 5% of total time has elapsed
+                    // For testnet (90 min): show if less than 4.5 minutes elapsed
+                    // For mainnet (14 days): show if less than ~17 hours elapsed
+                    let isNewlyRegistered = elapsedTime < (totalDuration * 0.05)
+                    
+                    if isNewlyRegistered {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.yellow)
+                                Text("Newly Registered Contest")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                            }
+                            Text("You just started this contest! Other users can join as contenders until the halfway point.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                        Text("You just started this contest! Other users can join as contenders until voting begins.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        .padding(.vertical, 4)
+                    } else {
+                        // Show a different message for contests where you're the only contender but it's not new
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.blue)
+                                Text("Only Contender")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                            }
+                            Text("You are currently the only contender for this name. Other users can still join until the halfway point.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
                 
                 ForEach(contenders, id: \.id) { contender in
@@ -126,26 +174,37 @@ struct ContestDetailView: View {
                 }
             }
             
-            // Vote Tallies Section
-            if abstainVotes != nil || lockVotes != nil {
-                Section("Other Votes") {
-                    if let abstain = abstainVotes {
-                        HStack {
-                            Label("Abstain Votes", systemImage: "minus.circle")
-                            Spacer()
-                            Text("\(abstain)")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    if let lock = lockVotes {
-                        HStack {
-                            Label("Lock Votes", systemImage: "lock.fill")
-                            Spacer()
-                            Text("\(lock)")
-                                .foregroundColor(.red)
-                        }
-                    }
+            // Vote Tallies Section - Always show to give complete picture
+            Section("Vote Summary") {
+                HStack {
+                    Label("Abstain Votes", systemImage: "minus.circle")
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text("\(abstainVotes ?? 0)")
+                        .font(.headline)
+                        .foregroundColor(abstainVotes ?? 0 > 0 ? .orange : .secondary)
+                }
+                
+                HStack {
+                    Label("Lock Votes", systemImage: "lock.fill")
+                        .foregroundColor(.red)
+                    Spacer()
+                    Text("\(lockVotes ?? 0)")
+                        .font(.headline)
+                        .foregroundColor(lockVotes ?? 0 > 0 ? .red : .secondary)
+                }
+                
+                // Add a divider and total vote count
+                Divider()
+                
+                HStack {
+                    Label("Total Votes", systemImage: "sum")
+                        .foregroundColor(.primary)
+                        .font(.headline)
+                    Spacer()
+                    Text("\(getTotalVotes())")
+                        .font(.headline)
+                        .foregroundColor(.primary)
                 }
             }
             
@@ -163,6 +222,9 @@ struct ContestDetailView: View {
         }
         .navigationTitle("Contest Details")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshable {
+            await refreshVoteState()
+        }
         .onAppear {
             parseContestInfo()
         }
@@ -241,6 +303,16 @@ struct ContestDetailView: View {
         return 0
     }
     
+    private func getTotalVotes() -> Int {
+        // Sum up all votes: contender votes + abstain + lock
+        let contenderVotes = contenders.reduce(0) { total, contender in
+            total + extractVoteCount(from: contender.votes)
+        }
+        let abstain = abstainVotes ?? 0
+        let lock = lockVotes ?? 0
+        return contenderVotes + abstain + lock
+    }
+    
     private func timeRemainingColor(for endTime: Date) -> Color {
         let timeRemaining = endTime.timeIntervalSinceNow
         let oneDay: TimeInterval = 24 * 60 * 60
@@ -257,11 +329,17 @@ struct ContestDetailView: View {
     }
     
     private func progressWidth(for endTime: Date, in totalWidth: CGFloat) -> CGFloat {
-        // For contests, we don't know the start time, so we'll just show time remaining
-        // Assume a 14-day contest for mainnet, 90-minute contest for testnet
-        let totalDuration: TimeInterval = 14 * 24 * 60 * 60 // Default to 14 days
+        // Get total duration based on network
+        let totalDuration: TimeInterval = appState.currentNetwork == .mainnet ?
+            (14 * 24 * 60 * 60) : // 14 days for mainnet
+            (90 * 60) // 90 minutes for testnet
+        
+        // Calculate elapsed time
         let timeRemaining = max(0, endTime.timeIntervalSinceNow)
-        let progress = min(1.0, timeRemaining / totalDuration)
+        let elapsedTime = totalDuration - timeRemaining
+        
+        // Calculate progress (how much time has passed)
+        let progress = min(1.0, max(0, elapsedTime / totalDuration))
         
         return totalWidth * CGFloat(progress)
     }
@@ -283,5 +361,92 @@ struct ContestDetailView: View {
         }
         
         return "Contest ending soon"
+    }
+    
+    private func refreshVoteState() async {
+        guard let sdk = appState.sdk else { return }
+        
+        // Don't refresh if already refreshing
+        guard !isRefreshing else { return }
+        
+        await MainActor.run {
+            isRefreshing = true
+        }
+        
+        do {
+            // Call the SDK to get the latest vote state for this contested name
+            let voteState = try await sdk.dpnsGetContestedVoteState(name: contestName, limit: 100)
+            
+            await MainActor.run {
+                // Parse the updated vote state
+                var newContenders: [(id: String, votes: String, isCurrentIdentity: Bool)] = []
+                
+                if let contendersArray = voteState["contenders"] as? [[String: Any]] {
+                    newContenders = contendersArray.compactMap { contenderDict in
+                        guard let id = contenderDict["identifier"] as? String,
+                              let votes = contenderDict["votes"] as? String else {
+                            return nil
+                        }
+                        
+                        let isCurrentIdentity = id == currentIdentityId
+                        
+                        return (id: id, votes: votes, isCurrentIdentity: isCurrentIdentity)
+                    }
+                    
+                    // Sort contenders by vote count
+                    newContenders.sort { first, second in
+                        let firstVotes = extractVoteCount(from: first.votes)
+                        let secondVotes = extractVoteCount(from: second.votes)
+                        return firstVotes > secondVotes
+                    }
+                }
+                
+                // Update vote tallies
+                if let abstain = voteState["abstainVotes"] as? Int {
+                    abstainVotes = abstain
+                }
+                if let lock = voteState["lockVotes"] as? Int {
+                    lockVotes = lock
+                }
+                
+                // Update contenders
+                contenders = newContenders
+                
+                // Update the identity's contested info if we have access
+                if let identityIndex = appState.identities.firstIndex(where: { $0.idString == currentIdentityId }) {
+                    var updatedIdentity = appState.identities[identityIndex]
+                    
+                    // Update the contest info for this name
+                    var updatedContestInfo = updatedIdentity.contestedDpnsInfo[contestName] as? [String: Any] ?? [:]
+                    updatedContestInfo["contenders"] = voteState["contenders"]
+                    updatedContestInfo["abstainVotes"] = abstainVotes
+                    updatedContestInfo["lockVotes"] = lockVotes
+                    
+                    // Check if there's a winner
+                    if let winner = voteState["winner"] {
+                        updatedContestInfo["hasWinner"] = !(winner is NSNull)
+                    }
+                    
+                    updatedIdentity.contestedDpnsInfo[contestName] = updatedContestInfo
+                    appState.identities[identityIndex] = updatedIdentity
+                    
+                    // Persist the update
+                    appState.updateIdentityDPNSNames(
+                        id: updatedIdentity.id,
+                        dpnsNames: updatedIdentity.dpnsNames,
+                        contestedNames: updatedIdentity.contestedDpnsNames,
+                        contestedInfo: updatedIdentity.contestedDpnsInfo
+                    )
+                }
+                
+                isRefreshing = false
+            }
+        } catch {
+            await MainActor.run {
+                isRefreshing = false
+                print("Failed to refresh vote state: \(error)")
+                // Could show an error alert here if desired
+            }
+        }
     }
 }

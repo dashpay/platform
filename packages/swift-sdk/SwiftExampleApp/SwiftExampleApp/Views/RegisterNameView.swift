@@ -559,10 +559,11 @@ struct RegisterNameView: View {
                             }
                             
                             // Create contest info showing user as only contender
+                            // Note: During contender registration period, there are no votes yet
                             let contestInfo: [String: Any] = [
                                 "contenders": [[
                                     "identifier": identity.idString,
-                                    "votes": "ResourceVote { vote_choice: TowardsIdentity, strength: 1 }"
+                                    "votes": "ResourceVote { vote_choice: TowardsIdentity, strength: 0 }"
                                 ]],
                                 "abstainVotes": 0,
                                 "lockVotes": 0,

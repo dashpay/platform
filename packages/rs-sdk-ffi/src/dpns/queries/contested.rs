@@ -500,9 +500,8 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                         Err(_) => continue,
                     };
 
-                    // Extract vote count (for now just use 1 as placeholder)
-                    // TODO: Extract actual vote strength from ContenderWithSerializedDocument
-                    let vote_count = 1u32;
+                    // Extract actual vote tally from ContenderWithSerializedDocument
+                    let vote_count = votes.vote_tally().unwrap_or(0);
 
                     contenders.push(DashSDKContender {
                         identity_id: c_id,
@@ -587,9 +586,8 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                         Err(_) => continue,
                     };
 
-                    // Extract vote count (for now just use 1 as placeholder)
-                    // TODO: Extract actual vote strength from ContenderWithSerializedDocument
-                    let vote_count = 1u32;
+                    // Extract actual vote tally from ContenderWithSerializedDocument
+                    let vote_count = votes.vote_tally().unwrap_or(0);
 
                     contenders.push(DashSDKContender {
                         identity_id: c_id,

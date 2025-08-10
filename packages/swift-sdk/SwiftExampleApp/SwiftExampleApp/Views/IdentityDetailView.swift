@@ -106,7 +106,7 @@ struct IdentityDetailView: View {
                                 contestName: name,
                                 contestInfo: contestedDpnsInfo[name] as? [String: Any] ?? [:],
                                 currentIdentityId: identity.idString
-                            )) {
+                            ).environmentObject(appState)) {
                                 HStack {
                                     Text(name)
                                     Spacer()
