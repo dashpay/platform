@@ -26,6 +26,11 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
     let payoutPrivateKey: Data?
     var dpnsName: String?
     
+    // DPNS names for this identity
+    var dpnsNames: [String] = []
+    var contestedDpnsNames: [String] = []
+    var contestedDpnsInfo: [String: Any] = [:]
+    
     // Public keys for this identity
     let publicKeys: [IdentityPublicKey]
     
@@ -42,7 +47,7 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         id.toHexString()
     }
     
-    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, publicKeys: [IdentityPublicKey] = []) {
+    init(id: Data, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, dpnsNames: [String] = [], contestedDpnsNames: [String] = [], contestedDpnsInfo: [String: Any] = [:], publicKeys: [IdentityPublicKey] = []) {
         self.id = id
         self._base58String = id.toBase58String()
         self.balance = balance
@@ -54,13 +59,16 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         self.ownerPrivateKey = ownerPrivateKey
         self.payoutPrivateKey = payoutPrivateKey
         self.dpnsName = dpnsName
+        self.dpnsNames = dpnsNames
+        self.contestedDpnsNames = contestedDpnsNames
+        self.contestedDpnsInfo = contestedDpnsInfo
         self.publicKeys = publicKeys
     }
     
     /// Initialize with hex string ID for convenience
-    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, publicKeys: [IdentityPublicKey] = []) {
+    init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, dpnsNames: [String] = [], contestedDpnsNames: [String] = [], contestedDpnsInfo: [String: Any] = [:], publicKeys: [IdentityPublicKey] = []) {
         guard let idData = Data(hexString: idString), idData.count == 32 else { return nil }
-        self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dpnsName: dpnsName, publicKeys: publicKeys)
+        self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dpnsName: dpnsName, dpnsNames: dpnsNames, contestedDpnsNames: contestedDpnsNames, contestedDpnsInfo: contestedDpnsInfo, publicKeys: publicKeys)
     }
     
     init?(from identity: SwiftDashSDK.Identity) {
@@ -76,11 +84,14 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         self.ownerPrivateKey = nil
         self.payoutPrivateKey = nil
         self.dpnsName = nil
+        self.dpnsNames = []
+        self.contestedDpnsNames = []
+        self.contestedDpnsInfo = [:]
         self.publicKeys = []
     }
     
     /// Create from DPP Identity
-    init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], dpnsName: String? = nil) {
+    init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], dpnsName: String? = nil, dpnsNames: [String] = [], contestedDpnsNames: [String] = [], contestedDpnsInfo: [String: Any] = [:]) {
         self.id = dppIdentity.id  // DPPIdentity already uses Data for id
         self._base58String = dppIdentity.id.toBase58String()
         self.balance = dppIdentity.balance
@@ -89,6 +100,9 @@ struct IdentityModel: Identifiable, Equatable, Hashable {
         self.type = type
         self.privateKeys = privateKeys
         self.dpnsName = dpnsName
+        self.dpnsNames = dpnsNames
+        self.contestedDpnsNames = contestedDpnsNames
+        self.contestedDpnsInfo = contestedDpnsInfo
         self.publicKeys = Array(dppIdentity.publicKeys.values)
         
         // Extract specific keys for masternodes

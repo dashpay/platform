@@ -350,3 +350,179 @@ pub unsafe extern "C" fn dash_sdk_identity_balance_map_free(map: *mut DashSDKIde
         let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
     }
 }
+
+// DPNS Contested structures
+
+/// Represents a contender in a contested DPNS name
+#[repr(C)]
+pub struct DashSDKContender {
+    /// Identity ID of the contender (base58 string)
+    pub identity_id: *mut c_char,
+    /// Vote count for this contender
+    pub vote_count: u32,
+}
+
+/// Represents contest information for a DPNS name
+#[repr(C)]
+pub struct DashSDKContestInfo {
+    /// Array of contenders
+    pub contenders: *mut DashSDKContender,
+    /// Number of contenders
+    pub contender_count: usize,
+    /// Abstain vote tally (0 if none)
+    pub abstain_votes: u32,
+    /// Lock vote tally (0 if none)
+    pub lock_votes: u32,
+    /// End time in milliseconds since epoch
+    pub end_time: u64,
+    /// Whether there is a winner
+    pub has_winner: bool,
+}
+
+/// Represents a contested DPNS name entry
+#[repr(C)]
+pub struct DashSDKContestedName {
+    /// The contested name
+    pub name: *mut c_char,
+    /// Contest information
+    pub contest_info: DashSDKContestInfo,
+}
+
+/// Represents a list of contested names
+#[repr(C)]
+pub struct DashSDKContestedNamesList {
+    /// Array of contested names
+    pub names: *mut DashSDKContestedName,
+    /// Number of names
+    pub count: usize,
+}
+
+/// Represents a simple name to timestamp mapping
+#[repr(C)]
+pub struct DashSDKNameTimestamp {
+    /// The name
+    pub name: *mut c_char,
+    /// End timestamp in milliseconds
+    pub end_time: u64,
+}
+
+/// Represents a list of name-timestamp pairs
+#[repr(C)]
+pub struct DashSDKNameTimestampList {
+    /// Array of name-timestamp pairs
+    pub entries: *mut DashSDKNameTimestamp,
+    /// Number of entries
+    pub count: usize,
+}
+
+/// Free a contender structure
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_contender_free(contender: *mut DashSDKContender) {
+    if contender.is_null() {
+        return;
+    }
+
+    let contender = Box::from_raw(contender);
+    dash_sdk_string_free(contender.identity_id);
+}
+
+/// Free contest info structure
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_contest_info_free(info: *mut DashSDKContestInfo) {
+    if info.is_null() {
+        return;
+    }
+
+    let info = Box::from_raw(info);
+    if !info.contenders.is_null() && info.contender_count > 0 {
+        for i in 0..info.contender_count {
+            let contender = info.contenders.add(i);
+            dash_sdk_string_free((*contender).identity_id);
+        }
+        let _ = Vec::from_raw_parts(info.contenders, info.contender_count, info.contender_count);
+    }
+}
+
+/// Free a contested name structure
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_contested_name_free(name: *mut DashSDKContestedName) {
+    if name.is_null() {
+        return;
+    }
+
+    let name = Box::from_raw(name);
+    dash_sdk_string_free(name.name);
+
+    // Free contest info contents (but not the struct itself as it's embedded)
+    if !name.contest_info.contenders.is_null() && name.contest_info.contender_count > 0 {
+        for i in 0..name.contest_info.contender_count {
+            let contender = name.contest_info.contenders.add(i);
+            dash_sdk_string_free((*contender).identity_id);
+        }
+        let _ = Vec::from_raw_parts(
+            name.contest_info.contenders,
+            name.contest_info.contender_count,
+            name.contest_info.contender_count,
+        );
+    }
+}
+
+/// Free a contested names list
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_contested_names_list_free(list: *mut DashSDKContestedNamesList) {
+    if list.is_null() {
+        return;
+    }
+
+    let list = Box::from_raw(list);
+    if !list.names.is_null() && list.count > 0 {
+        for i in 0..list.count {
+            let name = list.names.add(i);
+            dash_sdk_string_free((*name).name);
+
+            // Free contest info contents
+            if !(*name).contest_info.contenders.is_null()
+                && (*name).contest_info.contender_count > 0
+            {
+                for j in 0..(*name).contest_info.contender_count {
+                    let contender = (*name).contest_info.contenders.add(j);
+                    dash_sdk_string_free((*contender).identity_id);
+                }
+                let _ = Vec::from_raw_parts(
+                    (*name).contest_info.contenders,
+                    (*name).contest_info.contender_count,
+                    (*name).contest_info.contender_count,
+                );
+            }
+        }
+        let _ = Vec::from_raw_parts(list.names, list.count, list.count);
+    }
+}
+
+/// Free a name-timestamp structure
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_name_timestamp_free(entry: *mut DashSDKNameTimestamp) {
+    if entry.is_null() {
+        return;
+    }
+
+    let entry = Box::from_raw(entry);
+    dash_sdk_string_free(entry.name);
+}
+
+/// Free a name-timestamp list
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_name_timestamp_list_free(list: *mut DashSDKNameTimestampList) {
+    if list.is_null() {
+        return;
+    }
+
+    let list = Box::from_raw(list);
+    if !list.entries.is_null() && list.count > 0 {
+        for i in 0..list.count {
+            let entry = list.entries.add(i);
+            dash_sdk_string_free((*entry).name);
+        }
+        let _ = Vec::from_raw_parts(list.entries, list.count, list.count);
+    }
+}

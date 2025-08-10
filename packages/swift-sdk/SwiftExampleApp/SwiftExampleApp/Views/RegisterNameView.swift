@@ -540,15 +540,78 @@ struct RegisterNameView: View {
                 let registeredName = "\(normalizedUsername).dash"
                 
                 await MainActor.run {
-                    // Update the identity's dpnsName
-                    if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
-                        var updatedIdentity = appState.identities[index]
-                        updatedIdentity.dpnsName = normalizedUsername // Store just the username part
-                        appState.identities[index] = updatedIdentity
+                    // Calculate contest end time based on network
+                    let currentTime = Date()
+                    let contestDuration: TimeInterval = appState.currentNetwork == .mainnet ? 
+                        (14 * 24 * 60 * 60) : // 14 days for mainnet
+                        (90 * 60) // 90 minutes for testnet
+                    let endTime = currentTime.addingTimeInterval(contestDuration)
+                    let endTimeMillis = UInt64(endTime.timeIntervalSince1970 * 1000)
+                    
+                    if isContested {
+                        // For contested names, add to contested list
+                        if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
+                            var updatedIdentity = appState.identities[index]
+                            
+                            // Add to contested names list
+                            if !updatedIdentity.contestedDpnsNames.contains(normalizedUsername) {
+                                updatedIdentity.contestedDpnsNames.append(normalizedUsername)
+                            }
+                            
+                            // Create contest info showing user as only contender
+                            let contestInfo: [String: Any] = [
+                                "contenders": [[
+                                    "identifier": identity.idString,
+                                    "votes": "ResourceVote { vote_choice: TowardsIdentity, strength: 1 }"
+                                ]],
+                                "abstainVotes": 0,
+                                "lockVotes": 0,
+                                "endTime": endTimeMillis,
+                                "hasWinner": false
+                            ]
+                            updatedIdentity.contestedDpnsInfo[normalizedUsername] = contestInfo
+                            
+                            appState.identities[index] = updatedIdentity
+                            
+                            // Use the new update function to persist
+                            appState.updateIdentityDPNSNames(
+                                id: identity.id,
+                                dpnsNames: updatedIdentity.dpnsNames,
+                                contestedNames: updatedIdentity.contestedDpnsNames,
+                                contestedInfo: updatedIdentity.contestedDpnsInfo
+                            )
+                        }
+                    } else {
+                        // For regular names, add to regular list and set as primary
+                        if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
+                            var updatedIdentity = appState.identities[index]
+                            
+                            // Add to regular names list
+                            if !updatedIdentity.dpnsNames.contains(normalizedUsername) {
+                                updatedIdentity.dpnsNames.append(normalizedUsername)
+                            }
+                            
+                            // Set as primary name if no primary exists
+                            if updatedIdentity.dpnsName == nil {
+                                updatedIdentity.dpnsName = normalizedUsername
+                            }
+                            
+                            appState.identities[index] = updatedIdentity
+                            
+                            // Use the new update function to persist
+                            appState.updateIdentityDPNSNames(
+                                id: identity.id,
+                                dpnsNames: updatedIdentity.dpnsNames,
+                                contestedNames: updatedIdentity.contestedDpnsNames,
+                                contestedInfo: updatedIdentity.contestedDpnsInfo
+                            )
+                        }
                     }
                     
                     registrationSuccess = true
-                    errorMessage = "Successfully registered \(registeredName)!"
+                    errorMessage = isContested ? 
+                        "Successfully started contest for \(normalizedUsername)! Voting ends in \(appState.currentNetwork == .mainnet ? "14 days" : "90 minutes")." :
+                        "Successfully registered \(registeredName)!"
                     showingError = true
                     isRegistering = false
                 }

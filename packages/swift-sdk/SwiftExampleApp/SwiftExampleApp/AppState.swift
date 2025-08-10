@@ -267,6 +267,33 @@ class AppState: ObservableObject {
         }
     }
     
+    func updateIdentityDPNSNames(id: Data, dpnsNames: [String], contestedNames: [String], contestedInfo: [String: Any]) {
+        guard let dataManager = dataManager else { return }
+        
+        if let index = identities.firstIndex(where: { $0.id == id }) {
+            var identity = identities[index]
+            identity.dpnsNames = dpnsNames
+            identity.contestedDpnsNames = contestedNames
+            identity.contestedDpnsInfo = contestedInfo
+            
+            // Set the primary dpnsName if we have registered names
+            if !dpnsNames.isEmpty && identity.dpnsName == nil {
+                identity.dpnsName = dpnsNames.first
+            }
+            
+            identities[index] = identity
+            
+            // Update in persistence
+            Task {
+                do {
+                    try dataManager.saveIdentity(identity)
+                } catch {
+                    print("Error updating identity DPNS names: \(error)")
+                }
+            }
+        }
+    }
+    
     func removePrivateKeyReference(identityId: Data, keyId: Int32) {
         guard let dataManager = dataManager else { return }
         
@@ -301,6 +328,9 @@ class AppState: ObservableObject {
                 ownerPrivateKey: oldIdentity.ownerPrivateKey,
                 payoutPrivateKey: oldIdentity.payoutPrivateKey,
                 dpnsName: oldIdentity.dpnsName,
+                dpnsNames: oldIdentity.dpnsNames,
+                contestedDpnsNames: oldIdentity.contestedDpnsNames,
+                contestedDpnsInfo: oldIdentity.contestedDpnsInfo,
                 publicKeys: publicKeys
             )
             identities[index] = updatedIdentity

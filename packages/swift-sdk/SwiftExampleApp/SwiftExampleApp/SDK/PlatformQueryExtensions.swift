@@ -581,6 +581,167 @@ extension SDK {
         return isAvailable
     }
     
+    /// Get non-resolved DPNS contests for a specific identity
+    public func dpnsGetNonResolvedContestsForIdentity(identityId: String, limit: UInt32?) async throws -> [String: Any] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Call native FFI function which now returns a pointer to DashSDKContestedNamesList
+        guard let contestedNamesListPtr = dash_sdk_dpns_get_non_resolved_contests_for_identity(handle, identityId, limit ?? 20) else {
+            throw SDKError.internalError("Failed to get contested names")
+        }
+        
+        defer {
+            // Free the C structure when done
+            dash_sdk_contested_names_list_free(contestedNamesListPtr)
+        }
+        
+        // Convert C structure to Swift dictionary
+        let contestedNamesList = contestedNamesListPtr.pointee
+        var result: [String: Any] = [:]
+        
+        if contestedNamesList.count > 0 && contestedNamesList.names != nil {
+            for i in 0..<contestedNamesList.count {
+                let contestedName = contestedNamesList.names![Int(i)]
+                
+                // Get the name
+                guard let namePtr = contestedName.name else { continue }
+                let name = String(cString: namePtr)
+                
+                // Parse contest info
+                var contestInfo: [String: Any] = [:]
+                let contest = contestedName.contest_info
+                
+                // Add end time
+                contestInfo["endTime"] = contest.end_time
+                contestInfo["hasWinner"] = contest.has_winner
+                
+                // Add vote tallies
+                contestInfo["abstainVotes"] = contest.abstain_votes
+                contestInfo["lockVotes"] = contest.lock_votes
+                
+                // Parse contenders
+                var contenders: [[String: Any]] = []
+                if contest.contender_count > 0 && contest.contenders != nil {
+                    for j in 0..<contest.contender_count {
+                        let contender = contest.contenders![Int(j)]
+                        
+                        var contenderDict: [String: Any] = [:]
+                        if let idPtr = contender.identity_id {
+                            contenderDict["identifier"] = String(cString: idPtr)
+                        }
+                        contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        
+                        contenders.append(contenderDict)
+                    }
+                }
+                contestInfo["contenders"] = contenders
+                
+                result[name] = contestInfo
+            }
+        }
+        
+        return result
+    }
+    
+    /// Get current DPNS contests (active vote polls)
+    public func dpnsGetCurrentContests(startTime: UInt64 = 0, endTime: UInt64 = 0, limit: UInt16 = 100) async throws -> [String: UInt64] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Call native FFI function which returns a pointer to DashSDKNameTimestampList
+        guard let nameTimestampListPtr = dash_sdk_dpns_get_current_contests(handle, startTime, endTime, limit) else {
+            throw SDKError.internalError("Failed to get current contests")
+        }
+        
+        defer {
+            // Free the C structure when done
+            dash_sdk_name_timestamp_list_free(nameTimestampListPtr)
+        }
+        
+        // Convert C structure to Swift dictionary
+        let nameTimestampList = nameTimestampListPtr.pointee
+        var result: [String: UInt64] = [:]
+        
+        if nameTimestampList.count > 0 && nameTimestampList.entries != nil {
+            for i in 0..<nameTimestampList.count {
+                let entry = nameTimestampList.entries![Int(i)]
+                
+                guard let namePtr = entry.name else { continue }
+                let name = String(cString: namePtr)
+                result[name] = entry.end_time
+            }
+        }
+        
+        return result
+    }
+    
+    /// Get contested DPNS usernames that are not yet resolved
+    public func dpnsGetContestedNonResolvedUsernames(limit: UInt32 = 100) async throws -> [String: Any] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        // Call native FFI function which returns a pointer to DashSDKContestedNamesList
+        guard let contestedNamesListPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(handle, limit) else {
+            throw SDKError.internalError("Failed to get contested names")
+        }
+        
+        defer {
+            // Free the C structure when done
+            dash_sdk_contested_names_list_free(contestedNamesListPtr)
+        }
+        
+        // Convert C structure to Swift dictionary
+        let contestedNamesList = contestedNamesListPtr.pointee
+        var result: [String: Any] = [:]
+        
+        if contestedNamesList.count > 0 && contestedNamesList.names != nil {
+            for i in 0..<contestedNamesList.count {
+                let contestedName = contestedNamesList.names![Int(i)]
+                
+                // Get the name
+                guard let namePtr = contestedName.name else { continue }
+                let name = String(cString: namePtr)
+                
+                // Parse contest info
+                var contestInfo: [String: Any] = [:]
+                let contest = contestedName.contest_info
+                
+                // Add end time
+                contestInfo["endTime"] = contest.end_time
+                contestInfo["hasWinner"] = contest.has_winner
+                
+                // Add vote tallies
+                contestInfo["abstainVotes"] = contest.abstain_votes
+                contestInfo["lockVotes"] = contest.lock_votes
+                
+                // Parse contenders
+                var contenders: [[String: Any]] = []
+                if contest.contender_count > 0 && contest.contenders != nil {
+                    for j in 0..<contest.contender_count {
+                        let contender = contest.contenders![Int(j)]
+                        
+                        var contenderDict: [String: Any] = [:]
+                        if let idPtr = contender.identity_id {
+                            contenderDict["identifier"] = String(cString: idPtr)
+                        }
+                        contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        
+                        contenders.append(contenderDict)
+                    }
+                }
+                contestInfo["contenders"] = contenders
+                
+                result[name] = contestInfo
+            }
+        }
+        
+        return result
+    }
+    
     /// Resolve DPNS name to identity ID
     public func dpnsResolve(name: String) async throws -> String {
         guard let handle = handle else {

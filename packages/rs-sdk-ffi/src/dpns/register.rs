@@ -2,10 +2,10 @@
 
 use crate::{
     signer::VTableSigner, utils, DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError,
-    SDKWrapper, SDKHandle,
+    SDKHandle, SDKWrapper,
 };
-use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
+use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 use std::ffi::CStr;
 use std::sync::Arc;
 
@@ -113,16 +113,15 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
     };
 
     // Register the name
-    let result = wrapper.runtime.block_on(async {
-        sdk.register_dpns_name(input)
-            .await
-            .map_err(FFIError::from)
-    });
+    let result = wrapper
+        .runtime
+        .block_on(async { sdk.register_dpns_name(input).await.map_err(FFIError::from) });
 
     match result {
         Ok(registration_result) => {
             // Serialize documents to JSON
-            let preorder_json = match serde_json::to_string(&registration_result.preorder_document) {
+            let preorder_json = match serde_json::to_string(&registration_result.preorder_document)
+            {
                 Ok(json) => json,
                 Err(e) => {
                     return DashSDKResult::error(DashSDKError::new(
@@ -157,15 +156,16 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
                 }
             };
 
-            let domain_name_cstring = match utils::c_string_from(registration_result.full_domain_name) {
-                Ok(s) => s,
-                Err(e) => {
-                    // Clean up previous strings
-                    let _ = std::ffi::CString::from_raw(preorder_cstring);
-                    let _ = std::ffi::CString::from_raw(domain_cstring);
-                    return DashSDKResult::error(e.into());
-                }
-            };
+            let domain_name_cstring =
+                match utils::c_string_from(registration_result.full_domain_name) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        // Clean up previous strings
+                        let _ = std::ffi::CString::from_raw(preorder_cstring);
+                        let _ = std::ffi::CString::from_raw(domain_cstring);
+                        return DashSDKResult::error(e.into());
+                    }
+                };
 
             // Create result structure
             let result = Box::new(DpnsRegistrationResult {
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_registration_result_free(
 ) {
     if !result.is_null() {
         let result = Box::from_raw(result);
-        
+
         // Free the C strings
         if !result.preorder_document_json.is_null() {
             let _ = std::ffi::CString::from_raw(result.preorder_document_json);

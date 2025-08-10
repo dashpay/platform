@@ -1,8 +1,8 @@
 //! Document transfer operations
 
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
+use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentTransferTransitionBuilder;
@@ -99,11 +99,12 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
         // Parse contract ID (base58 encoded)
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
-        
+
         // Clone the document and bump its revision
         let mut document_to_transfer = document.clone();
-        document_to_transfer.increment_revision()
-            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
+        document_to_transfer.increment_revision().map_err(|e| {
+            FFIError::InternalError(format!("Failed to increment document revision: {}", e))
+        })?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
@@ -264,11 +265,12 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
         // Parse contract ID (base58 encoded)
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
-        
+
         // Clone the document and bump its revision
         let mut document_to_transfer = document.clone();
-        document_to_transfer.increment_revision()
-            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
+        document_to_transfer.increment_revision().map_err(|e| {
+            FFIError::InternalError(format!("Failed to increment document revision: {}", e))
+        })?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {

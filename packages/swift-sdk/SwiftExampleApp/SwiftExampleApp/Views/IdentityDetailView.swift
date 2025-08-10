@@ -12,10 +12,21 @@ struct IdentityDetailView: View {
     @State private var isRefreshing = false
     @State private var showingEditAlias = false
     @State private var newAlias = ""
-    @State private var dpnsNames: [String] = []
-    @State private var contestedDpnsNames: [String] = []
     @State private var isLoadingDPNS = false
     @State private var showingRegisterName = false
+    
+    // Computed properties that get DPNS names from the identity model
+    private var dpnsNames: [String] {
+        identity?.dpnsNames ?? []
+    }
+    
+    private var contestedDpnsNames: [String] {
+        identity?.contestedDpnsNames ?? []
+    }
+    
+    private var contestedDpnsInfo: [String: Any] {
+        identity?.contestedDpnsInfo ?? [:]
+    }
     
     var body: some View {
         if let identity = identity {
@@ -91,12 +102,18 @@ struct IdentityDetailView: View {
                         
                         // Show contested names
                         ForEach(contestedDpnsNames, id: \.self) { name in
-                            HStack {
-                                Text(name)
-                                Spacer()
-                                Label("Contested", systemImage: "flag.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
+                            NavigationLink(destination: ContestDetailView(
+                                contestName: name,
+                                contestInfo: contestedDpnsInfo[name] as? [String: Any] ?? [:],
+                                currentIdentityId: identity.idString
+                            )) {
+                                HStack {
+                                    Text(name)
+                                    Spacer()
+                                    Label("Contested", systemImage: "flag.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
                             }
                         }
                     }
@@ -179,14 +196,12 @@ struct IdentityDetailView: View {
         .onAppear {
             print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
             
-            // Only load DPNS names from network if we don't have any cached
-            if identity.dpnsName == nil && !identity.isLocal {
-                print("🔵 No cached DPNS name, loading from network...")
+            // Load DPNS names from network if we don't have any cached or if they're empty
+            if (dpnsNames.isEmpty && contestedDpnsNames.isEmpty) && !identity.isLocal {
+                print("🔵 No cached DPNS names, loading from network...")
                 loadDPNSNames()
-            } else if let cachedName = identity.dpnsName {
-                // Use cached name
-                print("🔵 Using cached DPNS name: \(cachedName)")
-                dpnsNames = [cachedName]
+            } else if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty {
+                print("🔵 Using cached DPNS names: \(dpnsNames.count) regular, \(contestedDpnsNames.count) contested")
             }
         }
         } else {
@@ -296,22 +311,24 @@ struct IdentityDetailView: View {
         let (regular, contested) = await (regularNamesTask, contestedNamesTask)
         
         await MainActor.run {
-            dpnsNames = regular
-            contestedDpnsNames = contested
+            let regularNames = regular.0
+            let contestedNames = contested.0
+            let contestedInfo = contested.1
             
-            // Update the primary DPNS name if we found one (prefer regular over contested)
-            if let firstUsername = dpnsNames.first {
-                print("🔵 Updating cached DPNS name to: \(firstUsername)")
-                appState.updateIdentityDPNSName(id: identity.id, dpnsName: firstUsername)
-            } else if let firstContested = contestedDpnsNames.first {
-                print("🔵 Found contested name: \(firstContested)")
-                // Note: We don't cache contested names as the primary name
-            }
+            // Update all DPNS names in the identity model
+            appState.updateIdentityDPNSNames(
+                id: identity.id, 
+                dpnsNames: regularNames, 
+                contestedNames: contestedNames, 
+                contestedInfo: contestedInfo
+            )
+            
+            print("🔵 Updated identity with \(regularNames.count) regular names and \(contestedNames.count) contested names")
         }
     }
     
-    private func fetchRegularDPNSNames(identity: IdentityModel) async -> [String] {
-        guard let sdk = appState.sdk else { return [] }
+    private func fetchRegularDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
+        guard let sdk = appState.sdk else { return ([], [:]) }
         
         do {
             print("🔵 Fetching regular DPNS names from network...")
@@ -321,112 +338,39 @@ struct IdentityDetailView: View {
             )
             
             print("🔵 Got \(usernames.count) regular DPNS names from network")
-            return usernames.compactMap { $0["label"] as? String }
+            return (usernames.compactMap { $0["label"] as? String }, [:])
         } catch {
             print("❌ No regular DPNS names found for identity: \(error)")
-            return []
+            return ([], [:])
         }
     }
     
-    private func fetchContestedDPNSNames(identity: IdentityModel) async -> [String] {
-        guard let sdk = appState.sdk else { return [] }
+    private func fetchContestedDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
+        guard let sdk = appState.sdk else { return ([], [:]) }
         
         do {
             print("🔵 Fetching contested DPNS names from network...")
             
-            // First, get all contested DPNS resources
-            let contestedResources = try await sdk.getContestedResources(
-                documentTypeName: "domain",
-                dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec", // DPNS contract
-                indexName: "parentNameAndLabel",
-                startIndexValues: nil,
-                endIndexValues: nil,
-                startIndexValuesIncluded: true,
-                limit: 100,
-                orderAscending: true
+            // Use the new dedicated FFI function for getting non-resolved contests for this identity
+            let contestsResult = try await sdk.dpnsGetNonResolvedContestsForIdentity(
+                identityId: identity.idString,
+                limit: 20
             )
             
             var contestedNames: [String] = []
+            var contestInfo: [String: Any] = [:]
             
-            // Parse the contested resources to find ones where this identity is a contender
-            if let resourcesList = contestedResources as? [[String: Any]] {
-                for resource in resourcesList {
-                    // Get the index values to extract the name
-                    if let indexValues = resource["indexValues"] as? [[String: Any]] {
-                        // The DPNS name is in the second index value
-                        if indexValues.count > 1,
-                           let nameBytes = indexValues[1]["bytes"] as? String,
-                           let nameData = Data(base64Encoded: nameBytes) {
-                            let name = String(data: nameData, encoding: .utf8) ?? ""
-                            
-                            // Now check if this identity is a contender for this name
-                            let voteState = try? await sdk.getContestedResourceVoteState(
-                                dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-                                documentTypeName: "domain",
-                                indexName: "parentNameAndLabel",
-                                indexValues: ["dash", name],
-                                resultType: "documentAndVoteTally",
-                                allowIncludeLockedAndAbstainingVoteTally: true,
-                                startAtIdentifierInfo: nil,
-                                count: 100,
-                                orderAscending: true
-                            )
-                            
-                            // Check if our identity is in the contenders list
-                            if let voteStateDict = voteState as? [String: Any],
-                               let contenders = voteStateDict["contenders"] as? [[String: Any]] {
-                                for contender in contenders {
-                                    if let contenderId = contender["identifier"] as? String,
-                                       contenderId == identity.idString {
-                                        if !contestedNames.contains(name) {
-                                            contestedNames.append(name)
-                                        }
-                                        break
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Also check for votes cast by this identity (if it's a masternode)
-            do {
-                let votes = try await sdk.getContestedResourceIdentityVotes(
-                    identityId: identity.idString,
-                    limit: 100,
-                    offset: 0,
-                    orderAscending: true
-                )
-                
-                if let votesList = votes as? [[String: Any]] {
-                    for vote in votesList {
-                        // Check if this is a DPNS vote
-                        if let contractId = vote["contractId"] as? String,
-                           contractId == "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-                           let documentTypeName = vote["documentTypeName"] as? String,
-                           documentTypeName == "domain",
-                           let indexValues = vote["indexValues"] as? [[String: Any]],
-                           indexValues.count > 1 {
-                            // Extract the name from index values
-                            if let nameValue = indexValues[1]["string"] as? String {
-                                if !contestedNames.contains(nameValue) {
-                                    contestedNames.append(nameValue)
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {
-                // This identity might not be a masternode, which is fine
-                print("⚠️ Could not fetch identity votes (may not be a masternode): \(error)")
+            // Parse the result - it's a dictionary where keys are the contested names
+            for (name, info) in contestsResult {
+                contestedNames.append(name)
+                contestInfo[name] = info
             }
             
             print("🔵 Found \(contestedNames.count) contested DPNS names")
-            return contestedNames
+            return (contestedNames, contestInfo)
         } catch {
             print("❌ Failed to fetch contested DPNS names: \(error)")
-            return []
+            return ([], [:])
         }
     }
 }

@@ -1,15 +1,5 @@
 //! Document purchasing operations
 
-use dash_sdk::dpp::document::Document;
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
-use dash_sdk::platform::documents::transitions::DocumentPurchaseTransitionBuilder;
-use dash_sdk::platform::IdentityPublicKey;
-use drive_proof_verifier::ContextProvider;
-use std::ffi::CStr;
-use std::os::raw::c_char;
-use std::sync::Arc;
-use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
 };
@@ -19,6 +9,16 @@ use crate::types::{
     DashSDKTokenPaymentInfo, DocumentHandle, SDKHandle, SignerHandle,
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
+use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::platform::documents::transitions::DocumentPurchaseTransitionBuilder;
+use dash_sdk::platform::IdentityPublicKey;
+use drive_proof_verifier::ContextProvider;
+use std::ffi::CStr;
+use std::os::raw::c_char;
+use std::sync::Arc;
 
 /// Purchase document (broadcast state transition)
 #[no_mangle]
@@ -89,8 +89,9 @@ pub unsafe extern "C" fn dash_sdk_document_purchase(
 
         // Clone the document and bump its revision
         let mut document_to_transfer = document.clone();
-        document_to_transfer.increment_revision()
-            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
+        document_to_transfer.increment_revision().map_err(|e| {
+            FFIError::InternalError(format!("Failed to increment document revision: {}", e))
+        })?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
@@ -243,8 +244,9 @@ pub unsafe extern "C" fn dash_sdk_document_purchase_and_wait(
 
         // Clone the document and bump its revision
         let mut document_to_transfer = document.clone();
-        document_to_transfer.increment_revision()
-            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
+        document_to_transfer.increment_revision().map_err(|e| {
+            FFIError::InternalError(format!("Failed to increment document revision: {}", e))
+        })?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {

@@ -30,7 +30,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_normalize_username(
     };
 
     let normalized = dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars(name_str);
-    
+
     match utils::c_string_from(normalized) {
         Ok(c_string) => DashSDKResult::success(c_string as *mut std::os::raw::c_void),
         Err(e) => DashSDKResult::error(e.into()),
@@ -53,9 +53,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_normalize_username(
 /// - 0 if the username is invalid
 /// - -1 if there's an error
 #[no_mangle]
-pub unsafe extern "C" fn dash_sdk_dpns_is_valid_username(
-    name: *const std::os::raw::c_char,
-) -> i32 {
+pub unsafe extern "C" fn dash_sdk_dpns_is_valid_username(name: *const std::os::raw::c_char) -> i32 {
     if name.is_null() {
         return -1;
     }
@@ -136,13 +134,24 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_validation_message(
         "Name must be at least 3 characters long"
     } else if name_str.len() > 63 {
         "Name must be 63 characters or less"
-    } else if !name_str.chars().next().map_or(false, |c| c.is_ascii_alphanumeric()) {
+    } else if !name_str
+        .chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_alphanumeric())
+    {
         "Name must start with an alphanumeric character"
-    } else if !name_str.chars().last().map_or(false, |c| c.is_ascii_alphanumeric()) {
+    } else if !name_str
+        .chars()
+        .last()
+        .map_or(false, |c| c.is_ascii_alphanumeric())
+    {
         "Name must end with an alphanumeric character"
     } else if name_str.contains("--") {
         "Name cannot contain consecutive hyphens"
-    } else if !name_str.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    } else if !name_str
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         "Name can only contain letters, numbers, and hyphens"
     } else if dash_sdk::platform::dpns_usernames::is_valid_username(name_str) {
         "valid"

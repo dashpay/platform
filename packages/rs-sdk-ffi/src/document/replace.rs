@@ -1,5 +1,15 @@
 //! Document replacement operations
 
+use crate::document::helpers::{
+    convert_state_transition_creation_options, convert_token_payment_info,
+};
+use crate::sdk::SDKWrapper;
+use crate::types::{
+    DashSDKPutSettings, DashSDKResultDataType, DashSDKStateTransitionCreationOptions,
+    DashSDKTokenPaymentInfo, DocumentHandle, SDKHandle, SignerHandle,
+};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
@@ -10,16 +20,6 @@ use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
-use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
-use crate::document::helpers::{
-    convert_state_transition_creation_options, convert_token_payment_info,
-};
-use crate::sdk::SDKWrapper;
-use crate::types::{
-    DashSDKPutSettings, DashSDKResultDataType, DashSDKStateTransitionCreationOptions,
-    DashSDKTokenPaymentInfo, DocumentHandle, SDKHandle, SignerHandle,
-};
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Replace document on platform (broadcast state transition)
 #[no_mangle]
@@ -241,8 +241,9 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
 
         // Clone the document and bump its revision
         let mut document_to_transfer = document.clone();
-        document_to_transfer.increment_revision()
-            .map_err(|e| FFIError::InternalError(format!("Failed to increment document revision: {}", e)))?;
+        document_to_transfer.increment_revision().map_err(|e| {
+            FFIError::InternalError(format!("Failed to increment document revision: {}", e))
+        })?;
 
         // Get contract from trusted context provider
         let data_contract = if let Some(ref provider) = wrapper.trusted_provider {

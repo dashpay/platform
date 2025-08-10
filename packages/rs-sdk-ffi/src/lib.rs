@@ -83,25 +83,28 @@ pub extern "C" fn dash_sdk_init() {
 #[no_mangle]
 pub extern "C" fn dash_sdk_enable_logging(level: u8) {
     use std::env;
-    
+
     let log_level = match level {
         0 => "error",
-        1 => "warn", 
+        1 => "warn",
         2 => "info",
         3 => "debug",
         4 => "trace",
         _ => "info",
     };
-    
+
     // Set RUST_LOG environment variable for detailed logging
-    env::set_var("RUST_LOG", format!(
-        "dash_sdk={},rs_sdk={},dapi_grpc={},h2={},tower={},hyper={},tonic={}",
-        log_level, log_level, log_level, log_level, log_level, log_level, log_level
-    ));
-    
+    env::set_var(
+        "RUST_LOG",
+        format!(
+            "dash_sdk={},rs_sdk={},dapi_grpc={},h2={},tower={},hyper={},tonic={}",
+            log_level, log_level, log_level, log_level, log_level, log_level, log_level
+        ),
+    );
+
     // Note: env_logger initialization is done in SDK creation
     // We just set the environment variable here
-    
+
     eprintln!("🔵 Logging enabled at level: {}", log_level);
 }
 
