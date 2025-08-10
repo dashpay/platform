@@ -346,6 +346,35 @@ public enum SDKError: Error {
     }
 }
 
+extension SDKError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .invalidParameter(let message):
+            return "Invalid Parameter: \(message)"
+        case .invalidState(let message):
+            return "Invalid State: \(message)"
+        case .networkError(let message):
+            return "Network Error: \(message)"
+        case .serializationError(let message):
+            return "Serialization Error: \(message)"
+        case .protocolError(let message):
+            return "Protocol Error: \(message)"
+        case .cryptoError(let message):
+            return "Cryptographic Error: \(message)"
+        case .notFound(let message):
+            return "Not Found: \(message)"
+        case .timeout(let message):
+            return "Operation Timed Out: \(message)"
+        case .notImplemented(let message):
+            return "Feature Not Implemented: \(message)"
+        case .internalError(let message):
+            return "Internal Error: \(message)"
+        case .unknown(let message):
+            return "Unknown Error: \(message)"
+        }
+    }
+}
+
 
 /// Identities operations
 public class Identities {

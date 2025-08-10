@@ -30,7 +30,18 @@ private func selectSigningKey(from identity: DPPIdentity, operation: String) -> 
         return nil
     }
     
-    // Prefer critical key if we have its private key
+    // For contract creation, ONLY critical AUTHENTICATION key is allowed
+    if operation == "CONTRACT CREATE" {
+        let criticalAuthKey = keysWithPrivateKeys.first { 
+            $0.securityLevel == .critical && $0.purpose == .authentication
+        }
+        if criticalAuthKey == nil {
+            print("❌ [\(operation)] Data contract creation requires a critical AUTHENTICATION key, but none found with private key!")
+        }
+        return criticalAuthKey
+    }
+    
+    // For other operations, prefer critical key if we have its private key
     let criticalKey = keysWithPrivateKeys.first { $0.securityLevel == .critical }
     
     // Fall back to authentication key, then any key
@@ -2390,13 +2401,108 @@ extension SDK {
     
     // MARK: - Data Contract State Transitions
     
-    /// Create a new data contract
+    /// Create and broadcast a new data contract
     public func dataContractCreate(
-        schema: [String: Any],
-        ownerId: String
+        identity: DPPIdentity,
+        documentSchemas: [String: Any]?,
+        tokenSchemas: [String: Any]?,
+        groups: [[String: Any]]?,
+        contractConfig: [String: Any],
+        signer: OpaquePointer
     ) async throws -> [String: Any] {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Data contract create not yet implemented")
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                // The FFI function expects just the document schemas directly
+                // Token schemas, groups, and other config are not supported yet
+                let schemasToUse = documentSchemas ?? [:]
+                
+                // Convert to JSON string
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: schemasToUse),
+                      let jsonString = String(data: jsonData, encoding: .utf8) else {
+                    continuation.resume(throwing: SDKError.serializationError("Failed to serialize contract schema"))
+                    return
+                }
+                
+                print("📄 [CONTRACT CREATE] Sending document schemas: \(jsonString)")
+                
+                // Create identity handle
+                guard let identityHandle = try? self.identityToHandle(identity) else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create identity handle"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_identity_destroy(identityHandle)
+                }
+                
+                // Step 1: Create the contract locally
+                let createResult = jsonString.withCString { jsonCStr in
+                    dash_sdk_data_contract_create(
+                        handle,
+                        identityHandle,
+                        jsonCStr
+                    )
+                }
+                
+                if let error = createResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to create contract: \(errorString)"))
+                    return
+                }
+                
+                guard let contractHandle = createResult.data else {
+                    continuation.resume(throwing: SDKError.internalError("No contract handle returned"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+                }
+                
+                // Step 2: Select signing key (must be critical authentication key for contract creation)
+                guard let keyToUse = selectSigningKey(from: identity, operation: "CONTRACT CREATE") else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No critical authentication key with private key found. Data contract creation requires a critical AUTHENTICATION key."))
+                    return
+                }
+                
+                // Create public key handle
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "CONTRACT CREATE") else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create public key handle"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_identity_public_key_destroy(keyHandle)
+                }
+                
+                // Step 3: Broadcast the contract to the network
+                let putResult = dash_sdk_data_contract_put_to_platform_and_wait(
+                    handle,
+                    OpaquePointer(contractHandle),
+                    keyHandle,
+                    signer
+                )
+                
+                if let error = putResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to broadcast contract: \(errorString)"))
+                    return
+                }
+                
+                // Successfully created and broadcast the contract
+                continuation.resume(returning: [
+                    "success": true,
+                    "message": "Data contract created and broadcast successfully"
+                ])
+            }
+        }
     }
     
     /// Update an existing data contract

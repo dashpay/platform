@@ -180,11 +180,43 @@ struct TransitionDefinitions {
                     defaultValue: "true"
                 ),
                 TransitionInput(
+                    name: "requiresIdentityEncryptionBoundedKey",
+                    type: "checkbox",
+                    label: "Requires Identity Encryption Key",
+                    required: false,
+                    help: "If checked, identities must have an encryption key to interact with documents"
+                ),
+                TransitionInput(
+                    name: "requiresIdentityDecryptionBoundedKey",
+                    type: "checkbox",
+                    label: "Requires Identity Decryption Key",
+                    required: false,
+                    help: "If checked, identities must have a decryption key to interact with documents"
+                ),
+                TransitionInput(
                     name: "documentSchemas",
                     type: "json",
                     label: "Document Schemas JSON",
-                    required: true,
-                    placeholder: "{\n  \"note\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"message\": {\n        \"type\": \"string\",\n        \"maxLength\": 100,\n        \"position\": 0\n      }\n    },\n    \"required\": [\"message\"],\n    \"additionalProperties\": false\n  }\n}"
+                    required: false,
+                    placeholder: "{\n  \"note\": {\n    \"type\": \"object\",\n    \"documentsMutable\": true,\n    \"canBeDeleted\": true,\n    \"properties\": {\n      \"message\": {\n        \"type\": \"string\",\n        \"maxLength\": 100,\n        \"position\": 0\n      }\n    },\n    \"required\": [\"message\"],\n    \"additionalProperties\": false\n  }\n}",
+                    help: "Define document types with their schemas. Leave empty for token-only contracts.",
+                    defaultValue: "{\n  \"note\": {\n    \"type\": \"object\",\n    \"documentsMutable\": true,\n    \"canBeDeleted\": true,\n    \"properties\": {\n      \"message\": {\n        \"type\": \"string\",\n        \"maxLength\": 100,\n        \"position\": 0\n      }\n    },\n    \"required\": [\"message\"],\n    \"additionalProperties\": false\n  }\n}"
+                ),
+                TransitionInput(
+                    name: "tokenSchemas",
+                    type: "json",
+                    label: "Token Schemas JSON (optional)",
+                    required: false,
+                    placeholder: "{\n  \"myToken\": {\n    \"type\": 0,\n    \"displayName\": \"My Token\",\n    \"decimalPlaces\": 2,\n    \"maxSupply\": 1000000000,\n    \"baseSupply\": 1000000,\n    \"mutable\": false,\n    \"decimals\": 2\n  }\n}",
+                    help: "Define tokens for this contract. Leave empty for document-only contracts."
+                ),
+                TransitionInput(
+                    name: "groups",
+                    type: "json",
+                    label: "Groups JSON (optional)",
+                    required: false,
+                    placeholder: "[\n  {\n    \"id\": 0,\n    \"members\": [\"ownerIdentityId1\", \"ownerIdentityId2\"]\n  }\n]",
+                    help: "Define groups for access control. Leave empty if not needed."
                 ),
                 TransitionInput(
                     name: "keywords",
@@ -218,7 +250,24 @@ struct TransitionDefinitions {
                     type: "json",
                     label: "New Document Schemas to Add (optional)",
                     required: false,
-                    placeholder: "{\n  \"newType\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"field\": {\n        \"type\": \"string\",\n        \"maxLength\": 100,\n        \"position\": 0\n      }\n    },\n    \"required\": [\"field\"],\n    \"additionalProperties\": false\n  }\n}"
+                    placeholder: "{\n  \"newType\": {\n    \"type\": \"object\",\n    \"documentsMutable\": true,\n    \"canBeDeleted\": true,\n    \"properties\": {\n      \"field\": {\n        \"type\": \"string\",\n        \"maxLength\": 100,\n        \"position\": 0\n      }\n    },\n    \"required\": [\"field\"],\n    \"additionalProperties\": false\n  }\n}",
+                    help: "Add new document types to the contract"
+                ),
+                TransitionInput(
+                    name: "newTokenSchemas",
+                    type: "json",
+                    label: "New Token Schemas to Add (optional)",
+                    required: false,
+                    placeholder: "{\n  \"newToken\": {\n    \"type\": 0,\n    \"displayName\": \"New Token\",\n    \"decimalPlaces\": 2,\n    \"maxSupply\": 1000000\n  }\n}",
+                    help: "Add new tokens to the contract"
+                ),
+                TransitionInput(
+                    name: "newGroups",
+                    type: "json",
+                    label: "New Groups to Add (optional)",
+                    required: false,
+                    placeholder: "[\n  {\n    \"id\": 1,\n    \"members\": [\"identityId1\", \"identityId2\"]\n  }\n]",
+                    help: "Add new groups for access control"
                 )
             ]
         ),
