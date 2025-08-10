@@ -148,6 +148,28 @@ struct SendTransactionView: View {
     
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        return String(format: "%.8f DASH", dash)
+        
+        // Special case for zero
+        if dash == 0 {
+            return "0 DASH"
+        }
+        
+        // Format with up to 8 decimal places, removing trailing zeros
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        
+        // Fallback formatting
+        let formatted = String(format: "%.8f", dash)
+        let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
+        return "\(trimmed) DASH"
     }
 }

@@ -96,36 +96,67 @@ struct WalletDetailView: View {
 
 struct BalanceCardView: View {
     let wallet: HDWallet
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    
+    var platformBalance: UInt64 {
+        // Sum all identity balances linked to this wallet
+        unifiedAppState.platformState.identities.reduce(0) { sum, identity in
+            sum + identity.balance
+        }
+    }
     
     var body: some View {
         VStack(spacing: 12) {
-            Text("Total Balance")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            Text(formatBalance(wallet.totalBalance))
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+            // Show main balance or "Empty Wallet"
+            if wallet.totalBalance == 0 {
+                Text("Empty Wallet")
+                    .font(.system(size: 28, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Wallet Balance")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Text(formatBalance(wallet.totalBalance))
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+            }
             
             HStack(spacing: 20) {
+                // Incoming (unconfirmed) balance
                 VStack(spacing: 4) {
-                    Text("Confirmed")
+                    Text("Incoming")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatBalance(wallet.confirmedBalance))
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                    if wallet.unconfirmedBalance > 0 {
+                        Text(formatBalance(wallet.unconfirmedBalance))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                    } else {
+                        Text("—")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
                 Divider()
                     .frame(height: 30)
                 
+                // Platform balance
                 VStack(spacing: 4) {
-                    Text("Unconfirmed")
+                    Text("Platform Balance")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatBalance(wallet.unconfirmedBalance))
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                    if platformBalance > 0 {
+                        Text(formatBalance(platformBalance))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.blue)
+                    } else {
+                        Text("—")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
@@ -136,7 +167,20 @@ struct BalanceCardView: View {
     
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        return String(format: "%.8f DASH", dash)
+        
+        // Format with up to 8 decimal places, removing trailing zeros
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        
+        return String(format: "%.8f DASH", dash).replacingOccurrences(of: "0+$", with: "", options: .regularExpression).replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
     }
 }
 

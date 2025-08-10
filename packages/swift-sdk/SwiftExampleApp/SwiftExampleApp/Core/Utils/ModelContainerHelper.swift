@@ -14,13 +14,13 @@ public struct ModelContainerHelper {
             // Platform models
             PersistentIdentity.self,
             PersistentPublicKey.self,
-            PersistentContract.self,
             PersistentDocument.self,
             PersistentTokenBalance.self,
             PersistentDataContract.self,
             PersistentToken.self,
             PersistentDocumentType.self,
-            PersistentTokenHistoryEvent.self
+            PersistentTokenHistoryEvent.self,
+            PersistentKeyword.self
         ])
         
         let modelConfiguration = ModelConfiguration(

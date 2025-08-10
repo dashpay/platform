@@ -6,8 +6,6 @@ struct CoreContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
     @State private var showingCreateWallet = false
-    @State private var lastTapLocation: CGPoint = .zero
-    @State private var showTapCoordinates = false
     
     var body: some View {
         VStack {
@@ -35,33 +33,6 @@ struct CoreContentView: View {
                             .padding(.vertical, 10)
                             .background(Color.blue)
                             .cornerRadius(8)
-                    }
-                    
-                    // Debug button to test tap coordinates
-                    Button {
-                        showTapCoordinates.toggle()
-                    } label: {
-                        VStack {
-                            Text("Tap Coordinate Test")
-                                .font(.headline)
-                            Text("Tap anywhere on this button")
-                                .font(.caption)
-                            if showTapCoordinates {
-                                Text("Last tap: (\(Int(lastTapLocation.x)), \(Int(lastTapLocation.y)))")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(.green)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 100)
-                        .padding()
-                        .background(Color.gray.opacity(0.2))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal)
-                    .onTapGesture { location in
-                        lastTapLocation = location
-                        showTapCoordinates = true
-                        print("Tapped at: \(location)")
                     }
                     
                     Spacer()
@@ -101,6 +72,14 @@ struct CoreContentView: View {
 
 struct WalletRowView: View {
     let wallet: HDWallet
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    
+    var platformBalance: UInt64 {
+        // Sum all identity balances linked to this wallet
+        unifiedAppState.platformState.identities.reduce(0) { sum, identity in
+            sum + identity.balance
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -123,9 +102,29 @@ struct WalletRowView: View {
                 
                 Spacer()
                 
-                Text(formatBalance(wallet.totalBalance))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                VStack(alignment: .trailing, spacing: 2) {
+                    // Show wallet balance or "Empty"
+                    if wallet.totalBalance == 0 {
+                        Text("Empty")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(formatBalance(wallet.totalBalance))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    
+                    // Show platform balance if any
+                    if platformBalance > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "p.circle.fill")
+                                .font(.system(size: 9))
+                            Text(formatBalance(platformBalance))
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                    }
+                }
             }
         }
         .padding(.vertical, 4)
@@ -133,6 +132,28 @@ struct WalletRowView: View {
     
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        return String(format: "%.8f DASH", dash)
+        
+        // Special case for zero
+        if dash == 0 {
+            return "0 DASH"
+        }
+        
+        // Format with up to 8 decimal places, removing trailing zeros
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        
+        // Fallback formatting
+        let formatted = String(format: "%.8f", dash)
+        let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
+        return "\(trimmed) DASH"
     }
 }

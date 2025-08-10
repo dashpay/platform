@@ -505,6 +505,9 @@ struct TransitionDetailView: View {
         case "dataContractCreate":
             return try await executeDataContractCreate(sdk: sdk)
             
+        case "dataContractUpdate":
+            return try await executeDataContractUpdate(sdk: sdk)
+            
         default:
             throw SDKError.notImplemented("State transition '\(transitionKey)' not yet implemented")
         }
@@ -2251,6 +2254,105 @@ struct TransitionDetailView: View {
             tokenSchemas: tokenSchemas,
             groups: groups,
             contractConfig: contractConfig,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return result
+    }
+    
+    private func executeDataContractUpdate(sdk: SDK) async throws -> Any {
+        guard let contractId = formInputs["dataContractId"], !contractId.isEmpty else {
+            throw SDKError.invalidParameter("Data contract ID is required")
+        }
+        
+        guard !selectedIdentityId.isEmpty,
+              let ownerIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+            throw SDKError.invalidParameter("No identity selected")
+        }
+        
+        // Parse new document schemas if provided
+        var newDocumentSchemas: [String: Any]? = nil
+        if let schemasJson = formInputs["newDocumentSchemas"], !schemasJson.isEmpty {
+            guard let data = schemasJson.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw SDKError.serializationError("Invalid document schemas JSON")
+            }
+            newDocumentSchemas = parsed
+        }
+        
+        // Parse new token schemas if provided
+        var newTokenSchemas: [String: Any]? = nil
+        if let tokensJson = formInputs["newTokenSchemas"], !tokensJson.isEmpty {
+            guard let data = tokensJson.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw SDKError.serializationError("Invalid token schemas JSON")
+            }
+            newTokenSchemas = parsed
+        }
+        
+        // Parse new groups if provided
+        var newGroups: [[String: Any]]? = nil
+        if let groupsJson = formInputs["newGroups"], !groupsJson.isEmpty {
+            guard let data = groupsJson.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                throw SDKError.serializationError("Invalid groups JSON")
+            }
+            newGroups = parsed
+        }
+        
+        // Validate that at least one update is provided
+        if newDocumentSchemas == nil && newTokenSchemas == nil && newGroups == nil {
+            throw SDKError.invalidParameter("At least one update (document schemas, token schemas, or groups) must be provided")
+        }
+        
+        // Find a critical authentication key for contract update (required)
+        let signingKey = ownerIdentity.publicKeys.first { key in
+            key.securityLevel == .critical && key.purpose == .authentication
+        }
+        
+        guard let signingKey = signingKey else {
+            throw SDKError.invalidParameter("No critical authentication key found for signing contract update. Data contract updates require a critical AUTHENTICATION key.")
+        }
+        
+        // Get the private key from keychain
+        guard let privateKeyData = KeychainManager.shared.retrievePrivateKey(
+            identityId: ownerIdentity.id,
+            keyIndex: Int32(signingKey.id)
+        ) else {
+            throw SDKError.invalidParameter("Private key not found for key #\(signingKey.id). Please add the private key first.")
+        }
+        
+        // Create signer
+        let signerResult = privateKeyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(privateKeyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Use the DPPIdentity for contract update
+        let dppIdentity = DPPIdentity(
+            id: ownerIdentity.id,
+            publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.publicKeys.map { ($0.id, $0) }),
+            balance: ownerIdentity.balance,
+            revision: 0
+        )
+        
+        let result = try await sdk.dataContractUpdate(
+            contractId: contractId,
+            identity: dppIdentity,
+            newDocumentSchemas: newDocumentSchemas,
+            newTokenSchemas: newTokenSchemas,
+            newGroups: newGroups,
             signer: OpaquePointer(signer)!
         )
         

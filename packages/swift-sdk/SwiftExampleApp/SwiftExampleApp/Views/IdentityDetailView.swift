@@ -236,10 +236,27 @@ struct IdentityDetailView: View {
             }
         }
         } else {
-            Text("Identity not found")
-                .foregroundColor(.secondary)
-                .navigationTitle("Identity Details")
-                .navigationBarTitleDisplayMode(.inline)
+            // No identity found view
+            VStack(spacing: 20) {
+                Spacer()
+                
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .font(.system(size: 60))
+                    .foregroundColor(.gray)
+                
+                Text("No Identity Found")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Text("The identity could not be found.\nIt may have been deleted or doesn't exist.")
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("Identity Details")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
     

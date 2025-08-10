@@ -7,28 +7,68 @@ struct IdentitiesView: View {
     
     var body: some View {
         NavigationView {
-            List {
-                ForEach(appState.identities) { identity in
-                    IdentityRow(identity: identity)
-                }
-                .onDelete { indexSet in
-                    deleteIdentities(at: indexSet)
-                }
-            }
-            .navigationTitle("Identities")
-            .refreshable {
-                await refreshAllBalances()
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            if appState.identities.isEmpty {
+                // Empty state view
+                VStack(spacing: 20) {
+                    Spacer()
+                    
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 60))
+                        .foregroundColor(.gray)
+                    
+                    Text("No Identities")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("Create or load an identity to get started\nwith Dash Platform")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    
                     Button(action: { showingLoadIdentity = true }) {
-                        Image(systemName: "square.and.arrow.down")
+                        Label("Load Identity", systemImage: "square.and.arrow.down")
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Spacer()
+                }
+                .navigationTitle("Identities")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: { showingLoadIdentity = true }) {
+                            Image(systemName: "square.and.arrow.down")
+                        }
                     }
                 }
-            }
-            .sheet(isPresented: $showingLoadIdentity) {
-                LoadIdentityView()
-                    .environmentObject(appState)
+                .sheet(isPresented: $showingLoadIdentity) {
+                    LoadIdentityView()
+                        .environmentObject(appState)
+                }
+            } else {
+                List {
+                    ForEach(appState.identities) { identity in
+                        IdentityRow(identity: identity)
+                    }
+                    .onDelete { indexSet in
+                        deleteIdentities(at: indexSet)
+                    }
+                }
+                .navigationTitle("Identities")
+                .refreshable {
+                    await refreshAllBalances()
+                }
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: { showingLoadIdentity = true }) {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                    }
+                }
+                .sheet(isPresented: $showingLoadIdentity) {
+                    LoadIdentityView()
+                        .environmentObject(appState)
+                }
             }
         }
     }

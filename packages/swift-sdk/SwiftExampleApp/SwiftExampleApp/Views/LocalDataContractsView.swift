@@ -157,13 +157,14 @@ struct LoadDataContractView: View {
     @State private var showExampleContracts = false
     @State private var currentNetwork: String = "Unknown"
     
-    // Known testnet contracts - these are the system contracts that should always exist
+    // Known testnet contracts - these are the common system contracts
     let exampleContracts = [
         ("DPNS Contract", "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"),
         ("DashPay Contract", "Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7"),
-        ("Feature Flags", "HY1jjghgVz6aERbyDPjTk7CZqjKQCKK8AGzJndVwwRCN"),
-        ("Masternode Rewards", "rUnsWrFu3PKyRMGk2mxmZVBPbQuZx2qtHeFjURoQevX"),
-        ("Withdrawals Contract", "5G5kBnF3z8Y6cmiJHvNJkSjJc26cX7vb1CiEtRKqfKaD")
+        ("Withdrawals Contract", "4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6"),
+        ("Wallet Utils", "7CSFGeF4WNzgDmx94zwvHkYaG3Dx4XEe5LFsFgJswLbm"),
+        ("Token History", "43gujrzZgXqcKBiScLa4T8XTDnRhenR9BLx8GWVHjPxF"),
+        ("Keyword Search", "BsjE6tQxG47wffZCRQCovFx5rYrAYYC3rTVRWKro27LA")
     ]
     
     var body: some View {
@@ -192,7 +193,7 @@ struct LoadDataContractView: View {
                         .disabled(isLoading)
                     
                     if showExampleContracts {
-                        Section(header: Text("System Contracts (\(unifiedState.platformState.currentNetwork.rawValue))")) {
+                        Section(header: Text("Common System Contracts (\(unifiedState.platformState.currentNetwork.rawValue))")) {
                             ForEach(exampleContracts, id: \.1) { example in
                                 Button(action: {
                                     contractId = example.1

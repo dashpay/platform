@@ -8,10 +8,12 @@ extension ModelContainer {
         let schema = Schema([
             PersistentIdentity.self,
             PersistentDocument.self,
-            PersistentContract.self,
+            PersistentDataContract.self,
             PersistentPublicKey.self,
             PersistentTokenBalance.self,
-            PersistentKeyword.self
+            PersistentKeyword.self,
+            PersistentToken.self,
+            PersistentDocumentType.self
         ])
         
         let modelConfiguration = ModelConfiguration(
@@ -33,10 +35,12 @@ extension ModelContainer {
         let schema = Schema([
             PersistentIdentity.self,
             PersistentDocument.self,
-            PersistentContract.self,
+            PersistentDataContract.self,
             PersistentPublicKey.self,
             PersistentTokenBalance.self,
-            PersistentKeyword.self
+            PersistentKeyword.self,
+            PersistentToken.self,
+            PersistentDocumentType.self
         ])
         
         let modelConfiguration = ModelConfiguration(
@@ -72,7 +76,7 @@ enum AppSchemaV1: VersionedSchema {
         [
             PersistentIdentity.self,
             PersistentDocument.self,
-            PersistentContract.self,
+            PersistentDataContract.self,
             PersistentPublicKey.self,
             PersistentTokenBalance.self,
             PersistentKeyword.self

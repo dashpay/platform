@@ -40,29 +40,31 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             TabView {
-                // Core features
+                // Tab 1: Wallets
                 CoreWalletView()
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
                     }
                 
-                CoreTransactionsView()
-                    .tabItem {
-                        Label("Transactions", systemImage: "list.bullet")
-                    }
-                
-                // Platform features
+                // Tab 2: Identities
                 IdentitiesView()
                     .tabItem {
-                        Label("Identities", systemImage: "person.3")
+                        Label("Identities", systemImage: "person.circle")
                     }
                 
+                // Tab 3: Friends
+                FriendsView()
+                    .tabItem {
+                        Label("Friends", systemImage: "person.2")
+                    }
+                
+                // Tab 4: Platform
                 PlatformView()
                     .tabItem {
                         Label("Platform", systemImage: "network")
                     }
                 
-                // Settings
+                // Tab 5: Settings
                 SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
@@ -132,26 +134,6 @@ struct CoreWalletView: View {
                 .environmentObject(unifiedState.walletService)
                 .environment(\.modelContext, unifiedState.modelContainer.mainContext)
         }
-    }
-}
-
-struct CoreTransactionsView: View {
-    @EnvironmentObject var unifiedState: UnifiedAppState
-    @Query private var wallets: [HDWallet]
-    
-    var body: some View {
-        NavigationStack {
-            if let firstWallet = wallets.first {
-                WalletDetailView(wallet: firstWallet)
-            } else {
-                ContentUnavailableView(
-                    "No Wallets",
-                    systemImage: "wallet.pass",
-                    description: Text("Create a wallet to view transactions")
-                )
-            }
-        }
-        .environmentObject(unifiedState.walletService)
     }
 }
 

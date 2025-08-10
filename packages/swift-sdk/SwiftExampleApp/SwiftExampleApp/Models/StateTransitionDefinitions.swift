@@ -251,7 +251,7 @@ struct TransitionDefinitions {
                     label: "New Document Schemas to Add (optional)",
                     required: false,
                     placeholder: "{\n  \"newType\": {\n    \"type\": \"object\",\n    \"documentsMutable\": true,\n    \"canBeDeleted\": true,\n    \"properties\": {\n      \"field\": {\n        \"type\": \"string\",\n        \"maxLength\": 100,\n        \"position\": 0\n      }\n    },\n    \"required\": [\"field\"],\n    \"additionalProperties\": false\n  }\n}",
-                    help: "Add new document types to the contract"
+                    help: "Add new document types to the contract (existing schemas will be preserved automatically)"
                 ),
                 TransitionInput(
                     name: "newTokenSchemas",

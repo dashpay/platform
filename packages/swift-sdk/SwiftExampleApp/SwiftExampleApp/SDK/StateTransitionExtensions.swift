@@ -30,13 +30,13 @@ private func selectSigningKey(from identity: DPPIdentity, operation: String) -> 
         return nil
     }
     
-    // For contract creation, ONLY critical AUTHENTICATION key is allowed
-    if operation == "CONTRACT CREATE" {
+    // For contract creation and updates, ONLY critical AUTHENTICATION key is allowed
+    if operation == "CONTRACT CREATE" || operation == "CONTRACT UPDATE" {
         let criticalAuthKey = keysWithPrivateKeys.first { 
             $0.securityLevel == .critical && $0.purpose == .authentication
         }
         if criticalAuthKey == nil {
-            print("❌ [\(operation)] Data contract creation requires a critical AUTHENTICATION key, but none found with private key!")
+            print("❌ [\(operation)] Data contract operations require a critical AUTHENTICATION key, but none found with private key!")
         }
         return criticalAuthKey
     }
@@ -2508,10 +2508,150 @@ extension SDK {
     /// Update an existing data contract
     public func dataContractUpdate(
         contractId: String,
-        schema: [String: Any]
+        identity: DPPIdentity,
+        newDocumentSchemas: [String: Any]?,
+        newTokenSchemas: [String: Any]?,
+        newGroups: [[String: Any]]?,
+        signer: OpaquePointer
     ) async throws -> [String: Any] {
-        // TODO: Implement when FFI binding is available
-        throw SDKError.notImplemented("Data contract update not yet implemented")
+        // Temporary: Contract update needs FFI implementation
+        throw SDKError.notImplemented("Data contract update requires FFI implementation for merging schemas. Please use a new contract instead.")
+        
+        /*
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async { [weak self] in
+                guard let self = self, let handle = self.handle else {
+                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+                    return
+                }
+                
+                // Fetch the existing contract as JSON to get current schemas
+                let fetchResult = contractId.withCString { contractIdCStr in
+                    dash_sdk_data_contract_fetch_json(handle, contractIdCStr)
+                }
+                
+                if let error = fetchResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to fetch contract: \(errorString)"))
+                    return
+                }
+                
+                guard fetchResult.data != nil else {
+                    continuation.resume(throwing: SDKError.notFound("Contract not found: \(contractId)"))
+                    return
+                }
+                
+                // Parse the existing contract JSON
+                let existingContractJson = String(cString: fetchResult.data!)
+                dash_sdk_string_free(fetchResult.data!)
+                
+                guard let existingData = existingContractJson.data(using: .utf8),
+                      let existingContract = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any] else {
+                    continuation.resume(throwing: SDKError.serializationError("Failed to parse existing contract"))
+                    return
+                }
+                
+                // Extract existing document schemas
+                var allDocumentSchemas = (existingContract["documentSchemas"] as? [String: Any]) ?? [:]
+                
+                // Merge with new document schemas if provided
+                if let newDocs = newDocumentSchemas {
+                    for (key, value) in newDocs {
+                        allDocumentSchemas[key] = value
+                    }
+                }
+                
+                print("📄 [CONTRACT UPDATE] Existing schemas: \(allDocumentSchemas.keys)")
+                if let newDocs = newDocumentSchemas {
+                    print("📄 [CONTRACT UPDATE] Adding new schemas: \(newDocs.keys)")
+                }
+                
+                // Convert merged schemas to JSON string
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: allDocumentSchemas),
+                      let jsonString = String(data: jsonData, encoding: .utf8) else {
+                    continuation.resume(throwing: SDKError.serializationError("Failed to serialize merged schemas"))
+                    return
+                }
+                
+                print("📄 [CONTRACT UPDATE] Creating updated contract with \(allDocumentSchemas.count) document types")
+                
+                // Create identity handle
+                guard let identityHandle = try? self.identityToHandle(identity) else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create identity handle"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_identity_destroy(identityHandle)
+                }
+                
+                // Create the updated contract
+                let createResult = jsonString.withCString { jsonCStr in
+                    dash_sdk_data_contract_create(
+                        handle,
+                        identityHandle,
+                        jsonCStr
+                    )
+                }
+                
+                if let error = createResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to create updated contract: \(errorString)"))
+                    return
+                }
+                
+                guard let updatedContractHandle = createResult.data else {
+                    continuation.resume(throwing: SDKError.internalError("No updated contract handle returned"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_data_contract_destroy(OpaquePointer(updatedContractHandle))
+                }
+                
+                // Select signing key (must be critical authentication key for contract update)
+                guard let keyToUse = selectSigningKey(from: identity, operation: "CONTRACT UPDATE") else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No critical authentication key with private key found. Data contract updates require a critical AUTHENTICATION key."))
+                    return
+                }
+                
+                // Create public key handle
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "CONTRACT UPDATE") else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create public key handle"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_identity_public_key_destroy(keyHandle)
+                }
+                
+                // Broadcast the updated contract to the network
+                let putResult = dash_sdk_data_contract_put_to_platform_and_wait(
+                    handle,
+                    OpaquePointer(updatedContractHandle),
+                    keyHandle,
+                    signer
+                )
+                
+                if let error = putResult.error {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to broadcast contract update: \(errorString)"))
+                    return
+                }
+                
+                // Successfully updated and broadcast the contract
+                continuation.resume(returning: [
+                    "success": true,
+                    "contractId": contractId,
+                    "message": "Data contract updated and broadcast successfully"
+                ])
+            }
+        }
+        return result
+        */
     }
 }
 

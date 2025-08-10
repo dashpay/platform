@@ -8,7 +8,7 @@ final class PersistentKeyword {
     var contractId: String
     
     // Relationship
-    var contract: PersistentContract?
+    var dataContract: PersistentDataContract?
     
     init(keyword: String, contractId: String) {
         self.id = "\(contractId)_\(keyword)"

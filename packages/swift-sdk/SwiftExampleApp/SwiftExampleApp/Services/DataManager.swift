@@ -165,23 +165,23 @@ final class DataManager: ObservableObject {
     
     /// Save or update a contract
     func saveContract(_ contract: ContractModel) throws {
-        let predicate = PersistentContract.predicate(contractId: contract.id)
-        let descriptor = FetchDescriptor<PersistentContract>(predicate: predicate)
+        let predicate = PersistentDataContract.predicate(contractId: contract.id)
+        let descriptor = FetchDescriptor<PersistentDataContract>(predicate: predicate)
         
         if let existingContract = try modelContext.fetch(descriptor).first {
             // Update existing contract
             existingContract.name = contract.name
-            existingContract.updateVersion(Int32(contract.version))
+            existingContract.updateVersion(contract.version)
             existingContract.schema = contract.schema
-            existingContract.documentTypes = contract.documentTypes
+            existingContract.documentTypesList = contract.documentTypes
             // Update keywords by recreating relations
             existingContract.keywordRelations = contract.keywords.map { 
-                PersistentKeyword(keyword: $0, contractId: existingContract.contractId) 
+                PersistentKeyword(keyword: $0, contractId: existingContract.idBase58) 
             }
             existingContract.contractDescription = contract.description
         } else {
             // Create new contract
-            let persistentContract = PersistentContract.from(contract)
+            let persistentContract = PersistentDataContract.from(contract)
             modelContext.insert(persistentContract)
         }
         
@@ -190,8 +190,8 @@ final class DataManager: ObservableObject {
     
     /// Fetch all contracts for current network
     func fetchContracts() throws -> [ContractModel] {
-        let descriptor = FetchDescriptor<PersistentContract>(
-            predicate: PersistentContract.predicate(network: currentNetwork.rawValue),
+        let descriptor = FetchDescriptor<PersistentDataContract>(
+            predicate: PersistentDataContract.predicate(network: currentNetwork.rawValue),
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         let persistentContracts = try modelContext.fetch(descriptor)
@@ -200,8 +200,8 @@ final class DataManager: ObservableObject {
     
     /// Fetch contracts with tokens
     func fetchContractsWithTokens() throws -> [ContractModel] {
-        let descriptor = FetchDescriptor<PersistentContract>(
-            predicate: PersistentContract.contractsWithTokensPredicate(network: currentNetwork.rawValue),
+        let descriptor = FetchDescriptor<PersistentDataContract>(
+            predicate: PersistentDataContract.contractsWithTokensPredicate(network: currentNetwork.rawValue),
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         let persistentContracts = try modelContext.fetch(descriptor)
@@ -292,7 +292,7 @@ final class DataManager: ObservableObject {
         try modelContext.delete(model: PersistentDocument.self)
         
         // Delete all contracts
-        try modelContext.delete(model: PersistentContract.self)
+        try modelContext.delete(model: PersistentDataContract.self)
         
         // Delete all public keys
         try modelContext.delete(model: PersistentPublicKey.self)
@@ -307,7 +307,7 @@ final class DataManager: ObservableObject {
     func getDataStatistics() throws -> (identities: Int, documents: Int, contracts: Int, tokenBalances: Int) {
         let identityCount = try modelContext.fetchCount(FetchDescriptor<PersistentIdentity>())
         let documentCount = try modelContext.fetchCount(FetchDescriptor<PersistentDocument>())
-        let contractCount = try modelContext.fetchCount(FetchDescriptor<PersistentContract>())
+        let contractCount = try modelContext.fetchCount(FetchDescriptor<PersistentDataContract>())
         let tokenBalanceCount = try modelContext.fetchCount(FetchDescriptor<PersistentTokenBalance>())
         
         return (identities: identityCount, documents: documentCount, contracts: contractCount, tokenBalances: tokenBalanceCount)

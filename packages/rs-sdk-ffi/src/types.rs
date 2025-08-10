@@ -366,13 +366,13 @@ pub unsafe extern "C" fn dash_sdk_document_info_free(info: *mut DashSDKDocumentI
     }
 
     let info = Box::from_raw(info);
-    
+
     // Free string fields
     dash_sdk_string_free(info.id);
     dash_sdk_string_free(info.owner_id);
     dash_sdk_string_free(info.data_contract_id);
     dash_sdk_string_free(info.document_type);
-    
+
     // Free data fields
     if !info.data_fields.is_null() && info.data_fields_count > 0 {
         for i in 0..info.data_fields_count {
@@ -380,7 +380,11 @@ pub unsafe extern "C" fn dash_sdk_document_info_free(info: *mut DashSDKDocumentI
             dash_sdk_string_free((*field).name);
             dash_sdk_string_free((*field).value);
         }
-        let _ = Vec::from_raw_parts(info.data_fields, info.data_fields_count, info.data_fields_count);
+        let _ = Vec::from_raw_parts(
+            info.data_fields,
+            info.data_fields_count,
+            info.data_fields_count,
+        );
     }
 }
 

@@ -5,7 +5,9 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Value;
 use std::ffi::CString;
 
-use crate::types::{DashSDKDocumentInfo, DashSDKDocumentField, DashSDKDocumentFieldType, DocumentHandle};
+use crate::types::{
+    DashSDKDocumentField, DashSDKDocumentFieldType, DashSDKDocumentInfo, DocumentHandle,
+};
 
 /// Get document information
 #[no_mangle]
@@ -55,13 +57,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
     // Extract document properties (data fields)
     let properties = document.properties();
     let mut data_fields = Vec::new();
-    
+
     for (key, value) in properties.iter() {
         let field_name = match CString::new(key.clone()) {
             Ok(s) => s.into_raw(),
             Err(_) => continue,
         };
-        
+
         let (field_type, value_str, int_value, float_value, bool_value) = match value {
             Value::Text(s) => {
                 let val_str = match CString::new(s.clone()) {
@@ -71,7 +73,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldString, val_str, 0i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldString,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::I128(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -81,7 +89,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::I64(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -91,7 +105,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n,
+                    0.0f64,
+                    false,
+                )
             }
             Value::I32(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -101,7 +121,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::I16(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -111,7 +137,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::U128(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -121,7 +153,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::U64(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -131,7 +169,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::U32(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -141,7 +185,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::U16(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -151,7 +201,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::U8(n) => {
                 let val_str = match CString::new(n.to_string()) {
@@ -161,7 +217,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldInteger, val_str, *n as i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldInteger,
+                    val_str,
+                    *n as i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::Float(f) => {
                 let val_str = match CString::new(f.to_string()) {
@@ -171,7 +233,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldFloat, val_str, 0i64, *f, false)
+                (
+                    DashSDKDocumentFieldType::FieldFloat,
+                    val_str,
+                    0i64,
+                    *f,
+                    false,
+                )
             }
             Value::Bool(b) => {
                 let val_str = match CString::new(b.to_string()) {
@@ -181,7 +249,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldBoolean, val_str, 0i64, 0.0f64, *b)
+                (
+                    DashSDKDocumentFieldType::FieldBoolean,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    *b,
+                )
             }
             Value::Null => {
                 let val_str = match CString::new("null") {
@@ -191,7 +265,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldNull, val_str, 0i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldNull,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::Bytes(bytes) => {
                 let hex_str = hex::encode(bytes.as_slice());
@@ -202,7 +282,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldBytes, val_str, 0i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldBytes,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::Array(arr) => {
                 // Convert array to JSON string
@@ -214,7 +300,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldArray, val_str, 0i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldArray,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    false,
+                )
             }
             Value::Map(map) => {
                 // Convert map to JSON string
@@ -226,7 +318,13 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldObject, val_str, 0i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldObject,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    false,
+                )
             }
             _ => {
                 // For other types, convert to string
@@ -237,10 +335,16 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
                         continue;
                     }
                 };
-                (DashSDKDocumentFieldType::FieldString, val_str, 0i64, 0.0f64, false)
+                (
+                    DashSDKDocumentFieldType::FieldString,
+                    val_str,
+                    0i64,
+                    0.0f64,
+                    false,
+                )
             }
         };
-        
+
         data_fields.push(DashSDKDocumentField {
             name: field_name,
             field_type,
@@ -250,7 +354,7 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
             bool_value,
         });
     }
-    
+
     // Convert vector to raw pointer
     let data_fields_ptr = if data_fields.is_empty() {
         std::ptr::null_mut()

@@ -46,6 +46,7 @@ final class PersistentDocument {
     
     // Relationships
     var documentType_relation: PersistentDocumentType?
+    var dataContract: PersistentDataContract?
     
     // Optional reference to local identity (if owner is local)
     var ownerIdentity: PersistentIdentity?
