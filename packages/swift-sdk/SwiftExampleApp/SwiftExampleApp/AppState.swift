@@ -267,6 +267,41 @@ class AppState: ObservableObject {
         }
     }
     
+    func updateIdentityMainName(id: Data, mainName: String?) {
+        guard let dataManager = dataManager else { return }
+        
+        if let index = identities.firstIndex(where: { $0.id == id }) {
+            let oldIdentity = identities[index]
+            let updatedIdentity = IdentityModel(
+                id: oldIdentity.id,
+                balance: oldIdentity.balance,
+                isLocal: oldIdentity.isLocal,
+                alias: oldIdentity.alias,
+                type: oldIdentity.type,
+                privateKeys: oldIdentity.privateKeys,
+                votingPrivateKey: oldIdentity.votingPrivateKey,
+                ownerPrivateKey: oldIdentity.ownerPrivateKey,
+                payoutPrivateKey: oldIdentity.payoutPrivateKey,
+                dpnsName: oldIdentity.dpnsName,
+                mainDpnsName: mainName,
+                dpnsNames: oldIdentity.dpnsNames,
+                contestedDpnsNames: oldIdentity.contestedDpnsNames,
+                contestedDpnsInfo: oldIdentity.contestedDpnsInfo,
+                publicKeys: oldIdentity.publicKeys
+            )
+            identities[index] = updatedIdentity
+            
+            // Update in persistence
+            Task {
+                do {
+                    try dataManager.saveIdentity(updatedIdentity)
+                } catch {
+                    print("Error updating identity main name: \(error)")
+                }
+            }
+        }
+    }
+    
     func updateIdentityDPNSNames(id: Data, dpnsNames: [String], contestedNames: [String], contestedInfo: [String: Any]) {
         guard let dataManager = dataManager else { return }
         
@@ -328,6 +363,7 @@ class AppState: ObservableObject {
                 ownerPrivateKey: oldIdentity.ownerPrivateKey,
                 payoutPrivateKey: oldIdentity.payoutPrivateKey,
                 dpnsName: oldIdentity.dpnsName,
+                mainDpnsName: oldIdentity.mainDpnsName,
                 dpnsNames: oldIdentity.dpnsNames,
                 contestedDpnsNames: oldIdentity.contestedDpnsNames,
                 contestedDpnsInfo: oldIdentity.contestedDpnsInfo,

@@ -2,6 +2,20 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
+// Holds temporary state for state transitions
+@MainActor
+class TransitionState: ObservableObject {
+    @Published var documentPrice: UInt64?
+    @Published var canPurchaseDocument: Bool = false
+    @Published var documentPurchaseError: String?
+    
+    func reset() {
+        documentPrice = nil
+        canPurchaseDocument = false
+        documentPurchaseError = nil
+    }
+}
+
 @MainActor
 class UnifiedAppState: ObservableObject {
     @Published var isInitialized = false
@@ -18,6 +32,9 @@ class UnifiedAppState: ObservableObject {
     
     // SwiftData container
     let modelContainer: ModelContainer
+    
+    // Transition state for temporary data
+    @Published var transitionState = TransitionState()
     
     // Computed property for easy SDK access
     var sdk: SDK? {

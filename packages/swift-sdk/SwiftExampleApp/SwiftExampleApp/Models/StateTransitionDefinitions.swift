@@ -408,18 +408,13 @@ struct TransitionDefinitions {
                 ),
                 TransitionInput(
                     name: "documentId",
-                    type: "documentPicker",
+                    type: "documentWithPrice",
                     label: "Document ID",
                     required: true,
-                    placeholder: "Enter or search for document ID"
-                ),
-                TransitionInput(
-                    name: "price",
-                    type: "number",
-                    label: "Price (credits)",
-                    required: true,
-                    help: "The price to pay for the document in credits"
+                    placeholder: "Enter document ID to fetch price",
+                    help: "Enter a valid document ID to automatically fetch its price"
                 )
+                // Price field removed - will be auto-fetched from document
             ]
         ),
         

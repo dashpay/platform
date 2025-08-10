@@ -12,6 +12,7 @@ final class PersistentIdentity {
     var isLocal: Bool
     var alias: String?
     var dpnsName: String?
+    var mainDpnsName: String?
     var identityType: String
     
     // MARK: - Special Key Storage (stored in keychain)
@@ -42,6 +43,7 @@ final class PersistentIdentity {
         isLocal: Bool = true,
         alias: String? = nil,
         dpnsName: String? = nil,
+        mainDpnsName: String? = nil,
         identityType: IdentityType = .user,
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
@@ -54,6 +56,7 @@ final class PersistentIdentity {
         self.isLocal = isLocal
         self.alias = alias
         self.dpnsName = dpnsName
+        self.mainDpnsName = mainDpnsName
         self.identityType = identityType.rawValue
         self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
         self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
@@ -144,6 +147,7 @@ extension PersistentIdentity {
             ownerPrivateKey: ownerKey,
             payoutPrivateKey: payoutKey,
             dpnsName: dpnsName,
+            mainDpnsName: mainDpnsName,
             publicKeys: publicKeyModels
         )
     }
@@ -172,6 +176,7 @@ extension PersistentIdentity {
             isLocal: model.isLocal,
             alias: model.alias,
             dpnsName: model.dpnsName,
+            mainDpnsName: model.mainDpnsName,
             identityType: model.type,
             votingPrivateKeyIdentifier: votingKeyId,
             ownerPrivateKeyIdentifier: ownerKeyId,

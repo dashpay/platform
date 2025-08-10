@@ -8,7 +8,7 @@ extension SDK {
     // MARK: - Helper Functions
     
     /// Process DashSDKResult and extract JSON
-    private func processJSONResult(_ result: DashSDKResult) throws -> [String: Any] {
+    internal func processJSONResult(_ result: DashSDKResult) throws -> [String: Any] {
         print("🔵 processJSONResult: Processing result...")
         
         if let error = result.error {
@@ -534,15 +534,53 @@ extension SDK {
         let documentInfo = infoPtr.pointee
         
         // Build JSON representation from document info fields
-        let json: [String: Any] = [
-            "id": documentInfo.id != nil ? String(cString: documentInfo.id!) : "",
-            "ownerId": documentInfo.owner_id != nil ? String(cString: documentInfo.owner_id!) : "",
-            "dataContractId": documentInfo.data_contract_id != nil ? String(cString: documentInfo.data_contract_id!) : "",
-            "documentType": documentInfo.document_type != nil ? String(cString: documentInfo.document_type!) : "",
-            "revision": documentInfo.revision,
-            "createdAt": documentInfo.created_at,
-            "updatedAt": documentInfo.updated_at
+        var json: [String: Any] = [
+            "$id": documentInfo.id != nil ? String(cString: documentInfo.id!) : "",
+            "$ownerId": documentInfo.owner_id != nil ? String(cString: documentInfo.owner_id!) : "",
+            "$dataContractId": documentInfo.data_contract_id != nil ? String(cString: documentInfo.data_contract_id!) : "",
+            "$type": documentInfo.document_type != nil ? String(cString: documentInfo.document_type!) : "",
+            "$revision": documentInfo.revision,
+            "$createdAt": documentInfo.created_at,
+            "$updatedAt": documentInfo.updated_at
         ]
+        
+        // Add data fields
+        if documentInfo.data_fields_count > 0 && documentInfo.data_fields != nil {
+            for i in 0..<Int(documentInfo.data_fields_count) {
+                let field = documentInfo.data_fields!.advanced(by: i).pointee
+                
+                let fieldName = field.name != nil ? String(cString: field.name!) : ""
+                let fieldValueStr = field.value != nil ? String(cString: field.value!) : ""
+                
+                // Convert field value based on type
+                let fieldValue: Any
+                switch field.field_type {
+                case FieldInteger:
+                    fieldValue = field.int_value
+                case FieldFloat:
+                    fieldValue = field.float_value
+                case FieldBoolean:
+                    fieldValue = field.bool_value
+                case FieldArray, FieldObject:
+                    // Parse JSON string
+                    if let data = fieldValueStr.data(using: String.Encoding.utf8),
+                       let parsed = try? JSONSerialization.jsonObject(with: data) {
+                        fieldValue = parsed
+                    } else {
+                        fieldValue = fieldValueStr
+                    }
+                case FieldNull:
+                    fieldValue = NSNull()
+                case FieldBytes:
+                    // For bytes, we get hex string - could convert back to Data if needed
+                    fieldValue = fieldValueStr
+                default: // FieldString or unknown
+                    fieldValue = fieldValueStr
+                }
+                
+                json[fieldName] = fieldValue
+            }
+        }
         
         return json
     }

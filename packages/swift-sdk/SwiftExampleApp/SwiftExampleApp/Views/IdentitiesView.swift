@@ -65,7 +65,7 @@ struct IdentitiesView: View {
                         }
                         
                         // Also try to fetch DPNS name if we don't have one
-                        if identity.dpnsName == nil {
+                        if identity.dpnsName == nil && identity.mainDpnsName == nil {
                             do {
                                 let usernames = try await sdk.dpnsGetUsername(
                                     identityId: identity.idString,
@@ -119,20 +119,26 @@ struct IdentityRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        // Show DPNS name if available, otherwise alias or "Identity"
-                        if let dpnsName = displayIdentity.dpnsName {
-                            Text(dpnsName)
+                        // Show display name with star if main name is selected
+                        HStack(spacing: 4) {
+                            Text(displayIdentity.displayName)
                                 .font(.headline)
-                                .foregroundColor(.blue)
+                                .foregroundColor(displayIdentity.mainDpnsName != nil || displayIdentity.dpnsName != nil ? .blue : .primary)
                             
-                            if let alias = displayIdentity.alias {
-                                Text(alias)
+                            // Show star icon if this is the selected main name
+                            if displayIdentity.mainDpnsName != nil {
+                                Image(systemName: "star.fill")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.yellow)
                             }
-                        } else {
-                            Text(displayIdentity.alias ?? "Identity")
-                                .font(.headline)
+                        }
+                        
+                        // Show alias as subtitle if we're displaying a DPNS name
+                        if (displayIdentity.mainDpnsName != nil || displayIdentity.dpnsName != nil),
+                           let alias = displayIdentity.alias {
+                            Text(alias)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
                     
@@ -217,7 +223,7 @@ struct IdentityRow: View {
             }
             
             // Also try to fetch DPNS name if we don't have one
-            if identity.dpnsName == nil {
+            if identity.dpnsName == nil && identity.mainDpnsName == nil {
                 do {
                     let usernames = try await sdk.dpnsGetUsername(
                         identityId: identity.idString,

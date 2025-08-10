@@ -174,6 +174,9 @@ struct TransitionInputView: View {
             case "documentPicker":
                 documentPicker()
                 
+            case "documentWithPrice":
+                documentWithPricePicker()
+                
             default:
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -456,5 +459,22 @@ struct TransitionInputView: View {
     private func documentPicker() -> some View {
         TextField(input.placeholder ?? "Enter document ID", text: $value)
             .textFieldStyle(RoundedBorderTextFieldStyle())
+    }
+    
+    @ViewBuilder
+    private func documentWithPricePicker() -> some View {
+        // Extract contract ID, document type, and identity ID from action field (format: "contractId|documentType|identityId")
+        let parts = (input.action ?? "").split(separator: "|").map(String.init)
+        let contractId = parts.count > 0 ? parts[0] : ""
+        let documentType = parts.count > 1 ? parts[1] : ""
+        let identityId = parts.count > 2 ? parts[2] : nil
+        
+        DocumentWithPriceView(
+            documentId: $value,
+            contractId: contractId,
+            documentType: documentType,
+            currentIdentityId: identityId
+        )
+        .environmentObject(appState)
     }
 }

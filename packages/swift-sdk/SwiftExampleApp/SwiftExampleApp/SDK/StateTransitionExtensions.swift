@@ -8,23 +8,38 @@ import DashSDKFFI
 /// Returns the key we most likely have the private key for
 private func selectSigningKey(from identity: DPPIdentity, operation: String) -> IdentityPublicKey? {
     // IMPORTANT: We need to use the key that we actually have the private key for
-    // Look for the critical key (ID 1) first, since that's typically what we have the private key for
-    let criticalKey = identity.publicKeys.values.first { key in
-        key.id == 1 && key.securityLevel == .critical
+    // First, check which keys we have private keys for
+    print("🔑 [\(operation)] Checking available private keys for identity \(identity.id.toBase58String())")
+    
+    var keysWithPrivateKeys: [IdentityPublicKey] = []
+    for key in identity.publicKeys.values {
+        let privateKey = KeychainManager.shared.retrievePrivateKey(
+            identityId: identity.id,
+            keyIndex: Int32(key.id)
+        )
+        if privateKey != nil {
+            keysWithPrivateKeys.append(key)
+            print("✅ [\(operation)] Found private key for key ID \(key.id) (purpose: \(key.purpose), security: \(key.securityLevel))")
+        } else {
+            print("❌ [\(operation)] No private key for key ID \(key.id)")
+        }
     }
     
+    guard !keysWithPrivateKeys.isEmpty else {
+        print("❌ [\(operation)] No keys with available private keys found!")
+        return nil
+    }
+    
+    // Prefer critical key if we have its private key
+    let criticalKey = keysWithPrivateKeys.first { $0.securityLevel == .critical }
+    
     // Fall back to authentication key, then any key
-    let keyToUse = criticalKey ?? identity.publicKeys.values.first { key in
+    let keyToUse = criticalKey ?? keysWithPrivateKeys.first { key in
         key.purpose == .authentication
-    } ?? identity.publicKeys.values.first
+    } ?? keysWithPrivateKeys.first
     
     if let key = keyToUse {
-        if criticalKey != nil {
-            print("📝 [\(operation)] Using CRITICAL key (ID 1) - ID: \(key.id), purpose: \(key.purpose), type: \(key.keyType), security: \(key.securityLevel)")
-        } else {
-            print("⚠️ [\(operation)] WARNING: Using non-critical key - ID: \(key.id), purpose: \(key.purpose), type: \(key.keyType), security: \(key.securityLevel)")
-            print("⚠️ [\(operation)] This may fail if you don't have the private key for this key!")
-        }
+        print("📝 [\(operation)] Selected key ID \(key.id) - purpose: \(key.purpose), type: \(key.keyType), security: \(key.securityLevel)")
     } else {
         print("❌ [\(operation)] No public key found for identity")
     }
@@ -1121,27 +1136,158 @@ extension SDK {
         print("🛍️ [DOCUMENT PURCHASE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
         print("🛍️ [DOCUMENT PURCHASE] Purchaser: \(purchaserIdentity.id.toBase58String()), Price: \(price)")
         
+        guard let handle = self.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async { [weak self] in
-                guard let self = self, let handle = self.handle else {
-                    continuation.resume(throwing: SDKError.invalidState("SDK not initialized"))
+            Task {
+                // Convert strings to C strings
+                guard let contractIdCString = contractId.cString(using: .utf8),
+                      let documentTypeCString = documentType.cString(using: .utf8),
+                      let documentIdCString = documentId.cString(using: .utf8),
+                      let purchaserIdCString = purchaserIdentity.id.toBase58String().cString(using: .utf8) else {
+                    continuation.resume(throwing: SDKError.serializationError("Failed to convert strings to C strings"))
                     return
                 }
                 
-                // TODO: Implement full document purchase with logging:
-                // 1. Fetch document with timing
-                // 2. Fetch contract with timing
-                // 3. Fetch purchaser identity with timing
-                // 4. Get public key with timing
-                // 5. Call dash_sdk_document_purchase_and_wait with network timing
+                // Select signing key
+                guard let keyToUse = selectSigningKey(from: purchaserIdentity, operation: "DOCUMENT PURCHASE") else {
+                    continuation.resume(throwing: SDKError.invalidParameter("No suitable key found for signing"))
+                    return
+                }
                 
-                print("⚠️ [DOCUMENT PURCHASE] Not fully implemented yet")
-                let totalTime = Date().timeIntervalSince(startTime)
-                print("⚠️ [DOCUMENT PURCHASE] Total time: \(totalTime) seconds")
+                // Create public key handle
+                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT PURCHASE") else {
+                    continuation.resume(throwing: SDKError.internalError("Failed to create key handle"))
+                    return
+                }
                 
-                continuation.resume(throwing: SDKError.notImplemented(
-                    "Document purchase implementation similar to replace - handles are available"
-                ))
+                defer {
+                    dash_sdk_identity_public_key_destroy(keyHandle)
+                }
+                
+                print("📝 [DOCUMENT PURCHASE] Step 1: Fetching contract...")
+                let contractFetchStartTime = Date()
+                
+                // First fetch the data contract
+                let contractResult = dash_sdk_data_contract_fetch(handle, contractIdCString)
+                
+                if let error = contractResult.error {
+                    let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to fetch contract: \(errorMessage)"))
+                    return
+                }
+                
+                guard let contractHandle = contractResult.data else {
+                    continuation.resume(throwing: SDKError.notFound("Data contract not found"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+                }
+                
+                print("📝 [DOCUMENT PURCHASE] Contract fetched in \(Date().timeIntervalSince(contractFetchStartTime)) seconds")
+                
+                // Fetch the document to purchase
+                print("📝 [DOCUMENT PURCHASE] Step 2: Fetching document...")
+                let documentFetchStart = Date()
+                
+                let documentResult = dash_sdk_document_fetch(handle, OpaquePointer(contractHandle), documentTypeCString, documentIdCString)
+                
+                if let error = documentResult.error {
+                    let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+                    dash_sdk_error_free(error)
+                    continuation.resume(throwing: SDKError.internalError("Failed to fetch document: \(errorMessage)"))
+                    return
+                }
+                
+                guard let documentHandle = documentResult.data else {
+                    continuation.resume(throwing: SDKError.notFound("Document not found"))
+                    return
+                }
+                
+                defer {
+                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                }
+                
+                print("📝 [DOCUMENT PURCHASE] Document fetched in \(Date().timeIntervalSince(documentFetchStart)) seconds")
+                
+                // Call the document purchase function and broadcast
+                print("📝 [DOCUMENT PURCHASE] Step 3: Executing purchase and broadcasting...")
+                print("🚀 [DOCUMENT PURCHASE] This will broadcast the state transition to the network")
+                let purchaseStartTime = Date()
+                
+                let result = dash_sdk_document_purchase_and_wait(
+                    handle,
+                    OpaquePointer(documentHandle),
+                    contractIdCString,
+                    documentTypeCString,
+                    price,
+                    purchaserIdCString,
+                    keyHandle,
+                    signer,
+                    nil,  // token_payment_info - null for now
+                    nil,  // put_settings - null for now
+                    nil   // state_transition_creation_options - null for now
+                )
+                
+                print("📝 [DOCUMENT PURCHASE] Purchase executed in \(Date().timeIntervalSince(purchaseStartTime)) seconds")
+                print("📝 [DOCUMENT PURCHASE] Result data type: \(result.data_type)")
+                
+                if let error = result.error {
+                    let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+                    dash_sdk_error_free(error)
+                    
+                    print("❌ [DOCUMENT PURCHASE] Failed: \(errorMessage)")
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("❌ [DOCUMENT PURCHASE] Total time: \(totalTime) seconds")
+                    
+                    continuation.resume(throwing: SDKError.internalError("Document purchase failed: \(errorMessage)"))
+                    return
+                }
+                
+                // The result should contain the purchased document
+                if let documentData = result.data {
+                    // We received the purchased document back
+                    let purchasedDocHandle = OpaquePointer(documentData)
+                    
+                    // Get info about the purchased document
+                    var purchasedDocInfo: [String: Any] = [:]
+                    if let info = dash_sdk_document_get_info(purchasedDocHandle) {
+                        let docInfo = info.pointee
+                        purchasedDocInfo["id"] = String(cString: docInfo.id)
+                        purchasedDocInfo["owner_id"] = String(cString: docInfo.owner_id)
+                        purchasedDocInfo["revision"] = docInfo.revision
+                        dash_sdk_document_info_free(info)
+                    }
+                    
+                    // Clean up the purchased document handle
+                    dash_sdk_document_destroy(handle, purchasedDocHandle)
+                    
+                    let totalTime = Date().timeIntervalSince(startTime)
+                    print("✅ [DOCUMENT PURCHASE] Purchase completed and confirmed in \(totalTime) seconds")
+                    print("📦 [DOCUMENT PURCHASE] Document successfully purchased and ownership transferred")
+                    print("📄 [DOCUMENT PURCHASE] New owner: \(purchasedDocInfo["owner_id"] ?? "unknown")")
+                    
+                    // Return success with the purchased document info
+                    continuation.resume(returning: [
+                        "success": true,
+                        "message": "Document purchased successfully",
+                        "transitionType": "documentPurchase",
+                        "contractId": contractId,
+                        "documentType": documentType,
+                        "documentId": documentId,
+                        "price": price,
+                        "purchasedDocument": purchasedDocInfo
+                    ])
+                } else {
+                    print("❌ [DOCUMENT PURCHASE] No data returned from purchase")
+                    continuation.resume(throwing: SDKError.internalError("No data returned from document purchase"))
+                    return
+                }
             }
         }
     }

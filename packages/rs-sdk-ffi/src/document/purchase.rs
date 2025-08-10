@@ -3,6 +3,7 @@
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
 };
+use hex;
 use crate::sdk::SDKWrapper;
 use crate::types::{
     DashSDKPutSettings, DashSDKResultDataType, DashSDKStateTransitionCreationOptions,
@@ -10,7 +11,7 @@ use crate::types::{
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
-use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentPurchaseTransitionBuilder;
@@ -164,9 +165,21 @@ pub unsafe extern "C" fn dash_sdk_document_purchase(
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
-        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+        let serialized = bincode::encode_to_vec(&state_transition, config).map_err(|e| {
             FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
-        })
+        })?;
+        
+        // Log the hex of the state transition for debugging
+        tracing::info!("📦 [DOCUMENT PURCHASE FFI] State transition created:");
+        tracing::info!("   Contract ID: {}", contract_id_str);
+        tracing::info!("   Document Type: {}", document_type_name_str);
+        tracing::info!("   Document ID: {}", document.id());
+        tracing::info!("   Purchaser ID: {}", purchaser_id_str);
+        tracing::info!("   Price: {}", price);
+        tracing::info!("   State transition hex: {}", hex::encode(&serialized));
+        tracing::info!("   State transition size: {} bytes", serialized.len());
+        
+        Ok(serialized)
     });
 
     match result {

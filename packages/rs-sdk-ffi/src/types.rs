@@ -206,6 +206,37 @@ pub struct DashSDKIdentityInfo {
     pub public_keys_count: u32,
 }
 
+/// Document field value types
+#[repr(C)]
+pub enum DashSDKDocumentFieldType {
+    FieldString = 0,
+    FieldInteger = 1,
+    FieldFloat = 2,
+    FieldBoolean = 3,
+    FieldBytes = 4,
+    FieldArray = 5,
+    FieldObject = 6,
+    FieldNull = 7,
+}
+
+/// Document field value
+#[repr(C)]
+pub struct DashSDKDocumentField {
+    /// Field name (null-terminated)
+    pub name: *mut c_char,
+    /// Field type
+    pub field_type: DashSDKDocumentFieldType,
+    /// Field value as string representation (null-terminated)
+    /// For complex types, this will be JSON-encoded
+    pub value: *mut c_char,
+    /// Raw integer value (for Integer type)
+    pub int_value: i64,
+    /// Raw float value (for Float type)
+    pub float_value: f64,
+    /// Raw boolean value (for Boolean type)
+    pub bool_value: bool,
+}
+
 /// Document information
 #[repr(C)]
 pub struct DashSDKDocumentInfo {
@@ -223,6 +254,10 @@ pub struct DashSDKDocumentInfo {
     pub created_at: i64,
     /// Updated at timestamp (milliseconds since epoch)
     pub updated_at: i64,
+    /// Number of data fields
+    pub data_fields_count: usize,
+    /// Array of data fields
+    pub data_fields: *mut DashSDKDocumentField,
 }
 
 /// Put settings for platform operations
@@ -331,10 +366,22 @@ pub unsafe extern "C" fn dash_sdk_document_info_free(info: *mut DashSDKDocumentI
     }
 
     let info = Box::from_raw(info);
+    
+    // Free string fields
     dash_sdk_string_free(info.id);
     dash_sdk_string_free(info.owner_id);
     dash_sdk_string_free(info.data_contract_id);
     dash_sdk_string_free(info.document_type);
+    
+    // Free data fields
+    if !info.data_fields.is_null() && info.data_fields_count > 0 {
+        for i in 0..info.data_fields_count {
+            let field = info.data_fields.add(i);
+            dash_sdk_string_free((*field).name);
+            dash_sdk_string_free((*field).value);
+        }
+        let _ = Vec::from_raw_parts(info.data_fields, info.data_fields_count, info.data_fields_count);
+    }
 }
 
 /// Free an identity balance map

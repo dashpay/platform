@@ -14,6 +14,7 @@ struct IdentityDetailView: View {
     @State private var newAlias = ""
     @State private var isLoadingDPNS = false
     @State private var showingRegisterName = false
+    @State private var showingSelectMainName = false
     
     // Computed properties that get DPNS names from the identity model
     private var dpnsNames: [String] {
@@ -39,7 +40,22 @@ struct IdentityDetailView: View {
                                 .font(.headline)
                         }
                     
-                    if let dpnsName = identity.dpnsName {
+                    // Show the main name if selected, otherwise show first registered name
+                    if let mainName = identity.mainDpnsName {
+                        HStack {
+                            Label(mainName, systemImage: "star.fill")
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                            Spacer()
+                            Text("Main")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.blue)
+                                .cornerRadius(4)
+                        }
+                    } else if let dpnsName = identity.dpnsName {
                         Label(dpnsName, systemImage: "at")
                             .font(.subheadline)
                             .foregroundColor(.blue)
@@ -118,6 +134,17 @@ struct IdentityDetailView: View {
                         }
                     }
                     
+                    // Select main name button (only show if user has registered names)
+                    if !dpnsNames.isEmpty {
+                        Button(action: { showingSelectMainName = true }) {
+                            HStack {
+                                Image(systemName: "star.circle")
+                                Text("Select Main Name")
+                            }
+                            .foregroundColor(.purple)
+                        }
+                    }
+                    
                     // Register name button
                     if !identity.isLocal {
                         Button(action: { showingRegisterName = true }) {
@@ -191,6 +218,10 @@ struct IdentityDetailView: View {
         }
         .sheet(isPresented: $showingRegisterName) {
             RegisterNameView(identity: identity)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showingSelectMainName) {
+            SelectMainNameView(identity: identity)
                 .environmentObject(appState)
         }
         .onAppear {
@@ -430,6 +461,10 @@ struct EditAliasView: View {
             ownerPrivateKey: identity.ownerPrivateKey,
             payoutPrivateKey: identity.payoutPrivateKey,
             dpnsName: identity.dpnsName,
+            mainDpnsName: identity.mainDpnsName,
+            dpnsNames: identity.dpnsNames,
+            contestedDpnsNames: identity.contestedDpnsNames,
+            contestedDpnsInfo: identity.contestedDpnsInfo,
             publicKeys: identity.publicKeys
         )
         

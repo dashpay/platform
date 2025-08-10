@@ -28,6 +28,24 @@ struct TransitionDetailView: View {
         transitionKey != "identityCreate"
     }
     
+    // Computed property that properly observes state changes
+    var isButtonEnabled: Bool {
+        if transitionKey == "documentPurchase" {
+            // For document purchase, enable if all fields are filled AND canPurchaseDocument is true
+            let hasContractId = !formInputs["contractId", default: ""].isEmpty
+            let hasDocumentType = !formInputs["documentType", default: ""].isEmpty
+            let hasDocumentId = !formInputs["documentId", default: ""].isEmpty
+            let canPurchase = appState.transitionState.canPurchaseDocument
+            
+            print("DEBUG: Button enabled check - contract: \(hasContractId), type: \(hasDocumentType), id: \(hasDocumentId), canPurchase: \(canPurchase), executing: \(isExecuting)")
+            
+            // Enable if all fields are filled and document can be purchased
+            return hasContractId && hasDocumentType && hasDocumentId && canPurchase && !isExecuting
+        } else {
+            return isFormValid() && !isExecuting
+        }
+    }
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -120,7 +138,13 @@ struct TransitionDetailView: View {
         }
     }
     
+    @ViewBuilder
     private var executeButton: some View {
+        // Explicitly read the state to ensure SwiftUI tracks the dependency
+        let canPurchase = transitionKey == "documentPurchase" ? appState.transitionState.canPurchaseDocument : true
+        let enabled = isButtonEnabled
+        let _ = print("DEBUG: executeButton render - isButtonEnabled: \(enabled), canPurchase: \(canPurchase), background: \(enabled ? "blue" : "gray")")
+        
         Button(action: executeTransition) {
             if isExecuting {
                 ProgressView()
@@ -133,10 +157,10 @@ struct TransitionDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .background(isExecuting ? Color.gray : Color.blue)
+        .background(enabled ? Color.blue : Color.gray)
         .foregroundColor(.white)
         .cornerRadius(10)
-        .disabled(isExecuting || !isFormValid())
+        .disabled(!enabled)
     }
     
     private var resultView: some View {
@@ -264,6 +288,9 @@ struct TransitionDetailView: View {
         formInputs.removeAll()
         checkboxInputs.removeAll()
         
+        // Reset transition state
+        appState.transitionState.reset()
+        
         // Set default values
         if let transition = getTransitionDefinition(transitionKey) {
             for input in transition.inputs {
@@ -286,6 +313,46 @@ struct TransitionDetailView: View {
     private func isFormValid() -> Bool {
         guard let transition = getTransitionDefinition(transitionKey) else { return false }
         
+        // Special validation for document purchase
+        if transitionKey == "documentPurchase" {
+            // Debug: Show all form inputs
+            print("DEBUG: Current formInputs: \(formInputs)")
+            print("DEBUG: selectedContractId: \(selectedContractId)")
+            print("DEBUG: selectedDocumentType: \(selectedDocumentType)")
+            
+            // Check if all required fields are filled
+            for input in transition.inputs {
+                if input.required {
+                    var value = formInputs[input.name] ?? ""
+                    
+                    // Special handling for contract and document type - check both formInputs and selected* variables
+                    if input.name == "contractId" && value.isEmpty {
+                        value = selectedContractId
+                        if !value.isEmpty {
+                            formInputs["contractId"] = value  // Update formInputs
+                        }
+                    }
+                    if input.name == "documentType" && value.isEmpty {
+                        value = selectedDocumentType
+                        if !value.isEmpty {
+                            formInputs["documentType"] = value  // Update formInputs
+                        }
+                    }
+                    
+                    if value.isEmpty {
+                        print("DEBUG: Form invalid - missing required field: \(input.name), value: '\(value)'")
+                        return false
+                    }
+                }
+            }
+            // Also check if the document can be purchased
+            // Force re-evaluation of the published property
+            let canPurchase = appState.transitionState.canPurchaseDocument
+            print("DEBUG: Document purchase form validation - canPurchase: \(canPurchase), price: \(String(describing: appState.transitionState.documentPrice))")
+            return canPurchase
+        }
+        
+        // Standard validation for other transitions
         for input in transition.inputs {
             if input.required {
                 if input.type == "checkbox" {
@@ -1113,7 +1180,8 @@ struct TransitionDetailView: View {
     }
     
     private func executeDocumentPurchase(sdk: SDK) async throws -> Any {
-        guard !selectedIdentityId.isEmpty else {
+        guard !selectedIdentityId.isEmpty,
+              let purchaserIdentity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
             throw SDKError.invalidParameter("No identity selected")
         }
         
@@ -1129,12 +1197,71 @@ struct TransitionDetailView: View {
             throw SDKError.invalidParameter("Document ID is required")
         }
         
-        guard let priceString = formInputs["price"],
-              let _ = UInt64(priceString) else {
-            throw SDKError.invalidParameter("Invalid price")
+        // Check if we can purchase (this should already be validated by the button state)
+        if let error = appState.transitionState.documentPurchaseError {
+            throw SDKError.invalidParameter(error)
         }
         
-        throw SDKError.notImplemented("Document purchase is prepared but FFI bindings not yet exposed to Swift")
+        // Get the price that was fetched by DocumentWithPriceView
+        guard let price = appState.transitionState.documentPrice else {
+            throw SDKError.invalidParameter("Document price not available. Please enter a valid document ID to fetch its price.")
+        }
+        
+        // Validate that the document is actually for sale (price > 0)
+        if price == 0 {
+            throw SDKError.invalidParameter("This document is not for sale")
+        }
+        
+        // Get the selected signing key
+        guard let selectedKey = purchaserIdentity.publicKeys.first(where: { key in
+            // Check if we have the private key for this public key
+            let privateKey = KeychainManager.shared.retrievePrivateKey(identityId: purchaserIdentity.id, keyIndex: Int32(key.id))
+            return privateKey != nil
+        }) else {
+            throw SDKError.invalidParameter("No key with available private key found for signing")
+        }
+        
+        // Get the private key data
+        guard let keyData = KeychainManager.shared.retrievePrivateKey(identityId: purchaserIdentity.id, keyIndex: Int32(selectedKey.id)) else {
+            throw SDKError.invalidParameter("No suitable key with available private key found for signing")
+        }
+      
+      // Use the DPPIdentity
+      let fromIdentity = DPPIdentity(
+          id: purchaserIdentity.id,
+          publicKeys: Dictionary(uniqueKeysWithValues: purchaserIdentity.publicKeys.map { ($0.id, $0) }),
+          balance: purchaserIdentity.balance,
+          revision: 0
+      )
+        
+        // Create signer using the private key
+        let signerResult = keyData.withUnsafeBytes { keyBytes in
+            dash_sdk_signer_create_from_private_key(
+                keyBytes.bindMemory(to: UInt8.self).baseAddress!,
+                UInt(keyData.count)
+            )
+        }
+        
+        guard signerResult.error == nil,
+              let signer = signerResult.data else {
+            throw SDKError.internalError("Failed to create signer")
+        }
+        
+        defer {
+            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+        }
+        
+        // Call the document purchase function
+        let result = try await sdk.documentPurchase(
+            contractId: contractId,
+            documentType: documentType,
+            documentId: documentId,
+            purchaserIdentity: fromIdentity,
+            price: price,
+            signer: OpaquePointer(signer)!
+        )
+        
+        return result
     }
     
     private func executeDocumentReplace(sdk: SDK) async throws -> Any {
@@ -2015,6 +2142,26 @@ struct TransitionDetailView: View {
             )
         }
         
+        // For documentWithPrice picker, pass contract, document type, and identity ID in action field
+        if input.type == "documentWithPrice" {
+            let contractId = formInputs["contractId"] ?? ""
+            let documentType = formInputs["documentType"] ?? ""
+            let identityId = selectedIdentityId
+            return TransitionInput(
+                name: input.name,
+                type: input.type,
+                label: input.label,
+                required: input.required,
+                placeholder: input.placeholder,
+                help: input.help,
+                defaultValue: input.defaultValue,
+                options: input.options,
+                action: "\(contractId)|\(documentType)|\(identityId)",  // Pass all values separated by |
+                min: input.min,
+                max: input.max
+            )
+        }
+        
         // For contract picker, pass the transition context
         if input.name == "contractId" && input.type == "contractPicker" {
             return TransitionInput(
@@ -2099,6 +2246,8 @@ extension IdentityModel {
     var displayName: String {
         if let alias = alias, !alias.isEmpty {
             return alias
+        } else if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
+            return mainDpnsName
         } else if let dpnsName = dpnsName, !dpnsName.isEmpty {
             return dpnsName
         } else {
