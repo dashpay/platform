@@ -13,7 +13,6 @@ state-transitions = ["dpp/state-transitions", "dpp/bls-signatures", "dpp/state-t
 
 [dependencies]
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6", features = ["signer"] }
 dpp = { path = "../rs-dpp", default-features = false, features = ["ed25519-dalek"] }
 base64 = { version = "0.22.1" }
 hex = { version = "0.4.3" }

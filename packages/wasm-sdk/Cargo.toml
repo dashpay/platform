@@ -24,12 +24,11 @@ keywords-contract = ["dash-sdk/keywords-contract", "rs-sdk-trusted-context-provi
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", default-features = false }
+dash-sdk = { path = "../rs-sdk", features = ["serde"], default-features = false }
 simple-signer = { path = "../simple-signer" }
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.40-dev", features = ["std", "secp-recovery"] }
 web-sys = { version = "0.3.4", features = [
     'console',
     'Document',

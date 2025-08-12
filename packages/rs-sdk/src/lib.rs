@@ -77,6 +77,8 @@ pub use dpp;
 pub use drive;
 pub use drive_proof_verifier::types as query_types;
 pub use drive_proof_verifier::Error as ProofVerifierError;
+#[cfg(feature = "key-wallet")]
+pub use key_wallet;
 pub use rs_dapi_client as dapi_client;
 pub mod sync;
 

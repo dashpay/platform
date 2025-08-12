@@ -11,7 +11,7 @@ chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
-
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", features = ["std"], rev = "0901ab1188f1499f1ecf0fc6c60513501135a8f3", optional = true }
 dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
@@ -39,7 +39,7 @@ envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
 derive_more = { version = "1.0", features = ["from"] }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "0901ab1188f1499f1ecf0fc6c60513501135a8f3" }
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
@@ -127,6 +127,12 @@ token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
+
+key-wallet = ["dep:key-wallet"]
+bip38 = ["dep:key-wallet", "key-wallet/bip38"]
+serde = ["key-wallet/serde", "dep:serde", "dep:serde_json"]
+core-bincode = ["key-wallet/bincode", "dpp/core_bincode"]
+
 
 [[example]]
 

@@ -1,5 +1,6 @@
-use dashcore::signer;
-use dashcore::PrivateKey;
+use dpp::dashcore;
+use dpp::dashcore::signer;
+use dpp::dashcore::PrivateKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
@@ -86,7 +87,7 @@ impl Signer for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 => {
                 // Compare full public key
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_slice(
+                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
                     &self.private_key.inner.secret_bytes(),
                 ) {
                     Ok(sk) => sk,
@@ -100,10 +101,10 @@ impl Signer for SingleKeySigner {
             }
             KeyType::ECDSA_HASH160 => {
                 // Compare hash160 of public key
-                use dashcore::hashes::{hash160, Hash};
+                use dpp::dashcore::hashes::{hash160, Hash};
 
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_slice(
+                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
                     &self.private_key.inner.secret_bytes(),
                 ) {
                     Ok(sk) => sk,
