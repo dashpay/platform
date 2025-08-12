@@ -247,12 +247,28 @@ const testData = {
       },
       getTotalCreditsInPlatform: {
         testnet: [{}]
+      },
+      getCurrentQuorumsInfo: {
+        testnet: [{}] // No parameters needed
+      },
+      getPrefundedSpecializedBalance: {
+        testnet: [
+          { identityId: "AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT" }
+        ]
       }
     },
 
     protocol: {
       getProtocolVersionUpgradeState: {
-        testnet: [{}]
+        testnet: [{}] // No parameters needed
+      },
+      getProtocolVersionUpgradeVoteStatus: {
+        testnet: [
+          { 
+            startProTxHash: "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113",
+            count: 100
+          }
+        ]
       }
     },
 
@@ -263,8 +279,17 @@ const testData = {
       getEpochsInfo: {
         testnet: [
           {
-            epoch: 1000,
-            count: 5,
+            startEpoch: 1000,
+            count: 100,
+            ascending: true
+          }
+        ]
+      },
+      getFinalizedEpochInfos: {
+        testnet: [
+          {
+            startEpoch: 8635,
+            count: 100,
             ascending: true
           }
         ]
@@ -272,7 +297,55 @@ const testData = {
       getEvonodesProposedEpochBlocksByIds: {
         testnet: [
           {
+            epoch: 8635,
             ids: ["143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"]
+          }
+        ]
+      },
+      getEvonodesProposedEpochBlocksByRange: {
+        testnet: [
+          {
+            epoch: 8635,
+            limit: 10,
+            startAfter: "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113",
+            orderAscending: true
+          }
+        ]
+      }
+    },
+
+    dpns: {
+      getDpnsUsername: {
+        testnet: [
+          { 
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            limit: 10
+          }
+        ]
+      },
+      dpnsCheckAvailability: {
+        testnet: [
+          { label: "alice" },
+          { label: "test-username" },
+          { label: "available-name" }
+        ]
+      },
+      dpnsResolve: {
+        testnet: [
+          { name: "therea1s11mshaddy5" },
+          { name: "alice.dash" },
+          { name: "test-name" }
+        ]
+      },
+      dpnsSearch: {
+        testnet: [
+          { 
+            prefix: "the",
+            limit: 10
+          },
+          {
+            prefix: "test",
+            limit: 5
           }
         ]
       }
@@ -282,7 +355,138 @@ const testData = {
       getTokenStatuses: {
         testnet: [
           {
-            tokenIds: ["Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"]
+            tokenIds: ["Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", "H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy"]
+          }
+        ]
+      },
+      getTokenDirectPurchasePrices: {
+        testnet: [
+          {
+            tokenIds: ["H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy"]
+          }
+        ]
+      },
+      getTokenContractInfo: {
+        testnet: [
+          {
+            dataContractId: "H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy"
+          }
+        ]
+      },
+      getTokenPerpetualDistributionLastClaim: {
+        testnet: [
+          {
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            tokenId: "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+          }
+        ]
+      },
+      getTokenTotalSupply: {
+        testnet: [
+          {
+            tokenId: "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"
+          }
+        ]
+      }
+    },
+
+    voting: {
+      getContestedResources: {
+        testnet: [
+          {
+            documentTypeName: "domain",
+            dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            indexName: "parentNameAndLabel",
+            resultType: "documents",
+            allowIncludeLockedAndAbstainingVoteTally: false,
+            limit: 10,
+            offset: 0,
+            orderAscending: true
+          }
+        ]
+      },
+      getContestedResourceVoteState: {
+        testnet: [
+          {
+            dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            documentTypeName: "domain",
+            indexName: "parentNameAndLabel",
+            indexValues: ["dash", "alice"],
+            resultType: "contenders",
+            allowIncludeLockedAndAbstainingVoteTally: false,
+            count: 10,
+            orderAscending: true
+          }
+        ]
+      },
+      getContestedResourceVotersForIdentity: {
+        testnet: [
+          {
+            dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+            documentTypeName: "domain",
+            indexName: "parentNameAndLabel",
+            indexValues: ["dash", "alice"],
+            contestantId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            count: 10,
+            orderAscending: true
+          }
+        ]
+      },
+      getContestedResourceIdentityVotes: {
+        testnet: [
+          {
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            limit: 10,
+            offset: 0,
+            orderAscending: true
+          }
+        ]
+      },
+      getVotePollsByEndDate: {
+        testnet: [
+          {
+            limit: 10,
+            offset: 0,
+            orderAscending: true
+          }
+        ]
+      }
+    },
+
+    group: {
+      getGroupInfo: {
+        testnet: [
+          {
+            contractId: "49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N",
+            groupContractPosition: 0
+          }
+        ]
+      },
+      getGroupInfos: {
+        testnet: [
+          {
+            contractId: "49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N",
+            count: 100
+          }
+        ]
+      },
+      getGroupActions: {
+        testnet: [
+          {
+            contractId: "49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N",
+            groupContractPosition: 0,
+            status: "ACTIVE",
+            count: 10
+          }
+        ]
+      },
+      getGroupActionSigners: {
+        testnet: [
+          {
+            contractId: "49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N",
+            groupContractPosition: 0,
+            status: "ACTIVE",
+            actionId: "6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ"
           }
         ]
       }

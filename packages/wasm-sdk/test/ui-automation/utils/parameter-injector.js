@@ -40,7 +40,7 @@ class ParameterInjector {
     return {
       // Identity parameters
       'id': ['#id', '[name="id"]', 'input[placeholder*="Identity ID"]'],
-      'identityId': ['#identityId', '[name="identityId"]', 'input[placeholder*="Identity ID"]'],
+      'identityId': ['[name="identityId"]', '#identityId', 'input[placeholder*="Identity ID"]'],
       'identityIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="identityIds"] input[type="text"]', '.array-input-container[data-array-name="identityIds"] input', '#identityIds', '[name="identityIds"]', 'input[placeholder*="Identity IDs"]'],
       'identitiesIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="identitiesIds"] input[type="text"]', '.array-input-container[data-array-name="identitiesIds"] input', '#identitiesIds', '[name="identitiesIds"]', 'input[placeholder*="Identity IDs"]'],
       
@@ -62,6 +62,11 @@ class ParameterInjector {
       'tokenId': ['#tokenId', '[name="tokenId"]', 'input[placeholder*="Token ID"]'],
       'tokenIds': ['input[placeholder="Enter value"]', '.array-input-container input[type="text"]', '[data-array-name="tokenIds"] input[type="text"]', '.array-input-container[data-array-name="tokenIds"] input', '#tokenIds', '[name="tokenIds"]', 'input[placeholder*="Token IDs"]'],
       
+      // DPNS parameters
+      'label': ['#label', '[name="label"]', 'input[placeholder*="Username"]', 'input[placeholder*="Label"]'],
+      'name': ['#name', '[name="name"]', 'input[placeholder*="Name"]', 'input[placeholder*="DPNS"]'],
+      'prefix': ['#prefix', '[name="prefix"]', 'input[placeholder*="prefix"]', 'input[placeholder*="Prefix"]'],
+      
       // Query modifiers
       'limit': ['#limit', '[name="limit"]', 'input[placeholder*="limit" i]'],
       'offset': ['#offset', '[name="offset"]', 'input[placeholder*="offset" i]'],
@@ -71,6 +76,8 @@ class ParameterInjector {
       'epoch': ['#epoch', '[name="epoch"]', 'input[placeholder*="epoch" i]'],
       'startEpoch': ['#startEpoch', '[name="startEpoch"]'],
       'ascending': ['#ascending', '[name="ascending"]', 'input[type="checkbox"][name="ascending"]'],
+      'orderAscending': ['#orderAscending', '[name="orderAscending"]', 'input[type="checkbox"][name="orderAscending"]'],
+      'startAfter': ['#startAfter', '[name="startAfter"]', 'input[placeholder*="startAfter" i]'],
       
       // ProTx parameters
       'startProTxHash': ['#startProTxHash', '[name="startProTxHash"]'],
@@ -83,8 +90,21 @@ class ParameterInjector {
       // Voting parameters
       'documentTypeName': ['#documentTypeName', '[name="documentTypeName"]'],
       'indexName': ['#indexName', '[name="indexName"]'],
+      'indexValues': ['#indexValues', '[name="indexValues"]', 'textarea[name="indexValues"]', 'input[placeholder*="indexValues"]'],
       'resultType': ['#resultType', '[name="resultType"]'],
       'contestantId': ['#contestantId', '[name="contestantId"]'],
+      'allowIncludeLockedAndAbstainingVoteTally': ['#allowIncludeLockedAndAbstainingVoteTally', '[name="allowIncludeLockedAndAbstainingVoteTally"]', 'input[type="checkbox"][name="allowIncludeLockedAndAbstainingVoteTally"]'],
+      'startAtIdentifierInfo': ['#startAtIdentifierInfo', '[name="startAtIdentifierInfo"]'],
+      
+      // Group parameters
+      'contractId': ['#contractId', '[name="contractId"]', 'input[placeholder*="Contract ID"]'],
+      'groupContractPosition': ['#groupContractPosition', '[name="groupContractPosition"]'],
+      'startAtGroupContractPosition': ['#startAtGroupContractPosition', '[name="startAtGroupContractPosition"]'],
+      'startGroupContractPositionIncluded': ['#startGroupContractPositionIncluded', '[name="startGroupContractPositionIncluded"]', 'input[type="checkbox"][name="startGroupContractPositionIncluded"]'],
+      'status': ['#status', '[name="status"]', 'select[name="status"]'],
+      'actionId': ['#actionId', '[name="actionId"]'],
+      'startActionId': ['#startActionId', '[name="startActionId"]'],
+      'startActionIdIncluded': ['#startActionIdIncluded', '[name="startActionIdIncluded"]', 'input[type="checkbox"][name="startActionIdIncluded"]'],
       
       // Time parameters
       'startTimeMs': ['#startTimeMs', '[name="startTimeMs"]'],
