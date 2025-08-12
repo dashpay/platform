@@ -81,6 +81,19 @@ function validateBasicQueryResult(result) {
 }
 
 /**
+ * Helper function to validate basic query result properties for DPNS queries
+ * (allows "not found" as valid response)
+ * @param {Object} result - The query result object
+ */
+function validateBasicDpnsQueryResult(result) {
+  expect(result.success).toBe(true);
+  expect(result.result).toBeDefined();
+  expect(result.hasError).toBe(false);
+  expect(result.result).not.toContain('Error executing query');
+  expect(result.result).not.toContain('invalid');
+}
+
+/**
  * Helper function to validate proof content contains expected fields
  * @param {string} proofContent - The proof content string
  */
@@ -137,8 +150,14 @@ function validateDocumentResult(resultStr) {
   // Documents can be arrays or single objects
   if (Array.isArray(documentData)) {
     expect(documentData.length).toBeGreaterThanOrEqual(0);
+    // Validate each document in the array has ownerId
+    documentData.forEach(document => {
+      expect(document).toHaveProperty('ownerId');
+    });
   } else {
     expect(documentData).toBeInstanceOf(Object);
+    // Validate single document has ownerId
+    expect(documentData).toHaveProperty('ownerId');
   }
 }
 
@@ -170,6 +189,10 @@ function validateKeysResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const keysData = JSON.parse(resultStr);
   expect(keysData).toBeDefined();
+  keysData.forEach(key => {
+      expect(key).toHaveProperty('keyId')
+      expect(key).toHaveProperty('purpose')
+    });
 }
 
 function validateIdentitiesResult(resultStr) {
@@ -195,6 +218,10 @@ function validateBalancesResult(resultStr) {
   expect(balancesData).toBeDefined();
   if (Array.isArray(balancesData)) {
     expect(balancesData.length).toBeGreaterThanOrEqual(0);
+    // Validate each balance object in the array
+    balancesData.forEach(balanceObj => {
+      expect(balanceObj).toHaveProperty('balance');
+    });
   }
 }
 
@@ -203,18 +230,26 @@ function validateBalanceAndRevisionResult(resultStr) {
   const data = JSON.parse(resultStr);
   expect(data).toBeDefined();
   expect(data).toBeInstanceOf(Object);
+  expect(data).toHaveProperty('balance');
+  expect(data).toHaveProperty('revision');
 }
 
 function validateTokenBalanceResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const tokenData = JSON.parse(resultStr);
   expect(tokenData).toBeDefined();
+  tokenData.forEach(token => {
+    expect(token).toHaveProperty('balance');
+  });
 }
 
 function validateTokenInfoResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const tokenInfoData = JSON.parse(resultStr);
   expect(tokenInfoData).toBeDefined();
+  tokenInfoData.forEach(token => {
+    expect(token).toHaveProperty('isFrozen');
+  });
 }
 
 test.describe('WASM SDK Query Execution Tests', () => {
@@ -260,6 +295,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(() => JSON.parse(result.result)).not.toThrow();
       const contractsData = JSON.parse(result.result);
       expect(contractsData).toBeDefined();
+      expect(contractsData).toHaveProperty('dataContracts');
+      expect(typeof contractsData.dataContracts).toBe('object');
+      
+      // Validate each contract using validateContractResult
+      Object.values(contractsData.dataContracts).forEach(contract => {
+        validateContractResult(JSON.stringify(contract));
+      });
       
       console.log('✅ getDataContracts single view without proof confirmed');
     });
@@ -323,6 +365,13 @@ test.describe('WASM SDK Query Execution Tests', () => {
       expect(() => JSON.parse(result.result)).not.toThrow();
       const contractsData = JSON.parse(result.result);
       expect(contractsData).toBeDefined();
+      expect(contractsData).toHaveProperty('dataContracts');
+      expect(typeof contractsData.dataContracts).toBe('object');
+      
+      // Validate each contract using validateContractResult
+      Object.values(contractsData.dataContracts).forEach(contract => {
+        validateContractResult(JSON.stringify(contract));
+      });
       
       // If proof was enabled, verify split view
       if (proofEnabled) {
@@ -440,55 +489,520 @@ test.describe('WASM SDK Query Execution Tests', () => {
   });
 
   test.describe('System Queries', () => {
-    test('should execute getStatus query', async () => {
-      await wasmSdkPage.setupQuery('system', 'getStatus');
-      
-      // Status query needs no parameters
-      const result = await wasmSdkPage.executeQueryAndGetResult();
-      
-      // Status should generally succeed
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      expect(result.result).toContain('version');
-      
-    });
+    const systemQueries = [
+      { 
+        name: 'getStatus', 
+        hasProofSupport: false, // No proof function in WASM-SDK
+        needsParameters: false,
+        validateFn: (result) => {
+          expect(result).toBeDefined();
+          expect(result).toContain('version');
+        }
+      },
+      { 
+        name: 'getTotalCreditsInPlatform', 
+        hasProofSupport: true, 
+        needsParameters: false,
+        validateFn: (result) => {
+          expect(result).toBeDefined();
+          expect(result).toMatch(/\d+|credits|balance/i);
+        }
+      },
+      { 
+        name: 'getCurrentQuorumsInfo', 
+        hasProofSupport: false, // No proof function in WASM-SDK 
+        needsParameters: false,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const quorumsData = JSON.parse(result);
+          expect(quorumsData).toBeDefined();
+          expect(quorumsData).toHaveProperty('quorums');
+          expect(Array.isArray(quorumsData.quorums)).toBe(true);
+        }
+      },
+      { 
+        name: 'getPrefundedSpecializedBalance', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const balanceData = JSON.parse(result);
+          expect(balanceData).toBeDefined();
+          expect(balanceData).toHaveProperty('identityId');
+          expect(balanceData).toHaveProperty('balance');
+        }
+      }
+    ];
 
-    test('should execute getCurrentEpoch query', async () => {
-      await wasmSdkPage.setupQuery('epoch', 'getCurrentEpoch');
-      
-      const result = await wasmSdkPage.executeQueryAndGetResult();
-      
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      
-      // Should contain epoch data (number or JSON with epoch info)
-      expect(result.result).toMatch(/\d+|epoch/i);
-      
-    });
+    systemQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('system', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('system', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
 
-    test('should execute getTotalCreditsInPlatform query', async () => {
-      await wasmSdkPage.setupQuery('system', 'getTotalCreditsInPlatform');
-      
-      const result = await wasmSdkPage.executeQueryAndGetResult();
-      
-      // Verify query executed successfully
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      
-      // Verify the result is not an error message
-      expect(result.hasError).toBe(false);
-      expect(result.result).not.toContain('Error executing query');
-      expect(result.result).not.toContain('not found');
-      
-      // Should contain credits data (number or JSON with credits info)
-      expect(result.result).toMatch(/\d+|credits|balance/i);
-      
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'system', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
+    });
+  });
+
+  test.describe('Epoch & Block Queries', () => {
+    const epochQueries = [
+      { 
+        name: 'getCurrentEpoch', 
+        hasProofSupport: true, 
+        needsParameters: false,
+        validateFn: (result) => {
+          expect(result).toBeDefined();
+          expect(result).toMatch(/\d+|epoch/i);
+        }
+      },
+      { 
+        name: 'getEpochsInfo', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const epochData = JSON.parse(result);
+          expect(epochData).toBeDefined();
+          expect(typeof epochData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getFinalizedEpochInfos', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const epochData = JSON.parse(result);
+          expect(epochData).toBeDefined();
+          expect(typeof epochData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getEvonodesProposedEpochBlocksByIds', 
+        hasProofSupport: false, // Proof support not yet implemented in WASM-SDK
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const blockData = JSON.parse(result);
+          expect(blockData).toBeDefined();
+          expect(typeof blockData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getEvonodesProposedEpochBlocksByRange', 
+        hasProofSupport: false, // Proof support not yet implemented in WASM-SDK
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const blockData = JSON.parse(result);
+          expect(blockData).toBeDefined();
+          expect(typeof blockData === 'object').toBe(true);
+        }
+      }
+    ];
+
+    epochQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('epoch', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('epoch', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'epoch', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
+    });
+  });
+
+  test.describe('Token Queries', () => {
+    const tokenQueries = [
+      { 
+        name: 'getTokenStatuses', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const tokenStatuses = JSON.parse(result);
+          expect(tokenStatuses).toBeDefined();
+          expect(Array.isArray(tokenStatuses)).toBe(true);
+          tokenStatuses.forEach(token => {
+            expect(token).toHaveProperty('isPaused');
+            expect(typeof token.isPaused).toBe('boolean');
+          });
+        }
+      },
+      { 
+        name: 'getTokenDirectPurchasePrices', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const priceData = JSON.parse(result);
+          expect(priceData).toBeDefined();
+          expect(Array.isArray(priceData)).toBe(true);
+          priceData.forEach(token => {
+            expect(token).toHaveProperty('basePrice');
+          });
+        }
+      },
+      { 
+        name: 'getTokenContractInfo', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const contractInfo = JSON.parse(result);
+          expect(contractInfo).toBeDefined();
+          expect(typeof contractInfo === 'object').toBe(true);
+          expect(contractInfo).toHaveProperty('contractId');
+        }
+      },
+      { 
+        name: 'getTokenPerpetualDistributionLastClaim', 
+        hasProofSupport: false, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const claimData = JSON.parse(result);
+          expect(claimData).toBeDefined();
+          expect(typeof claimData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getTokenTotalSupply', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const supplyData = JSON.parse(result);
+          expect(supplyData).toBeDefined();
+          expect(typeof supplyData === 'object').toBe(true);
+          expect(supplyData).toHaveProperty('totalSupply');
+        }
+      }
+    ];
+
+    tokenQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('token', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('token', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'token', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
+    });
+  });
+
+  test.describe('Voting & Contested Resources Queries', () => {
+    const votingQueries = [
+      { 
+        name: 'getContestedResources', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const contestedData = JSON.parse(result);
+          expect(contestedData).toBeDefined();
+          expect(typeof contestedData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getContestedResourceVoteState', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const voteStateData = JSON.parse(result);
+          expect(voteStateData).toBeDefined();
+          expect(typeof voteStateData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getContestedResourceVotersForIdentity', 
+        hasProofSupport: false, // Not working
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const votersData = JSON.parse(result);
+          expect(votersData).toBeDefined();
+          expect(typeof votersData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getContestedResourceIdentityVotes', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const identityVotesData = JSON.parse(result);
+          expect(identityVotesData).toBeDefined();
+          expect(typeof identityVotesData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getVotePollsByEndDate', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const pollsData = JSON.parse(result);
+          expect(pollsData).toBeDefined();
+          expect(typeof pollsData === 'object').toBe(true);
+        }
+      }
+    ];
+
+    votingQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('voting', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('voting', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'voting', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
+    });
+  });
+
+  test.describe('Group Queries', () => {
+    const groupQueries = [
+      { 
+        name: 'getGroupInfo', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const groupInfo = JSON.parse(result);
+          expect(groupInfo).toBeDefined();
+          expect(typeof groupInfo === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getGroupInfos', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const groupInfos = JSON.parse(result);
+          expect(groupInfos).toBeDefined();
+          expect(typeof groupInfos === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getGroupActions', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const groupActions = JSON.parse(result);
+          expect(groupActions).toBeDefined();
+          expect(typeof groupActions === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'getGroupActionSigners', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const actionSigners = JSON.parse(result);
+          expect(actionSigners).toBeDefined();
+          expect(typeof actionSigners === 'object').toBe(true);
+        }
+      }
+    ];
+
+    groupQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('group', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('group', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'group', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
     });
   });
 
@@ -563,6 +1077,184 @@ test.describe('WASM SDK Query Execution Tests', () => {
       // Should contain status data with version info
       expect(result.result).toContain('version');
       
+    });
+  });
+
+  test.describe('Protocol & Version Queries', () => {
+    const protocolQueries = [
+      { 
+        name: 'getProtocolVersionUpgradeState', 
+        hasProofSupport: true, 
+        needsParameters: false,
+        validateFn: (result) => {
+          expect(result).toBeDefined();
+          expect(result).toContain('currentProtocolVersion');
+        }
+      },
+      { 
+        name: 'getProtocolVersionUpgradeVoteStatus', 
+        hasProofSupport: false, // Proof support not yet implemented in WASM-SDK
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const voteData = JSON.parse(result);
+          expect(voteData).toBeDefined();
+          expect(typeof voteData === 'object').toBe(true);
+        }
+      }
+    ];
+
+    protocolQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('protocol', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('protocol', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'protocol', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
+    });
+  });
+
+  test.describe('DPNS Queries', () => {
+    const dpnsQueries = [
+      { 
+        name: 'getDpnsUsername', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const usernameData = JSON.parse(result);
+          expect(usernameData).toBeDefined();
+          if (Array.isArray(usernameData)) {
+            expect(usernameData.length).toBeGreaterThanOrEqual(1);
+          }
+        }
+      },
+      { 
+        name: 'dpnsCheckAvailability', 
+        hasProofSupport: false,  // Proof support not yet implemented in WASM-SDK
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const availabilityData = JSON.parse(result);
+          expect(availabilityData).toBeDefined();
+          expect(typeof availabilityData === 'boolean' || typeof availabilityData === 'object').toBe(true);
+        }
+      },
+      { 
+        name: 'dpnsResolve', 
+        hasProofSupport: false,  // Proof support not yet implemented in WASM-SDK
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const resolveData = JSON.parse(result);
+          // Check for either successful resolution (has name) or error response
+          if (resolveData && typeof resolveData === 'object') {
+            // Valid response structure - may or may not have 'name' depending on resolution success
+            expect(resolveData).toBeDefined();
+          }
+        }
+      },
+      { 
+        name: 'dpnsSearch', 
+        hasProofSupport: true, 
+        needsParameters: true,
+        validateFn: (result) => {
+          expect(() => JSON.parse(result)).not.toThrow();
+          const searchData = JSON.parse(result);
+          expect(searchData).toBeDefined();
+          if (Array.isArray(searchData)) {
+            expect(searchData.length).toBeGreaterThanOrEqual(0);
+            searchData.forEach(result => {
+              expect(result).toHaveProperty('username');
+            });
+          }
+        }
+      }
+    ];
+
+    dpnsQueries.forEach(({ name, hasProofSupport, needsParameters, validateFn }) => {
+      test.describe(`${name} query (parameterized)`, () => {
+        test('without proof info', async () => {
+          await wasmSdkPage.setupQuery('dpns', name);
+          
+          if (needsParameters) {
+            const success = await parameterInjector.injectParameters('dpns', name, 'testnet');
+            expect(success).toBe(true);
+          }
+          
+          const result = await wasmSdkPage.executeQueryAndGetResult();
+          validateBasicDpnsQueryResult(result);
+          validateSingleView(result);
+          validateFn(result.result);
+          
+          console.log(`✅ ${name} single view without proof confirmed`);
+        });
+
+        if (hasProofSupport) {
+          test('with proof info', async () => {
+            const { result, proofEnabled } = await executeQueryWithProof(
+              wasmSdkPage, 
+              parameterInjector, 
+              'dpns', 
+              name,
+              'testnet'
+            );
+            
+            validateBasicDpnsQueryResult(result);
+            
+            if (proofEnabled) {
+              validateSplitView(result);
+              console.log(`✅ ${name} split view with proof confirmed`);
+            } else {
+              console.log(`⚠️ Proof was not enabled for ${name} query`);
+            }
+            
+            validateFn(result.result);
+          });
+        } else {
+          test.skip('with proof info', async () => {
+            // Proof support not yet implemented for this query
+          });
+        }
+      });
     });
   });
 
