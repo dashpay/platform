@@ -1,124 +1,29 @@
 #!/usr/bin/env python3
 """
 Documentation generator for WASM JS SDK
-Extracts query and state transition definitions from index.html
+Reads query and state transition definitions from api-definitions.json
 and generates both user documentation (HTML) and AI reference (Markdown)
 """
 
-import os
-import re
 import json
 import html as html_lib
-import html
 from pathlib import Path
 from datetime import datetime
 
-def extract_definitions_from_html(html_content):
-    """Extract query and state transition definitions from index.html"""
-    
-    # Extract queryDefinitions
-    query_match = re.search(r'const queryDefinitions = ({[\s\S]*?});(?=\s*(?:const|//|$))', html_content)
-    query_definitions = {}
-    if query_match:
-        # Clean up the JavaScript object to make it JSON-parseable
-        query_str = query_match.group(1)
-        # Convert JS object to JSON format
-        query_str = re.sub(r'(\w+):', r'"\1":', query_str)  # Add quotes to keys
-        query_str = re.sub(r',\s*}', '}', query_str)  # Remove trailing commas
-        query_str = re.sub(r',\s*]', ']', query_str)  # Remove trailing commas in arrays
-        # Handle functions and complex values
-        query_str = re.sub(r'dependsOn:\s*{[^}]+}', '"dependsOn": {}', query_str)
-        query_str = re.sub(r'action:\s*"[^"]*"', '"action": ""', query_str)
-        query_str = re.sub(r'dynamic:\s*true', '"dynamic": true', query_str)
-        query_str = re.sub(r'defaultValue:\s*true', '"defaultValue": true', query_str)
-        query_str = re.sub(r'validateOnType:\s*true', '"validateOnType": true', query_str)
+def load_api_definitions(api_definitions_file):
+    """Load query and state transition definitions from api-definitions.json"""
+    try:
+        with open(api_definitions_file, 'r', encoding='utf-8') as f:
+            api_data = json.load(f)
         
-        try:
-            query_definitions = json.loads(query_str)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Could not parse query definitions: {e}")
-            # Fallback to regex extraction
-            query_definitions = extract_definitions_regex(html_content, 'queryDefinitions')
-    
-    # Extract stateTransitionDefinitions
-    transition_match = re.search(r'const stateTransitionDefinitions = ({[\s\S]*?});(?=\s*(?:const|//|$))', html_content)
-    transition_definitions = {}
-    if transition_match:
-        trans_str = transition_match.group(1)
-        trans_str = re.sub(r'(\w+):', r'"\1":', trans_str)
-        trans_str = re.sub(r',\s*}', '}', trans_str)
-        trans_str = re.sub(r',\s*]', ']', trans_str)
-        trans_str = re.sub(r'dependsOn:\s*{[^}]+}', '"dependsOn": {}', trans_str)
-        trans_str = re.sub(r'action:\s*"[^"]*"', '"action": ""', trans_str)
-        trans_str = re.sub(r'dynamic:\s*true', '"dynamic": true', trans_str)
-        trans_str = re.sub(r'defaultValue:\s*true', '"defaultValue": true', trans_str)
-        trans_str = re.sub(r'validateOnType:\s*true', '"validateOnType": true', trans_str)
+        query_definitions = api_data.get('queries', {})
+        transition_definitions = api_data.get('transitions', {})
         
-        try:
-            transition_definitions = json.loads(trans_str)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Could not parse transition definitions: {e}")
-            transition_definitions = extract_definitions_regex(html_content, 'stateTransitionDefinitions')
-    
-    return query_definitions, transition_definitions
-
-def extract_definitions_regex(html_content, definition_name):
-    """Robust regex extraction method for JavaScript object definitions"""
-    definitions = {}
-    
-    # Find the complete definition block
-    pattern = rf'const {definition_name} = (\{{(?:[^{{}}]|{{[^{{}}]*}})*\}});'
-    match = re.search(pattern, html_content, re.DOTALL)
-    if not match:
-        return definitions
-    
-    full_def = match.group(1)
-    
-    # Extract each category
-    cat_pattern = r'(\w+):\s*\{[^}]*label:\s*"([^"]+)"[^}]*(?:queries|transitions):\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-    
-    for cat_match in re.finditer(cat_pattern, full_def, re.DOTALL):
-        cat_key = cat_match.group(1)
-        cat_label = cat_match.group(2)
-        items_block = cat_match.group(3)
+        return query_definitions, transition_definitions
         
-        items_key = 'queries' if 'query' in definition_name else 'transitions'
-        definitions[cat_key] = {
-            'label': cat_label,
-            items_key: {}
-        }
-        
-        # Extract individual queries/transitions
-        item_pattern = r'(\w+):\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-        
-        for item_match in re.finditer(item_pattern, items_block):
-            item_key = item_match.group(1)
-            item_content = item_match.group(2)
-            
-            # Extract item details
-            item_data = {}
-            
-            # Extract label
-            label_match = re.search(r'label:\s*"([^"]+)"', item_content)
-            if label_match:
-                item_data['label'] = label_match.group(1)
-            
-            # Extract description
-            desc_match = re.search(r'description:\s*"([^"]+)"', item_content)
-            if desc_match:
-                item_data['description'] = desc_match.group(1)
-            
-            # Extract inputs array
-            inputs_match = re.search(r'inputs:\s*\[([^\]]+(?:\[[^\]]*\][^\]]*)*)\]', item_content, re.DOTALL)
-            if inputs_match:
-                inputs_str = inputs_match.group(1)
-                item_data['inputs'] = extract_inputs(inputs_str)
-            else:
-                item_data['inputs'] = []
-            
-            definitions[cat_key][items_key][item_key] = item_data
-    
-    return definitions
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading API definitions: {e}")
+        return {}, {}
 
 def generate_example_code(query_key, inputs):
     """Generate example code for a query"""
@@ -290,60 +195,6 @@ def generate_example_code(query_key, inputs):
     # Generate the function call (functions are imported directly, not methods on sdk)
     return f'return await window.wasmFunctions.{func_name}({", ".join(all_params)});'
 
-def extract_inputs(inputs_str):
-    """Extract input definitions from JavaScript array string"""
-    inputs = []
-    
-    # Match individual input objects
-    input_pattern = r'\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-    
-    for match in re.finditer(input_pattern, inputs_str):
-        input_content = match.group(1)
-        input_data = {}
-        
-        # Extract name
-        name_match = re.search(r'name:\s*"([^"]+)"', input_content)
-        if name_match:
-            input_data['name'] = name_match.group(1)
-        
-        # Extract type
-        type_match = re.search(r'type:\s*"([^"]+)"', input_content)
-        if type_match:
-            input_data['type'] = type_match.group(1)
-        
-        # Extract label
-        label_match = re.search(r'label:\s*"([^"]+)"', input_content)
-        if label_match:
-            input_data['label'] = label_match.group(1)
-        
-        # Extract required
-        req_match = re.search(r'required:\s*(true|false)', input_content)
-        if req_match:
-            input_data['required'] = req_match.group(1) == 'true'
-        
-        # Extract placeholder
-        placeholder_match = re.search(r'placeholder:\s*["\']([^"\']+)["\']', input_content)
-        if placeholder_match:
-            input_data['placeholder'] = placeholder_match.group(1)
-        
-        # Extract options if present
-        options_match = re.search(r'options:\s*\[([^\]]+)\]', input_content)
-        if options_match:
-            options_str = options_match.group(1)
-            input_data['options'] = []
-            
-            # Extract each option
-            opt_pattern = r'\{\s*value:\s*"([^"]+)"[^}]*label:\s*"([^"]+)"[^}]*\}'
-            for opt_match in re.finditer(opt_pattern, options_str):
-                input_data['options'].append({
-                    'value': opt_match.group(1),
-                    'label': opt_match.group(2)
-                })
-        
-        if input_data:
-            inputs.append(input_data)
-    
-    return inputs
 
 def generate_sidebar_entries(definitions, type_prefix, section_class=""):
     """Generate sidebar entries for queries or transitions"""
@@ -1925,51 +1776,18 @@ def main():
     
     # Get paths
     script_dir = Path(__file__).parent
-    index_file = script_dir / 'index.html'
     
-    if not index_file.exists():
-        print(f"Error: index.html not found at {index_file}")
+    # Load API definitions from api-definitions.json
+    api_definitions_file = script_dir / 'api-definitions.json'
+    
+    if not api_definitions_file.exists():
+        print(f"Error: api-definitions.json not found at {api_definitions_file}")
         return 1
     
-    # First check if we have manually fixed definitions
-    fixed_file = script_dir / 'fixed_definitions.json'
-    extracted_file = script_dir / 'extracted_definitions.json'
+    print("Loading API definitions from api-definitions.json...")
+    query_defs, transition_defs = load_api_definitions(api_definitions_file)
     
-    if fixed_file.exists():
-        print("Using manually fixed definitions...")
-        definitions_file = fixed_file
-    else:
-        # Extract definitions using the extraction script
-        print("Extracting definitions from index.html...")
-        import subprocess
-        result = subprocess.run(['python3', 'extract_definitions.py'], cwd=script_dir, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Error extracting definitions: {result.stderr}")
-            return 1
-        
-        if not extracted_file.exists():
-            print("Error: Could not find extracted definitions")
-            return 1
-        definitions_file = extracted_file
-    
-    with open(definitions_file, 'r') as f:
-        extracted = json.load(f)
-    
-    query_defs = extracted.get('queries', {})
-    transition_defs = extracted.get('transitions', {})
-    
-    # Clean up the extracted data (remove invalid entries like 'dependsOn')
-    for cat_key, category in list(query_defs.items()):
-        queries = category.get('queries', {})
-        for q_key in list(queries.keys()):
-            if q_key in ['dependsOn', 'offset', 'limit'] or not queries[q_key].get('label'):
-                del queries[q_key]
-    
-    for cat_key, category in list(transition_defs.items()):
-        transitions = category.get('transitions', {})
-        for t_key in list(transitions.keys()):
-            if t_key in ['dependsOn'] or not transitions[t_key].get('label'):
-                del transitions[t_key]
+    # API definitions are already clean from JSON source - no cleanup needed
     
     print(f"Found {sum(len(cat.get('queries', {})) for cat in query_defs.values())} queries")
     print(f"Found {sum(len(cat.get('transitions', {})) for cat in transition_defs.values())} state transitions")
