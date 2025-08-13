@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1",
-  "generated_at": "2025-08-13T11:30:00.000000",
-  "source": "Curated definitions from fixed_definitions.json (fixed missing dpnsSearch)",
+  "version": "1.0.2",
+  "generated_at": "2025-08-13T11:45:00.000000",
+  "source": "Restored getIdentitiesContractKeys purposes field",
   "queries": {
     "identity": {
       "label": "Identity Queries",
