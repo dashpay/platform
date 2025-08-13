@@ -71,7 +71,8 @@ Parameters:
 - `identitiesIds` (array, required) - Identity IDs
 - `contractId` (text, required) - Contract ID
 - `documentTypeName` (text, optional) - Document Type (optional)
-- `keyRequestType` (select, optional) - Key Request Type
+- `purposes` (multiselect, optional) - Key Purposes
+  - Options: `0` (Authentication), `1` (Encryption), `2` (Decryption), `3` (Transfer), `5` (Voting)
 
 Example:
 ```javascript
@@ -116,7 +117,7 @@ const balance = await sdk.getIdentityBalance(identityId);
 *Get balances for multiple identities*
 
 Parameters:
-- `identityIds` (array, required) - Identity IDs
+- `ids` (array, required) - Identity IDs
 
 Example:
 ```javascript
@@ -327,6 +328,20 @@ Example:
 const result = await sdk.dpnsResolve("name");
 ```
 
+**DPNS Search Name** - `dpnsSearch`
+*Search for DPNS names that start with a given prefix*
+
+Parameters:
+- `prefix` (text, required) - Name Prefix
+  - Example: `Enter prefix (e.g., ali)`
+- `limit` (number, optional) - Limit
+  - Example: `Default: 10`
+
+Example:
+```javascript
+const result = await sdk.dpnsSearch("prefix");
+```
+
 #### Voting & Contested Resources
 
 **Get Contested Resources** - `getContestedResources`
@@ -372,7 +387,7 @@ const result = await sdk.getContestedResourceVoteState("dataContractId", "docume
 *Get voters who voted for a specific identity in a contested resource*
 
 Parameters:
-- `contractId` (text, required) - Contract ID
+- `dataContractId` (text, required) - Contract ID
 - `documentTypeName` (text, required) - Document Type
 - `indexName` (text, required) - Index Name
 - `indexValues` (array, required) - Index Values
@@ -384,7 +399,7 @@ Parameters:
 
 Example:
 ```javascript
-const result = await sdk.getContestedResourceVotersForIdentity("contractId", "documentTypeName", "indexName", [], "contestantId");
+const result = await sdk.getContestedResourceVotersForIdentity("dataContractId", "documentTypeName", "indexName", [], "contestantId");
 ```
 
 **Get Contested Resource Identity Votes** - `getContestedResourceIdentityVotes`
@@ -496,13 +511,15 @@ const result = await sdk.getEvonodesProposedEpochBlocksByIds(100, []);
 *Get proposed blocks by range*
 
 Parameters:
-- `startProTxHash` (text, required) - Start ProTx Hash
+- `epoch` (number, required) - Epoch
+- `limit` (number, optional) - Limit
+- `startAfter` (text, optional) - Start After (Evonode ID)
   - Example: `143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113`
-- `count` (number, required) - Count
+- `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
 ```javascript
-const result = await sdk.getEvonodesProposedEpochBlocksByRange("startProTxHash", 100);
+const result = await sdk.getEvonodesProposedEpochBlocksByRange(100);
 ```
 
 #### Token Queries

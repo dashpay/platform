@@ -872,6 +872,7 @@
             <li style="margin-left: 20px;"><a href="#query-getDpnsUsername">Get DPNS Usernames</a></li>
             <li style="margin-left: 20px;"><a href="#query-dpnsCheckAvailability">DPNS Check Availability</a></li>
             <li style="margin-left: 20px;"><a href="#query-dpnsResolve">DPNS Resolve Name</a></li>
+            <li style="margin-left: 20px;"><a href="#query-dpnsSearch">DPNS Search Name</a></li>
             <li class="category">Voting & Contested Resources</li>
             <li style="margin-left: 20px;"><a href="#query-getContestedResources">Get Contested Resources</a></li>
             <li style="margin-left: 20px;"><a href="#query-getContestedResourceVoteState">Get Contested Resource Vote State</a></li>
@@ -1073,15 +1074,16 @@
                     <span class="param-optional">(optional)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key Request Type</span>
-                    <span class="param-type">select</span>
+                    <span class="param-name">Key Purposes</span>
+                    <span class="param-type">multiselect</span>
                     <span class="param-optional">(optional)</span>
+                    <br><small>Options: Authentication, Encryption, Decryption, Transfer, Voting</small>
                 </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getIdentitiesContractKeys">return await window.wasmFunctions.get_identities_contract_keys(sdk, ['5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk'], 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', 'domain', 'all');</div>
+                <div class="example-code" id="code-getIdentitiesContractKeys">return await window.wasmFunctions.get_identities_contract_keys(sdk, ['5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk'], 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', 'domain');</div>
                 <button class="run-button" id="run-getIdentitiesContractKeys" onclick="runExample('getIdentitiesContractKeys')">Run</button>
                 <div class="example-result" id="result-getIdentitiesContractKeys"></div>            </div>
         </div>
@@ -1537,6 +1539,32 @@
                 <button class="run-button" id="run-dpnsResolve" onclick="runExample('dpnsResolve')">Run</button>
                 <div class="example-result" id="result-dpnsResolve"></div>            </div>
         </div>
+        <div class="operation">
+            <h4 id="query-dpnsSearch">DPNS Search Name</h4>
+            <p class="description">Search for DPNS names that start with a given prefix</p>
+            
+            <div class="parameters">
+                <h5>Parameters:</h5>
+                <div class="parameter">
+                    <span class="param-name">Name Prefix</span>
+                    <span class="param-type">text</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>Example: Enter prefix (e.g., ali)</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Limit</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                    <br><small>Example: Default: 10</small>
+                </div>
+            </div>
+            
+            <div class="example-container">
+                <h5>Example</h5>
+                <div class="example-code" id="code-dpnsSearch">return await window.wasmFunctions.get_documents(sdk, 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', 'domain', JSON.stringify([["normalizedLabel", "startsWith", "ali"], ["normalizedParentDomainName", "==", "dash"]]), JSON.stringify([["normalizedLabel", "asc"]]), 10);</div>
+                <button class="run-button" id="run-dpnsSearch" onclick="runExample('dpnsSearch')">Run</button>
+                <div class="example-result" id="result-dpnsSearch"></div>            </div>
+        </div>
     </div>
     <div class="category">
         <h3>Voting & Contested Resources</h3>
@@ -1932,21 +1960,32 @@
             <div class="parameters">
                 <h5>Parameters:</h5>
                 <div class="parameter">
-                    <span class="param-name">Start ProTx Hash</span>
-                    <span class="param-type">text</span>
+                    <span class="param-name">Epoch</span>
+                    <span class="param-type">number</span>
                     <span class="param-required">(required)</span>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Limit</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                    <br><small>Default: 100 (maximum items returned if not specified)</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Start After (Evonode ID)</span>
+                    <span class="param-type">text</span>
+                    <span class="param-optional">(optional)</span>
                     <br><small>Example: 143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Count</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
+                    <span class="param-name">Order Ascending</span>
+                    <span class="param-type">checkbox</span>
+                    <span class="param-optional">(optional)</span>
                 </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getEvonodesProposedEpochBlocksByRange">return await window.wasmFunctions.get_evonodes_proposed_epoch_blocks_by_range(sdk, '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113', 100);</div>
+                <div class="example-code" id="code-getEvonodesProposedEpochBlocksByRange">return await window.wasmFunctions.get_evonodes_proposed_epoch_blocks_by_range(sdk, 8635, 10, null, true);</div>
                 <button class="run-button" id="run-getEvonodesProposedEpochBlocksByRange" onclick="runExample('getEvonodesProposedEpochBlocksByRange')">Run</button>
                 <div class="example-result" id="result-getEvonodesProposedEpochBlocksByRange"></div>            </div>
         </div>

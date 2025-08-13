@@ -65,6 +65,7 @@ def generate_example_code(query_key, inputs):
         'documentId': f"'{test_data['document_id']}'",
         'label': f"'{test_data['username']}'",
         'name': f"'{test_data['username']}'",
+        'prefix': "'ali'",
         'epoch': '1000' if 'getEpochsInfo' in query_key else test_data['epoch'],
         'keyRequestType': "'all'",
         'limit': '10',
@@ -102,7 +103,8 @@ def generate_example_code(query_key, inputs):
         'startAtVoterInfo': 'null',
         'startAtVotePollIdInfo': 'null',
         'startTimeInfo': '(Date.now() - 86400000).toString()',
-        'endTimeInfo': 'Date.now().toString()'
+        'endTimeInfo': 'Date.now().toString()',
+        'startAfter': 'null'
     }
     
     # Handle special cases for functions with structured parameters
@@ -116,6 +118,15 @@ def generate_example_code(query_key, inputs):
         # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
         # Use the specific contract ID for getDataContractHistory examples
         params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0"]
+    elif query_key == 'dpnsSearch':
+        # dpnsSearch is implemented as get_documents with DPNS-specific parameters
+        # get_documents expects: sdk, contractId, documentType, whereClause, orderBy, limit
+        dpns_contract_id = "'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'"
+        document_type = "'domain'"
+        where_clause = 'JSON.stringify([["normalizedLabel", "startsWith", "ali"], ["normalizedParentDomainName", "==", "dash"]])'
+        order_by = 'JSON.stringify([["normalizedLabel", "asc"]])'
+        limit = "10"
+        params = [dpns_contract_id, document_type, where_clause, order_by, limit]
     else:
         # Generate parameters normally
         params = []
@@ -154,6 +165,7 @@ def generate_example_code(query_key, inputs):
         'getDpnsUsername': 'get_dpns_usernames',
         'dpnsCheckAvailability': 'dpns_is_name_available',
         'dpnsResolve': 'dpns_resolve_name',
+        'dpnsSearch': 'get_documents',
         'getContestedResources': 'get_contested_resources',
         'getContestedResourceVoteState': 'get_contested_resource_vote_state',
         'getContestedResourceVotersForIdentity': 'get_contested_resource_voters_for_identity',
