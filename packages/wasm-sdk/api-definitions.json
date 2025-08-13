@@ -1,7 +1,7 @@
 {
-  "version": "1.0.2",
-  "generated_at": "2025-08-13T11:45:00.000000",
-  "source": "Restored getIdentitiesContractKeys purposes field",
+  "version": "1.0.3",
+  "generated_at": "2025-08-13T17:10:00.000000",
+  "source": "index.html",
   "queries": {
     "identity": {
       "label": "Identity Queries",
@@ -163,7 +163,7 @@
           "description": "Get balances for multiple identities",
           "inputs": [
             {
-              "name": "identityIds",
+              "name": "ids",
               "type": "array",
               "label": "Identity IDs",
               "required": true
@@ -603,7 +603,7 @@
           "description": "Get voters who voted for a specific identity in a contested resource",
           "inputs": [
             {
-              "name": "contractId",
+              "name": "dataContractId",
               "type": "text",
               "label": "Contract ID",
               "required": true
@@ -820,17 +820,29 @@
           "description": "Get proposed blocks by range",
           "inputs": [
             {
-              "name": "startProTxHash",
-              "type": "text",
-              "label": "Start ProTx Hash",
-              "required": true,
-              "placeholder": "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"
+              "name": "epoch",
+              "type": "number",
+              "label": "Epoch",
+              "required": true
             },
             {
-              "name": "count",
+              "name": "limit",
               "type": "number",
-              "label": "Count",
-              "required": true
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "startAfter",
+              "type": "text",
+              "label": "Start After (Evonode ID)",
+              "required": false,
+              "placeholder": "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"              
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
+              "required": false
             }
           ]
         }
