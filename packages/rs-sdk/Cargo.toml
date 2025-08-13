@@ -132,7 +132,8 @@ key-wallet = ["dep:key-wallet"]
 bip38 = ["dep:key-wallet", "key-wallet/bip38"]
 serde = ["key-wallet/serde", "dep:serde", "dep:serde_json"]
 core-bincode = ["key-wallet/bincode", "dpp/core_bincode"]
-
+core-quorum-validation = ["dpp/core_quorum_validation"]
+core-verification = ["dpp/core_verification"]
 
 [[example]]
 
