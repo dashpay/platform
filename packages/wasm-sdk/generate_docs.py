@@ -807,6 +807,9 @@ h3 {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.8);
     z-index: 9999;
+}
+
+.preloader--visible {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1008,7 +1011,7 @@ def generate_user_docs_html(query_defs, transition_defs):
             
             // Only show preloader if not cached
             if (!isCached || window.location.search.includes('force-reload')) {
-                preloader.style.display = 'flex';
+                preloader.classList.add('preloader--visible');
             }
             
             try {
@@ -1044,13 +1047,13 @@ def generate_user_docs_html(query_defs, transition_defs):
                 
                 // Hide preloader faster if cached
                 setTimeout(() => {
-                    preloader.style.display = 'none';
+                    preloader.classList.remove('preloader--visible');
                 }, isCached ? 200 : 500);
             } catch (error) {
                 console.error('Failed to initialize SDK:', error);
                 sdk = null;
                 isInitialized = false;
-                preloader.style.display = 'none';
+                preloader.classList.remove('preloader--visible');
                 throw error;
             }
         }
