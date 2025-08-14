@@ -558,11 +558,22 @@
                     <span class="param-optional">(optional)</span>
                     <br><small>Example: {&quot;0&quot;: {&quot;0&quot;: &quot;current&quot;}, &quot;1&quot;: {&quot;0&quot;: &quot;all&quot;}}</small>
                 </div>
+                <div class="parameter">
+                    <span class="param-name">Limit</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                    <br><small>Default: 100 (maximum items returned if not specified)</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Offset</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getIdentityKeys">return await window.wasmFunctions.get_identity_keys(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 'all');</div>
+                <div class="example-code" id="code-getIdentityKeys">return await window.wasmFunctions.get_identity_keys(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 'all', 10, 0);</div>
                 <button class="run-button" id="run-getIdentityKeys" onclick="runExample('getIdentityKeys')">Run</button>
                 <div class="example-result" id="result-getIdentityKeys"></div>
             </div>
@@ -747,11 +758,16 @@
                     <span class="param-required">(required)</span>
                     <br><small>Example: 518038dc858461bcee90478fd994bba8057b7531</small>
                 </div>
+                <div class="parameter">
+                    <span class="param-name">Start After</span>
+                    <span class="param-type">text</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getIdentityByNonUniquePublicKeyHash">return await window.wasmFunctions.get_identity_by_non_unique_public_key_hash(sdk, '518038dc858461bcee90478fd994bba8057b7531');</div>
+                <div class="example-code" id="code-getIdentityByNonUniquePublicKeyHash">return await window.wasmFunctions.get_identity_by_non_unique_public_key_hash(sdk, '518038dc858461bcee90478fd994bba8057b7531', null);</div>
                 <button class="run-button" id="run-getIdentityByNonUniquePublicKeyHash" onclick="runExample('getIdentityByNonUniquePublicKeyHash')">Run</button>
                 <div class="example-result" id="result-getIdentityByNonUniquePublicKeyHash"></div>            </div>
         </div>
@@ -821,11 +837,22 @@
                     <span class="param-optional">(optional)</span>
                     <br><small>Example: [&quot;Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv&quot;]</small>
                 </div>
+                <div class="parameter">
+                    <span class="param-name">Limit</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                    <br><small>Default: 100 (maximum items returned if not specified)</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Offset</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getIdentityTokenInfos">return await window.wasmFunctions.get_identity_token_infos(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', ['Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv']);</div>
+                <div class="example-code" id="code-getIdentityTokenInfos">return await window.wasmFunctions.get_identity_token_infos(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', ['Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv'], 10, 0);</div>
                 <button class="run-button" id="run-getIdentityTokenInfos" onclick="runExample('getIdentityTokenInfos')">Run</button>
                 <div class="example-result" id="result-getIdentityTokenInfos"></div>            </div>
         </div>
@@ -1254,15 +1281,15 @@
                     <span class="param-required">(required)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Start At Voter Info</span>
+                    <span class="param-name">Start At Identifier Info</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Limit</span>
+                    <span class="param-name">Count</span>
                     <span class="param-type">number</span>
                     <span class="param-optional">(optional)</span>
-                    <br><small>Default: 100 (maximum items returned if not specified)</small>
+                    <br><small>Example: Default: 100</small>
                 </div>
                 <div class="parameter">
                     <span class="param-name">Order Ascending</span>
@@ -1273,7 +1300,7 @@
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getContestedResourceVotersForIdentity">return await window.wasmFunctions.get_contested_resource_voters_for_identity(sdk, 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', 'domain', 'parentNameAndLabel', ['dash', 'alice'], '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', null, 10, true);</div>
+                <div class="example-code" id="code-getContestedResourceVotersForIdentity">return await window.wasmFunctions.get_contested_resource_voters_for_identity(sdk, 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', 'domain', 'parentNameAndLabel', ['dash', 'alice'], '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', null, 100, true);</div>
                 <button class="run-button" id="run-getContestedResourceVotersForIdentity" onclick="runExample('getContestedResourceVotersForIdentity')">Run</button> <span style="color: #f39c12; margin-left: 10px;">🚧 Work in Progress</span>
                 <div class="example-result" id="result-getContestedResourceVotersForIdentity"></div>            </div>
         </div>
@@ -1295,8 +1322,8 @@
                     <br><small>Default: 100 (maximum items returned if not specified)</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Start At Vote Poll ID Info</span>
-                    <span class="param-type">text</span>
+                    <span class="param-name">Offset</span>
+                    <span class="param-type">number</span>
                     <span class="param-optional">(optional)</span>
                 </div>
                 <div class="parameter">
@@ -1308,7 +1335,7 @@
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getContestedResourceIdentityVotes">return await window.wasmFunctions.get_contested_resource_identity_votes(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 10, null, true);</div>
+                <div class="example-code" id="code-getContestedResourceIdentityVotes">return await window.wasmFunctions.get_contested_resource_identity_votes(sdk, '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk', 10, 0, true);</div>
                 <button class="run-button" id="run-getContestedResourceIdentityVotes" onclick="runExample('getContestedResourceIdentityVotes')">Run</button>
                 <div class="example-result" id="result-getContestedResourceIdentityVotes"></div>            </div>
         </div>
@@ -1319,13 +1346,13 @@
             <div class="parameters">
                 <h5>Parameters:</h5>
                 <div class="parameter">
-                    <span class="param-name">Start Time Info</span>
+                    <span class="param-name">Start Time (ms)</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
                     <br><small>Example: Timestamp in milliseconds as string</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">End Time Info</span>
+                    <span class="param-name">End Time (ms)</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
                     <br><small>Example: Timestamp in milliseconds as string</small>
@@ -1337,6 +1364,11 @@
                     <br><small>Default: 100 (maximum items returned if not specified)</small>
                 </div>
                 <div class="parameter">
+                    <span class="param-name">Offset</span>
+                    <span class="param-type">number</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
+                <div class="parameter">
                     <span class="param-name">Order Ascending</span>
                     <span class="param-type">checkbox</span>
                     <span class="param-optional">(optional)</span>
@@ -1345,7 +1377,7 @@
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getVotePollsByEndDate">return await window.wasmFunctions.get_vote_polls_by_end_date(sdk, (Date.now() - 86400000).toString(), Date.now().toString(), 10, true);</div>
+                <div class="example-code" id="code-getVotePollsByEndDate">return await window.wasmFunctions.get_vote_polls_by_end_date(sdk, Date.now() - 86400000, Date.now(), 10, 0, true);</div>
                 <button class="run-button" id="run-getVotePollsByEndDate" onclick="runExample('getVotePollsByEndDate')">Run</button>
                 <div class="example-result" id="result-getVotePollsByEndDate"></div>            </div>
         </div>
@@ -1419,7 +1451,7 @@
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getEpochsInfo">return await window.wasmFunctions.get_epochs_info(sdk, 1000, 100, true);</div>
+                <div class="example-code" id="code-getEpochsInfo">return await window.wasmFunctions.get_epochs_info(sdk, 8635, 100, true);</div>
                 <button class="run-button" id="run-getEpochsInfo" onclick="runExample('getEpochsInfo')">Run</button>
                 <div class="example-result" id="result-getEpochsInfo"></div>            </div>
         </div>
@@ -1453,11 +1485,16 @@
                     <span class="param-type">number</span>
                     <span class="param-required">(required)</span>
                 </div>
+                <div class="parameter">
+                    <span class="param-name">Ascending Order</span>
+                    <span class="param-type">checkbox</span>
+                    <span class="param-optional">(optional)</span>
+                </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code" id="code-getFinalizedEpochInfos">return await window.wasmFunctions.get_finalized_epoch_infos(sdk, 8635, 100);</div>
+                <div class="example-code" id="code-getFinalizedEpochInfos">return await window.wasmFunctions.get_finalized_epoch_infos(sdk, 8635, 100, true);</div>
                 <button class="run-button" id="run-getFinalizedEpochInfos" onclick="runExample('getFinalizedEpochInfos')">Run</button>
                 <div class="example-result" id="result-getFinalizedEpochInfos"></div>            </div>
         </div>

@@ -58,6 +58,8 @@ Parameters:
   - Example: `0,1,2`
 - `searchPurposeMap` (text, optional) - Search Purpose Map JSON (required for 'search' type)
   - Example: `{"0": {"0": "current"}, "1": {"0": "all"}}`
+- `limit` (number, optional) - Limit
+- `offset` (number, optional) - Offset
 
 Example:
 ```javascript
@@ -153,6 +155,7 @@ const result = await sdk.getIdentityByPublicKeyHash("publicKeyHash");
 Parameters:
 - `publicKeyHash` (text, required) - Public Key Hash
   - Example: `518038dc858461bcee90478fd994bba8057b7531`
+- `startAfter` (text, optional) - Start After
 
 Example:
 ```javascript
@@ -191,6 +194,8 @@ Parameters:
 - `identityId` (text, required) - Identity ID
 - `tokenIds` (array, optional) - Token IDs (optional)
   - Example: `["Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv"]`
+- `limit` (number, optional) - Limit
+- `offset` (number, optional) - Offset
 
 Example:
 ```javascript
@@ -394,8 +399,9 @@ Parameters:
 - `indexValues` (array, required) - Index Values
   - Example: `["dash", "alice"]`
 - `contestantId` (text, required) - Contestant Identity ID
-- `startAtVoterInfo` (text, optional) - Start At Voter Info
-- `limit` (number, optional) - Limit
+- `startAtIdentifierInfo` (text, optional) - Start At Identifier Info
+- `count` (number, optional) - Count
+  - Example: `Default: 100`
 - `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
@@ -409,7 +415,7 @@ const result = await sdk.getContestedResourceVotersForIdentity("dataContractId",
 Parameters:
 - `identityId` (text, required) - Identity ID
 - `limit` (number, optional) - Limit
-- `startAtVotePollIdInfo` (text, optional) - Start At Vote Poll ID Info
+- `offset` (number, optional) - Offset
 - `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
@@ -421,11 +427,12 @@ const result = await sdk.getContestedResourceIdentityVotes("identityId");
 *Get vote polls within a time range*
 
 Parameters:
-- `startTimeInfo` (text, optional) - Start Time Info
+- `startTimeMs` (text, optional) - Start Time (ms)
   - Example: `Timestamp in milliseconds as string`
-- `endTimeInfo` (text, optional) - End Time Info
+- `endTimeMs` (text, optional) - End Time (ms)
   - Example: `Timestamp in milliseconds as string`
 - `limit` (number, optional) - Limit
+- `offset` (number, optional) - Offset
 - `orderAscending` (checkbox, optional) - Order Ascending
 
 Example:
@@ -464,7 +471,7 @@ const result = await sdk.getProtocolVersionUpgradeVoteStatus("startProTxHash", 1
 *Get information about epochs*
 
 Parameters:
-- `epoch` (number, required) - Start Epoch
+- `startEpoch` (number, required) - Start Epoch
 - `count` (number, required) - Count
 - `ascending` (checkbox, optional) - Ascending Order
 
@@ -489,6 +496,7 @@ const result = await sdk.getCurrentEpoch();
 Parameters:
 - `startEpoch` (number, required) - Start Epoch
 - `count` (number, required) - Count
+- `ascending` (checkbox, optional) - Ascending Order
 
 Example:
 ```javascript

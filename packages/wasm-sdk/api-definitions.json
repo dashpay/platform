@@ -61,6 +61,18 @@
               "label": "Search Purpose Map JSON (required for 'search' type)",
               "required": false,
               "placeholder": "{\"0\": {\"0\": \"current\"}, \"1\": {\"0\": \"all\"}}"
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
+              "required": false
             }
           ]
         },
@@ -205,6 +217,12 @@
               "label": "Public Key Hash",
               "required": true,
               "placeholder": "518038dc858461bcee90478fd994bba8057b7531"
+            },
+            {
+              "name": "startAfter",
+              "type": "text",
+              "label": "Start After",
+              "required": false
             }
           ]
         },
@@ -261,6 +279,18 @@
               "label": "Token IDs (optional)",
               "required": false,
               "placeholder": "[\"Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv\"]"
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
+              "required": false
             }
           ]
         },
@@ -640,16 +670,17 @@
               "required": true
             },
             {
-              "name": "startAtVoterInfo",
+              "name": "startAtIdentifierInfo",
               "type": "text",
-              "label": "Start At Voter Info",
+              "label": "Start At Identifier Info",
               "required": false
             },
             {
-              "name": "limit",
+              "name": "count",
               "type": "number",
-              "label": "Limit",
-              "required": false
+              "label": "Count",
+              "required": false,
+              "placeholder": "Default: 100"
             },
             {
               "name": "orderAscending",
@@ -676,9 +707,9 @@
               "required": false
             },
             {
-              "name": "startAtVotePollIdInfo",
-              "type": "text",
-              "label": "Start At Vote Poll ID Info",
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
               "required": false
             },
             {
@@ -694,16 +725,16 @@
           "description": "Get vote polls within a time range",
           "inputs": [
             {
-              "name": "startTimeInfo",
+              "name": "startTimeMs",
               "type": "text",
-              "label": "Start Time Info",
+              "label": "Start Time (ms)",
               "required": false,
               "placeholder": "Timestamp in milliseconds as string"
             },
             {
-              "name": "endTimeInfo",
+              "name": "endTimeMs",
               "type": "text",
-              "label": "End Time Info",
+              "label": "End Time (ms)",
               "required": false,
               "placeholder": "Timestamp in milliseconds as string"
             },
@@ -711,6 +742,12 @@
               "name": "limit",
               "type": "number",
               "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
               "required": false
             },
             {
@@ -760,7 +797,7 @@
           "description": "Get information about epochs",
           "inputs": [
             {
-              "name": "epoch",
+              "name": "startEpoch",
               "type": "number",
               "label": "Start Epoch",
               "required": true
@@ -799,6 +836,12 @@
               "type": "number",
               "label": "Count",
               "required": true
+            },
+            {
+              "name": "ascending",
+              "type": "checkbox",
+              "label": "Ascending Order",
+              "required": false
             }
           ]
         },
