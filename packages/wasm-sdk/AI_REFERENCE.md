@@ -427,10 +427,10 @@ const result = await sdk.getContestedResourceIdentityVotes("identityId");
 *Get vote polls within a time range*
 
 Parameters:
-- `startTimeMs` (text, optional) - Start Time (ms)
-  - Example: `Timestamp in milliseconds as string`
-- `endTimeMs` (text, optional) - End Time (ms)
-  - Example: `Timestamp in milliseconds as string`
+- `startTimeMs` (number, optional) - Start Time (ms)
+  - Example: `Timestamp in milliseconds as string (e.g., 1650000000000)`
+- `endTimeMs` (number, optional) - End Time (ms)
+  - Example: `Timestamp in milliseconds as string (e.g., 1650086400000)`
 - `limit` (number, optional) - Limit
 - `offset` (number, optional) - Offset
 - `orderAscending` (checkbox, optional) - Order Ascending

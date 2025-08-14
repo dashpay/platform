@@ -726,17 +726,17 @@
           "inputs": [
             {
               "name": "startTimeMs",
-              "type": "text",
+              "type": "number",
               "label": "Start Time (ms)",
               "required": false,
-              "placeholder": "Timestamp in milliseconds as string"
+              "placeholder": "Timestamp in milliseconds as string (e.g., 1650000000000)"
             },
             {
               "name": "endTimeMs",
-              "type": "text",
+              "type": "number",
               "label": "End Time (ms)",
               "required": false,
-              "placeholder": "Timestamp in milliseconds as string"
+              "placeholder": "Timestamp in milliseconds as string (e.g., 1650086400000)"
             },
             {
               "name": "limit",
