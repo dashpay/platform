@@ -23,6 +23,14 @@
     </nav>
   </div>
   
+  <!-- Error Banner for API definitions loading failures -->
+  <div id="apiErrorBanner" style="display: none; background-color: #f8d7da; color: #721c24; padding: 15px; margin: 0; border-bottom: 1px solid #f5c6cb; text-align: center;">
+    <div style="display: flex; justify-content: center; align-items: center; gap: 15px; flex-wrap: wrap;">
+      <span id="apiErrorMessage">Failed to load API definitions. Please check your connection and try again.</span>
+      <button id="apiRetryButton" style="background-color: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px;">Retry</button>
+    </div>
+  </div>
+  
   <div id="preloader">
     <div class="preloader-content">
       <div class="preloader-text">Loading WASM module...</div>
@@ -441,7 +449,9 @@
     // Function to load API definitions from JSON
     async function loadApiDefinitions() {
       try {
-        const response = await fetch('./api-definitions.json');
+        const response = await fetch('./api-definitions.json', {
+          cache: 'no-store' // Bypass browser cache to ensure fresh data
+        });
         if (!response.ok) {
           throw new Error(`Failed to load API definitions: ${response.status}`);
         }
@@ -449,9 +459,40 @@
         queryDefinitions = apiData.queries || {};
         stateTransitionDefinitions = apiData.transitions || {};
         console.log('API definitions loaded successfully');
+        return true;
       } catch (error) {
         console.error('Failed to load API definitions:', error);
-        throw error;
+        return false;
+      }
+    }
+
+    // Function to show API error banner
+    function showApiErrorBanner(message) {
+      const banner = document.getElementById('apiErrorBanner');
+      const messageElement = document.getElementById('apiErrorMessage');
+      if (banner && messageElement) {
+        messageElement.textContent = message || 'Failed to load API definitions. Please check your connection and try again.';
+        banner.style.display = 'block';
+      }
+    }
+
+    // Function to hide API error banner
+    function hideApiErrorBanner() {
+      const banner = document.getElementById('apiErrorBanner');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+
+    // Function to handle API definitions loading with retry functionality
+    async function tryLoadApiDefinitions() {
+      const success = await loadApiDefinitions();
+      if (success) {
+        hideApiErrorBanner();
+        return true;
+      } else {
+        showApiErrorBanner();
+        return false;
       }
     }
 
@@ -4925,11 +4966,8 @@ ${indentStr}]`;
       try {
         // Load API definitions FIRST (before any UI elements are shown)
         updateStatus('Loading API definitions...', 'loading');
-        try {
-          await loadApiDefinitions();
-          console.log('API definitions loaded successfully');
-        } catch (error) {
-          console.error('Failed to load API definitions:', error);
+        const apiLoadSuccess = await tryLoadApiDefinitions();
+        if (!apiLoadSuccess) {
           updateStatus('Failed to load API definitions', 'error');
           return;
         }
@@ -5042,6 +5080,24 @@ ${indentStr}]`;
         if (preloader) preloader.style.display = 'none';
       }
     }
+
+    // Set up retry button event listener
+    document.getElementById('apiRetryButton').addEventListener('click', async function() {
+      this.disabled = true;
+      this.textContent = 'Retrying...';
+      
+      updateStatus('Loading API definitions...', 'loading');
+      const success = await tryLoadApiDefinitions();
+      
+      if (success) {
+        // API definitions loaded successfully, restart the app initialization
+        run();
+      } else {
+        // Still failed, re-enable the button
+        this.disabled = false;
+        this.textContent = 'Retry';
+      }
+    });
 
     run();
   </script>
