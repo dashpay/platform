@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-07-28T12:35:33.649527",
+  "generated_at": "2025-08-14T08:48:31.968333",
   "queries": {
     "getIdentity": {
       "category": "identity",
@@ -86,6 +86,10 @@
       "documented": true
     },
     "dpnsResolve": {
+      "category": "dpns",
+      "documented": true
+    },
+    "dpnsSearch": {
       "category": "dpns",
       "documented": true
     },
