@@ -323,6 +323,12 @@
               "type": "number",
               "label": "Offset",
               "required": false
+            },
+            {
+              "name": "startAtMs",
+              "type": "number",
+              "label": "Start At Timestamp (ms)",
+              "required": false
             }
           ]
         },

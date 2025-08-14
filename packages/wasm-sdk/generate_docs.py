@@ -117,7 +117,7 @@ def generate_example_code(query_key, inputs):
     elif query_key == 'getDataContractHistory':
         # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
         # Use the specific contract ID for getDataContractHistory examples
-        params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0"]
+        params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0", "'0'"]
     elif query_key == 'dpnsSearch':
         # dpnsSearch is implemented as get_documents with DPNS-specific parameters
         # get_documents expects: sdk, contractId, documentType, whereClause, orderBy, limit

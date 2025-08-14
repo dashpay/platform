@@ -232,6 +232,7 @@ Parameters:
   - Example: `HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM`
 - `limit` (number, optional) - Limit
 - `offset` (number, optional) - Offset
+- `startAtMs` (number, optional) - Start At Timestamp (ms)
 
 Example:
 ```javascript
