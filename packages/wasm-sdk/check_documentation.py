@@ -7,7 +7,7 @@ import os
 import sys
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 def check_documentation_completeness():
     """Check if documentation is up to date with api-definitions.json"""
@@ -58,7 +58,7 @@ def check_documentation_completeness():
     # Check if manifest is stale (older than 24 hours)
     if 'generated_at' in manifest:
         generated_time = datetime.fromisoformat(manifest['generated_at'])
-        age_hours = (datetime.now() - generated_time).total_seconds() / 3600
+        age_hours = (datetime.now(timezone.utc) - generated_time).total_seconds() / 3600
         if age_hours > 24:
             warnings.append(f"WARNING: Documentation was generated {age_hours:.1f} hours ago. Consider regenerating.")
     

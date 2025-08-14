@@ -8,7 +8,7 @@ and generates both user documentation (HTML) and AI reference (Markdown)
 import json
 import html as html_lib
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 def load_api_definitions(api_definitions_file):
     """Load query and state transition definitions from api-definitions.json"""
@@ -1853,7 +1853,7 @@ def main():
     
     # Generate documentation manifest for CI checks
     manifest = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "queries": {},
         "transitions": {}
     }
