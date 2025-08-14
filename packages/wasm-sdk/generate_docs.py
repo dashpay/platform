@@ -1799,12 +1799,30 @@ def main():
         return 1
     
     print("Loading API definitions from api-definitions.json...")
-    query_defs, transition_defs = load_api_definitions(api_definitions_file)
+    try:
+        query_defs, transition_defs = load_api_definitions(api_definitions_file)
+        
+        # Check if loading failed (returns empty dictionaries on error)
+        if not query_defs or not transition_defs:
+            print("Error: Failed to load API definitions or definitions are empty")
+            return 1
+            
+        # Validate that we have actual data
+        query_count = sum(len(cat.get('queries', {})) for cat in query_defs.values())
+        transition_count = sum(len(cat.get('transitions', {})) for cat in transition_defs.values())
+        
+        if query_count == 0 and transition_count == 0:
+            print("Error: No queries or state transitions found in API definitions")
+            return 1
+            
+        print(f"Found {query_count} queries")
+        print(f"Found {transition_count} state transitions")
+        
+    except Exception as e:
+        print(f"Error: Failed to load API definitions: {e}")
+        return 1
     
     # API definitions are already clean from JSON source - no cleanup needed
-    
-    print(f"Found {sum(len(cat.get('queries', {})) for cat in query_defs.values())} queries")
-    print(f"Found {sum(len(cat.get('transitions', {})) for cat in transition_defs.values())} state transitions")
     
     # Generate user docs
     print("\nGenerating user documentation (docs.html)...")
