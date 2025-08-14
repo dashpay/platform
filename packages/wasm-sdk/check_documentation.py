@@ -58,6 +58,11 @@ def check_documentation_completeness():
     # Check if manifest is stale (older than 24 hours)
     if 'generated_at' in manifest:
         generated_time = datetime.fromisoformat(manifest['generated_at'])
+        # Normalize to UTC timezone
+        if generated_time.tzinfo is None:
+            generated_time = generated_time.replace(tzinfo=timezone.utc)
+        else:
+            generated_time = generated_time.astimezone(timezone.utc)
         age_hours = (datetime.now(timezone.utc) - generated_time).total_seconds() / 3600
         if age_hours > 24:
             warnings.append(f"WARNING: Documentation was generated {age_hours:.1f} hours ago. Consider regenerating.")
