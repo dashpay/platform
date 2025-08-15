@@ -1,4 +1,7 @@
 {
+  "version": "1.0.3",
+  "generated_at": "2025-08-13T17:10:00.000000",
+  "source": "index.html",
   "queries": {
     "identity": {
       "label": "Identity Queries",
@@ -58,6 +61,18 @@
               "label": "Search Purpose Map JSON (required for 'search' type)",
               "required": false,
               "placeholder": "{\"0\": {\"0\": \"current\"}, \"1\": {\"0\": \"all\"}}"
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
+              "required": false
             }
           ]
         },
@@ -84,10 +99,32 @@
               "required": false
             },
             {
-              "name": "keyRequestType",
-              "type": "select",
-              "label": "Key Request Type",
-              "required": false
+              "name": "purposes",
+              "type": "multiselect",
+              "label": "Key Purposes",
+              "required": false,
+              "options": [
+                {
+                  "value": "0",
+                  "label": "Authentication"
+                },
+                {
+                  "value": "1", 
+                  "label": "Encryption"
+                },
+                {
+                  "value": "2",
+                  "label": "Decryption"
+                },
+                {
+                  "value": "3",
+                  "label": "Transfer"
+                },
+                {
+                  "value": "5",
+                  "label": "Voting"
+                }
+              ]
             }
           ]
         },
@@ -138,7 +175,7 @@
           "description": "Get balances for multiple identities",
           "inputs": [
             {
-              "name": "identityIds",
+              "name": "ids",
               "type": "array",
               "label": "Identity IDs",
               "required": true
@@ -180,6 +217,12 @@
               "label": "Public Key Hash",
               "required": true,
               "placeholder": "518038dc858461bcee90478fd994bba8057b7531"
+            },
+            {
+              "name": "startAfter",
+              "type": "text",
+              "label": "Start After",
+              "required": false
             }
           ]
         },
@@ -236,6 +279,18 @@
               "label": "Token IDs (optional)",
               "required": false,
               "placeholder": "[\"Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv\"]"
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
+              "required": false
             }
           ]
         },
@@ -297,6 +352,12 @@
               "name": "offset",
               "type": "number",
               "label": "Offset",
+              "required": false
+            },
+            {
+              "name": "startAtMs",
+              "type": "number",
+              "label": "Start At Timestamp (ms)",
               "required": false
             }
           ]
@@ -424,6 +485,26 @@
               "type": "text",
               "label": "Name",
               "required": true
+            }
+          ]
+        },
+        "dpnsSearch": {
+          "label": "DPNS Search Name",
+          "description": "Search for DPNS names that start with a given prefix",
+          "inputs": [
+            {
+              "name": "prefix",
+              "type": "text",
+              "label": "Name Prefix",
+              "required": true,
+              "placeholder": "Enter prefix (e.g., ali)"
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "label": "Limit",
+              "required": false,
+              "placeholder": "Default: 10"
             }
           ]
         }
@@ -558,7 +639,7 @@
           "description": "Get voters who voted for a specific identity in a contested resource",
           "inputs": [
             {
-              "name": "contractId",
+              "name": "dataContractId",
               "type": "text",
               "label": "Contract ID",
               "required": true
@@ -589,16 +670,17 @@
               "required": true
             },
             {
-              "name": "startAtVoterInfo",
+              "name": "startAtIdentifierInfo",
               "type": "text",
-              "label": "Start At Voter Info",
+              "label": "Start At Identifier Info",
               "required": false
             },
             {
-              "name": "limit",
+              "name": "count",
               "type": "number",
-              "label": "Limit",
-              "required": false
+              "label": "Count",
+              "required": false,
+              "placeholder": "Default: 100"
             },
             {
               "name": "orderAscending",
@@ -625,9 +707,9 @@
               "required": false
             },
             {
-              "name": "startAtVotePollIdInfo",
-              "type": "text",
-              "label": "Start At Vote Poll ID Info",
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
               "required": false
             },
             {
@@ -643,23 +725,29 @@
           "description": "Get vote polls within a time range",
           "inputs": [
             {
-              "name": "startTimeInfo",
-              "type": "text",
-              "label": "Start Time Info",
+              "name": "startTimeMs",
+              "type": "number",
+              "label": "Start Time (ms)",
               "required": false,
-              "placeholder": "Timestamp in milliseconds as string"
+              "placeholder": "Timestamp in milliseconds as string (e.g., 1650000000000)"
             },
             {
-              "name": "endTimeInfo",
-              "type": "text",
-              "label": "End Time Info",
+              "name": "endTimeMs",
+              "type": "number",
+              "label": "End Time (ms)",
               "required": false,
-              "placeholder": "Timestamp in milliseconds as string"
+              "placeholder": "Timestamp in milliseconds as string (e.g., 1650086400000)"
             },
             {
               "name": "limit",
               "type": "number",
               "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "offset",
+              "type": "number",
+              "label": "Offset",
               "required": false
             },
             {
@@ -709,7 +797,7 @@
           "description": "Get information about epochs",
           "inputs": [
             {
-              "name": "epoch",
+              "name": "startEpoch",
               "type": "number",
               "label": "Start Epoch",
               "required": true
@@ -748,6 +836,12 @@
               "type": "number",
               "label": "Count",
               "required": true
+            },
+            {
+              "name": "ascending",
+              "type": "checkbox",
+              "label": "Ascending Order",
+              "required": false
             }
           ]
         },
@@ -775,17 +869,29 @@
           "description": "Get proposed blocks by range",
           "inputs": [
             {
-              "name": "startProTxHash",
-              "type": "text",
-              "label": "Start ProTx Hash",
-              "required": true,
-              "placeholder": "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"
+              "name": "epoch",
+              "type": "number",
+              "label": "Epoch",
+              "required": true
             },
             {
-              "name": "count",
+              "name": "limit",
               "type": "number",
-              "label": "Count",
-              "required": true
+              "label": "Limit",
+              "required": false
+            },
+            {
+              "name": "startAfter",
+              "type": "text",
+              "label": "Start After (Evonode ID)",
+              "required": false,
+              "placeholder": "143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113"              
+            },
+            {
+              "name": "orderAscending",
+              "type": "checkbox",
+              "label": "Order Ascending",
+              "required": false
             }
           ]
         }
