@@ -8,7 +8,7 @@ use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct PlatformStatus {
-    version: u32,
+    version: Option<u32>,
     network: String,
     block_height: Option<u64>,
     core_height: Option<u64>,
@@ -74,22 +74,23 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
         _ => "unknown",
     }.to_string();
     
-    // Try to fetch current epoch info to get block heights
-    let (block_height, core_height) = match ExtendedEpochInfo::fetch_current(sdk.as_ref()).await {
+    // Try to fetch current epoch info to get block heights and protocol version
+    let (block_height, core_height, protocol_version) = match ExtendedEpochInfo::fetch_current(sdk.as_ref()).await {
         Ok(epoch_info) => {
-            // Extract heights from epoch info
+            // Extract heights and protocol version from epoch info
             let platform_height = Some(epoch_info.first_block_height());
             let core_height = Some(epoch_info.first_core_block_height() as u64);
-            (platform_height, core_height)
+            let protocol_version = Some(epoch_info.protocol_version());            
+            (platform_height, core_height, protocol_version)
         }
-        Err(_) => {
-            // If we can't fetch epoch info, heights remain None
-            (None, None)
+        Err(_e) => {
+            // If we can't fetch epoch info, we don't know the current network state
+            (None, None, None)
         }
     };
     
     let status = PlatformStatus {
-        version: sdk.version(),
+        version: protocol_version,
         network: network_str,
         block_height,
         core_height,
