@@ -757,29 +757,61 @@ const result = await sdk.{transition_name}(identityHex, ...params, privateKeyHex
 **Identity Create** - `identityCreate`
 *Create a new identity with initial credits*
 
-Parameters (in addition to identity/key):
-- `seedPhrase` (textarea, required) - Seed Phrase
-  - Example: `Enter seed phrase (12-24 words) or click Generate`
-- `generateSeedButton` (button, optional) - Generate New Seed
-- `identityIndex` (number, required) - Identity Index
-- `keySelectionMode` (select, required) - Key Selection Mode
-- `keyPreview` (keyPreview, optional) - Keys to be added
+Parameters:
+- `assetLockProof` (string, required) - Asset Lock Proof
+  - Hex-encoded JSON asset lock proof
+- `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
+  - WIF format private key
+- `publicKeys` (string, required) - Public Keys
+  - JSON array of public keys
 
 Example:
 ```javascript
-const result = await sdk.identityCreate(identityHex, /* params */, privateKeyHex);
+// Asset lock proof is a hex-encoded JSON object
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+// Public keys array with proper key types
+const publicKeys = JSON.stringify([
+  {
+    id: 0,
+    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
+    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
+    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
+    data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
+    readOnly: false
+  },
+  {
+    id: 1,
+    type: 0,
+    purpose: 0,
+    securityLevel: 2,
+    data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
+    readOnly: false
+  }
+]);
+
+const result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey, publicKeys);
 ```
 
 **Identity Top Up** - `identityTopUp`
 *Add credits to an existing identity*
 
-Parameters (in addition to identity/key):
-- `identityId` (text, required) - Identity ID
-  - Example: `Enter the identity ID to top up (base58)`
+Parameters:
+- `identityId` (string, required) - Identity ID
+  - Base58 format identity ID
+- `assetLockProof` (string, required) - Asset Lock Proof
+  - Hex-encoded JSON asset lock proof
+- `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
+  - WIF format private key
 
 Example:
 ```javascript
-const result = await sdk.identityTopUp(identityHex, /* params */, privateKeyHex);
+const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWve1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProofPrivateKey);
 ```
 
 **Identity Update** - `identityUpdate`
