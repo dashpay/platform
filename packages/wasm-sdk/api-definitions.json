@@ -1915,7 +1915,7 @@
         },
         "tokenTransfer": {
           "label": "Token Transfer",
-          "description": "Transfer tokens to another identity",
+          "description": "Transfer tokens between identities",
           "inputs": [
             {
               "name": "contractId",
@@ -1924,14 +1924,14 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
               "name": "amount",
-              "type": "number",
+              "type": "text",
               "label": "Amount to Transfer",
               "required": true
             },
@@ -1940,12 +1940,18 @@
               "type": "text",
               "label": "Recipient Identity ID",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         },
         "tokenFreeze": {
           "label": "Token Freeze",
-          "description": "Freeze tokens for an identity",
+          "description": "Freeze tokens for a specific identity",
           "inputs": [
             {
               "name": "contractId",
@@ -1954,22 +1960,28 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
-              "name": "identityId",
+              "name": "identityToFreeze",
               "type": "text",
               "label": "Identity ID to Freeze",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         },
         "tokenUnfreeze": {
           "label": "Token Unfreeze",
-          "description": "Unfreeze tokens for an identity",
+          "description": "Unfreeze tokens for a specific identity",
           "inputs": [
             {
               "name": "contractId",
@@ -1978,21 +1990,27 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
-              "name": "identityId",
+              "name": "identityToUnfreeze",
               "type": "text",
               "label": "Identity ID to Unfreeze",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         },
         "tokenDestroyFrozen": {
-          "label": "Token Destroy Frozen Funds",
+          "label": "Token Destroy Frozen",
           "description": "Destroy frozen tokens",
           "inputs": [
             {
@@ -2002,16 +2020,22 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
               "name": "identityId",
               "type": "text",
-              "label": "Identity ID",
+              "label": "Identity ID whose frozen tokens to destroy",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         }

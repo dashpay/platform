@@ -757,55 +757,29 @@ const result = await sdk.{transition_name}(identityHex, ...params, privateKeyHex
 **Identity Create** - `identityCreate`
 *Create a new identity with initial credits*
 
-Parameters:
-- `assetLockProof` (string, required) - Asset lock proof (hex-encoded JSON)
-- `assetLockProofPrivateKey` (string, required) - Private key for the asset lock proof (WIF format)
-- `publicKeys` (string, required) - JSON array of public keys to add to the identity
+Parameters (in addition to identity/key):
+- `seedPhrase` (textarea, required) - Seed Phrase
+  - Example: `Enter seed phrase (12-24 words) or click Generate`
+- `generateSeedButton` (button, optional) - Generate New Seed
+- `identityIndex` (number, required) - Identity Index
+- `keySelectionMode` (select, required) - Key Selection Mode
+- `keyPreview` (keyPreview, optional) - Keys to be added
 
 Example:
 ```javascript
-// Asset lock proof is a hex-encoded JSON object
-const assetLockProof = "a9147d3b... (hex-encoded)";
-const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
-
-// Public keys array with proper key types
-const publicKeys = JSON.stringify([
-  {
-    id: 0,
-    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
-    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
-    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
-    data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
-    readOnly: false
-  },
-  {
-    id: 1,
-    type: 0,
-    purpose: 0,
-    securityLevel: 2,
-    data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
-    readOnly: false
-  }
-]);
-
-const result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey, publicKeys);
+const result = await sdk.identityCreate(identityHex, /* params */, privateKeyHex);
 ```
 
 **Identity Top Up** - `identityTopUp`
 *Add credits to an existing identity*
 
-Parameters:
-- `identityId` (string, required) - The identity ID to top up (base58 format)
-- `assetLockProof` (string, required) - Asset lock proof (hex-encoded JSON)
-- `assetLockProofPrivateKey` (string, required) - Private key for the asset lock proof (WIF format)
+Parameters (in addition to identity/key):
+- `identityId` (text, required) - Identity ID
+  - Example: `Enter the identity ID to top up (base58)`
 
 Example:
 ```javascript
-const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
-const assetLockProof = "a9147d3b... (hex-encoded)";
-const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
-
-const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProofPrivateKey);
+const result = await sdk.identityTopUp(identityHex, /* params */, privateKeyHex);
 ```
 
 **Identity Update** - `identityUpdate`
@@ -813,7 +787,7 @@ const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProo
 
 Parameters (in addition to identity/key):
 - `addPublicKeys` (textarea, optional) - Keys to Add (JSON array)
-  - Example: `[{"type":0,"purpose":0,"securityLevel":2,"data":"base64_encoded_public_key","readOnly":false}]`
+  - Example: `[{"keyType":"ECDSA_HASH160","purpose":"AUTHENTICATION","data":"base64_key_data"}]`
 - `disablePublicKeys` (text, optional) - Key IDs to Disable (comma-separated)
   - Example: `2,3,5`
 
@@ -1114,13 +1088,14 @@ const result = await sdk.tokenConfigUpdate(identityHex, /* params */, privateKey
 ```
 
 **Token Transfer** - `tokenTransfer`
-*Transfer tokens to another identity*
+*Transfer tokens between identities*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `amount` (number, required) - Amount to Transfer
+- `tokenPosition` (number, required) - Token Contract Position
+- `amount` (text, required) - Amount to Transfer
 - `recipientId` (text, required) - Recipient Identity ID
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
@@ -1135,12 +1110,13 @@ const result = await sdk.token_transfer(
 ```
 
 **Token Freeze** - `tokenFreeze`
-*Freeze tokens for an identity*
+*Freeze tokens for a specific identity*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID to Freeze
+- `tokenPosition` (number, required) - Token Contract Position
+- `identityToFreeze` (text, required) - Identity ID to Freeze
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
@@ -1148,25 +1124,27 @@ const result = await sdk.tokenFreeze(identityHex, /* params */, privateKeyHex);
 ```
 
 **Token Unfreeze** - `tokenUnfreeze`
-*Unfreeze tokens for an identity*
+*Unfreeze tokens for a specific identity*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID to Unfreeze
+- `tokenPosition` (number, required) - Token Contract Position
+- `identityToUnfreeze` (text, required) - Identity ID to Unfreeze
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
 const result = await sdk.tokenUnfreeze(identityHex, /* params */, privateKeyHex);
 ```
 
-**Token Destroy Frozen Funds** - `tokenDestroyFrozen`
+**Token Destroy Frozen** - `tokenDestroyFrozen`
 *Destroy frozen tokens*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID
+- `tokenPosition` (number, required) - Token Contract Position
+- `identityId` (text, required) - Identity ID whose frozen tokens to destroy
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
