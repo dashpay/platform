@@ -8,6 +8,18 @@ extern crate core;
 
 pub use dashcore;
 
+#[cfg(feature = "core_key_wallet")]
+pub use key_wallet;
+
+#[cfg(feature = "core_key_wallet_manager")]
+pub use key_wallet_manager;
+
+#[cfg(feature = "core_spv")]
+pub use dash_spv;
+
+#[cfg(feature = "core_rpc_client")]
+pub use dashcore_rpc;
+
 #[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;

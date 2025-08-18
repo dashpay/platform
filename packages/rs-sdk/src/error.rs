@@ -6,7 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
-use dpp::ProtocolError;
+use dpp::{dashcore_rpc, ProtocolError};
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
