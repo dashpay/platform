@@ -34,7 +34,8 @@ members = [
     "packages/token-history-contract",
     "packages/keyword-search-contract",
     "packages/wasm-drive-verify",
-    "packages/dash-platform-balance-checker"
+    "packages/dash-platform-balance-checker",
+    "packages/rs-platform-wallet"
 ]
 
 exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use

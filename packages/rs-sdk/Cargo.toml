@@ -16,6 +16,7 @@ rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
+platform-wallet = { path = "../rs-platform-wallet", optional = true}
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
@@ -138,6 +139,7 @@ core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
+platform_wallet_manager = ["platform-wallet/manager"]
 
 [[example]]
 

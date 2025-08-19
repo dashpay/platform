@@ -6,24 +6,24 @@ use crate::strategy::{
     StrategyRandomness, ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
-use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
-    MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkType,
-};
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{BlockHash, ProTxHash, QuorumHash};
+use dpp::dashcore_rpc::dashcore_rpc_json::{
+    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
+    MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkType,
+};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
-use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey, SignatureSchemes};
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
+use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;

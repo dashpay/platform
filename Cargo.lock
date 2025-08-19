@@ -646,33 +646,6 @@ dependencies = [
 
 [[package]]
 name = "blsful"
-version = "2.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a676ce0f93ae20ca6defc223b5ac459a6f071bd88c03100a14cb93604a5e994c"
-dependencies = [
- "anyhow",
- "arrayref",
- "blstrs_plus",
- "hex",
- "hkdf",
- "merlin",
- "pairing",
- "rand",
- "rand_chacha",
- "rand_core",
- "serde",
- "serde_bare",
- "sha2",
- "sha3",
- "subtle",
- "thiserror 1.0.64",
- "uint-zigzag",
- "vsss-rs 4.3.8",
- "zeroize",
-]
-
-[[package]]
-name = "blsful"
 version = "3.0.0-pre8"
 source = "git+https://github.com/dashpay/agora-blsful?rev=be108b2cf6ac64eedbe04f91c63731533c8956bc#be108b2cf6ac64eedbe04f91c63731533c8956bc"
 dependencies = [
@@ -692,7 +665,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.12",
  "uint-zigzag",
- "vsss-rs 5.1.0",
+ "vsss-rs",
  "zeroize",
 ]
 
@@ -1411,6 +1384,7 @@ dependencies = [
  "http",
  "js-sys",
  "lru",
+ "platform-wallet",
  "rs-dapi-client",
  "rustls-pemfile",
  "sanitize-filename",
@@ -1433,13 +1407,14 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bincode 1.3.3",
- "blsful 2.5.7",
+ "blsful",
  "clap",
  "crossterm",
  "dashcore",
  "dashcore_hashes",
  "hex",
  "indexmap 2.7.0",
+ "key-wallet",
  "key-wallet-manager",
  "log",
  "rand",
@@ -1464,7 +1439,7 @@ dependencies = [
  "bitflags 2.9.0",
  "bitvec",
  "blake3",
- "blsful 3.0.0-pre8",
+ "blsful",
  "dash-network",
  "dashcore-private",
  "dashcore_hashes",
@@ -4215,6 +4190,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "platform-wallet"
+version = "0.1.0"
+dependencies = [
+ "dashcore",
+ "dpp",
+ "indexmap 2.7.0",
+ "key-wallet",
+ "key-wallet-manager",
+ "serde",
+ "thiserror 1.0.64",
+]
+
+[[package]]
 name = "plotters"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5723,26 +5711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "thiserror-impl-no-std"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58e6318948b519ba6dc2b442a6d0b904ebfb8d411a3ad3e07843615a72249758"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "thiserror-no-std"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3ad459d94dd517257cc96add8a43190ee620011bb6e6cdc82dafd97dfafafea"
-dependencies = [
- "thiserror-impl-no-std",
-]
-
-[[package]]
 name = "thread_local"
 version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6469,22 +6437,6 @@ name = "virtue"
 version = "0.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7302ac74a033bf17b6e609ceec0f891ca9200d502d31f02dc7908d3d98767c9d"
-
-[[package]]
-name = "vsss-rs"
-version = "4.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fabeca519a296f0b39428cfe496b600c0179c9498687986449d61fa40e60806"
-dependencies = [
- "crypto-bigint",
- "elliptic-curve",
- "generic-array 1.1.0",
- "rand_core",
- "serde",
- "sha3",
- "subtle",
- "thiserror-no-std",
-]
 
 [[package]]
 name = "vsss-rs"

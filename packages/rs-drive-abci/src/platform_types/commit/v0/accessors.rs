@@ -1,4 +1,4 @@
-use dashcore_rpc::json::QuorumType;
+use dpp::dashcore_rpc::json::QuorumType;
 use tenderdash_abci::proto;
 
 #[allow(dead_code)]
