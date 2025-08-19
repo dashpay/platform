@@ -1,124 +1,29 @@
 #!/usr/bin/env python3
 """
 Documentation generator for WASM JS SDK
-Extracts query and state transition definitions from index.html
+Reads query and state transition definitions from api-definitions.json
 and generates both user documentation (HTML) and AI reference (Markdown)
 """
 
-import os
-import re
 import json
 import html as html_lib
-import html
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
-def extract_definitions_from_html(html_content):
-    """Extract query and state transition definitions from index.html"""
-    
-    # Extract queryDefinitions
-    query_match = re.search(r'const queryDefinitions = ({[\s\S]*?});(?=\s*(?:const|//|$))', html_content)
-    query_definitions = {}
-    if query_match:
-        # Clean up the JavaScript object to make it JSON-parseable
-        query_str = query_match.group(1)
-        # Convert JS object to JSON format
-        query_str = re.sub(r'(\w+):', r'"\1":', query_str)  # Add quotes to keys
-        query_str = re.sub(r',\s*}', '}', query_str)  # Remove trailing commas
-        query_str = re.sub(r',\s*]', ']', query_str)  # Remove trailing commas in arrays
-        # Handle functions and complex values
-        query_str = re.sub(r'dependsOn:\s*{[^}]+}', '"dependsOn": {}', query_str)
-        query_str = re.sub(r'action:\s*"[^"]*"', '"action": ""', query_str)
-        query_str = re.sub(r'dynamic:\s*true', '"dynamic": true', query_str)
-        query_str = re.sub(r'defaultValue:\s*true', '"defaultValue": true', query_str)
-        query_str = re.sub(r'validateOnType:\s*true', '"validateOnType": true', query_str)
+def load_api_definitions(api_definitions_file):
+    """Load query and state transition definitions from api-definitions.json"""
+    try:
+        with open(api_definitions_file, 'r', encoding='utf-8') as f:
+            api_data = json.load(f)
         
-        try:
-            query_definitions = json.loads(query_str)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Could not parse query definitions: {e}")
-            # Fallback to regex extraction
-            query_definitions = extract_definitions_regex(html_content, 'queryDefinitions')
-    
-    # Extract stateTransitionDefinitions
-    transition_match = re.search(r'const stateTransitionDefinitions = ({[\s\S]*?});(?=\s*(?:const|//|$))', html_content)
-    transition_definitions = {}
-    if transition_match:
-        trans_str = transition_match.group(1)
-        trans_str = re.sub(r'(\w+):', r'"\1":', trans_str)
-        trans_str = re.sub(r',\s*}', '}', trans_str)
-        trans_str = re.sub(r',\s*]', ']', trans_str)
-        trans_str = re.sub(r'dependsOn:\s*{[^}]+}', '"dependsOn": {}', trans_str)
-        trans_str = re.sub(r'action:\s*"[^"]*"', '"action": ""', trans_str)
-        trans_str = re.sub(r'dynamic:\s*true', '"dynamic": true', trans_str)
-        trans_str = re.sub(r'defaultValue:\s*true', '"defaultValue": true', trans_str)
-        trans_str = re.sub(r'validateOnType:\s*true', '"validateOnType": true', trans_str)
+        query_definitions = api_data.get('queries', {})
+        transition_definitions = api_data.get('transitions', {})
         
-        try:
-            transition_definitions = json.loads(trans_str)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Could not parse transition definitions: {e}")
-            transition_definitions = extract_definitions_regex(html_content, 'stateTransitionDefinitions')
-    
-    return query_definitions, transition_definitions
-
-def extract_definitions_regex(html_content, definition_name):
-    """Robust regex extraction method for JavaScript object definitions"""
-    definitions = {}
-    
-    # Find the complete definition block
-    pattern = rf'const {definition_name} = (\{{(?:[^{{}}]|{{[^{{}}]*}})*\}});'
-    match = re.search(pattern, html_content, re.DOTALL)
-    if not match:
-        return definitions
-    
-    full_def = match.group(1)
-    
-    # Extract each category
-    cat_pattern = r'(\w+):\s*\{[^}]*label:\s*"([^"]+)"[^}]*(?:queries|transitions):\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-    
-    for cat_match in re.finditer(cat_pattern, full_def, re.DOTALL):
-        cat_key = cat_match.group(1)
-        cat_label = cat_match.group(2)
-        items_block = cat_match.group(3)
+        return query_definitions, transition_definitions
         
-        items_key = 'queries' if 'query' in definition_name else 'transitions'
-        definitions[cat_key] = {
-            'label': cat_label,
-            items_key: {}
-        }
-        
-        # Extract individual queries/transitions
-        item_pattern = r'(\w+):\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-        
-        for item_match in re.finditer(item_pattern, items_block):
-            item_key = item_match.group(1)
-            item_content = item_match.group(2)
-            
-            # Extract item details
-            item_data = {}
-            
-            # Extract label
-            label_match = re.search(r'label:\s*"([^"]+)"', item_content)
-            if label_match:
-                item_data['label'] = label_match.group(1)
-            
-            # Extract description
-            desc_match = re.search(r'description:\s*"([^"]+)"', item_content)
-            if desc_match:
-                item_data['description'] = desc_match.group(1)
-            
-            # Extract inputs array
-            inputs_match = re.search(r'inputs:\s*\[([^\]]+(?:\[[^\]]*\][^\]]*)*)\]', item_content, re.DOTALL)
-            if inputs_match:
-                inputs_str = inputs_match.group(1)
-                item_data['inputs'] = extract_inputs(inputs_str)
-            else:
-                item_data['inputs'] = []
-            
-            definitions[cat_key][items_key][item_key] = item_data
-    
-    return definitions
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading API definitions: {e}")
+        return {}, {}
 
 def generate_example_code(query_key, inputs):
     """Generate example code for a query"""
@@ -160,6 +65,7 @@ def generate_example_code(query_key, inputs):
         'documentId': f"'{test_data['document_id']}'",
         'label': f"'{test_data['username']}'",
         'name': f"'{test_data['username']}'",
+        'prefix': "'ali'",
         'epoch': '1000' if 'getEpochsInfo' in query_key else test_data['epoch'],
         'keyRequestType': "'all'",
         'limit': '10',
@@ -197,7 +103,8 @@ def generate_example_code(query_key, inputs):
         'startAtVoterInfo': 'null',
         'startAtVotePollIdInfo': 'null',
         'startTimeInfo': '(Date.now() - 86400000).toString()',
-        'endTimeInfo': 'Date.now().toString()'
+        'endTimeInfo': 'Date.now().toString()',
+        'startAfter': 'null'
     }
     
     # Handle special cases for functions with structured parameters
@@ -210,7 +117,16 @@ def generate_example_code(query_key, inputs):
     elif query_key == 'getDataContractHistory':
         # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
         # Use the specific contract ID for getDataContractHistory examples
-        params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0"]
+        params = ["'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM'", "10", "0", "'0'"]
+    elif query_key == 'dpnsSearch':
+        # dpnsSearch is implemented as get_documents with DPNS-specific parameters
+        # get_documents expects: sdk, contractId, documentType, whereClause, orderBy, limit
+        dpns_contract_id = "'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'"
+        document_type = "'domain'"
+        where_clause = 'JSON.stringify([["normalizedLabel", "startsWith", "ali"], ["normalizedParentDomainName", "==", "dash"]])'
+        order_by = 'JSON.stringify([["normalizedLabel", "asc"]])'
+        limit = "10"
+        params = [dpns_contract_id, document_type, where_clause, order_by, limit]
     else:
         # Generate parameters normally
         params = []
@@ -249,6 +165,7 @@ def generate_example_code(query_key, inputs):
         'getDpnsUsername': 'get_dpns_usernames',
         'dpnsCheckAvailability': 'dpns_is_name_available',
         'dpnsResolve': 'dpns_resolve_name',
+        'dpnsSearch': 'get_documents',
         'getContestedResources': 'get_contested_resources',
         'getContestedResourceVoteState': 'get_contested_resource_vote_state',
         'getContestedResourceVotersForIdentity': 'get_contested_resource_voters_for_identity',
@@ -290,60 +207,6 @@ def generate_example_code(query_key, inputs):
     # Generate the function call (functions are imported directly, not methods on sdk)
     return f'return await window.wasmFunctions.{func_name}({", ".join(all_params)});'
 
-def extract_inputs(inputs_str):
-    """Extract input definitions from JavaScript array string"""
-    inputs = []
-    
-    # Match individual input objects
-    input_pattern = r'\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
-    
-    for match in re.finditer(input_pattern, inputs_str):
-        input_content = match.group(1)
-        input_data = {}
-        
-        # Extract name
-        name_match = re.search(r'name:\s*"([^"]+)"', input_content)
-        if name_match:
-            input_data['name'] = name_match.group(1)
-        
-        # Extract type
-        type_match = re.search(r'type:\s*"([^"]+)"', input_content)
-        if type_match:
-            input_data['type'] = type_match.group(1)
-        
-        # Extract label
-        label_match = re.search(r'label:\s*"([^"]+)"', input_content)
-        if label_match:
-            input_data['label'] = label_match.group(1)
-        
-        # Extract required
-        req_match = re.search(r'required:\s*(true|false)', input_content)
-        if req_match:
-            input_data['required'] = req_match.group(1) == 'true'
-        
-        # Extract placeholder
-        placeholder_match = re.search(r'placeholder:\s*["\']([^"\']+)["\']', input_content)
-        if placeholder_match:
-            input_data['placeholder'] = placeholder_match.group(1)
-        
-        # Extract options if present
-        options_match = re.search(r'options:\s*\[([^\]]+)\]', input_content)
-        if options_match:
-            options_str = options_match.group(1)
-            input_data['options'] = []
-            
-            # Extract each option
-            opt_pattern = r'\{\s*value:\s*"([^"]+)"[^}]*label:\s*"([^"]+)"[^}]*\}'
-            for opt_match in re.finditer(opt_pattern, options_str):
-                input_data['options'].append({
-                    'value': opt_match.group(1),
-                    'label': opt_match.group(2)
-                })
-        
-        if input_data:
-            inputs.append(input_data)
-    
-    return inputs
 
 def generate_sidebar_entries(definitions, type_prefix, section_class=""):
     """Generate sidebar entries for queries or transitions"""
@@ -515,6 +378,483 @@ def generate_path_elements_info():
                     </ul>
                 </div>'''
 
+def generate_docs_css():
+    """Generate CSS styles for docs.html"""
+    return '''body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+    display: flex;
+}
+
+/* Sidebar styles */
+.sidebar {
+    width: 280px;
+    background-color: white;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+    position: fixed;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+.sidebar h2 {
+    font-size: 1.2em;
+    margin-bottom: 10px;
+    color: #2c3e50;
+}
+
+.sidebar ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 20px 0;
+}
+
+.sidebar li {
+    margin-bottom: 5px;
+}
+
+.sidebar a {
+    color: #34495e;
+    text-decoration: none;
+    font-size: 0.9em;
+    display: block;
+    padding: 5px 10px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.sidebar a:hover {
+    background-color: #ecf0f1;
+    color: #2c3e50;
+}
+
+.sidebar .section-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    margin: 20px -20px 15px -20px;
+    font-weight: 600;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar .section-header:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(-100%);
+    transition: transform 0.6s ease;
+}
+
+.sidebar .section-header:hover:before {
+    transform: translateX(0);
+}
+
+.sidebar .section-header.state-transitions {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.sidebar .category {
+    font-weight: 600;
+    color: #34495e;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    font-size: 0.85em;
+    padding-left: 10px;
+    border-left: 3px solid #3498db;
+}
+
+/* Search box styles */
+.search-container {
+    padding: 0 20px 20px 20px;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.search-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-input:focus {
+    border-color: #3498db;
+}
+
+.search-input::placeholder {
+    color: #95a5a6;
+}
+
+.sidebar li.hidden {
+    display: none;
+}
+
+.sidebar .no-results {
+    text-align: center;
+    color: #95a5a6;
+    padding: 20px;
+    font-size: 0.9em;
+    display: none;
+}
+
+/* Main content styles */
+.main-content {
+    margin-left: 320px;
+    padding: 20px 40px;
+    max-width: 900px;
+}
+
+h1, h2, h3, h4 {
+    color: #2c3e50;
+}
+
+h1 {
+    border-bottom: 3px solid #3498db;
+    padding-bottom: 10px;
+}
+
+h2 {
+    border-bottom: 2px solid #ecf0f1;
+    padding-bottom: 8px;
+    margin-top: 30px;
+}
+
+h3 {
+    color: #34495e;
+    margin-top: 25px;
+}
+
+.nav {
+    background-color: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.nav li {
+    display: inline-block;
+    margin-right: 20px;
+}
+
+.nav a {
+    color: #3498db;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.nav a:hover {
+    text-decoration: underline;
+}
+
+.category {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.operation {
+    border-left: 4px solid #3498db;
+    padding-left: 20px;
+    margin-bottom: 30px;
+}
+
+.description {
+    color: #7f8c8d;
+    font-style: italic;
+    margin-bottom: 15px;
+}
+
+.parameters {
+    background-color: #ecf0f1;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 10px;
+}
+
+.parameter {
+    margin-bottom: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid #bdc3c7;
+}
+
+.parameter:last-child {
+    border-bottom: none;
+}
+
+.param-name {
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.param-type {
+    color: #e74c3c;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.param-required {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.param-optional {
+    color: #95a5a6;
+}
+
+.code-example {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 15px;
+    border-radius: 5px;
+    overflow-x: auto;
+    font-family: monospace;
+    margin-top: 10px;
+}
+
+/* Interactive example styles */
+.example-container {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.example-code {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 10px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.9em;
+    margin-bottom: 10px;
+    position: relative;
+}
+
+.run-button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.run-button:hover {
+    background-color: #2980b9;
+}
+
+.run-button:disabled {
+    background-color: #95a5a6;
+    cursor: not-allowed;
+}
+
+.example-result {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.85em;
+    display: none;
+}
+
+.example-result.success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.example-result.error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.back-to-top {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #3498db;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    text-decoration: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.back-to-top:hover {
+    background-color: #2980b9;
+}
+
+.info-note {
+    background-color: #e3f2fd;
+    color: #1565c0;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    margin: 10px 0;
+    border-left: 4px solid #1976d2;
+}
+
+.path-info {
+    background-color: #f5f7fa;
+    border: 1px solid #e1e5eb;
+    border-radius: 4px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.path-info h6 {
+    margin-top: 15px;
+    margin-bottom: 10px;
+    color: #2c3e50;
+    font-size: 0.95em;
+}
+
+.path-info h6:first-child {
+    margin-top: 0;
+}
+
+.path-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+}
+
+.path-table th {
+    background-color: #e9ecef;
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid #dee2e6;
+}
+
+.path-table td {
+    padding: 8px 12px;
+    border: 1px solid #dee2e6;
+}
+
+.path-table code {
+    background-color: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.path-info ul {
+    margin: 0;
+    padding-left: 25px;
+}
+
+.path-info li {
+    margin-bottom: 5px;
+    line-height: 1.6;
+}
+
+.path-info li code {
+    background-color: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+/* Preloader styles */
+#preloader {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 9999;
+}
+
+.preloader--visible {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.preloader-content {
+    text-align: center;
+    background: white;
+    padding: 30px 50px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.preloader-text {
+    font-size: 16px;
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.preloader-progress {
+    margin-top: 20px;
+}
+
+.progress-bar {
+    width: 300px;
+    height: 20px;
+    background-color: #f0f0f0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #45a049);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.progress-percent {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+}'''
+
 def generate_user_docs_html(query_defs, transition_defs):
     """Generate user-friendly HTML documentation"""
     
@@ -526,479 +866,7 @@ def generate_user_docs_html(query_defs, transition_defs):
     <title>Dash Platform WASM JS SDK Documentation</title>
     <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
     <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f5;
-            display: flex;
-        }
-        
-        /* Sidebar styles */
-        .sidebar {
-            width: 280px;
-            background-color: white;
-            box-shadow: 2px 0 4px rgba(0,0,0,0.1);
-            position: fixed;
-            height: 100vh;
-            overflow-y: auto;
-            padding: 20px;
-        }
-        
-        .sidebar h2 {
-            font-size: 1.2em;
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-        
-        .sidebar ul {
-            list-style: none;
-            padding: 0;
-            margin: 0 0 20px 0;
-        }
-        
-        .sidebar li {
-            margin-bottom: 5px;
-        }
-        
-        .sidebar a {
-            color: #34495e;
-            text-decoration: none;
-            font-size: 0.9em;
-            display: block;
-            padding: 5px 10px;
-            border-radius: 3px;
-            transition: background-color 0.2s;
-        }
-        
-        .sidebar a:hover {
-            background-color: #ecf0f1;
-            color: #2c3e50;
-        }
-        
-        .sidebar .section-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 20px;
-            margin: 20px -20px 15px -20px;
-            font-weight: 600;
-            font-size: 0.9em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .sidebar .section-header:before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.1);
-            transform: translateX(-100%);
-            transition: transform 0.6s ease;
-        }
-        
-        .sidebar .section-header:hover:before {
-            transform: translateX(0);
-        }
-        
-        .sidebar .section-header.state-transitions {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        
-        .sidebar .category {
-            font-weight: 600;
-            color: #34495e;
-            margin-top: 15px;
-            margin-bottom: 8px;
-            font-size: 0.85em;
-            padding-left: 10px;
-            border-left: 3px solid #3498db;
-        }
-        
-        /* Search box styles */
-        .search-container {
-            padding: 0 20px 20px 20px;
-            border-bottom: 1px solid #ecf0f1;
-        }
-        
-        .search-input {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 0.9em;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        
-        .search-input:focus {
-            border-color: #3498db;
-        }
-        
-        .search-input::placeholder {
-            color: #95a5a6;
-        }
-        
-        .sidebar li.hidden {
-            display: none;
-        }
-        
-        .sidebar .no-results {
-            text-align: center;
-            color: #95a5a6;
-            padding: 20px;
-            font-size: 0.9em;
-            display: none;
-        }
-        
-        /* Main content styles */
-        .main-content {
-            margin-left: 320px;
-            padding: 20px 40px;
-            max-width: 900px;
-        }
-        
-        h1, h2, h3, h4 {
-            color: #2c3e50;
-        }
-        
-        h1 {
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 10px;
-        }
-        
-        h2 {
-            border-bottom: 2px solid #ecf0f1;
-            padding-bottom: 8px;
-            margin-top: 30px;
-        }
-        
-        h3 {
-            color: #34495e;
-            margin-top: 25px;
-        }
-        
-        .nav {
-            background-color: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .nav ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .nav li {
-            display: inline-block;
-            margin-right: 20px;
-        }
-        
-        .nav a {
-            color: #3498db;
-            text-decoration: none;
-            font-weight: 500;
-        }
-        
-        .nav a:hover {
-            text-decoration: underline;
-        }
-        
-        .category {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .operation {
-            border-left: 4px solid #3498db;
-            padding-left: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .description {
-            color: #7f8c8d;
-            font-style: italic;
-            margin-bottom: 15px;
-        }
-        
-        .parameters {
-            background-color: #ecf0f1;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 10px;
-        }
-        
-        .parameter {
-            margin-bottom: 10px;
-            padding: 5px 0;
-            border-bottom: 1px solid #bdc3c7;
-        }
-        
-        .parameter:last-child {
-            border-bottom: none;
-        }
-        
-        .param-name {
-            font-weight: bold;
-            color: #2c3e50;
-        }
-        
-        .param-type {
-            color: #e74c3c;
-            font-family: monospace;
-            font-size: 0.9em;
-        }
-        
-        .param-required {
-            color: #e74c3c;
-            font-weight: bold;
-        }
-        
-        .param-optional {
-            color: #95a5a6;
-        }
-        
-        .code-example {
-            background-color: #2c3e50;
-            color: #ecf0f1;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-            font-family: monospace;
-            margin-top: 10px;
-        }
-        
-        /* Interactive example styles */
-        .example-container {
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 5px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-        
-        .example-code {
-            background-color: #2c3e50;
-            color: #ecf0f1;
-            padding: 10px;
-            border-radius: 3px;
-            font-family: monospace;
-            font-size: 0.9em;
-            margin-bottom: 10px;
-            position: relative;
-        }
-        
-        .run-button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: background-color 0.2s;
-        }
-        
-        .run-button:hover {
-            background-color: #2980b9;
-        }
-        
-        .run-button:disabled {
-            background-color: #95a5a6;
-            cursor: not-allowed;
-        }
-        
-        .example-result {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 3px;
-            font-family: monospace;
-            font-size: 0.85em;
-            display: none;
-        }
-        
-        .example-result.success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-        
-        .example-result.error {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-        
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .back-to-top {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background-color: #3498db;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 5px;
-            text-decoration: none;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .back-to-top:hover {
-            background-color: #2980b9;
-        }
-        
-        .info-note {
-            background-color: #e3f2fd;
-            color: #1565c0;
-            padding: 12px 16px;
-            border-radius: 4px;
-            font-size: 0.9em;
-            margin: 10px 0;
-            border-left: 4px solid #1976d2;
-        }
-        
-        .path-info {
-            background-color: #f5f7fa;
-            border: 1px solid #e1e5eb;
-            border-radius: 4px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-        
-        .path-info h6 {
-            margin-top: 15px;
-            margin-bottom: 10px;
-            color: #2c3e50;
-            font-size: 0.95em;
-        }
-        
-        .path-info h6:first-child {
-            margin-top: 0;
-        }
-        
-        .path-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 15px;
-        }
-        
-        .path-table th {
-            background-color: #e9ecef;
-            padding: 8px 12px;
-            text-align: left;
-            font-weight: 600;
-            border: 1px solid #dee2e6;
-        }
-        
-        .path-table td {
-            padding: 8px 12px;
-            border: 1px solid #dee2e6;
-        }
-        
-        .path-table code {
-            background-color: #fff;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: monospace;
-        }
-        
-        .path-info ul {
-            margin: 0;
-            padding-left: 25px;
-        }
-        
-        .path-info li {
-            margin-bottom: 5px;
-            line-height: 1.6;
-        }
-        
-        .path-info li code {
-            background-color: #fff;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: monospace;
-        }
-        
-        /* Preloader styles */
-        #preloader {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            z-index: 9999;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .preloader-content {
-            text-align: center;
-            background: white;
-            padding: 30px 50px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        .preloader-text {
-            font-size: 16px;
-            margin-bottom: 15px;
-            color: #333;
-        }
-        
-        .preloader-progress {
-            margin-top: 20px;
-        }
-        
-        .progress-bar {
-            width: 300px;
-            height: 20px;
-            background-color: #f0f0f0;
-            border-radius: 10px;
-            overflow: hidden;
-            margin-bottom: 10px;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #4CAF50, #45a049);
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        
-        .progress-percent {
-            font-size: 14px;
-            font-weight: bold;
-            color: #333;
-        }
-    </style>
+    <link rel="stylesheet" href="docs.css">
     <script type="module">
         import init, { 
             WasmSdkBuilder,
@@ -1143,7 +1011,7 @@ def generate_user_docs_html(query_defs, transition_defs):
             
             // Only show preloader if not cached
             if (!isCached || window.location.search.includes('force-reload')) {
-                preloader.style.display = 'flex';
+                preloader.classList.add('preloader--visible');
             }
             
             try {
@@ -1179,13 +1047,13 @@ def generate_user_docs_html(query_defs, transition_defs):
                 
                 // Hide preloader faster if cached
                 setTimeout(() => {
-                    preloader.style.display = 'none';
+                    preloader.classList.remove('preloader--visible');
                 }, isCached ? 200 : 500);
             } catch (error) {
                 console.error('Failed to initialize SDK:', error);
                 sdk = null;
                 isInitialized = false;
-                preloader.style.display = 'none';
+                preloader.classList.remove('preloader--visible');
                 throw error;
             }
         }
@@ -1925,54 +1793,39 @@ def main():
     
     # Get paths
     script_dir = Path(__file__).parent
-    index_file = script_dir / 'index.html'
     
-    if not index_file.exists():
-        print(f"Error: index.html not found at {index_file}")
+    # Load API definitions from api-definitions.json
+    api_definitions_file = script_dir / 'api-definitions.json'
+    
+    if not api_definitions_file.exists():
+        print(f"Error: api-definitions.json not found at {api_definitions_file}")
         return 1
     
-    # First check if we have manually fixed definitions
-    fixed_file = script_dir / 'fixed_definitions.json'
-    extracted_file = script_dir / 'extracted_definitions.json'
-    
-    if fixed_file.exists():
-        print("Using manually fixed definitions...")
-        definitions_file = fixed_file
-    else:
-        # Extract definitions using the extraction script
-        print("Extracting definitions from index.html...")
-        import subprocess
-        result = subprocess.run(['python3', 'extract_definitions.py'], cwd=script_dir, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Error extracting definitions: {result.stderr}")
-            return 1
+    print("Loading API definitions from api-definitions.json...")
+    try:
+        query_defs, transition_defs = load_api_definitions(api_definitions_file)
         
-        if not extracted_file.exists():
-            print("Error: Could not find extracted definitions")
+        # Check if loading failed (returns empty dictionaries on error)
+        if not query_defs or not transition_defs:
+            print("Error: Failed to load API definitions or definitions are empty")
             return 1
-        definitions_file = extracted_file
+            
+        # Validate that we have actual data
+        query_count = sum(len(cat.get('queries', {})) for cat in query_defs.values())
+        transition_count = sum(len(cat.get('transitions', {})) for cat in transition_defs.values())
+        
+        if query_count == 0 and transition_count == 0:
+            print("Error: No queries or state transitions found in API definitions")
+            return 1
+            
+        print(f"Found {query_count} queries")
+        print(f"Found {transition_count} state transitions")
+        
+    except Exception as e:
+        print(f"Error: Failed to load API definitions: {e}")
+        return 1
     
-    with open(definitions_file, 'r') as f:
-        extracted = json.load(f)
-    
-    query_defs = extracted.get('queries', {})
-    transition_defs = extracted.get('transitions', {})
-    
-    # Clean up the extracted data (remove invalid entries like 'dependsOn')
-    for cat_key, category in list(query_defs.items()):
-        queries = category.get('queries', {})
-        for q_key in list(queries.keys()):
-            if q_key in ['dependsOn', 'offset', 'limit'] or not queries[q_key].get('label'):
-                del queries[q_key]
-    
-    for cat_key, category in list(transition_defs.items()):
-        transitions = category.get('transitions', {})
-        for t_key in list(transitions.keys()):
-            if t_key in ['dependsOn'] or not transitions[t_key].get('label'):
-                del transitions[t_key]
-    
-    print(f"Found {sum(len(cat.get('queries', {})) for cat in query_defs.values())} queries")
-    print(f"Found {sum(len(cat.get('transitions', {})) for cat in transition_defs.values())} state transitions")
+    # API definitions are already clean from JSON source - no cleanup needed
     
     # Generate user docs
     print("\nGenerating user documentation (docs.html)...")
@@ -1981,6 +1834,14 @@ def main():
     with open(docs_file, 'w', encoding='utf-8') as f:
         f.write(user_docs_html)
     print(f"Written to {docs_file}")
+    
+    # Generate CSS file
+    print("Generating CSS file (docs.css)...")
+    docs_css = generate_docs_css()
+    css_file = script_dir / 'docs.css'
+    with open(css_file, 'w', encoding='utf-8') as f:
+        f.write(docs_css)
+    print(f"Written to {css_file}")
     
     # Generate AI reference
     print("\nGenerating AI reference (AI_REFERENCE.md)...")
@@ -1992,7 +1853,7 @@ def main():
     
     # Generate documentation manifest for CI checks
     manifest = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "queries": {},
         "transitions": {}
     }
