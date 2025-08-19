@@ -1952,37 +1952,52 @@
             <div class="parameters">
                 <h5>Parameters:</h5>
                 <div class="parameter">
-                    <span class="param-name">Seed Phrase</span>
-                    <span class="param-type">textarea</span>
+                    <span class="param-name">Asset Lock Proof</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
-                    <br><small>Example: Enter seed phrase (12-24 words) or click Generate</small>
+                    <br><small>Hex-encoded JSON asset lock proof</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Generate New Seed</span>
-                    <span class="param-type">button</span>
-                    <span class="param-optional">(optional)</span>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Identity Index</span>
-                    <span class="param-type">number</span>
+                    <span class="param-name">Asset Lock Proof Private Key</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
+                    <br><small>WIF format private key</small>
                 </div>
                 <div class="parameter">
-                    <span class="param-name">Key Selection Mode</span>
-                    <span class="param-type">select</span>
+                    <span class="param-name">Public Keys</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
-                    <br><small>Options: Default (Recommended), Advanced</small>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Keys to be added</span>
-                    <span class="param-type">keyPreview</span>
-                    <span class="param-optional">(optional)</span>
+                    <br><small>JSON array of public keys</small>
                 </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code">const result = await sdk.identityCreate(identityHex, /* params */, privateKeyHex);</div>            </div>
+                <div class="example-code">// Asset lock proof is a hex-encoded JSON object
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+// Public keys array with proper key types
+const publicKeys = JSON.stringify([
+  {
+    id: 0,
+    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
+    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
+    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
+    data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
+    readOnly: false
+  },
+  {
+    id: 1,
+    type: 0,
+    purpose: 0,
+    securityLevel: 2,
+    data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
+    readOnly: false
+  }
+]);
+
+const result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey, publicKeys);</div>            </div>
         </div>
         <div class="operation">
             <h4 id="transition-identityTopUp">Identity Top Up</h4>
@@ -1992,15 +2007,31 @@
                 <h5>Parameters:</h5>
                 <div class="parameter">
                     <span class="param-name">Identity ID</span>
-                    <span class="param-type">text</span>
+                    <span class="param-type">string</span>
                     <span class="param-required">(required)</span>
-                    <br><small>Example: Enter the identity ID to top up (base58)</small>
+                    <br><small>Base58 format identity ID</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Asset Lock Proof</span>
+                    <span class="param-type">string</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>Hex-encoded JSON asset lock proof</small>
+                </div>
+                <div class="parameter">
+                    <span class="param-name">Asset Lock Proof Private Key</span>
+                    <span class="param-type">string</span>
+                    <span class="param-required">(required)</span>
+                    <br><small>WIF format private key</small>
                 </div>
             </div>
             
             <div class="example-container">
                 <h5>Example</h5>
-                <div class="example-code">const result = await sdk.identityTopUp(identityHex, /* params */, privateKeyHex);</div>            </div>
+                <div class="example-code">const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
+const assetLockProof = "a9147d3b... (hex-encoded)";
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWve1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+
+const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProofPrivateKey);</div>            </div>
         </div>
         <div class="operation">
             <h4 id="transition-identityUpdate">Identity Update</h4>
