@@ -48,6 +48,7 @@ jobs:
             bench-suite
             release
             dash-spv
+            wasm-sdk
           requireScope: false
           # Configure additional validation for the subject based on a regex.
           # This example ensures the subject doesn't start with an uppercase character.
