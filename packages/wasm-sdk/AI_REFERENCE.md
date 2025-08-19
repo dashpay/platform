@@ -758,9 +758,12 @@ const result = await sdk.{transition_name}(identityHex, ...params, privateKeyHex
 *Create a new identity with initial credits*
 
 Parameters:
-- `assetLockProof` (string, required) - Asset lock proof (hex-encoded JSON)
-- `assetLockProofPrivateKey` (string, required) - Private key for the asset lock proof (WIF format)
-- `publicKeys` (string, required) - JSON array of public keys to add to the identity
+- `assetLockProof` (string, required) - Asset Lock Proof
+  - Hex-encoded JSON asset lock proof
+- `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
+  - WIF format private key
+- `publicKeys` (string, required) - Public Keys
+  - JSON array of public keys
 
 Example:
 ```javascript
@@ -795,15 +798,18 @@ const result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey
 *Add credits to an existing identity*
 
 Parameters:
-- `identityId` (string, required) - The identity ID to top up (base58 format)
-- `assetLockProof` (string, required) - Asset lock proof (hex-encoded JSON)
-- `assetLockProofPrivateKey` (string, required) - Private key for the asset lock proof (WIF format)
+- `identityId` (string, required) - Identity ID
+  - Base58 format identity ID
+- `assetLockProof` (string, required) - Asset Lock Proof
+  - Hex-encoded JSON asset lock proof
+- `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
+  - WIF format private key
 
 Example:
 ```javascript
 const identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"; // base58
 const assetLockProof = "a9147d3b... (hex-encoded)";
-const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
+const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWve1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
 
 const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProofPrivateKey);
 ```
@@ -813,7 +819,7 @@ const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProo
 
 Parameters (in addition to identity/key):
 - `addPublicKeys` (textarea, optional) - Keys to Add (JSON array)
-  - Example: `[{"type":0,"purpose":0,"securityLevel":2,"data":"base64_encoded_public_key","readOnly":false}]`
+  - Example: `[{"keyType":"ECDSA_HASH160","purpose":"AUTHENTICATION","data":"base64_key_data"}]`
 - `disablePublicKeys` (text, optional) - Key IDs to Disable (comma-separated)
   - Example: `2,3,5`
 
@@ -1114,13 +1120,14 @@ const result = await sdk.tokenConfigUpdate(identityHex, /* params */, privateKey
 ```
 
 **Token Transfer** - `tokenTransfer`
-*Transfer tokens to another identity*
+*Transfer tokens between identities*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `amount` (number, required) - Amount to Transfer
+- `tokenPosition` (number, required) - Token Contract Position
+- `amount` (text, required) - Amount to Transfer
 - `recipientId` (text, required) - Recipient Identity ID
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
@@ -1135,12 +1142,13 @@ const result = await sdk.token_transfer(
 ```
 
 **Token Freeze** - `tokenFreeze`
-*Freeze tokens for an identity*
+*Freeze tokens for a specific identity*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID to Freeze
+- `tokenPosition` (number, required) - Token Contract Position
+- `identityToFreeze` (text, required) - Identity ID to Freeze
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
@@ -1148,25 +1156,27 @@ const result = await sdk.tokenFreeze(identityHex, /* params */, privateKeyHex);
 ```
 
 **Token Unfreeze** - `tokenUnfreeze`
-*Unfreeze tokens for an identity*
+*Unfreeze tokens for a specific identity*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID to Unfreeze
+- `tokenPosition` (number, required) - Token Contract Position
+- `identityToUnfreeze` (text, required) - Identity ID to Unfreeze
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript
 const result = await sdk.tokenUnfreeze(identityHex, /* params */, privateKeyHex);
 ```
 
-**Token Destroy Frozen Funds** - `tokenDestroyFrozen`
+**Token Destroy Frozen** - `tokenDestroyFrozen`
 *Destroy frozen tokens*
 
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
-- `tokenId` (text, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID
+- `tokenPosition` (number, required) - Token Contract Position
+- `identityId` (text, required) - Identity ID whose frozen tokens to destroy
+- `publicNote` (text, optional) - Public Note
 
 Example:
 ```javascript

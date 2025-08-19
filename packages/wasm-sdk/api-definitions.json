@@ -1235,7 +1235,31 @@
               "label": "Keys to be added",
               "help": "These keys will be added to your new identity"
             }
-          ]
+          ],
+          "sdk_params": [
+            {
+              "name": "assetLockProof",
+              "type": "string",
+              "label": "Asset Lock Proof",
+              "required": true,
+              "description": "Hex-encoded JSON asset lock proof"
+            },
+            {
+              "name": "assetLockProofPrivateKey",
+              "type": "string",
+              "label": "Asset Lock Proof Private Key",
+              "required": true,
+              "description": "WIF format private key"
+            },
+            {
+              "name": "publicKeys",
+              "type": "string",
+              "label": "Public Keys",
+              "required": true,
+              "description": "JSON array of public keys"
+            }
+          ],
+          "sdk_example": "// Asset lock proof is a hex-encoded JSON object\nconst assetLockProof = \"a9147d3b... (hex-encoded)\";\nconst assetLockProofPrivateKey = \"XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1\"; // WIF format\n\n// Public keys array with proper key types\nconst publicKeys = JSON.stringify([\n  {\n    id: 0,\n    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2\n    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.\n    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3\n    data: \"A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ\", // Base64-encoded public key\n    readOnly: false\n  },\n  {\n    id: 1,\n    type: 0,\n    purpose: 0,\n    securityLevel: 2,\n    data: \"AnotherBase64EncodedPublicKeyHere\", // Base64-encoded public key\n    readOnly: false\n  }\n]);\n\nconst result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey, publicKeys);"
         },
         "identityTopUp": {
           "label": "Identity Top Up",
@@ -1249,7 +1273,31 @@
               "placeholder": "Enter the identity ID to top up (base58)",
               "help": "The identity ID that will receive the credits from the asset lock proof"
             }
-          ]
+          ],
+          "sdk_params": [
+            {
+              "name": "identityId",
+              "type": "string",
+              "label": "Identity ID",
+              "required": true,
+              "description": "Base58 format identity ID"
+            },
+            {
+              "name": "assetLockProof",
+              "type": "string",
+              "label": "Asset Lock Proof",
+              "required": true,
+              "description": "Hex-encoded JSON asset lock proof"
+            },
+            {
+              "name": "assetLockProofPrivateKey",
+              "type": "string",
+              "label": "Asset Lock Proof Private Key",
+              "required": true,
+              "description": "WIF format private key"
+            }
+          ],
+          "sdk_example": "const identityId = \"5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk\"; // base58\nconst assetLockProof = \"a9147d3b... (hex-encoded)\";\nconst assetLockProofPrivateKey = \"XFfpaSbZq52HPy3WWve1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1\"; // WIF format\n\nconst result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProofPrivateKey);"
         },
         "identityUpdate": {
           "label": "Identity Update",
@@ -1915,7 +1963,7 @@
         },
         "tokenTransfer": {
           "label": "Token Transfer",
-          "description": "Transfer tokens to another identity",
+          "description": "Transfer tokens between identities",
           "inputs": [
             {
               "name": "contractId",
@@ -1924,14 +1972,14 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
               "name": "amount",
-              "type": "number",
+              "type": "text",
               "label": "Amount to Transfer",
               "required": true
             },
@@ -1940,12 +1988,18 @@
               "type": "text",
               "label": "Recipient Identity ID",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         },
         "tokenFreeze": {
           "label": "Token Freeze",
-          "description": "Freeze tokens for an identity",
+          "description": "Freeze tokens for a specific identity",
           "inputs": [
             {
               "name": "contractId",
@@ -1954,22 +2008,28 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
-              "name": "identityId",
+              "name": "identityToFreeze",
               "type": "text",
               "label": "Identity ID to Freeze",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         },
         "tokenUnfreeze": {
           "label": "Token Unfreeze",
-          "description": "Unfreeze tokens for an identity",
+          "description": "Unfreeze tokens for a specific identity",
           "inputs": [
             {
               "name": "contractId",
@@ -1978,21 +2038,27 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
-              "name": "identityId",
+              "name": "identityToUnfreeze",
               "type": "text",
               "label": "Identity ID to Unfreeze",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         },
         "tokenDestroyFrozen": {
-          "label": "Token Destroy Frozen Funds",
+          "label": "Token Destroy Frozen",
           "description": "Destroy frozen tokens",
           "inputs": [
             {
@@ -2002,16 +2068,22 @@
               "required": true
             },
             {
-              "name": "tokenId",
-              "type": "text",
+              "name": "tokenPosition",
+              "type": "number",
               "label": "Token Contract Position",
               "required": true
             },
             {
               "name": "identityId",
               "type": "text",
-              "label": "Identity ID",
+              "label": "Identity ID whose frozen tokens to destroy",
               "required": true
+            },
+            {
+              "name": "publicNote",
+              "type": "text",
+              "label": "Public Note",
+              "required": false
             }
           ]
         }

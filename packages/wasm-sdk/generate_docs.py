@@ -245,11 +245,15 @@ def generate_operation_entry(operation_key, operation, type_prefix):
                 <h5>Parameters:</h5>
 '''
     
+    # Use sdk_params if available (for state transitions), otherwise use inputs
+    sdk_params = operation.get('sdk_params', [])
     inputs = operation.get('inputs', [])
-    if not inputs:
+    params_to_use = sdk_params if sdk_params else inputs
+    
+    if not params_to_use:
         html_content += '                <p class="param-optional">No parameters required</p>'
     else:
-        for param in inputs:
+        for param in params_to_use:
             html_content += generate_parameter_entry(param)
     
     html_content += '''            </div>
@@ -297,7 +301,7 @@ def generate_operation_entry(operation_key, operation, type_prefix):
         html_content += f'\n                <div class="example-result" id="result-{operation_key}"></div>'
     else:
         # State transitions don't have run buttons
-        html_content += f'                <div class="example-code">{generate_transition_example(operation_key)}</div>'
+        html_content += f'                <div class="example-code">{generate_transition_example(operation_key, operation)}</div>'
     
     html_content += '''            </div>
         </div>
@@ -312,7 +316,9 @@ def generate_parameter_entry(param):
                     <span class="param-type">{param.get('type', 'text')}</span>
                     {required_text}
 '''
-    if param.get('placeholder'):
+    if param.get('description'):
+        html_content += f'                    <br><small>{html_lib.escape(param.get("description"))}</small>\n'
+    elif param.get('placeholder'):
         html_content += f'                    <br><small>Example: {html_lib.escape(param.get("placeholder"))}</small>\n'
     elif param.get('name') == 'limit' and not param.get('required', False):
         html_content += '                    <br><small>Default: 100 (maximum items returned if not specified)</small>\n'
@@ -324,8 +330,12 @@ def generate_parameter_entry(param):
     html_content += '                </div>\n'
     return html_content
 
-def generate_transition_example(trans_key):
+def generate_transition_example(trans_key, transition=None):
     """Generate example code for state transitions"""
+    # Check if there's a custom sdk_example
+    if transition and transition.get('sdk_example'):
+        return transition.get('sdk_example')
+    
     if trans_key == 'documentCreate':
         return '''const result = await sdk.document_create(
     identityHex,
@@ -1670,18 +1680,28 @@ const documents = await sdk.getPathElements(['64'], ['contractId', '1', 'documen
             md_content += f"\n**{transition.get('label', trans_key)}** - `{trans_key}`\n"
             md_content += f"*{transition.get('description', 'No description')}*\n\n"
             
-            # Parameters
+            # Parameters - use sdk_params if available, otherwise fall back to inputs
+            sdk_params = transition.get('sdk_params', [])
             inputs = transition.get('inputs', [])
-            if inputs:
+            params_to_use = sdk_params if sdk_params else inputs
+            
+            # Adjust parameter section header based on whether we're using SDK params
+            if sdk_params:
+                md_content += "Parameters:\n"
+            elif inputs:
                 md_content += "Parameters (in addition to identity/key):\n"
-                for param in inputs:
+            
+            if params_to_use:
+                for param in params_to_use:
                     req = "required" if param.get('required', False) else "optional"
                     md_content += f"- `{param.get('name', 'unknown')}` ({param.get('type', 'text')}, {req})"
                     
                     if param.get('label') and param.get('label') != param.get('name'):
                         md_content += f" - {param.get('label')}"
                     
-                    if param.get('placeholder'):
+                    if param.get('description'):
+                        md_content += f"\n  - {param.get('description')}"
+                    elif param.get('placeholder'):
                         md_content += f"\n  - Example: `{param.get('placeholder')}`"
                     
                     md_content += "\n"
@@ -1689,8 +1709,11 @@ const documents = await sdk.getPathElements(['64'], ['contractId', '1', 'documen
             # Example
             md_content += f"\nExample:\n```javascript\n"
             
-            # Generate specific examples
-            if trans_key == 'documentCreate':
+            # Check if there's a custom sdk_example
+            sdk_example = transition.get('sdk_example')
+            if sdk_example:
+                md_content += sdk_example
+            elif trans_key == 'documentCreate':
                 md_content += '''const result = await sdk.document_create(
     identityHex,
     contractId,

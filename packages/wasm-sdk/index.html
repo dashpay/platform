@@ -3206,6 +3206,51 @@ ${indentStr}]`;
           );
           displayResult(JSON.stringify(result, null, 2));
           updateStatusWithTime('Token configuration updated successfully', 'success', startTime);
+        } else if (transitionType === 'tokenTransfer') {
+          result = await sdk.tokenTransfer(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.amount,
+            identityId, // sender ID
+            values.recipientId,
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Tokens transferred successfully', 'success', startTime);
+        } else if (transitionType === 'tokenFreeze') {
+          result = await sdk.tokenFreeze(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.identityToFreeze,
+            identityId, // freezer ID
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Tokens frozen successfully', 'success', startTime);
+        } else if (transitionType === 'tokenUnfreeze') {
+          result = await sdk.tokenUnfreeze(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.identityToUnfreeze,
+            identityId, // unfreezer ID
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Tokens unfrozen successfully', 'success', startTime);
+        } else if (transitionType === 'tokenDestroyFrozen') {
+          result = await sdk.tokenDestroyFrozen(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.identityId, // identity whose frozen tokens to destroy
+            identityId, // destroyer ID
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Frozen tokens destroyed successfully', 'success', startTime);
         } else if (transitionType === 'documentCreate') {
           // Collect document fields from dynamic inputs
           const documentData = collectDocumentFields();
