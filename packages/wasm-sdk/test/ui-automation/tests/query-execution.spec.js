@@ -496,7 +496,9 @@ test.describe('WASM SDK Query Execution Tests', () => {
         needsParameters: false,
         validateFn: (result) => {
           expect(result).toBeDefined();
-          expect(result).toContain('version');
+          expect(Object.keys(JSON.parse(result))).toEqual(expect.arrayContaining([
+            'version', 'node', 'chain', 'network', 'stateSync', 'time'
+          ]));
         }
       },
       { 
