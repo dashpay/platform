@@ -457,6 +457,7 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
     data_contract_id: &str,
     document_type_name: &str,
     index_name: &str,
+    index_values: Vec<JsValue>,
     contestant_id: &str,
     start_at_identifier_info: Option<String>,
     count: Option<u32>,
@@ -474,6 +475,21 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
         contestant_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
+    
+    // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
+    let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
+    for value in index_values {
+        if let Some(s) = value.as_string() {
+            // Create a platform Value from the string
+            let platform_value = Value::Text(s);
+            // Serialize using bincode
+            let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
+                .map_err(|e| JsError::new(&format!("Failed to serialize index value: {}", e)))?;
+            index_values_bytes.push(serialized);
+        } else {
+            return Err(JsError::new("Index values must be strings"));
+        }
+    }
     
     // Parse start_at_identifier_info if provided
     let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
@@ -505,7 +521,7 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
                 contract_id: contract_id.to_vec(),
                 document_type_name: document_type_name.to_string(),
                 index_name: index_name.to_string(),
-                index_values: vec![], // Empty to query all contested resources
+                index_values: index_values_bytes,
                 contestant_id: contestant_identifier.to_vec(),
                 start_at_identifier_info,
                 count,

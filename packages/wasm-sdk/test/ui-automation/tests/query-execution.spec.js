@@ -829,7 +829,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       },
       { 
         name: 'getContestedResourceVotersForIdentity', 
-        hasProofSupport: false, // Not working
+        hasProofSupport: true,
         needsParameters: true,
         validateFn: (result) => {
           expect(() => JSON.parse(result)).not.toThrow();
