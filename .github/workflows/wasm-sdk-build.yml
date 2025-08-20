@@ -45,16 +45,16 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           
-      - name: Install protoc
+      - name: Install system dependencies (protoc, clang, llvm)
         run: |
+          # Install protoc
           curl -Lo /tmp/protoc.zip \
             "https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-x86_64.zip"
           unzip -o /tmp/protoc.zip -d ${HOME}/.local
           echo "${HOME}/.local/bin" >> $GITHUB_PATH
           export PATH="${PATH}:${HOME}/.local/bin"
           
-      - name: Install clang
-        run: |
+          # Install clang and llvm
           sudo apt update -qq
           sudo apt install -qq --yes clang llvm
           
@@ -147,8 +147,12 @@ jobs:
     needs: build-wasm-sdk
     
     steps:
-      - name: Checkout repository
+      - name: Checkout test directory only
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            packages/wasm-sdk/test
+          sparse-checkout-cone-mode: false
         
       - name: Download WASM SDK build artifacts
         uses: actions/download-artifact@v4
