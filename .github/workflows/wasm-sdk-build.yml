@@ -202,7 +202,38 @@ jobs:
         working-directory: packages/wasm-sdk
         run: |
           echo "Running WASM SDK comprehensive test suite..."
-          node test/run-all-tests.mjs
+          node test/run-all-tests.mjs | tee test-output.log
+          
+      - name: Generate job summary
+        if: always()
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "## 🧪 WASM SDK Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract test results from the test output
+          if [ -f test-output.log ]; then
+            # Extract overall summary
+            total_tests=$(grep -o "Total Tests: [0-9]*" test-output.log | grep -o "[0-9]*" || echo "0")
+            total_passed=$(grep -o "Passed: [0-9]*" test-output.log | grep -o "[0-9]*" || echo "0")
+            total_failed=$(grep -o "Failed: [0-9]*" test-output.log | grep -o "[0-9]*" || echo "0")
+            total_time=$(grep -o "Time: [0-9]*\.[0-9]*s" test-output.log | grep -o "[0-9]*\.[0-9]*" || echo "0.00")
+            
+            # Display overall summary
+            echo "**$total_tests** tests • **$total_passed** passed • **$total_failed** failed • **${total_time}s**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$total_failed" != "0" ]; then
+              echo "❌ **Some tests failed** - Check the detailed test report for specifics" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **All tests passed**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ No test output captured" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Artifacts**: WASM SDK build files and detailed test report available for download" >> $GITHUB_STEP_SUMMARY
           
       - name: Upload test report
         if: always() && hashFiles('packages/wasm-sdk/test/test-report.html') != ''
