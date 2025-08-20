@@ -1,4 +1,4 @@
-name: Build WASM SDK
+name: Build and Test WASM SDK
 
 on:
   pull_request:
@@ -30,6 +30,7 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C lto=off"
   CARGO_PROFILE_RELEASE_LTO: false
+  CI: true
 
 jobs:
   build-wasm-sdk:
@@ -139,4 +140,70 @@ jobs:
         with:
           name: wasm-sdk-build
           path: packages/wasm-sdk/pkg/
+          retention-days: 7
+
+  test-wasm-sdk:
+    runs-on: ubuntu-latest
+    needs: build-wasm-sdk
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Download WASM SDK build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-sdk-build
+          path: packages/wasm-sdk/pkg/
+          
+      - name: Verify WASM SDK artifacts
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "Verifying downloaded WASM SDK artifacts..."
+          ls -lah pkg/
+          
+          # Verify all required files exist
+          required_files=(
+            "pkg/wasm_sdk_bg.wasm"
+            "pkg/optimized.wasm" 
+            "pkg/wasm_sdk.js"
+            "pkg/wasm_sdk.d.ts"
+            "pkg/package.json"
+          )
+          
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing required file: $file"
+              exit 1
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+          
+          echo "🎉 All WASM SDK artifacts verified successfully!"
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install test dependencies
+        working-directory: packages/wasm-sdk/test
+        run: |
+          if [ -f package.json ]; then
+            npm install
+          fi
+          
+      - name: Run comprehensive test suite
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "Running WASM SDK comprehensive test suite..."
+          node test/run-all-tests.mjs
+          
+      - name: Upload test report
+        if: always() && hashFiles('packages/wasm-sdk/test/test-report.html') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-sdk-test-report
+          path: packages/wasm-sdk/test/test-report.html
           retention-days: 7
