@@ -50,15 +50,21 @@ function describe(name) {
 
 console.log('\nDocument Query Tests Using Documented Testnet Values\n');
 
-// DOCUMENTED TEST VALUES FROM docs.html
+// DOCUMENTED TEST VALUES FROM docs.html and test-data.js
 const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
 const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
-const TOKEN_CONTRACT = 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv';
+const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
+const CONTRACT_WITH_HISTORY = 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM';
 
 console.log('Test Values:');
 console.log(`- Identity: ${TEST_IDENTITY}`);
 console.log(`- DPNS Contract: ${DPNS_CONTRACT}`);
 console.log(`- Token Contract: ${TOKEN_CONTRACT}`);
+console.log(`- Contract with History: ${CONTRACT_WITH_HISTORY}`);
+
+// Prefetch trusted quorums for testnet to avoid epoch query issues
+console.log('Prefetching trusted quorums...');
+await wasmSdk.prefetch_trusted_quorums_testnet();
 
 // Initialize SDK - use trusted builder for WASM
 const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
@@ -91,9 +97,9 @@ await test('get_documents - DPNS domains (no filters)', async () => {
 
 await test('get_documents - with where clause', async () => {
     try {
-        // Search for domains owned by test identity
+        // Search for domains under .dash parent domain (more likely to exist)
         const whereClause = JSON.stringify([
-            ["$ownerId", "==", TEST_IDENTITY]
+            ["normalizedParentDomainName", "==", "dash"]
         ]);
         
         const result = await wasmSdk.get_documents(
@@ -106,7 +112,7 @@ await test('get_documents - with where clause', async () => {
             null,  // no start after
             null   // no start at
         );
-        console.log(`   Found ${result?.length || 0} documents owned by test identity`);
+        console.log(`   Found ${result?.length || 0} domains under .dash`);
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
             console.log('   Expected network error (offline)');
@@ -118,8 +124,9 @@ await test('get_documents - with where clause', async () => {
 
 await test('get_documents - with orderBy clause', async () => {
     try {
+        // Use indexed properties for orderBy - normalizedParentDomainName is indexed
         const orderBy = JSON.stringify([
-            ["$createdAt", "desc"]
+            ["normalizedParentDomainName", "asc"]
         ]);
         
         const result = await wasmSdk.get_documents(
@@ -132,7 +139,7 @@ await test('get_documents - with orderBy clause', async () => {
             null,     // no start after
             null      // no start at
         );
-        console.log(`   Found ${result?.length || 0} documents ordered by creation time`);
+        console.log(`   Found ${result?.length || 0} documents ordered by parent domain`);
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
             console.log('   Expected network error (offline)');
@@ -144,10 +151,16 @@ await test('get_documents - with orderBy clause', async () => {
 
 await test('get_documents - with complex where clause', async () => {
     try {
-        // Multiple conditions
+        // Multiple conditions - need orderBy when using ranges like startsWith
         const whereClause = JSON.stringify([
             ["normalizedLabel", "startsWith", "test"],
             ["normalizedParentDomainName", "==", "dash"]
+        ]);
+        
+        // Required orderBy for range queries
+        const orderBy = JSON.stringify([
+            ["normalizedParentDomainName", "asc"],
+            ["normalizedLabel", "asc"]
         ]);
         
         const result = await wasmSdk.get_documents(
@@ -155,7 +168,7 @@ await test('get_documents - with complex where clause', async () => {
             DPNS_CONTRACT,
             "domain",
             whereClause,
-            null,
+            orderBy,
             10,
             null,
             null
@@ -170,10 +183,10 @@ await test('get_documents - with complex where clause', async () => {
     }
 });
 
-await test('get_single_document - by specific ID', async () => {
+await test('get_document - by specific ID', async () => {
     try {
         // This would need a real document ID
-        const result = await wasmSdk.get_single_document(
+        const result = await wasmSdk.get_document(
             sdk,
             DPNS_CONTRACT,
             "domain",
@@ -206,9 +219,10 @@ await test('data_contract_fetch - DPNS contract', async () => {
     }
 });
 
-await test('data_contract_fetch - Token contract', async () => {
+await test('data_contract_fetch - Dashpay contract', async () => {
     try {
-        const result = await wasmSdk.data_contract_fetch(sdk, TOKEN_CONTRACT);
+        // Use Dashpay contract which should exist
+        const result = await wasmSdk.data_contract_fetch(sdk, 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A');
         console.log(`   Contract fetched: ${result?.id || 'N/A'}`);
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
@@ -219,15 +233,14 @@ await test('data_contract_fetch - Token contract', async () => {
     }
 });
 
-await test('data_contract_fetch_history - DPNS contract history', async () => {
+await test('get_data_contract_history - contract with history', async () => {
     try {
-        const result = await wasmSdk.data_contract_fetch_history(
+        const result = await wasmSdk.get_data_contract_history(
             sdk,
-            DPNS_CONTRACT,
+            CONTRACT_WITH_HISTORY,
             10,    // limit
             0,     // offset
-            null,  // start at version
-            true   // prove
+            null   // start at ms
         );
         console.log(`   Found ${result?.length || 0} historical versions`);
     } catch (error) {
@@ -310,9 +323,9 @@ await test('get_current_epoch', async () => {
     }
 });
 
-await test('get_epoch_info', async () => {
+await test('get_epochs_info', async () => {
     try {
-        const result = await wasmSdk.get_epoch_info(sdk, 1); // Get info for epoch 1
+        const result = await wasmSdk.get_epochs_info(sdk, 1, 1); // Get info for epoch 1, count 1
         console.log(`   Epoch info fetched`);
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
