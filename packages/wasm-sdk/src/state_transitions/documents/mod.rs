@@ -1040,7 +1040,7 @@ impl WasmSdk {
         buyer_id: String,
         price: u64,
         private_key_wif: String,
-        key_id: u32,
+        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -1186,7 +1186,7 @@ impl WasmSdk {
         owner_id: String,
         price: u64,
         private_key_wif: String,
-        key_id: u32,
+        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -1273,7 +1273,7 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
         // Generate entropy for the state transition
-        let entropy_bytes = {
+        let _entropy_bytes = {
             let mut entropy = [0u8; 32];
             if let Some(window) = web_sys::window() {
                 if let Ok(crypto) = window.crypto() {

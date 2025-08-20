@@ -2,7 +2,6 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -384,7 +383,7 @@ pub async fn get_path_elements(
 pub async fn get_total_credits_in_platform_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
     use dash_sdk::platform::Fetch;
     use drive_proof_verifier::types::{TotalCreditsInPlatform as TotalCreditsQuery, NoParamQuery};
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     let (total_credits_result, metadata, proof) = TotalCreditsQuery::fetch_with_metadata_and_proof(sdk.as_ref(), NoParamQuery {}, None)
         .await
@@ -417,7 +416,7 @@ pub async fn get_prefunded_specialized_balance_with_proof_info(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::{Identifier, Fetch};
     use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse identity ID
     let identity_identifier = Identifier::from_string(
@@ -454,9 +453,9 @@ pub async fn get_path_elements_with_proof_info(
     keys: Vec<String>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchMany;
-    use drive_proof_verifier::types::{KeysInPath, Elements};
+    use drive_proof_verifier::types::KeysInPath;
     use dash_sdk::drive::grovedb::Element;
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Convert string path to byte vectors
     // Path elements can be either numeric values (like "96" for Balances) or string keys

@@ -266,7 +266,7 @@ pub async fn get_contested_resources_with_proof_info(
     _offset: Option<u32>,
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse contract ID
     let contract_id = Identifier::from_string(
@@ -348,13 +348,13 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
     document_type_name: &str,
     index_name: &str,
     index_values: Vec<JsValue>,
-    result_type: &str,
+    _result_type: &str,
     allow_include_locked_and_abstaining_vote_tally: Option<bool>,
     start_at_identifier_info: Option<String>,
     count: Option<u32>,
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse contract ID
     let contract_id = Identifier::from_string(
@@ -463,7 +463,7 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
     count: Option<u32>,
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse IDs
     let contract_id = Identifier::from_string(
@@ -571,7 +571,7 @@ pub async fn get_contested_resource_identity_votes_with_proof_info(
     offset: Option<u32>,
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse identity ID
     let identity_identifier = Identifier::from_string(
@@ -634,7 +634,7 @@ pub async fn get_vote_polls_by_end_date_with_proof_info(
     offset: Option<u32>,
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Note: GetVotePollsByEndDateRequestV0 doesn't have start_at_poll_info, only offset
     
@@ -703,7 +703,7 @@ pub async fn get_contested_resource_vote_state(
     document_type_name: &str,
     index_name: &str,
     index_values: Vec<JsValue>,
-    result_type: &str,
+    _result_type: &str,
     allow_include_locked_and_abstaining_vote_tally: Option<bool>,
     start_at_identifier_info: Option<String>,
     count: Option<u32>,
