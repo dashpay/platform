@@ -236,23 +236,23 @@ await test('wait_for_state_transition_result - requires valid hash', async () =>
     sdk.free();
 });
 
-// await test('get_path_elements - requires network', async () => {
-//     const builder = wasmSdk.WasmSdkBuilder.new_testnet();
-//     const sdk = await builder.build();
+await test('get_path_elements - requires network', async () => {
+    const builder = wasmSdk.WasmSdkBuilder.new_testnet();
+    const sdk = await builder.build();
     
-//     try {
-//         const result = await wasmSdk.get_path_elements(sdk, [], []);
-//         // If it succeeds, check result
-//         if (result && typeof result === 'object') {
-//             console.log('   Successfully got path elements');
-//         }
-//     } catch (error) {
-//         // Network error is expected
-//         console.log('   Expected network error');
-//     }
+    try {
+        const result = await wasmSdk.get_path_elements(sdk, [], []);
+        // If it succeeds, check result
+        if (result && typeof result === 'object') {
+            console.log('   Successfully got path elements');
+        }
+    } catch (error) {
+        // Network error is expected
+        console.log('   Expected network error');
+    }
     
-//     sdk.free();
-// });
+    sdk.free();
+});
 
 // Start function
 describe('Start Function');
