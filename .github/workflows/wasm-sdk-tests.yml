@@ -146,35 +146,18 @@ jobs:
             npm install
           fi
           
-      - name: Run custom test runner
+      - name: Run comprehensive test suite
         working-directory: packages/wasm-sdk
         run: |
-          echo "Running WASM SDK tests with custom runner..."
-          node test/run-tests.mjs
+          echo "Running WASM SDK comprehensive test suite..."
+          node test/run-all-tests.mjs
           
-      - name: Run Jest tests
-        working-directory: packages/wasm-sdk/test
-        run: |
-          echo "Running WASM SDK Jest tests..."
-          npm test || echo "Jest tests completed with status $?"
-          
-      - name: Run all .mjs test files
-        working-directory: packages/wasm-sdk
-        run: |
-          echo "Running all .mjs test files..."
-          for test_file in test/*.test.mjs; do
-            if [ -f "$test_file" ]; then
-              echo "Running $test_file..."
-              node "$test_file" || echo "Test $test_file completed with status $?"
-            fi
-          done
-          
-      - name: Upload test results
+      - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wasm-sdk-test-results
-          path: packages/wasm-sdk/test-results/
+          name: wasm-sdk-test-report
+          path: packages/wasm-sdk/test/test-report.html
           retention-days: 7
           
       - name: Upload build artifacts
