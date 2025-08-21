@@ -55,12 +55,14 @@ const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
 const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
 const CONTRACT_WITH_HISTORY = 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM';
+const DASHPAY_CONTRACT = 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A';
 
 console.log('Test Values:');
 console.log(`- Identity: ${TEST_IDENTITY}`);
 console.log(`- DPNS Contract: ${DPNS_CONTRACT}`);
 console.log(`- Token Contract: ${TOKEN_CONTRACT}`);
 console.log(`- Contract with History: ${CONTRACT_WITH_HISTORY}`);
+console.log(`- Dashpay Contract: ${DASHPAY_CONTRACT}`);
 
 // Prefetch trusted quorums for testnet to avoid epoch query issues
 console.log('Prefetching trusted quorums...');
@@ -138,7 +140,7 @@ await test('get_documents - with orderBy clause', async () => {
             DPNS_CONTRACT,
             "domain",
             null,     // no where
-            orderBy,  // order by creation time descending
+            orderBy,  // order by normalizedParentDomainName ascending
             5,        // limit
             null,     // no start after
             null      // no start at
@@ -226,7 +228,7 @@ await test('data_contract_fetch - DPNS contract', async () => {
 await test('data_contract_fetch - Dashpay contract', async () => {
     try {
         // Use Dashpay contract which should exist
-        const result = await wasmSdk.data_contract_fetch(sdk, 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A');
+        const result = await wasmSdk.data_contract_fetch(sdk, DASHPAY_CONTRACT);
         console.log(`   Contract fetched: ${result?.id || 'N/A'}`);
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
@@ -261,7 +263,7 @@ await test('get_data_contracts - fetch multiple contracts', async () => {
         // Note: This function expects Vec<String> in Rust, which should work with JS array
         const result = await wasmSdk.get_data_contracts(
             sdk,
-            [DPNS_CONTRACT, 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A']
+            [DPNS_CONTRACT, DASHPAY_CONTRACT]
         );
         console.log(`   Found ${result?.length || 0} data contracts`);
     } catch (error) {
