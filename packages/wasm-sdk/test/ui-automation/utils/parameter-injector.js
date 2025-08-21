@@ -1,4 +1,4 @@
-const { getTestParameters, getAllTestParameters } = require('../fixtures/test-data');
+const { getTestParameters, getAllTestParameters, getStateTransitionParameters, getAllStateTransitionParameters } = require('../fixtures/test-data');
 
 /**
  * Parameter injection system for WASM SDK UI tests
@@ -28,6 +28,29 @@ class ParameterInjector {
       return true;
     } catch (error) {
       console.error(`❌ Failed to inject parameters for ${category}.${queryType}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Inject parameters for a specific state transition based on test data
+   */
+  async injectStateTransitionParameters(category, transitionType, network = 'testnet', parameterSetIndex = 0) {
+    try {
+      const allParameters = getAllStateTransitionParameters(category, transitionType, network);
+      
+      if (allParameters.length === 0) {
+        console.warn(`⚠️  No state transition test parameters found for ${category}.${transitionType} on ${network}`);
+        return false;
+      }
+
+      const parameters = allParameters[parameterSetIndex] || allParameters[0];
+      console.log(`📝 Injecting state transition parameters for ${category}.${transitionType}:`, parameters);
+
+      await this.page.fillStateTransitionParameters(parameters);
+      return true;
+    } catch (error) {
+      console.error(`❌ Failed to inject state transition parameters for ${category}.${transitionType}:`, error.message);
       return false;
     }
   }

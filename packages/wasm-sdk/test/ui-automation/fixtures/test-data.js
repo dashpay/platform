@@ -493,6 +493,34 @@ const testData = {
     }
   },
 
+  // State transition test parameters organized by category
+  stateTransitionParameters: {
+    dataContract: {
+      dataContractCreate: {
+        testnet: [
+          {
+            canBeDeleted: false,
+            readonly: false,
+            keepsHistory: false,
+            documentSchemas: '{"note": {"type": "object", "properties": {"message": {"type": "string", "position": 0}}, "additionalProperties": false}}',
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            description: "Create simple test data contract with document schema"
+          }
+        ]
+      },
+      dataContractUpdate: {
+        testnet: [
+          {
+            dataContractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Sample contract ID
+            newDocumentSchemas: '{"note": {"type": "object", "properties": {"message": {"type": "string", "position": 0}, "author": {"type": "string", "position": 1}}, "additionalProperties": false}}',
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            description: "Update existing note document schema to add author field"
+          }
+        ]
+      }
+    },
+  },
+
   // Common where clauses for document queries
   whereClausesExamples: {
     dpnsDomain: [
