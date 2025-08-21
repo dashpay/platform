@@ -89,6 +89,15 @@ await test('dpns_convert_to_homograph_safe - special characters', () => {
     }
 });
 
+await test('dpns_convert_to_homograph_safe - ASCII homograph conversions (o,i,l)', () => {
+    const input = "IlIooLi"; // mix of I,l,i,o
+    const result = wasmSdk.dpns_convert_to_homograph_safe(input);
+    // Expect: I->i->1, l->1, I->i->1, o->0, o->0, L->l->1, i->1 = "1110011"
+    if (result !== "1110011") {
+        throw new Error(`Expected "1110011" for "${input}", got "${result}"`);
+    }
+});
+
 await test('dpns_convert_to_homograph_safe - unicode homographs', () => {
     // Only o,i,l are converted to 0,1,1 - other Unicode characters are preserved
     const result = wasmSdk.dpns_convert_to_homograph_safe("tеst"); // е is Cyrillic
