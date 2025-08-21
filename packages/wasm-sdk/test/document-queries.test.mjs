@@ -64,7 +64,11 @@ console.log(`- Contract with History: ${CONTRACT_WITH_HISTORY}`);
 
 // Prefetch trusted quorums for testnet to avoid epoch query issues
 console.log('Prefetching trusted quorums...');
-await wasmSdk.prefetch_trusted_quorums_testnet();
+try {
+    await wasmSdk.prefetch_trusted_quorums_testnet();
+} catch (error) {
+    console.warn('Failed to prefetch trusted quorums (offline mode?):', error.message);
+}
 
 // Initialize SDK - use trusted builder for WASM
 const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
