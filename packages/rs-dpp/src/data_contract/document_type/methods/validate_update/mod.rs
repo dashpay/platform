@@ -5,7 +5,7 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
-impl<'a> DocumentTypeRef<'a> {
+impl DocumentTypeRef<'_> {
     /// Verify that the update to the document type is valid.
     /// We assume that new document type is valid
     pub fn validate_update(

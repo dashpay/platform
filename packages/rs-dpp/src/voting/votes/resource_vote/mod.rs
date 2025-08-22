@@ -1,6 +1,6 @@
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};

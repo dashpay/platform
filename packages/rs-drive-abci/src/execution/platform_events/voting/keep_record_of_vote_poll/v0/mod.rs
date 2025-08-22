@@ -23,6 +23,7 @@ where
 {
     /// Keeps a record of the vote poll after it has finished
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn keep_record_of_finished_contested_resource_vote_poll_v0(
         &self,
         block_platform_state: &PlatformState,

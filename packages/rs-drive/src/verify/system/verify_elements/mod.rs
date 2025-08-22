@@ -29,6 +29,8 @@ impl Drive {
     ///
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     pub fn verify_elements(
         proof: &[u8],
         path: Vec<Vec<u8>>,

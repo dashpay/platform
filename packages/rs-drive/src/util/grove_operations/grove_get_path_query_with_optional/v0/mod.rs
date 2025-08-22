@@ -10,7 +10,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// Gets the return value and the cost of a groveDB path query.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_get_path_query_with_optional_v0(
+    pub(super) fn grove_get_path_query_with_optional_v0(
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,
@@ -21,7 +21,7 @@ impl Drive {
             path_query,
             true,
             true,
-            true,
+            false,
             transaction,
             &drive_version.grove_version,
         );

@@ -8,7 +8,7 @@ pub trait IdentityPublicKeyHashMethodsV0 {
     /// Verifies that the private key bytes match this identity public key
     fn validate_private_key_bytes(
         &self,
-        private_key_bytes: &[u8],
+        private_key_bytes: &[u8; 32],
         network: Network,
     ) -> Result<bool, ProtocolError>;
 }

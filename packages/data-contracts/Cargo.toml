@@ -1,13 +1,13 @@
 [package]
 name = "data-contracts"
 description = "Dash Platform system data contracts"
-version = "1.7.1"
+version = "2.0.1"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-thiserror = "1.0.64"
+thiserror = "2.0.12"
 platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 withdrawals-contract = { path = "../withdrawals-contract" }
@@ -17,3 +17,5 @@ dashpay-contract = { path = "../dashpay-contract" }
 feature-flags-contract = { path = "../feature-flags-contract" }
 platform-value = { path = "../rs-platform-value" }
 wallet-utils-contract = { path = "../wallet-utils-contract" }
+token-history-contract = { path = "../token-history-contract" }
+keyword-search-contract = { path = "../keyword-search-contract" }

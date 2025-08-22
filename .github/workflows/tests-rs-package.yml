@@ -39,14 +39,15 @@ jobs:
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
-      - uses: clechasseur/rs-clippy-check@v3
+      - uses: clechasseur/rs-clippy-check@v4
         with:
-          args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
+          args: --package ${{ inputs.package }} --all-features --locked -- --no-deps -D warnings
         env:
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
   formatting:
     name: Formatting
     runs-on: ubuntu-24.04
@@ -194,7 +195,7 @@ jobs:
         uses: ./.github/actions/librocksdb
 
       - name: Run tests
-        run: cargo test --package=${{ inputs.package }} --all-features --locked
+        run: RUST_MIN_STACK=16777216 cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
@@ -205,7 +206,7 @@ jobs:
   check_each_feature:
     name: Check each feature
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     if: ${{ inputs.check-each-feature }}
     steps:
       - name: Check out repo

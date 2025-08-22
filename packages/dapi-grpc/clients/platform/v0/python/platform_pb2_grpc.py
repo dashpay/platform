@@ -69,11 +69,6 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
                 )
-        self.getProofs = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getProofs',
-                request_serializer=platform__pb2.GetProofsRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetProofsResponse.FromString,
-                )
         self.getDataContract = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContract',
                 request_serializer=platform__pb2.GetDataContractRequest.SerializeToString,
@@ -174,6 +169,66 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetCurrentQuorumsInfoRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetCurrentQuorumsInfoResponse.FromString,
                 )
+        self.getIdentityTokenBalances = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityTokenBalances',
+                request_serializer=platform__pb2.GetIdentityTokenBalancesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityTokenBalancesResponse.FromString,
+                )
+        self.getIdentitiesTokenBalances = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentitiesTokenBalances',
+                request_serializer=platform__pb2.GetIdentitiesTokenBalancesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesTokenBalancesResponse.FromString,
+                )
+        self.getIdentityTokenInfos = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityTokenInfos',
+                request_serializer=platform__pb2.GetIdentityTokenInfosRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityTokenInfosResponse.FromString,
+                )
+        self.getIdentitiesTokenInfos = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentitiesTokenInfos',
+                request_serializer=platform__pb2.GetIdentitiesTokenInfosRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesTokenInfosResponse.FromString,
+                )
+        self.getTokenStatuses = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenStatuses',
+                request_serializer=platform__pb2.GetTokenStatusesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenStatusesResponse.FromString,
+                )
+        self.getTokenDirectPurchasePrices = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenDirectPurchasePrices',
+                request_serializer=platform__pb2.GetTokenDirectPurchasePricesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenDirectPurchasePricesResponse.FromString,
+                )
+        self.getTokenPreProgrammedDistributions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenPreProgrammedDistributions',
+                request_serializer=platform__pb2.GetTokenPreProgrammedDistributionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenPreProgrammedDistributionsResponse.FromString,
+                )
+        self.getTokenTotalSupply = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenTotalSupply',
+                request_serializer=platform__pb2.GetTokenTotalSupplyRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenTotalSupplyResponse.FromString,
+                )
+        self.getGroupInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getGroupInfo',
+                request_serializer=platform__pb2.GetGroupInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetGroupInfoResponse.FromString,
+                )
+        self.getGroupInfos = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getGroupInfos',
+                request_serializer=platform__pb2.GetGroupInfosRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetGroupInfosResponse.FromString,
+                )
+        self.getGroupActions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getGroupActions',
+                request_serializer=platform__pb2.GetGroupActionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetGroupActionsResponse.FromString,
+                )
+        self.getGroupActionSigners = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getGroupActionSigners',
+                request_serializer=platform__pb2.GetGroupActionSignersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetGroupActionSignersResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -240,12 +295,6 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getEvonodesProposedEpochBlocksByRange(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getProofs(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -376,6 +425,78 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getIdentityTokenBalances(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getIdentitiesTokenBalances(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getIdentityTokenInfos(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getIdentitiesTokenInfos(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTokenStatuses(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTokenDirectPurchasePrices(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTokenPreProgrammedDistributions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTokenTotalSupply(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getGroupInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getGroupInfos(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getGroupActions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getGroupActionSigners(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -433,11 +554,6 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getEvonodesProposedEpochBlocksByRange,
                     request_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.FromString,
                     response_serializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.SerializeToString,
-            ),
-            'getProofs': grpc.unary_unary_rpc_method_handler(
-                    servicer.getProofs,
-                    request_deserializer=platform__pb2.GetProofsRequest.FromString,
-                    response_serializer=platform__pb2.GetProofsResponse.SerializeToString,
             ),
             'getDataContract': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContract,
@@ -538,6 +654,66 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getCurrentQuorumsInfo,
                     request_deserializer=platform__pb2.GetCurrentQuorumsInfoRequest.FromString,
                     response_serializer=platform__pb2.GetCurrentQuorumsInfoResponse.SerializeToString,
+            ),
+            'getIdentityTokenBalances': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityTokenBalances,
+                    request_deserializer=platform__pb2.GetIdentityTokenBalancesRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityTokenBalancesResponse.SerializeToString,
+            ),
+            'getIdentitiesTokenBalances': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentitiesTokenBalances,
+                    request_deserializer=platform__pb2.GetIdentitiesTokenBalancesRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesTokenBalancesResponse.SerializeToString,
+            ),
+            'getIdentityTokenInfos': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityTokenInfos,
+                    request_deserializer=platform__pb2.GetIdentityTokenInfosRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityTokenInfosResponse.SerializeToString,
+            ),
+            'getIdentitiesTokenInfos': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentitiesTokenInfos,
+                    request_deserializer=platform__pb2.GetIdentitiesTokenInfosRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesTokenInfosResponse.SerializeToString,
+            ),
+            'getTokenStatuses': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenStatuses,
+                    request_deserializer=platform__pb2.GetTokenStatusesRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenStatusesResponse.SerializeToString,
+            ),
+            'getTokenDirectPurchasePrices': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenDirectPurchasePrices,
+                    request_deserializer=platform__pb2.GetTokenDirectPurchasePricesRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenDirectPurchasePricesResponse.SerializeToString,
+            ),
+            'getTokenPreProgrammedDistributions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenPreProgrammedDistributions,
+                    request_deserializer=platform__pb2.GetTokenPreProgrammedDistributionsRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenPreProgrammedDistributionsResponse.SerializeToString,
+            ),
+            'getTokenTotalSupply': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenTotalSupply,
+                    request_deserializer=platform__pb2.GetTokenTotalSupplyRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenTotalSupplyResponse.SerializeToString,
+            ),
+            'getGroupInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getGroupInfo,
+                    request_deserializer=platform__pb2.GetGroupInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetGroupInfoResponse.SerializeToString,
+            ),
+            'getGroupInfos': grpc.unary_unary_rpc_method_handler(
+                    servicer.getGroupInfos,
+                    request_deserializer=platform__pb2.GetGroupInfosRequest.FromString,
+                    response_serializer=platform__pb2.GetGroupInfosResponse.SerializeToString,
+            ),
+            'getGroupActions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getGroupActions,
+                    request_deserializer=platform__pb2.GetGroupActionsRequest.FromString,
+                    response_serializer=platform__pb2.GetGroupActionsResponse.SerializeToString,
+            ),
+            'getGroupActionSigners': grpc.unary_unary_rpc_method_handler(
+                    servicer.getGroupActionSigners,
+                    request_deserializer=platform__pb2.GetGroupActionSignersRequest.FromString,
+                    response_serializer=platform__pb2.GetGroupActionSignersResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -733,23 +909,6 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEvonodesProposedEpochBlocksByRange',
             platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.SerializeToString,
             platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getProofs(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getProofs',
-            platform__pb2.GetProofsRequest.SerializeToString,
-            platform__pb2.GetProofsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1090,5 +1249,209 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getCurrentQuorumsInfo',
             platform__pb2.GetCurrentQuorumsInfoRequest.SerializeToString,
             platform__pb2.GetCurrentQuorumsInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentityTokenBalances(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityTokenBalances',
+            platform__pb2.GetIdentityTokenBalancesRequest.SerializeToString,
+            platform__pb2.GetIdentityTokenBalancesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentitiesTokenBalances(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesTokenBalances',
+            platform__pb2.GetIdentitiesTokenBalancesRequest.SerializeToString,
+            platform__pb2.GetIdentitiesTokenBalancesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentityTokenInfos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityTokenInfos',
+            platform__pb2.GetIdentityTokenInfosRequest.SerializeToString,
+            platform__pb2.GetIdentityTokenInfosResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentitiesTokenInfos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesTokenInfos',
+            platform__pb2.GetIdentitiesTokenInfosRequest.SerializeToString,
+            platform__pb2.GetIdentitiesTokenInfosResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTokenStatuses(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenStatuses',
+            platform__pb2.GetTokenStatusesRequest.SerializeToString,
+            platform__pb2.GetTokenStatusesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTokenDirectPurchasePrices(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenDirectPurchasePrices',
+            platform__pb2.GetTokenDirectPurchasePricesRequest.SerializeToString,
+            platform__pb2.GetTokenDirectPurchasePricesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTokenPreProgrammedDistributions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenPreProgrammedDistributions',
+            platform__pb2.GetTokenPreProgrammedDistributionsRequest.SerializeToString,
+            platform__pb2.GetTokenPreProgrammedDistributionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTokenTotalSupply(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenTotalSupply',
+            platform__pb2.GetTokenTotalSupplyRequest.SerializeToString,
+            platform__pb2.GetTokenTotalSupplyResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getGroupInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupInfo',
+            platform__pb2.GetGroupInfoRequest.SerializeToString,
+            platform__pb2.GetGroupInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getGroupInfos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupInfos',
+            platform__pb2.GetGroupInfosRequest.SerializeToString,
+            platform__pb2.GetGroupInfosResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getGroupActions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupActions',
+            platform__pb2.GetGroupActionsRequest.SerializeToString,
+            platform__pb2.GetGroupActionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getGroupActionSigners(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupActionSigners',
+            platform__pb2.GetGroupActionSignersRequest.SerializeToString,
+            platform__pb2.GetGroupActionSignersResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

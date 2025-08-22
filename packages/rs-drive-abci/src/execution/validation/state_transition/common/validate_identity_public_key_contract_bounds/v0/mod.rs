@@ -3,7 +3,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use dpp::consensus::basic::document::{
     DataContractNotPresentError, InvalidDocumentTypeError,
 };
-use dpp::consensus::basic::identity::DataContractBoundsNotPresentError;
+use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, InvalidKeyPurposeForContractBoundsError};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -164,10 +164,13 @@ fn validate_identity_public_key_contract_bounds_v0(
                                     }
                                 }
                             }
-                            _ => Ok(SimpleConsensusValidationResult::new_with_error(
+                            purpose => Ok(SimpleConsensusValidationResult::new_with_error(
                                 ConsensusError::BasicError(
-                                    BasicError::DataContractNotPresentError(
-                                        DataContractNotPresentError::new(*contract_id),
+                                    BasicError::InvalidKeyPurposeForContractBoundsError(
+                                        InvalidKeyPurposeForContractBoundsError::new(
+                                            purpose,
+                                            vec![ENCRYPTION, DECRYPTION],
+                                        ),
                                     ),
                                 ),
                             )),
@@ -279,8 +282,11 @@ fn validate_identity_public_key_contract_bounds_v0(
                                     }
                                     _ => Ok(SimpleConsensusValidationResult::new_with_error(
                                         ConsensusError::BasicError(
-                                            BasicError::DataContractNotPresentError(
-                                                DataContractNotPresentError::new(*contract_id),
+                                            BasicError::InvalidKeyPurposeForContractBoundsError(
+                                                InvalidKeyPurposeForContractBoundsError::new(
+                                                    purpose,
+                                                    vec![ENCRYPTION, DECRYPTION],
+                                                ),
                                             ),
                                         ),
                                     )),

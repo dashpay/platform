@@ -13,7 +13,7 @@ use crate::state_transition::identity_credit_withdrawal_transition::v1::Identity
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition {
+impl StateTransitionValueConvert<'_> for IdentityCreditWithdrawalTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {

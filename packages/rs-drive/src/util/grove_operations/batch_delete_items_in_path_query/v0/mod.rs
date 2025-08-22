@@ -36,10 +36,10 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        if path_query.query.limit == None {
-            Error::Drive(DriveError::NotSupported(
+        if path_query.query.limit.is_none() {
+            return Err(Error::Drive(DriveError::NotSupported(
                 "Limits are required for path_query",
-            ));
+            )));
         }
         let query_result = if path_query
             .query
@@ -87,7 +87,7 @@ impl Drive {
             };
             let delete_operation = match apply_type {
                 BatchDeleteApplyType::StatelessBatchDelete {
-                    is_sum_tree,
+                    in_tree_type: is_sum_tree,
                     estimated_key_size,
                     estimated_value_size,
                 } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
@@ -104,7 +104,7 @@ impl Drive {
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    (path.as_slice()).into(),
+                    path.as_slice().into(),
                     key.as_slice(),
                     &options,
                     is_known_to_be_subtree_with_sum,
@@ -136,7 +136,7 @@ mod tests {
         util::grove_operations::BatchDeleteApplyType,
     };
     use assert_matches::assert_matches;
-    use grovedb::SizedQuery;
+    use grovedb::{SizedQuery, TreeType};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
 
@@ -533,7 +533,7 @@ mod tests {
 
         // Set up the stateless apply type with estimated sizes
         let apply_type = BatchDeleteApplyType::StatelessBatchDelete {
-            is_sum_tree: false,
+            in_tree_type: TreeType::NormalTree,
             estimated_key_size: key.len() as u32,
             estimated_value_size: element
                 .serialized_size(&platform_version.drive.grove_version)

@@ -1,10 +1,12 @@
 [package]
 name = "rs-dapi-client"
-version = "1.7.1"
+version = "2.0.1"
 edition = "2021"
 
 [features]
-default = ["mocks", "offline-testing"]
+
+default = ["offline-testing"]
+
 mocks = [
     "dep:sha2",
     "dep:hex",
@@ -18,24 +20,42 @@ dump = ["mocks"]
 # skip tests that require connection to the platform; enabled by default
 offline-testing = []
 
+# non-wasm dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+backon = { version = "1.3", default-features = false, features = [
+    "tokio-sleep",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+tonic-web-wasm-client = { version = "0.7.0" }
+wasm-bindgen-futures = { version = "0.4.49" }
+getrandom = { version = "0.2", features = ["js"] }
+
 [dependencies]
-backon = { version = "1.2", features = ["tokio-sleep"] }
+backon = { version = "1.3", default-features = false }
 dapi-grpc = { path = "../dapi-grpc", features = [
     "core",
     "platform",
     "client",
 ], default-features = false }
-futures = "0.3.28"
+futures = { version = "0.3.28" }
+http = { version = "1.1.0", default-features = false }
 http-serde = { version = "2.1", optional = true }
-rand = { version = "0.8.5", features = ["small_rng"] }
-thiserror = "1.0.64"
+
+
+rand = { version = "0.8.5", features = [
+    "small_rng",
+    "getrandom",
+], default-features = false }
+thiserror = "2.0.12"
 tracing = "0.1.40"
 tokio = { version = "1.40", default-features = false }
 sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4.3", optional = true }
 lru = { version = "0.12.3" }
-serde = { version = "1.0.197", optional = true, features = ["derive"] }
-serde_json = { version = "1.0.120", optional = true }
+serde = { version = "1.0.219", optional = true, features = ["derive"] }
+serde_json = { version = "1.0.140", optional = true }
 chrono = { version = "0.4.38", features = ["serde"] }
 
 [dev-dependencies]

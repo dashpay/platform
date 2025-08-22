@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -18,12 +19,15 @@ where
     #[inline(always)]
     pub(super) fn clean_up_after_vote_polls_end_v0(
         &self,
+        block_info: &BlockInfo,
         vote_polls: &BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>,
         clean_up_testnet_corrupted_reference_issue: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // Create a vector to hold the references to the contested document resource vote polls
+        // TODO: Use type or struct
+        #[allow(clippy::type_complexity)]
         let mut contested_polls: Vec<(
             &ContestedDocumentResourceVotePollWithContractInfo,
             &TimestampMillis,
@@ -44,6 +48,7 @@ where
         if !contested_polls.is_empty() {
             // Call the function to clean up contested document resource vote polls
             self.clean_up_after_contested_resources_vote_polls_end(
+                block_info,
                 contested_polls,
                 clean_up_testnet_corrupted_reference_issue,
                 transaction,

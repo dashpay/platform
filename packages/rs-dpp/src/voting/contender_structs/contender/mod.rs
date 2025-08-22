@@ -1,6 +1,7 @@
 pub mod v0;
 
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::DataContract;
 use crate::document::Document;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::voting::contender_structs::contender::v0::ContenderV0;
@@ -130,11 +131,16 @@ impl Contender {
     pub fn try_into_contender_with_serialized_document(
         self,
         document_type_ref: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<ContenderWithSerializedDocument, ProtocolError> {
         match self {
             Contender::V0(v0) => Ok(v0
-                .try_into_contender_with_serialized_document(document_type_ref, platform_version)?
+                .try_into_contender_with_serialized_document(
+                    document_type_ref,
+                    data_contract,
+                    platform_version,
+                )?
                 .into()),
         }
     }
@@ -142,11 +148,16 @@ impl Contender {
     pub fn try_to_contender_with_serialized_document(
         &self,
         document_type_ref: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<ContenderWithSerializedDocument, ProtocolError> {
         match self {
             Contender::V0(v0) => Ok(v0
-                .try_to_contender_with_serialized_document(document_type_ref, platform_version)?
+                .try_to_contender_with_serialized_document(
+                    document_type_ref,
+                    data_contract,
+                    platform_version,
+                )?
                 .into()),
         }
     }
@@ -154,19 +165,29 @@ impl Contender {
     pub fn serialize(
         &self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        self.try_to_contender_with_serialized_document(document_type, platform_version)?
-            .serialize_to_bytes()
+        self.try_to_contender_with_serialized_document(
+            document_type,
+            data_contract,
+            platform_version,
+        )?
+        .serialize_to_bytes()
     }
 
     pub fn serialize_consume(
         self,
         document_type: DocumentTypeRef,
+        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        self.try_into_contender_with_serialized_document(document_type, platform_version)?
-            .serialize_to_bytes()
+        self.try_into_contender_with_serialized_document(
+            document_type,
+            data_contract,
+            platform_version,
+        )?
+        .serialize_to_bytes()
     }
 
     pub fn from_bytes(

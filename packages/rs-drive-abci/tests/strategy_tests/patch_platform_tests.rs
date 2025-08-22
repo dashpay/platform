@@ -129,6 +129,7 @@ mod tests {
                     config.clone(),
                     13,
                     &mut None,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -419,15 +420,11 @@ mod tests {
         // Wait for the thread to finish and assert that it didn't panic.
         handler
             .join()
-            .map(|result| {
+            .inspect(|_result| {
                 cleanup_version_patches();
-
-                result
             })
-            .map_err(|e| {
+            .inspect_err(|_e| {
                 cleanup_version_patches();
-
-                e
             })
             .expect("Thread has panicked");
     }

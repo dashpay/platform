@@ -134,7 +134,7 @@ async fn document_list_drive_query() {
         block_time_ms: None,
     };
 
-    let docs = <Document>::fetch_many(&sdk, query)
+    let docs = Document::fetch_many(&sdk, query)
         .await
         .expect("fetch many documents");
 

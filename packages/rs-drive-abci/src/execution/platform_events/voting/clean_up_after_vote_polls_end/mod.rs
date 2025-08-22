@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePollWithVotes;
@@ -17,6 +18,7 @@ where
     /// Checks for ended vote polls
     pub(in crate::execution) fn clean_up_after_vote_polls_end(
         &self,
+        block_info: &BlockInfo,
         vote_polls: &BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>,
         clean_up_testnet_corrupted_reference_issue: bool,
         transaction: TransactionArg,
@@ -29,6 +31,7 @@ where
             .clean_up_after_vote_poll_end
         {
             0 => self.clean_up_after_vote_polls_end_v0(
+                block_info,
                 vote_polls,
                 clean_up_testnet_corrupted_reference_issue,
                 transaction,

@@ -9,7 +9,7 @@ use crate::error::drive::DriveError;
 use crate::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
 use dpp::version::PlatformVersion;
 
-impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
+impl ResolvedVotePollsByDocumentTypeQuery<'_> {
     /// Verifies a proof for a collection of documents.
     ///
     /// This function takes a slice of bytes `proof` containing a serialized proof,

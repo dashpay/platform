@@ -7,7 +7,7 @@ use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveDocumentQuery<'a> {
+impl DriveDocumentQuery<'_> {
     /// Verifies a proof for a collection of documents.
     ///
     /// This function takes a slice of bytes `proof` containing a serialized proof,

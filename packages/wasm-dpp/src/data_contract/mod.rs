@@ -8,6 +8,7 @@ pub mod errors;
 mod state_transition;
 
 mod data_contract_facade;
+pub mod tokens;
 // mod index;
 
 pub use data_contract_facade::DataContractFacadeWasm;

@@ -1,4 +1,4 @@
-import { Identifier, Metadata } from '@dashevo/wasm-dpp';
+import { Identifier } from '@dashevo/wasm-dpp';
 import { GetDataContractResponse } from '@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse';
 import { Platform } from '../../Platform';
 
@@ -43,18 +43,6 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
 
   const contract = await this.dpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract() as Uint8Array);
-
-  let metadata;
-  const responseMetadata = dataContractResponse.getMetadata();
-  if (responseMetadata) {
-    metadata = new Metadata({
-      blockHeight: responseMetadata.getHeight(),
-      coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
-      timeMs: responseMetadata.getTimeMs(),
-      protocolVersion: responseMetadata.getProtocolVersion(),
-    });
-  }
-  contract.setMetadata(metadata);
 
   // Store contract to the cache
   // eslint-disable-next-line

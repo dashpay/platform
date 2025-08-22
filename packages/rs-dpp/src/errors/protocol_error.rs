@@ -40,6 +40,7 @@ use crate::{
 
 use dashcore::consensus::encode::Error as DashCoreError;
 
+use crate::tokens::errors::TokenError;
 use crate::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
 use platform_version::error::PlatformVersionError;
@@ -134,6 +135,9 @@ pub enum ProtocolError {
     #[error(transparent)]
     Document(Box<DocumentError>),
 
+    #[error(transparent)]
+    Token(Box<TokenError>),
+
     #[error("Generic Error: {0}")]
     Generic(String),
 
@@ -200,6 +204,9 @@ pub enum ProtocolError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    #[error("divide by zero error: {0}")]
+    DivideByZero(&'static str),
+
     /// Error
     #[error("missing key: {0}")]
     DesiredKeyWithTypePurposeSecurityLevelMissing(String),
@@ -232,6 +239,12 @@ pub enum ProtocolError {
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
 
+    #[error("group member not found in contract: {0}")]
+    GroupMemberNotFound(String),
+
+    #[error("group not found in contract: {0}")]
+    GroupNotFound(String),
+
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
 
@@ -247,6 +260,36 @@ pub enum ProtocolError {
     /// Invalid CBOR error
     #[error("invalid cbor error: {0}")]
     InvalidCBOR(String),
+
+    /// BLS signature error
+    #[cfg(feature = "bls-signatures")]
+    #[error(transparent)]
+    BlsError(#[from] dashcore::blsful::BlsError),
+
+    #[error("Private key wrong size: expected 32, got {got}")]
+    PrivateKeySizeError { got: u32 },
+
+    #[error("Private key invalid error: {0}")]
+    InvalidBLSPrivateKeyError(String),
+
+    #[error("Signature wrong size: expected 96, got {got}")]
+    BlsSignatureSizeError { got: u32 },
+
+    /// Error when trying to add two different types of `RewardDistributionMoment`.
+    #[error("Attempted to add incompatible types of RewardDistributionMoment: {0}")]
+    AddingDifferentTypes(String),
+
+    #[error("invalid distribution step error: {0}")]
+    InvalidDistributionStep(&'static str),
+
+    #[error("missing epoch info: {0}")]
+    MissingEpochInfo(String),
+
+    #[error("Invalid BatchedTransitionAction variant: expected {expected}, found {found}")]
+    InvalidBatchedTransitionActionVariant {
+        expected: &'static str,
+        found: &'static str,
+    },
 }
 
 impl From<&str> for ProtocolError {
@@ -270,6 +313,12 @@ impl From<ConsensusError> for ProtocolError {
 impl From<DocumentError> for ProtocolError {
     fn from(e: DocumentError) -> Self {
         ProtocolError::Document(Box::new(e))
+    }
+}
+
+impl From<TokenError> for ProtocolError {
+    fn from(e: TokenError) -> Self {
+        ProtocolError::Token(Box::new(e))
     }
 }
 

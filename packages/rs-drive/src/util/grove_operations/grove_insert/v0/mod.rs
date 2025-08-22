@@ -9,7 +9,8 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
-    pub(crate) fn grove_insert_v0<B: AsRef<[u8]>>(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn grove_insert_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

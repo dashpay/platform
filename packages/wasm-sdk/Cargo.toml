@@ -1,0 +1,46 @@
+[package]
+name = "wasm-sdk"
+edition = "2021"
+# rust-version.workspace = true
+publish = false
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dash-sdk = { path = "../rs-sdk", default-features = false }
+console_error_panic_hook = { version = "0.1.6" }
+thiserror = { version = "2.0.12" }
+web-sys = { version = "0.3.4", features = [
+    'console',
+    'Document',
+    'Element',
+    'HtmlElement',
+    'Node',
+    'Window',
+] }
+wasm-bindgen = { version = "=0.2.100" }
+wasm-bindgen-futures = { version = "0.4.49" }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" } # TODO: I think it's not needed (LKl)
+# tonic = { version = "*", features = ["transport"], default-features = false }
+# client = [
+#   "tonic/channel", FAIL
+#   "tonic/transport", FAIL
+#   "tonic/tls",
+#   "tonic/tls-roots",
+#   "tonic/tls-webpki-roots",
+#   "platform",
+# ]
+tracing-wasm = { version = "0.2.1" }
+wee_alloc = "0.4"
+platform-value = { path = "../rs-platform-value", features = ["json"] }
+serde-wasm-bindgen = { version = "0.6.5" }
+
+[profile.release]
+lto = "fat"
+opt-level = "z"
+panic = "abort"
+debug = false
+
+#[package.metadata.wasm-pack.profile.release]
+#wasm-opt = ['-g', '-O'] # -g for profiling
+#  -Oz -Oz -g

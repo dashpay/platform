@@ -50,7 +50,12 @@ class AbstractResponse {
     }
 
     return {
-      metadata: new Metadata(metadata.toObject()),
+      metadata: new Metadata({
+        height: metadata.getHeight(),
+        coreChainLockedHeight: metadata.getCoreChainLockedHeight(),
+        timeMs: metadata.getTimeMs(),
+        protocolVersion: metadata.getProtocolVersion(),
+      }),
       proof,
     };
   }

@@ -14,7 +14,37 @@ use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_INCREASE;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
-impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
+impl StateTransitionValueConvert<'_> for DataContractCreateTransitionV0 {
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
+        if skip_signature {
+            Self::signature_property_paths()
+                .into_iter()
+                .try_for_each(|path| {
+                    object
+                        .remove_values_matching_path(path)
+                        .map_err(ProtocolError::ValueError)
+                        .map(|_| ())
+                })?;
+        }
+        Ok(object)
+    }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
+        if skip_signature {
+            Self::signature_property_paths()
+                .into_iter()
+                .try_for_each(|path| {
+                    object
+                        .remove_values_matching_path(path)
+                        .map_err(ProtocolError::ValueError)
+                        .map(|_| ())
+                })?;
+        }
+        Ok(object)
+    }
+
     fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,
@@ -88,35 +118,5 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
         Ok(())
-    }
-
-    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut object: Value = platform_value::to_value(self)?;
-        if skip_signature {
-            Self::signature_property_paths()
-                .into_iter()
-                .try_for_each(|path| {
-                    object
-                        .remove_values_matching_path(path)
-                        .map_err(ProtocolError::ValueError)
-                        .map(|_| ())
-                })?;
-        }
-        Ok(object)
-    }
-
-    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut object: Value = platform_value::to_value(self)?;
-        if skip_signature {
-            Self::signature_property_paths()
-                .into_iter()
-                .try_for_each(|path| {
-                    object
-                        .remove_values_matching_path(path)
-                        .map_err(ProtocolError::ValueError)
-                        .map(|_| ())
-                })?;
-        }
-        Ok(object)
     }
 }

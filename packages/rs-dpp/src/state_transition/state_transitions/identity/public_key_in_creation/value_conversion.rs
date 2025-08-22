@@ -1,5 +1,5 @@
 use crate::serialization::ValueConvertible;
-use crate::state_transition::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
+use crate::state_transition::batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
@@ -9,9 +9,9 @@ use platform_value::Value;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::collections::BTreeMap;
 
-impl<'a> ValueConvertible<'a> for IdentityPublicKeyInCreation {}
+impl ValueConvertible<'_> for IdentityPublicKeyInCreation {}
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityPublicKeyInCreation {
+impl StateTransitionValueConvert<'_> for IdentityPublicKeyInCreation {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             IdentityPublicKeyInCreation::V0(public_key) => {

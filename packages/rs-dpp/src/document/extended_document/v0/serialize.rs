@@ -31,7 +31,7 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// The serialization of an extended document follows the pattern:
     /// data contract | document type name | document
     fn serialize_v0(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
+        let mut buffer: Vec<u8> = 0u64.encode_var_vec(); //version 0
 
         buffer.append(
             &mut self
@@ -40,43 +40,11 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
         );
         buffer.push(self.document_type_name.len() as u8);
         buffer.extend(self.document_type_name.as_bytes());
-        buffer.append(
-            &mut self
-                .document
-                .serialize(self.document_type()?, platform_version)?,
-        );
-        Ok(buffer)
-    }
-
-    /// Serializes the extended document.
-    ///
-    /// The serialization of an extended document follows the pattern:
-    /// data contract | document type name | document
-    fn serialize_consume_v0(
-        self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        let ExtendedDocumentV0 {
-            document_type_name,
-            document,
-            data_contract,
-            ..
-        } = self;
-
-        let mut serialized_document = document.serialize_consume(
-            data_contract.document_type_for_name(document_type_name.as_str())?,
+        buffer.append(&mut self.document.serialize(
+            self.document_type()?,
+            &self.data_contract,
             platform_version,
-        )?;
-
-        let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
-
-        buffer.append(
-            &mut data_contract
-                .serialize_consume_to_bytes_with_platform_version(platform_version)?,
-        );
-        buffer.push(document_type_name.len() as u8);
-        buffer.append(&mut document_type_name.into_bytes());
-        buffer.append(&mut serialized_document);
+        )?);
         Ok(buffer)
     }
 }
@@ -125,6 +93,7 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             metadata: None,
 
             entropy: Default::default(),
+            token_payment_info: None,
         })
     }
 }
@@ -141,7 +110,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
         match platform_version
             .dpp
             .document_versions
-            .document_serialization_version
+            .extended_document_serialization_version
             .default_current_version
         {
             0 => self.serialize_v0(platform_version),
@@ -162,29 +131,6 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
             0 => self.serialize_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ExtendedDocumentV0::serialize".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
-    /// Serializes and consumes the document.
-    ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume_to_bytes(
-        self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .contract_serialization_version
-            .default_current_version
-        {
-            0 => self.serialize_consume_v0(platform_version),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DocumentV0::serialize_consume".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

@@ -9,7 +9,6 @@ use crate::platform_types::platform_state::v0::{
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
@@ -25,6 +24,7 @@ use indexmap::IndexMap;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
+use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
@@ -555,8 +555,11 @@ mod tests {
 
     mod versioned_deserialize {
         use super::*;
-        use crate::test::fixture::platform_state::PLATFORM_STATE_V3_TESTNET;
+        use crate::test::fixture::platform_state::{
+            PLATFORM_STATE_V3_TESTNET, PLATFORM_STATE_V8_DEVNET,
+        };
         use platform_version::version::v3::PLATFORM_V3;
+        use platform_version::version::v9::PLATFORM_V9;
         use std::ops::Deref;
 
         #[test]
@@ -565,6 +568,15 @@ mod tests {
                 hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
 
             PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
+                .expect("failed to deserialize state");
+        }
+
+        #[test]
+        fn should_deserialize_state_stored_in_version_8_from_devnet() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
+
+            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
                 .expect("failed to deserialize state");
         }
     }

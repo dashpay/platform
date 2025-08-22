@@ -30,6 +30,7 @@ where
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
     ///   there is a problem fetching the masternode list difference or updating the state.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_masternode_list_v0(
         &self,
         platform_state: Option<&PlatformState>,

@@ -13,18 +13,18 @@ use dpp::document::Document;
 
 use dpp::prelude::ExtendedDocument;
 
-use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use dpp::version::PlatformVersion;
-use std::convert::TryFrom;
-
-use crate::document_batch_transition::DocumentsBatchTransitionWasm;
+use crate::batch_transition::BatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
     identifier::identifier_from_js_value,
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, ExtendedDocumentWasm,
 };
+use dpp::identifier::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
+use dpp::version::PlatformVersion;
+use std::convert::TryFrom;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -109,7 +109,7 @@ impl DocumentFactoryWASM {
         &self,
         documents: &JsValue,
         nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
+    ) -> Result<BatchTransitionWasm, JsValue> {
         let mut nonce_counter = BTreeMap::new();
         let mut contract_ids_to_check = HashSet::<&Identifier>::new();
 
@@ -128,7 +128,12 @@ impl DocumentFactoryWASM {
                         .for_each(|entry| {
                             let key_value = js_sys::Array::from(&entry);
                             let contract_id = identifier_from_js_value(&key_value.get(0)).unwrap();
-                            let nonce = key_value.get(1).as_f64().unwrap() as u64;
+                            let nonce = key_value
+                                .get(1)
+                                .as_string()
+                                .unwrap()
+                                .parse::<u64>()
+                                .unwrap();
                             nonce_counter.insert((identity_id, contract_id), nonce);
                         });
                 });
@@ -150,13 +155,20 @@ impl DocumentFactoryWASM {
             }
         }
 
+        // TODO: use types or structs
+        #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef, Bytes32)>,
+            Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)>,
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32)> = documents
+                let documents_with_refs: Vec<(
+                    Document,
+                    DocumentTypeRef,
+                    Bytes32,
+                    Option<TokenPaymentInfo>,
+                )> = documents
                     .iter()
                     .map(|extended_document| {
                         (
@@ -166,6 +178,7 @@ impl DocumentFactoryWASM {
                                 .document_type_for_name(extended_document.document_type_name())
                                 .expect("should be able to get document type"),
                             extended_document.entropy().to_owned(),
+                            extended_document.token_payment_info(),
                         )
                     })
                     .collect();
@@ -245,6 +258,7 @@ impl DocumentFactoryWASM {
     //
     //     Ok(document.into())
     // }
+    //
 
     #[wasm_bindgen(js_name=createExtendedDocumentFromDocumentBuffer)]
     pub fn create_extended_from_document_buffer(
@@ -319,6 +333,7 @@ fn extract_documents_of_action(
         return Ok(vec![]);
     }
 
+    #[allow(clippy::unnecessary_fallible_conversions)]
     let documents_array = js_sys::Array::try_from(documents_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 

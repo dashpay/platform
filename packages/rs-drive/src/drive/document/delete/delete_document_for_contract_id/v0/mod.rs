@@ -20,6 +20,7 @@ impl Drive {
     /// Deletes a document and returns the associated fee.
     /// The contract CBOR is given instead of the contract itself.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_id_v0(
         &self,
         document_id: Identifier,

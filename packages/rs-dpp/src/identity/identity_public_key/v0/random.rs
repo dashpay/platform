@@ -68,7 +68,7 @@ impl IdentityPublicKeyV0 {
         rng: &mut StdRng,
         used_key_matrix: Option<(KeyCount, &mut UsedKeyMatrix)>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         // we have 16 different permutations possible
         let mut binding = [false; 16].to_vec();
         let (key_count, key_matrix) = used_key_matrix.unwrap_or((0, &mut binding));
@@ -124,7 +124,7 @@ impl IdentityPublicKeyV0 {
         key_type: KeyType,
         contract_bounds: Option<ContractBounds>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let read_only = false;
         let (public_data, private_data) =
             key_type.random_public_and_private_key_data(rng, platform_version)?;
@@ -197,7 +197,7 @@ impl IdentityPublicKeyV0 {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = MASTER;
@@ -223,7 +223,7 @@ impl IdentityPublicKeyV0 {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let key_type = ECDSA_HASH160;
         let purpose = VOTING;
         let security_level = MEDIUM;
@@ -249,7 +249,7 @@ impl IdentityPublicKeyV0 {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let key_type = ECDSA_HASH160;
         let purpose = OWNER;
         let security_level = CRITICAL;
@@ -275,7 +275,7 @@ impl IdentityPublicKeyV0 {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let key_type = ECDSA_HASH160;
         let purpose = TRANSFER;
         let security_level = CRITICAL;
@@ -301,7 +301,7 @@ impl IdentityPublicKeyV0 {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = CRITICAL;
@@ -327,7 +327,7 @@ impl IdentityPublicKeyV0 {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = HIGH;

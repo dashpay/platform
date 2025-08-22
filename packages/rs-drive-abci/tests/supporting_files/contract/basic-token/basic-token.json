@@ -1,0 +1,26 @@
+{
+  "$format_version": "1",
+  "id": "EbL1zYg1JrpPX9rYbASihRsSEgwKbqZAJu6B1Z2SKKU2",
+  "ownerId": "F1Ue2M5PfDjDX69NqrZdChdEbwF2SYZ8UF4qNjsCQu1d",
+  "version": 1,
+  "documentSchemas": {},
+  "tokens": {
+    "0": {
+      "$format_version": "0",
+      "conventions": {
+        "$format_version": "0",
+        "localizations": {
+          "en": {
+            "$format_version": "0",
+            "shouldCapitalize": false,
+            "pluralForm": "tests",
+            "singularForm": "test"
+          }
+        },
+        "decimals": 8
+      },
+      "baseSupply": 100000,
+      "maxSupply": null
+    }
+  }
+}

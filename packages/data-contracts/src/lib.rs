@@ -6,9 +6,11 @@ use crate::error::Error;
 pub use dashpay_contract;
 pub use dpns_contract;
 pub use feature_flags_contract;
+pub use keyword_search_contract;
 pub use masternode_reward_shares_contract;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+pub use token_history_contract;
 pub use wallet_utils_contract;
 pub use withdrawals_contract;
 
@@ -21,6 +23,8 @@ pub enum SystemDataContract {
     DPNS = 3,
     Dashpay = 4,
     WalletUtils = 5,
+    TokenHistory = 6,
+    KeywordSearch = 7,
 }
 
 pub struct DataContractSource {
@@ -40,6 +44,8 @@ impl SystemDataContract {
             SystemDataContract::DPNS => dpns_contract::ID_BYTES,
             SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
             SystemDataContract::WalletUtils => wallet_utils_contract::ID_BYTES,
+            SystemDataContract::TokenHistory => token_history_contract::ID_BYTES,
+            SystemDataContract::KeywordSearch => keyword_search_contract::ID_BYTES,
         };
         Identifier::new(bytes)
     }
@@ -91,6 +97,22 @@ impl SystemDataContract {
                 version: platform_version.system_data_contracts.wallet as u32,
                 definitions: wallet_utils_contract::load_definitions(platform_version)?,
                 document_schemas: wallet_utils_contract::load_documents_schemas(platform_version)?,
+            },
+            SystemDataContract::TokenHistory => DataContractSource {
+                id_bytes: token_history_contract::ID_BYTES,
+                owner_id_bytes: token_history_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.token_history as u32,
+                definitions: token_history_contract::load_definitions(platform_version)?,
+                document_schemas: token_history_contract::load_documents_schemas(platform_version)?,
+            },
+            SystemDataContract::KeywordSearch => DataContractSource {
+                id_bytes: keyword_search_contract::ID_BYTES,
+                owner_id_bytes: keyword_search_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.keyword_search as u32,
+                definitions: keyword_search_contract::load_definitions(platform_version)?,
+                document_schemas: keyword_search_contract::load_documents_schemas(
+                    platform_version,
+                )?,
             },
         };
 

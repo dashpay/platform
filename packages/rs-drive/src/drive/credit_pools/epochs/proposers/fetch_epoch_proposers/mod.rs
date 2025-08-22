@@ -6,9 +6,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::block::epoch::Epoch;
-
 use crate::query::proposer_block_count_query::ProposerQueryType;
+use dpp::block::epoch::Epoch;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -29,8 +29,8 @@ impl Drive {
     /// # Returns
     ///
     /// A `Result` containing:
-    /// - `Vec<(Vec<u8>, u64)>`: A vector of tuples where each tuple contains:
-    ///   - A byte vector (`Vec<u8>`) representing the proposer's transaction hash.
+    /// - `Vec<(Identifier, u64)>`: A vector of tuples where each tuple contains:
+    ///   - An identifier representing an Evonode's pro_tx_hash identifier.
     ///   - A `u64` representing the number of blocks proposed by that proposer.
     /// - `Error`: An error if the query fails due to an invalid platform version, transaction issues, or invalid epoch data.
     ///
@@ -46,7 +46,7 @@ impl Drive {
         query_type: ProposerQueryType,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
+    ) -> Result<Vec<(Identifier, u64)>, Error> {
         match platform_version
             .drive
             .methods

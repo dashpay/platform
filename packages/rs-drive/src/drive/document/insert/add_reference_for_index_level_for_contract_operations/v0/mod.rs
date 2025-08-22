@@ -15,7 +15,7 @@ use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElemen
 use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
@@ -23,12 +23,13 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
     /// Adds the terminal reference.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_reference_for_index_level_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -61,8 +62,8 @@ impl Drive {
                 BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
                 BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                    in_tree_using_sums: false,
-                    is_sum_tree: false,
+                    in_tree_type: TreeType::NormalTree,
+                    tree_type: TreeType::NormalTree,
                     flags_len: storage_flags
                         .map(|s| s.serialized_size())
                         .unwrap_or_default(),
@@ -75,7 +76,7 @@ impl Drive {
             // a contested resource index
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                false,
+                TreeType::NormalTree,
                 *storage_flags,
                 apply_type,
                 transaction,
@@ -94,7 +95,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
-                        is_sum_tree: false,
+                        tree_type: TreeType::NormalTree,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllReference(
                             DEFAULT_HASH_SIZE_U8,
@@ -194,7 +195,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_using_sums: false,
+                    in_tree_type: TreeType::NormalTree,
                     target: QueryTargetValue(
                         document_reference_size(document_and_contract_info.document_type)
                             + storage_flags

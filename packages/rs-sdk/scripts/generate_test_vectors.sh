@@ -15,7 +15,8 @@
 # its test vector is generated.
 #
 # Otherwise, all existing test vectors are removed and regenerated.
-
+#
+# HINT: You can use `connect_to_remote.sh` script to use some remote node (like testnet) to generate test vectors.
 CARGO_DIR="$(realpath "$(dirname "$0")/..")"
 
 pushd "$CARGO_DIR"

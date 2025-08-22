@@ -15,14 +15,14 @@ impl Drive {
     /// Gets the amount of processing fees to be distributed for the Epoch.
     pub(super) fn get_epoch_processing_credits_for_distribution_v0(
         &self,
-        epoch_tree: &Epoch,
+        epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
         let element = self
             .grove
             .get(
-                &epoch_tree.get_path(),
+                &epoch.get_path(),
                 epoch_key_constants::KEY_POOL_PROCESSING_FEES.as_slice(),
                 transaction,
                 &platform_version.drive.grove_version,

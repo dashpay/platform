@@ -14,19 +14,19 @@ impl ProtocolValidationOperation {
             ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size) => {
                 platform_version
                     .fee_version
-                    .data_contract
+                    .data_contract_validation
                     .document_type_base_fee
                     + *size
                         * platform_version
                             .fee_version
-                            .data_contract
-                            .document_type_size_fee
+                            .data_contract_validation
+                            .document_type_schema_size_fee
             }
             ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(properties_count) => {
                 *properties_count
                     * platform_version
                         .fee_version
-                        .data_contract
+                        .data_contract_validation
                         .document_type_per_property_fee
             }
             ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
@@ -37,21 +37,21 @@ impl ProtocolValidationOperation {
                     *index_properties_count
                         * platform_version
                             .fee_version
-                            .data_contract
+                            .data_contract_validation
                             .document_type_unique_index_per_property_fee
                         + platform_version
                             .fee_version
-                            .data_contract
+                            .data_contract_validation
                             .document_type_base_unique_index_fee
                 } else {
                     *index_properties_count
                         * platform_version
                             .fee_version
-                            .data_contract
+                            .data_contract_validation
                             .document_type_non_unique_index_per_property_fee
                         + platform_version
                             .fee_version
-                            .data_contract
+                            .data_contract_validation
                             .document_type_base_non_unique_index_fee
                 }
             }

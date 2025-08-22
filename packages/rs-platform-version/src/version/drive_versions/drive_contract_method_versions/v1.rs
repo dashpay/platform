@@ -18,8 +18,14 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V1: DriveContractMethodVersions =
         insert: DriveContractInsertMethodVersions {
             add_contract_to_storage: 0,
             insert_contract: 0,
+            add_description: 0,
+            add_keywords: 0,
         },
-        update: DriveContractUpdateMethodVersions { update_contract: 0 },
+        update: DriveContractUpdateMethodVersions {
+            update_contract: 0,
+            update_description: 0,
+            update_keywords: 0,
+        },
         costs: DriveContractCostsMethodVersions {
             add_estimation_costs_for_contract_insertion: 0,
         },

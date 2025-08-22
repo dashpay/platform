@@ -40,8 +40,12 @@ impl Serialize for InstantAssetLockProof {
     where
         S: Serializer,
     {
-        let raw =
-            RawInstantLockProof::try_from(self).map_err(|e| S::Error::custom(e.to_string()))?;
+        let raw = RawInstantLockProof::try_from(self).map_err(|e| {
+            S::Error::custom(format!(
+                "expected to be able to convert raw instant lock proof in serialization: {}",
+                e
+            ))
+        })?;
 
         raw.serialize(serializer)
     }
@@ -53,8 +57,12 @@ impl<'de> Deserialize<'de> for InstantAssetLockProof {
         D: Deserializer<'de>,
     {
         let raw = RawInstantLockProof::deserialize(deserializer)?;
-        raw.try_into()
-            .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+        raw.try_into().map_err(|e: ProtocolError| {
+            D::Error::custom(format!(
+                "expected to be able to convert raw instant lock proof in deserialization: {}",
+                e
+            ))
+        })
     }
 }
 

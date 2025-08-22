@@ -41,10 +41,22 @@
 @class GetEvonodesProposedEpochBlocksByIdsRequest;
 @class GetEvonodesProposedEpochBlocksByRangeRequest;
 @class GetEvonodesProposedEpochBlocksResponse;
+@class GetGroupActionSignersRequest;
+@class GetGroupActionSignersResponse;
+@class GetGroupActionsRequest;
+@class GetGroupActionsResponse;
+@class GetGroupInfoRequest;
+@class GetGroupInfoResponse;
+@class GetGroupInfosRequest;
+@class GetGroupInfosResponse;
 @class GetIdentitiesBalancesRequest;
 @class GetIdentitiesBalancesResponse;
 @class GetIdentitiesContractKeysRequest;
 @class GetIdentitiesContractKeysResponse;
+@class GetIdentitiesTokenBalancesRequest;
+@class GetIdentitiesTokenBalancesResponse;
+@class GetIdentitiesTokenInfosRequest;
+@class GetIdentitiesTokenInfosResponse;
 @class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
 @class GetIdentityBalanceRequest;
@@ -59,18 +71,28 @@
 @class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
+@class GetIdentityTokenBalancesRequest;
+@class GetIdentityTokenBalancesResponse;
+@class GetIdentityTokenInfosRequest;
+@class GetIdentityTokenInfosResponse;
 @class GetPathElementsRequest;
 @class GetPathElementsResponse;
 @class GetPrefundedSpecializedBalanceRequest;
 @class GetPrefundedSpecializedBalanceResponse;
-@class GetProofsRequest;
-@class GetProofsResponse;
 @class GetProtocolVersionUpgradeStateRequest;
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
 @class GetStatusRequest;
 @class GetStatusResponse;
+@class GetTokenDirectPurchasePricesRequest;
+@class GetTokenDirectPurchasePricesResponse;
+@class GetTokenPreProgrammedDistributionsRequest;
+@class GetTokenPreProgrammedDistributionsResponse;
+@class GetTokenStatusesRequest;
+@class GetTokenStatusesResponse;
+@class GetTokenTotalSupplyRequest;
+@class GetTokenTotalSupplyResponse;
 @class GetTotalCreditsInPlatformRequest;
 @class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
@@ -150,10 +172,6 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
 
 - (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByRangeWithMessage:(GetEvonodesProposedEpochBlocksByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
-
-- (GRPCUnaryProtoCall *)getProofsWithMessage:(GetProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
@@ -250,6 +268,54 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getCurrentQuorumsInfoWithMessage:(GetCurrentQuorumsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityTokenBalancesWithMessage:(GetIdentityTokenBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse)
+
+- (GRPCUnaryProtoCall *)getIdentitiesTokenBalancesWithMessage:(GetIdentitiesTokenBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityTokenInfosWithMessage:(GetIdentityTokenInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse)
+
+- (GRPCUnaryProtoCall *)getIdentitiesTokenInfosWithMessage:(GetIdentitiesTokenInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse)
+
+- (GRPCUnaryProtoCall *)getTokenStatusesWithMessage:(GetTokenStatusesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse)
+
+- (GRPCUnaryProtoCall *)getTokenDirectPurchasePricesWithMessage:(GetTokenDirectPurchasePricesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
+
+- (GRPCUnaryProtoCall *)getTokenPreProgrammedDistributionsWithMessage:(GetTokenPreProgrammedDistributionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)
+
+- (GRPCUnaryProtoCall *)getTokenTotalSupplyWithMessage:(GetTokenTotalSupplyRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse)
+
+- (GRPCUnaryProtoCall *)getGroupInfoWithMessage:(GetGroupInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse)
+
+- (GRPCUnaryProtoCall *)getGroupInfosWithMessage:(GetGroupInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse)
+
+- (GRPCUnaryProtoCall *)getGroupActionsWithMessage:(GetGroupActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse)
+
+- (GRPCUnaryProtoCall *)getGroupActionSignersWithMessage:(GetGroupActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 @end
 
 /**
@@ -333,13 +399,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
-
-- (void)getProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
@@ -530,6 +589,90 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse)
+
+- (void)getIdentityTokenBalancesWithRequest:(GetIdentityTokenBalancesRequest *)request handler:(void(^)(GetIdentityTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityTokenBalancesWithRequest:(GetIdentityTokenBalancesRequest *)request handler:(void(^)(GetIdentityTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse)
+
+- (void)getIdentitiesTokenBalancesWithRequest:(GetIdentitiesTokenBalancesRequest *)request handler:(void(^)(GetIdentitiesTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentitiesTokenBalancesWithRequest:(GetIdentitiesTokenBalancesRequest *)request handler:(void(^)(GetIdentitiesTokenBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse)
+
+- (void)getIdentityTokenInfosWithRequest:(GetIdentityTokenInfosRequest *)request handler:(void(^)(GetIdentityTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityTokenInfosWithRequest:(GetIdentityTokenInfosRequest *)request handler:(void(^)(GetIdentityTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse)
+
+- (void)getIdentitiesTokenInfosWithRequest:(GetIdentitiesTokenInfosRequest *)request handler:(void(^)(GetIdentitiesTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentitiesTokenInfosWithRequest:(GetIdentitiesTokenInfosRequest *)request handler:(void(^)(GetIdentitiesTokenInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse)
+
+- (void)getTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse)
+
+- (void)getTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
+
+- (void)getTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)
+
+- (void)getTokenTotalSupplyWithRequest:(GetTokenTotalSupplyRequest *)request handler:(void(^)(GetTokenTotalSupplyResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTokenTotalSupplyWithRequest:(GetTokenTotalSupplyRequest *)request handler:(void(^)(GetTokenTotalSupplyResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse)
+
+- (void)getGroupInfoWithRequest:(GetGroupInfoRequest *)request handler:(void(^)(GetGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetGroupInfoWithRequest:(GetGroupInfoRequest *)request handler:(void(^)(GetGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse)
+
+- (void)getGroupInfosWithRequest:(GetGroupInfosRequest *)request handler:(void(^)(GetGroupInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetGroupInfosWithRequest:(GetGroupInfosRequest *)request handler:(void(^)(GetGroupInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse)
+
+- (void)getGroupActionsWithRequest:(GetGroupActionsRequest *)request handler:(void(^)(GetGroupActionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetGroupActionsWithRequest:(GetGroupActionsRequest *)request handler:(void(^)(GetGroupActionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse)
+
+- (void)getGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

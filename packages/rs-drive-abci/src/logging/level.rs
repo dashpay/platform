@@ -46,7 +46,7 @@ impl From<&str> for LogLevel {
 
 struct LogLevelPresetVisitor;
 
-impl<'de> Visitor<'de> for LogLevelPresetVisitor {
+impl Visitor<'_> for LogLevelPresetVisitor {
     type Value = LogLevel;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

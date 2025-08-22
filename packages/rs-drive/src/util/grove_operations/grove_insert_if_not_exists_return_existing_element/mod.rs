@@ -18,7 +18,7 @@ impl Drive {
     /// * `element`: The element to be inserted.
     /// * `transaction`: The groveDB transaction associated with this operation.
     /// * `drive_operations`: A vector to collect the costs of operations for later computation. In this case,
-    /// it collects the cost of this insert operation if the path and key did not exist.
+    ///   it collects the cost of this insert operation if the path and key did not exist.
     /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns

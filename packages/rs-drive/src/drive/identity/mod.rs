@@ -9,16 +9,18 @@ use crate::drive::RootTree;
 use crate::util::object_size_info::DriveKeyInfo;
 use std::fmt;
 
+#[cfg(feature = "server")]
+use dpp::identity::KeyID;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::Purpose;
-#[cfg(feature = "server")]
-use dpp::identity::{KeyID, SecurityLevel};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::identity::SecurityLevel;
 
 #[cfg(feature = "server")]
 /// Everything related to withdrawals
 pub mod withdrawals;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::Purpose::AUTHENTICATION;
 #[cfg(feature = "server")]
 use integer_encoding::VarInt;
@@ -39,6 +41,10 @@ pub mod key;
 /// Module related to updating of identity
 #[cfg(feature = "server")]
 pub mod update;
+
+/// A module for a struct encapsulating an identity and a non-unique public key hash to identity id proof
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod identity_and_non_unique_public_key_hash_double_proof;
 
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::error::drive::DriveError;
@@ -258,7 +264,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec(
 }
 
 /// identity query keys security level tree path vec
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     identity_id: &[u8],
     security_level: SecurityLevel,

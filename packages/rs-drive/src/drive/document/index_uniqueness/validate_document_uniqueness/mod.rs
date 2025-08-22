@@ -35,6 +35,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function will return an error if the version of the Drive is unknown.
+    #[allow(clippy::too_many_arguments)]
     pub fn validate_document_uniqueness(
         &self,
         contract: &DataContract,

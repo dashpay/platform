@@ -9,7 +9,6 @@ use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::serialization::ValueConvertible;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use std::collections::BTreeMap;
-use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::{JsCast, JsValue};
 
 pub fn parse_public_keys(
@@ -47,11 +46,10 @@ pub fn parse_create_identity_update_transition_keys(
         let keys: Vec<IdentityPublicKeyInCreation> = add_public_keys_array
             .iter()
             .map(|key| {
-                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                        &key,
-                        "IdentityPublicKeyWithWitness",
-                    )?;
+                let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                    &key,
+                    "IdentityPublicKeyWithWitness",
+                )?;
 
                 Ok(public_key.clone().into())
             })
@@ -74,7 +72,7 @@ pub fn parse_create_identity_update_transition_keys(
         let keys: Vec<KeyID> = disable_public_keys_array
             .iter()
             .map(|key| {
-                let public_key_wasm: Ref<IdentityPublicKeyWasm> =
+                let public_key_wasm =
                     generic_of_js_val::<IdentityPublicKeyWasm>(&key, "IdentityPublicKey")?;
                 Ok(public_key_wasm.get_id())
             })

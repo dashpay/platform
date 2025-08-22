@@ -1,13 +1,13 @@
 mod v0;
 
 use crate::block::block_info::BlockInfo;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::voting::contender_structs::{
     ContenderWithSerializedDocument, FinalizedResourceVoteChoicesWithVoterInfo,
 };
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::v0::ContestedDocumentVotePollStoredInfoV0;
 use crate::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;

@@ -81,6 +81,7 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
                 data_contract,
                 metadata: None,
                 entropy: Bytes32::default(),
+                token_payment_info: None,
             })),
             _ => Err(serde::de::Error::unknown_variant(
                 &format!("{}", version),

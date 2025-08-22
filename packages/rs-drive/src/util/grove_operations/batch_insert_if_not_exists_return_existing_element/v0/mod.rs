@@ -129,7 +129,8 @@ impl Drive {
             PathKeyElementSize((key_info_path, key_info, element)) => {
                 match apply_type {
                     BatchInsertApplyType::StatelessBatchInsert {
-                        in_tree_using_sums, ..
+                        in_tree_type: in_tree_using_sums,
+                        ..
                     } => {
                         // Estimate if the element with the given size already exists
                         drive_operations.push(CalculatedCostOperation(

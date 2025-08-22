@@ -10,6 +10,7 @@ use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v1::STATE_TRANSITION_SERIALIZATION_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_versions::v1::STATE_TRANSITION_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
@@ -23,7 +24,8 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
-    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciVotingMethodVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciTokensProcessingMethodVersions,
+    DriveAbciVotingMethodVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
@@ -85,7 +87,10 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,
-                process_block_fees: 0,
+                process_block_fees_and_validate_sum_trees: 0,
+            },
+            tokens_processing: DriveAbciTokensProcessingMethodVersions {
+                validate_token_aggregated_balance: 0,
             },
             core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
                 choose_quorum: 0,
@@ -167,6 +172,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V1,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
+        token_versions: TOKEN_VERSIONS_V1,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V1,
         factory_versions: DPP_FACTORY_VERSIONS_V1,

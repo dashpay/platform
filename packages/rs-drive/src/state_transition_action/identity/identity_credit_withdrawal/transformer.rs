@@ -42,3 +42,66 @@ impl IdentityCreditWithdrawalTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+
+    #[test]
+    fn test_try_from_identity_credit_withdrawal_without_address_and_multiple_transfer_keys() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut identity = Identity::random_identity(1, Some(64), platform_version)
+            .expect("create random identity");
+
+        let (transfer_key1, _) =
+            IdentityPublicKey::random_masternode_transfer_key(2, Some(64), platform_version)
+                .expect("create random masternode transfer key");
+        let (transfer_key2, _) =
+            IdentityPublicKey::random_masternode_transfer_key(3, Some(64), platform_version)
+                .expect("create random masternode transfer key");
+
+        identity.add_public_keys([transfer_key1, transfer_key2]);
+
+        let identity_id = identity.id();
+
+        drive
+            .add_new_identity(
+                identity,
+                true,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("create new identity");
+
+        let transition =
+            IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
+                identity_id,
+                nonce: 0,
+                amount: 0,
+                core_fee_per_byte: 0,
+                pooling: Default::default(),
+                output_script: None,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            });
+
+        IdentityCreditWithdrawalTransitionAction::try_from_identity_credit_withdrawal(
+            &drive,
+            None,
+            &transition,
+            &BlockInfo::default(),
+            platform_version,
+        )
+        .expect("create action");
+    }
+}

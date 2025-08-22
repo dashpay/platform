@@ -4,6 +4,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
+use crate::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
+use crate::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
+use crate::query::token_status_drive_query::TokenStatusDriveQuery;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -21,6 +24,14 @@ impl Drive {
     ///   if the contract is historical.
     /// - `document_queries`: A list of [SingleDocumentDriveQuery]. These specify the documents
     ///   to be proven.
+    /// - `vote_queries`: A list of [IdentityBasedVoteDriveQuery]. These would be to figure out the
+    ///   result of votes based on identities making them.
+    /// - `token_balance_queries`: A slice of [IdentityTokenBalanceDriveQuery] objects specifying
+    ///   token balance queries for identities.
+    /// - `token_info_queries`: A slice of [IdentityTokenInfoDriveQuery] objects specifying
+    ///   token information queries for identities.
+    /// - `token_status_queries`: A slice of [TokenStatusDriveQuery] objects specifying token
+    ///   status queries.
     /// - `transaction`: An optional grovedb transaction
     /// - `drive_version`: A reference to the [DriveVersion] object that specifies the version of
     ///   the function to call.
@@ -28,12 +39,16 @@ impl Drive {
     /// # Returns
     /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
     /// or an `Error` if the function fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn prove_multiple_state_transition_results(
         &self,
         identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool represents if it is historical
         document_queries: &[SingleDocumentDriveQuery],
         vote_queries: &[IdentityBasedVoteDriveQuery],
+        token_balance_queries: &[IdentityTokenBalanceDriveQuery],
+        token_info_queries: &[IdentityTokenInfoDriveQuery],
+        token_status_queries: &[TokenStatusDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -48,6 +63,9 @@ impl Drive {
                 contract_ids,
                 document_queries,
                 vote_queries,
+                token_balance_queries,
+                token_info_queries,
+                token_status_queries,
                 transaction,
                 platform_version,
             ),

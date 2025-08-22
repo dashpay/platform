@@ -2,6 +2,7 @@ pub mod property_names {
     pub const FEATURE_VERSION: &str = "$version";
     pub const ID: &str = "$id";
     pub const DOCUMENT_TYPE_NAME: &str = "$type";
+    pub const TOKEN_PAYMENT_INFO: &str = "$tokenPaymentInfo";
     pub const REVISION: &str = "$revision";
     pub const DATA_CONTRACT: &str = "$dataContract";
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";

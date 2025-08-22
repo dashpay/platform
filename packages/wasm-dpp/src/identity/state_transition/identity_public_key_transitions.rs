@@ -111,10 +111,10 @@ impl IdentityPublicKeyWithWitnessWasm {
         contract_id: IdentifierWrapper,
         document_type_name: Option<String>,
     ) {
-        let contract_bounds = if document_type_name.is_some() {
+        let contract_bounds = if let Some(name) = document_type_name {
             ContractBounds::SingleContractDocumentType {
                 id: contract_id.into(),
-                document_type_name: document_type_name.unwrap(),
+                document_type_name: name,
             }
         } else {
             ContractBounds::SingleContract {

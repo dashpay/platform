@@ -58,7 +58,7 @@ impl From<&str> for LogDestination {
 
 struct LogDestinationVisitor;
 
-impl<'de> Visitor<'de> for LogDestinationVisitor {
+impl Visitor<'_> for LogDestinationVisitor {
     type Value = LogDestination;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

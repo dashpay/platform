@@ -10,7 +10,7 @@ use crate::util::type_constants::{
     U64_SIZE_U8,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -48,6 +48,7 @@ pub trait DocumentInfoV0Methods {
         &self,
         key_path: &str,
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<u16, Error>;
     /// Gets the raw path for the given document type
     fn get_raw_for_document_type(
@@ -67,7 +68,7 @@ pub trait DocumentInfoV0Methods {
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
 }
 
-impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
+impl DocumentInfoV0Methods for DocumentInfo<'_> {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool {
         matches!(self, DocumentInfo::DocumentRefAndSerialization(..))
@@ -111,6 +112,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
         &self,
         key_path: &str,
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
@@ -128,11 +130,14 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                         key_path
                     )))
                 })?;
-                let estimated_size = property.property_type.middle_byte_size_ceil().ok_or({
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "document type must have a max size",
-                    ))
-                })?;
+                let estimated_size = property
+                    .property_type
+                    .middle_byte_size_ceil(platform_version)?
+                    .ok_or({
+                        Error::Drive(DriveError::CorruptedCodeExecution(
+                            "document type must have a max size",
+                        ))
+                    })?;
                 Ok(estimated_size)
             }
         }
@@ -217,8 +222,10 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                                 ))
                             })?;
 
-                        let estimated_middle_size =
-                            property.property_type.middle_byte_size_ceil().ok_or({
+                        let estimated_middle_size = property
+                            .property_type
+                            .middle_byte_size_ceil(platform_version)?
+                            .ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
                                     "document type must have a max size",
                                 ))

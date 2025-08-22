@@ -16,7 +16,7 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
-    pub(crate) fn grove_apply_partial_batch_with_add_costs_v0(
+    pub(super) fn grove_apply_partial_batch_with_add_costs_v0(
         &self,
         ops: GroveDbOpBatch,
         validate: bool,

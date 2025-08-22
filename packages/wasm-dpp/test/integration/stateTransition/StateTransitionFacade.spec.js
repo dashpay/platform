@@ -102,14 +102,14 @@ describe('StateTransitionFacade', () => {
       create: documents,
     }, {
       [documents[0].getOwnerId().toString()]: {
-        [documents[0].getDataContractId().toString()]: 0,
+        [documents[0].getDataContractId().toString()]: '0',
       },
     });
     await documentsBatchTransition.sign(identityPublicKey, privateKey);
 
     identity = await getIdentityFixture();
     identity.setId(await generateRandomIdentifierAsync());
-    identity.setBalance(10000000);
+    identity.setBalance(BigInt(10000000));
     identity.setPublicKeys([identityPublicKey]);
 
     dpp = new DashPlatformProtocol(
@@ -171,7 +171,7 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should return invalid result if not enough balance to pay fee for State Transition', async () => {
-      identity.setBalance(0);
+      identity.setBalance(BigInt(0));
       stateRepositoryMock.fetchIdentityBalance.resolves(0);
       const result = await dpp.stateTransition.validate(
         dataContractCreateTransition,

@@ -110,7 +110,15 @@ describe('GetProtocolVersionUpgradeStateResponse', () => {
       .createFromProto(proto);
 
     expect(getProtocolVersionUpgradeState.getVersionEntries()).to.deep.equal([]);
-    expect(getProtocolVersionUpgradeState.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getProtocolVersionUpgradeState.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getProtocolVersionUpgradeState.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getProtocolVersionUpgradeState.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getProtocolVersionUpgradeState.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getProtocolVersionUpgradeState.getProof();
     expect(proof).to.be.an.instanceOf(Proof);

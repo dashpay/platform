@@ -55,7 +55,7 @@ where
         let key_ids_to_disable: Vec<KeyID> = old_withdrawal_identity_keys
             .iter()
             .filter_map(|(key_id, key)| {
-                if key.disabled_at().is_some() || key.data().as_slice() == &new_withdrawal_address {
+                if key.disabled_at().is_some() || key.data().as_slice() == new_withdrawal_address {
                     None //No need to disable it again or if we are adding the same key we already had
                 } else {
                     Some(*key_id)

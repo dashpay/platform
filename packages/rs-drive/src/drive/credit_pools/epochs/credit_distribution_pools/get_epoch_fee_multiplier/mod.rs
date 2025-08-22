@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
-
+use dpp::prelude::FeeMultiplier;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -28,7 +28,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
+    ) -> Result<FeeMultiplier, Error> {
         match platform_version
             .drive
             .methods

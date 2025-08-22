@@ -22,9 +22,13 @@ use crate::drive::RootTree;
 use crate::query::Query;
 use grovedb::{PathQuery, SizedQuery};
 
-/// Storage fee pool key
+/// Total system credits storage
 #[cfg(any(feature = "server", feature = "verify"))]
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
+
+/// Total token supplies storage
+#[cfg(any(feature = "server", feature = "verify"))]
+pub const TOTAL_TOKEN_SUPPLIES_STORAGE_KEY: &[u8; 1] = b"T";
 
 /// The path for all the credits in the system
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -51,6 +55,60 @@ pub fn total_credits_on_platform_path_query() -> PathQuery {
         path: vec![vec![RootTree::Misc as u8]],
         query: SizedQuery {
             query: Query::new_single_key(TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec()),
+            limit: Some(1),
+            offset: None,
+        },
+    }
+}
+
+/// The path for the root of all token supplies
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_tokens_root_supply_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Misc),
+        TOTAL_TOKEN_SUPPLIES_STORAGE_KEY,
+    ]
+}
+
+/// The path as a vec for the root of all token supplies
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_tokens_root_supply_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Misc as u8],
+        TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.to_vec(),
+    ]
+}
+
+/// The path for the token supply for a given token
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_token_supply_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Misc),
+        TOTAL_TOKEN_SUPPLIES_STORAGE_KEY,
+        token_id,
+    ]
+}
+
+/// The path as a vec for the token supply for a given token
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_token_supply_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Misc as u8],
+        TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.to_vec(),
+        token_id.to_vec(),
+    ]
+}
+
+/// A path query helper to get the total token supply for a given token on Platform
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_supply_for_token_on_platform_path_query(token_id: [u8; 32]) -> PathQuery {
+    PathQuery {
+        path: vec![
+            vec![RootTree::Misc as u8],
+            TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.to_vec(),
+        ],
+        query: SizedQuery {
+            query: Query::new_single_key(token_id.to_vec()),
             limit: Some(1),
             offset: None,
         },

@@ -8,16 +8,17 @@ const lodashGet = require('lodash/get');
  *
  * @param {string} protoPath
  * @param {string} [namespace]
- *
+ * @param {string[]} [includeDirs=[]]
  * @return {*}
  */
-function loadPackageDefinition(protoPath, namespace = undefined) {
+function loadPackageDefinition(protoPath, namespace = undefined, includeDirs = []) {
   const definition = protoLoader.loadSync(protoPath, {
     keepCase: false,
     longs: String,
     enums: String,
     bytes: Uint8Array,
     defaults: true,
+    includeDirs,
   });
 
   const packageDefinition = grpc.loadPackageDefinition(definition);

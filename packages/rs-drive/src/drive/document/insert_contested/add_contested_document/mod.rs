@@ -30,6 +30,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(FeeResult)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_contested_document(
         &self,
         owned_document_info: OwnedDocumentInfo,

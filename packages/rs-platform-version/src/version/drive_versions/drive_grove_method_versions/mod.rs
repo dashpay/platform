@@ -33,6 +33,10 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_proved_path_query_with_conditional: FeatureVersion,
     pub grove_get_sum_tree_total_value: FeatureVersion,
     pub grove_has_raw: FeatureVersion,
+    pub grove_get_raw_item: FeatureVersion,
+    pub grove_get_optional_sum_tree_total_value: FeatureVersion,
+    pub grove_get_raw_optional_item: FeatureVersion,
+    pub grove_get_big_sum_tree_total_value: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -40,6 +44,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert_empty_tree: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists_check_existing_operations: FeatureVersion,
+    pub batch_insert_sum_item_if_not_exists: FeatureVersion,
     pub batch_insert_sum_item_or_add_to_if_already_exists: FeatureVersion,
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,
@@ -51,6 +56,8 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
+    pub batch_insert_empty_sum_tree: FeatureVersion,
+    pub batch_move: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

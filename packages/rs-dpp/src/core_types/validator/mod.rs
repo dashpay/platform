@@ -1,4 +1,4 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use crate::core_types::validator::v0::{ValidatorV0, ValidatorV0Getters, ValidatorV0Setters};
 use dashcore::{ProTxHash, PubkeyHash};
 #[cfg(feature = "core-types-serde-conversion")]
@@ -25,7 +25,7 @@ impl ValidatorV0Getters for Validator {
         }
     }
 
-    fn public_key(&self) -> &Option<BlsPublicKey> {
+    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>> {
         match self {
             Validator::V0(v0) => v0.public_key(),
         }
@@ -75,7 +75,7 @@ impl ValidatorV0Setters for Validator {
         }
     }
 
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>) {
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>) {
         match self {
             Validator::V0(v0) => v0.set_public_key(public_key),
         }

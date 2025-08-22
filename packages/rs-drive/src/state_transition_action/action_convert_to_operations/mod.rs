@@ -3,8 +3,8 @@
 //! This module defines general, commonly used functions in Drive.
 //!
 
+mod batch;
 mod contract;
-mod document;
 mod identity;
 mod system;
 
@@ -39,7 +39,7 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
                 data_contract_update_transition
                     .into_high_level_drive_operations(epoch, platform_version)
             }
-            StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
+            StateTransitionAction::BatchAction(documents_batch_transition) => {
                 documents_batch_transition.into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::IdentityCreateAction(identity_create_transition) => {

@@ -131,7 +131,7 @@ impl VotePollsByEndDateDriveQuery {
                                 "we should always have a path not be null".to_string(),
                             )));
                         };
-                        let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
+                        let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
                         let vote_poll = VotePoll::deserialize_from_bytes(
@@ -361,7 +361,7 @@ impl VotePollsByEndDateDriveQuery {
                                 "we should always have a path not be null".to_string(),
                             )));
                         };
-                        let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
+                        let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
                         let vote_poll = VotePoll::deserialize_from_bytes(
@@ -415,7 +415,7 @@ impl VotePollsByEndDateDriveQuery {
                                 "we should always have a path not be null".to_string(),
                             )));
                         };
-                        let timestamp = decode_u64(last_path_component).map_err(Error::from)?;
+                        let timestamp = decode_u64(last_path_component)?;
                         let contested_document_resource_vote_poll_bytes =
                             element.into_item_bytes().map_err(Error::from)?;
                         Ok((timestamp, contested_document_resource_vote_poll_bytes))

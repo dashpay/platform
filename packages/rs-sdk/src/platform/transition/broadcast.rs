@@ -1,17 +1,21 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
 use super::put_settings::PutSettings;
+use crate::error::StateTransitionBroadcastError;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::sync::retry;
 use crate::{Error, Sdk};
-use dapi_grpc::platform::v0::{Proof, WaitForStateTransitionResultResponse};
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
+use dapi_grpc::platform::v0::{
+    wait_for_state_transition_result_response, Proof, WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use rs_dapi_client::{ExecutionResponse, WrapToExecutionResult};
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -80,6 +84,30 @@ impl BroadcastStateTransition for StateTransition {
             let response = request.execute(sdk, request_settings).await.inner_into()?;
 
             let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
+
+            // We use match here to have a compilation error if a new version of the response is introduced
+            let state_transition_broadcast_error = match &grpc_response.version {
+                Some(wait_for_state_transition_result_response::Version::V0(result)) => {
+                    match &result.result {
+                        Some(wait_for_state_transition_result_response_v0::Result::Error(e)) => {
+                            Some(e)
+                        }
+                        _ => None,
+                    }
+                }
+                None => None,
+            };
+
+            if let Some(e) = state_transition_broadcast_error {
+                let state_transition_broadcast_error: StateTransitionBroadcastError =
+                    StateTransitionBroadcastError::try_from(e.clone())
+                        .wrap_to_execution_result(&response)?
+                        .inner;
+
+                return Err(Error::from(state_transition_broadcast_error))
+                    .wrap_to_execution_result(&response);
+            }
+
             let metadata = grpc_response
                 .metadata()
                 .wrap_to_execution_result(&response)?
@@ -100,14 +128,33 @@ impl BroadcastStateTransition for StateTransition {
                 retries: response.retries,
             })?;
 
-            let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
+            let (_, result) = match Drive::verify_state_transition_was_executed_with_proof(
                 self,
                 &block_info,
                 proof.grovedb_proof.as_slice(),
-                &context_provider.as_contract_lookup_fn(),
+                &context_provider.as_contract_lookup_fn(sdk.version()),
                 sdk.version(),
-            )
-            .wrap_to_execution_result(&response)?
+            ) {
+                Ok(r) => Ok(ExecutionResponse {
+                    inner: r,
+                    retries: response.retries,
+                    address: response.address.clone(),
+                }),
+                Err(drive::error::Error::Proof(proof_error)) => Err(ExecutionError {
+                    inner: Error::DriveProofError(
+                        proof_error,
+                        proof.grovedb_proof.clone(),
+                        block_info,
+                    ),
+                    retries: response.retries,
+                    address: Some(response.address.clone()),
+                }),
+                Err(e) => Err(ExecutionError {
+                    inner: e.into(),
+                    retries: response.retries,
+                    address: Some(response.address.clone()),
+                }),
+            }?
             .inner;
 
             let variant_name = result.to_string();

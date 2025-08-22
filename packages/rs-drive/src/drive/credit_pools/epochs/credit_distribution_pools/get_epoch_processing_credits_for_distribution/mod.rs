@@ -26,7 +26,7 @@ impl Drive {
     /// or an Error if something goes wrong.
     pub fn get_epoch_processing_credits_for_distribution(
         &self,
-        epoch_tree: &Epoch,
+        epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
@@ -38,7 +38,7 @@ impl Drive {
             .get_epoch_processing_credits_for_distribution
         {
             0 => self.get_epoch_processing_credits_for_distribution_v0(
-                epoch_tree,
+                epoch,
                 transaction,
                 platform_version,
             ),

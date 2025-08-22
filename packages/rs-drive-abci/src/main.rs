@@ -17,7 +17,7 @@ use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
 use itertools::Itertools;
 use std::fs::remove_file;
-#[cfg(tokio_unstable)]
+#[cfg(all(tokio_unstable, feature = "console"))]
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -27,9 +27,9 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
-#[cfg(tokio_unstable)]
+#[cfg(all(tokio_unstable, feature = "console"))]
 use tracing_subscriber::layer::SubscriberExt;
-#[cfg(tokio_unstable)]
+#[cfg(all(tokio_unstable, feature = "console"))]
 use tracing_subscriber::util::SubscriberInitExt;
 
 const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
@@ -468,9 +468,9 @@ mod test {
         let path = tempdir.join("db");
         fs::create_dir(&path).expect("create db dir");
 
-        let (drive, _) = Drive::open(&path, None).expect("open drive");
-
         let platform_version = PlatformVersion::latest();
+
+        let (drive, _) = Drive::open(&path, None).expect("open drive");
 
         drive
             .create_initial_state_structure(None, platform_version)

@@ -361,7 +361,7 @@ impl Value {
         Self::inner_array_mut_ref(map, key)
     }
 
-    pub fn get_array_slice<'a>(&'a self, key: &'a str) -> Result<&[Value], Error> {
+    pub fn get_array_slice<'a>(&'a self, key: &'a str) -> Result<&'a [Value], Error> {
         let map = self.to_map()?;
         Self::inner_array_slice(map, key)
     }

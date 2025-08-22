@@ -307,7 +307,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.not.be.called();
     });
 
-    it('should point to existing transaction', async function () {
+    it('should point to existing transaction', async function it() {
       stateRepositoryMock.fetchTransaction.resolves(null);
 
       const result = await validateChainAssetLockProofStructure(
@@ -353,7 +353,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
       );
     });
 
-    it('should point to transaction from block lower than core chain locked height', async function () {
+    it('should point to transaction from block lower than core chain locked height', async function it() {
       rawProof.coreChainLockedHeight = 41;
       stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(41);
 
@@ -378,7 +378,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
     });
   });
 
-  it('should return valid result', async function () {
+  it('should return valid result', async function it() {
     const result = await validateChainAssetLockProofStructure(
       rawProof,
       executionContext,

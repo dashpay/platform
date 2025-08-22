@@ -14,7 +14,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// Gets the return value and the cost of a groveDB `has_raw` operation.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_has_raw_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_has_raw_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],
@@ -25,18 +25,18 @@ impl Drive {
     ) -> Result<bool, Error> {
         let CostContext { value, cost } = match query_type {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums,
+                in_tree_type: in_tree_using_sums,
                 query_target,
             } => {
                 let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
-                    QueryTarget::QueryTargetTree(flags_len, is_sum_tree) => {
+                    QueryTarget::QueryTargetTree(flags_len, tree_type) => {
                         GroveDb::average_case_for_has_raw_tree(
                             &key_info_path,
                             &key_info,
                             flags_len,
-                            is_sum_tree,
+                            tree_type,
                             in_tree_using_sums,
                             &drive_version.grove_version,
                         )?

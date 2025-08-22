@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::drive::credit_pools::epochs::epoch_key_constants;
 use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
+use dpp::prelude::FeeMultiplier;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -16,7 +17,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
+    ) -> Result<FeeMultiplier, Error> {
         let element = self
             .grove
             .get(

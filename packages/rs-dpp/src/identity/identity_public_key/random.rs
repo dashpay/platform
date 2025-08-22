@@ -138,7 +138,7 @@ impl IdentityPublicKey {
         id: KeyID,
         seed: Option<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -176,7 +176,7 @@ impl IdentityPublicKey {
         rng: &mut StdRng,
         used_key_matrix: Option<(KeyCount, &mut UsedKeyMatrix)>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -272,7 +272,7 @@ impl IdentityPublicKey {
         key_type: KeyType,
         contract_bounds: Option<ContractBounds>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -313,12 +313,11 @@ impl IdentityPublicKey {
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
     ///                      and the second element is the corresponding private key.
     ///
-
     pub fn random_ecdsa_master_authentication_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -346,7 +345,7 @@ impl IdentityPublicKey {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -384,7 +383,7 @@ impl IdentityPublicKey {
         id: KeyID,
         seed: Option<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -411,7 +410,7 @@ impl IdentityPublicKey {
         id: KeyID,
         seed: Option<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -442,7 +441,7 @@ impl IdentityPublicKey {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -489,7 +488,7 @@ impl IdentityPublicKey {
         id: KeyID,
         seed: Option<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -518,7 +517,7 @@ impl IdentityPublicKey {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -558,7 +557,7 @@ impl IdentityPublicKey {
         id: KeyID,
         seed: Option<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -587,7 +586,7 @@ impl IdentityPublicKey {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -629,7 +628,7 @@ impl IdentityPublicKey {
         id: KeyID,
         seed: Option<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -656,7 +655,7 @@ impl IdentityPublicKey {
         id: KeyID,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+    ) -> Result<(Self, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
@@ -703,7 +702,7 @@ impl IdentityPublicKey {
         key_count: KeyCount,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Self, Vec<u8>)>, ProtocolError> {
+    ) -> Result<Vec<(Self, [u8; 32])>, ProtocolError> {
         (start_id..(start_id + key_count))
             .map(|i| {
                 Self::random_authentication_key_with_private_key_with_rng(
@@ -720,7 +719,7 @@ impl IdentityPublicKey {
         key_count: KeyCount,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Self, Vec<u8>)>, ProtocolError> {
+    ) -> Result<Vec<(Self, [u8; 32])>, ProtocolError> {
         if key_count < 2 {
             return Err(ProtocolError::PublicKeyGenerationError(
                 "at least 2 keys must be created".to_string(),

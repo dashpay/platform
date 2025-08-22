@@ -17,6 +17,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any votes poll should be closed.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_vote_poll_end_date_query_operations(
         &self,
         creator_identity_id: Option<[u8; 32]>,

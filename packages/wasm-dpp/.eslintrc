@@ -1,5 +1,8 @@
 {
   "extends": "airbnb-base",
+  "env": {
+    "es2020": true
+  },
   "rules": {
     "no-plusplus": 0,
     "eol-last": [

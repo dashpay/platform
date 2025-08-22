@@ -163,21 +163,6 @@
                   cluster: dapi_api
                   # Upstream response timeout
                   timeout: 10s
-              # getProofs endpoint only for internal use (DAPI -> Drive)
-              - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/getProofs"
-                response_headers_to_add:
-                  - header:
-                      key: "Content-Type"
-                      value: "application/grpc-web+proto"
-                  - header:
-                      key: "grpc-status"
-                      value: "12"
-                  - header:
-                      key: "grpc-message"
-                      value: "getProofs endpoint is only for internal use"
-                direct_response:
-                  status: 204
               # Drive gRPC endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Platform"

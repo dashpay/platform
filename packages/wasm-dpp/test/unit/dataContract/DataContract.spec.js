@@ -16,11 +16,10 @@ describe('DataContract', () => {
 
   let DataContract;
   let Identifier;
-  let Metadata;
 
   before(async () => {
     ({
-      DataContract, Identifier, Metadata,
+      DataContract, Identifier,
     } = await loadWasmDpp());
   });
 
@@ -295,22 +294,6 @@ describe('DataContract', () => {
       dataContract.setIdentityNonce(identityNonce);
 
       expect(dataContract.getIdentityNonce()).to.deep.equal(identityNonce);
-    });
-  });
-
-  describe('#setMetadata', () => {
-    it('should set metadata', () => {
-      const otherMetadata = new Metadata({
-        blockHeight: 43,
-        coreChainLockedHeight: 1,
-        timeMs: 100,
-        protocolVersion: 2,
-      });
-      const otherMetadataToObject = otherMetadata.toObject();
-
-      dataContract.setMetadata(otherMetadata);
-
-      expect(dataContract.getMetadata().toObject()).to.deep.equal(otherMetadataToObject);
     });
   });
 

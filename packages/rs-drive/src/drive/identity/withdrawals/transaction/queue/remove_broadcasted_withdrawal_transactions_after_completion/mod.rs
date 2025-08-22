@@ -24,11 +24,13 @@ impl Drive {
             .queue
             .remove_broadcasted_withdrawal_transactions_after_completion_operations
         {
-            0 => Ok(self
-                .remove_broadcasted_withdrawal_transactions_after_completion_operations_v0(
+            0 => {
+                self.remove_broadcasted_withdrawal_transactions_after_completion_operations_v0(
                     indexes,
                     drive_operation_types,
-                )),
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_broadcasted_withdrawal_transactions_after_completion_operations"
                     .to_string(),

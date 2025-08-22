@@ -3,24 +3,15 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dpp::platform_value::string_encoding::Encoding;
+use crate::fetch::generated_data::*;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     prelude::Identifier,
 };
 use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 use zeroize::Zeroizing;
-
-/// Existing document ID
-///
-// TODO: this is copy-paste from drive-abci `packages/rs-sdk/tests/fetch/main.rs` where it's private,
-// consider defining it in `data-contracts` crate
-const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
-    215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
-    68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
-];
 
 #[derive(Debug, Deserialize)]
 /// Configuration for dash-platform-sdk.
@@ -36,6 +27,11 @@ pub struct Config {
     /// Port of the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_port: u16,
+    /// Host of the Dash Core RPC interface running on the Dash Platform node.
+    /// Defaults to the same as [platform_host](Config::platform_host).
+    #[serde(default)]
+    #[cfg_attr(not(feature = "network-testing"), allow(unused))]
+    pub core_host: Option<String>,
     /// Port of the Dash Core RPC interface running on the Dash Platform node
     #[serde(default)]
     pub core_port: u16,
@@ -48,6 +44,10 @@ pub struct Config {
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
+
+    /// When platform_ssl is true, use the PEM-encoded CA certificate from provided absolute path to verify the server certificate.
+    #[serde(default)]
+    pub platform_ca_cert_path: Option<PathBuf>,
 
     /// Directory where all generated test vectors will be saved.
     ///
@@ -180,14 +180,19 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
+            let core_host = self.core_host.as_ref().unwrap_or(&self.platform_host);
             // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
-                &self.platform_host,
+            let mut builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
+                core_host,
                 self.core_port,
                 &self.core_user,
                 &self.core_password,
             );
-
+            if let Some(cert_file) = &self.platform_ca_cert_path {
+                builder = builder
+                    .with_ca_certificate_file(cert_file)
+                    .expect("load CA cert");
+            }
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
                 // When we use namespaces, clean up the namespaced dump dir before starting
@@ -223,15 +228,7 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        // TODO: We don't have default system identities anymore.
-        //  So now I used this manually created identity to populate test vectors.
-        //  Next time we need to do it again and update this value :(. This is terrible.
-        //  We should automate creation of identity for SDK tests when we have time.
-        Identifier::from_string(
-            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
-            Encoding::Base58,
-        )
-        .unwrap()
+        IDENTITY_ID_1
     }
 
     fn default_data_contract_id() -> Identifier {

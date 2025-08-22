@@ -5,12 +5,19 @@ use crate::data_contract::document_type::property::DocumentProperty;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
+
+pub trait DocumentTypeV0MutGetters {
+    /// Gets the schema as mut
+    fn schema_mut(&mut self) -> &mut Value;
+}
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
@@ -77,4 +84,13 @@ pub trait DocumentTypeV0Getters {
 
     /// The security level requirements
     fn security_level_requirement(&self) -> SecurityLevel;
+
+    /// A reference to the json schema validator
+    #[cfg(feature = "validation")]
+    fn json_schema_validator_ref(&self) -> &StatelessJsonSchemaLazyValidator;
+}
+
+pub trait DocumentTypeV0Setters {
+    /// Setting the data contract id
+    fn set_data_contract_id(&mut self, data_contract_id: Identifier);
 }

@@ -26,6 +26,7 @@ pub trait JsonSchemaExt {
     fn is_type_of_identifier(&self) -> bool;
 }
 
+// TODO: This is big (due to using regex inside?)
 pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, DataContractError> {
     if !uri.starts_with("#/") {
         return Err(DataContractError::InvalidURI(
@@ -144,9 +145,10 @@ impl JsonSchemaExt for JsonValue {
 
 #[cfg(test)]
 mod test {
-
+    use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::document_type::DocumentType;
+    use std::collections::BTreeMap;
 
     use platform_value::Identifier;
     use platform_version::version::PlatformVersion;
@@ -206,14 +208,16 @@ mod test {
 
         let platform_value = platform_value::to_value(input).unwrap();
 
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+
         let document_type = DocumentType::try_from_schema(
             Identifier::random(),
             "doc",
             platform_value,
             None,
-            false,
-            false,
-            false,
+            &BTreeMap::new(),
+            &config,
             false,
             &mut vec![],
             platform_version,

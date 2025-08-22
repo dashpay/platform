@@ -8,6 +8,8 @@ use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{BorrowDecode, Decode, Encode};
+use dashcore::blsful::Bls12381G2Impl;
+#[cfg(feature = "core-types-serialization")]
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
@@ -17,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 
-/// The validator set is only slightly different from a quorum as it does not contain non valid
+/// The validator set is only slightly different from a quorum as it does not contain non-valid
 /// members
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(
@@ -34,7 +36,7 @@ pub struct ValidatorSetV0 {
     /// The list of masternodes
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
-    pub threshold_public_key: BlsPublicKey,
+    pub threshold_public_key: BlsPublicKey<Bls12381G2Impl>,
 }
 
 impl Display for ValidatorSetV0 {
@@ -61,7 +63,7 @@ impl Display for ValidatorSetV0 {
                     pro_tx_hash, validator.node_ip
                 ))
                 .join(", "),
-            hex::encode(self.threshold_public_key.to_bytes().as_slice()) // Assuming BlsPublicKey is a byte array
+            hex::encode(self.threshold_public_key.0.to_compressed()) // Assuming BlsPublicKey is a byte array
         )
     }
 }
@@ -85,7 +87,7 @@ impl Encode for ValidatorSetV0 {
 
         // Custom encoding for BlsPublicKey if needed
         // Assuming BlsPublicKey can be serialized to a byte slice
-        let public_key_bytes = *self.threshold_public_key.to_bytes();
+        let public_key_bytes = self.threshold_public_key.0.to_compressed();
         public_key_bytes.encode(encoder)?;
 
         Ok(())
@@ -118,9 +120,13 @@ impl Decode for ValidatorSetV0 {
         let mut public_key_bytes = [0u8; 48];
         let bytes = <[u8; 48]>::decode(decoder)?;
         public_key_bytes.copy_from_slice(&bytes);
-        let threshold_public_key = BlsPublicKey::from_bytes(&public_key_bytes).map_err(|_| {
-            bincode::error::DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
-        })?;
+        let threshold_public_key =
+            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|e| {
+                bincode::error::DecodeError::OtherString(format!(
+                    "Failed to decode BlsPublicKey: {}",
+                    e
+                ))
+            })?;
 
         Ok(ValidatorSetV0 {
             quorum_hash: QuorumHash::from_byte_array(quorum_hash),
@@ -133,7 +139,7 @@ impl Decode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
+impl BorrowDecode<'_> for ValidatorSetV0 {
     fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded
 
@@ -162,11 +168,13 @@ impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
         let mut public_key_bytes = [0u8; 48];
         let bytes = <[u8; 48]>::decode(decoder)?;
         public_key_bytes.copy_from_slice(&bytes);
-        let threshold_public_key = BlsPublicKey::from_bytes(&public_key_bytes).map_err(|_| {
-            bincode::error::DecodeError::OtherString(
-                "Failed to decode BlsPublicKey in borrow decode".to_string(),
-            )
-        })?;
+        let threshold_public_key =
+            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|e| {
+                bincode::error::DecodeError::OtherString(format!(
+                    "Failed to decode BlsPublicKey in borrow decode: {}",
+                    e
+                ))
+            })?;
 
         Ok(ValidatorSetV0 {
             quorum_hash: QuorumHash::from_byte_array(quorum_hash),
@@ -211,7 +219,7 @@ pub trait ValidatorSetV0Getters {
     /// Returns the members of the validator set.
     fn members_owned(self) -> BTreeMap<ProTxHash, ValidatorV0>;
     /// Returns the threshold public key of the validator set.
-    fn threshold_public_key(&self) -> &BlsPublicKey;
+    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl>;
 }
 
 /// Trait providing setter methods for `ValidatorSetV0` struct
@@ -225,7 +233,7 @@ pub trait ValidatorSetV0Setters {
     /// Sets the members of the validator set.
     fn set_members(&mut self, members: BTreeMap<ProTxHash, ValidatorV0>);
     /// Sets the threshold public key of the validator set.
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey);
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>);
 }
 
 impl ValidatorSetV0Getters for ValidatorSetV0 {
@@ -253,7 +261,7 @@ impl ValidatorSetV0Getters for ValidatorSetV0 {
         self.members
     }
 
-    fn threshold_public_key(&self) -> &BlsPublicKey {
+    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl> {
         &self.threshold_public_key
     }
 }
@@ -275,7 +283,7 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
         self.members = members;
     }
 
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>) {
         self.threshold_public_key = threshold_public_key;
     }
 }
@@ -284,7 +292,10 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
 mod tests {
     use super::*;
     use bincode::config;
+    use dashcore::blsful::SecretKey;
     use dashcore::PubkeyHash;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::collections::BTreeMap;
 
     #[test]
@@ -296,11 +307,12 @@ mod tests {
 
         // Create a sample ProTxHash and ValidatorV0 instance
         let pro_tx_hash = ProTxHash::from_slice(&[2; 32]).unwrap();
-        let public_key = Some(BlsPublicKey::generate());
+        let mut rng = StdRng::seed_from_u64(0);
+        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
         let node_ip = "192.168.1.1".to_string();
         let node_id = PubkeyHash::from_slice(&[4; 20]).unwrap();
         let validator = ValidatorV0 {
-            pro_tx_hash: pro_tx_hash.clone(),
+            pro_tx_hash,
             public_key,
             node_ip,
             node_id,
@@ -315,7 +327,7 @@ mod tests {
         members.insert(pro_tx_hash, validator);
 
         // Create a sample threshold public key
-        let threshold_public_key = BlsPublicKey::generate();
+        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
 
         // Create the ValidatorSetV0 instance
         let validator_set = ValidatorSetV0 {

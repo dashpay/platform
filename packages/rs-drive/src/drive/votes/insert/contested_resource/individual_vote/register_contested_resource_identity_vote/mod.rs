@@ -40,8 +40,7 @@ impl Drive {
     ///
     /// - The platform version is unknown or unsupported.
     /// - There is an issue processing the transaction or applying it to the database.
-    ///
-
+    #[allow(clippy::too_many_arguments)]
     pub fn register_contested_resource_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],
@@ -103,7 +102,7 @@ impl Drive {
     ///
     /// - The platform version is unknown or unsupported.
     /// - Any low-level drive operation fails due to transaction or database inconsistencies.
-    ///
+    #[allow(clippy::too_many_arguments)]
     pub fn register_contested_resource_identity_vote_operations(
         &self,
         voter_pro_tx_hash: [u8; 32],

@@ -1,4 +1,4 @@
-use dpp::bls_signatures::G2Element;
+use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
 use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
@@ -20,15 +20,16 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
     platform_state: &PlatformState,
 ) -> Result<bool, Error> {
     // First verify that the signature conforms to a signature
-    let signature = match G2Element::from_bytes(instant_lock.signature.as_bytes()) {
-        Ok(signature) => signature,
-        Err(e) => {
+
+    let signature = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
+        instant_lock.signature.as_bytes(),
+    )
+    .into_option()
+    {
+        Some(signature) => Signature::Basic(signature),
+        None => {
             tracing::trace!(
-                instant_lock = ?InstantLockDebug(instant_lock),
-                "Invalid instant Lock {} signature format: {}",
-                instant_lock.txid,
-                e,
-            );
+                instant_lock = ?InstantLockDebug(instant_lock),                "Invalid instant Lock {} signature format",                instant_lock.txid,            );
 
             return Ok(false);
         }
@@ -96,9 +97,12 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        if quorum
-            .public_key
-            .verify(&signature, message_digest.as_ref())
+        if signature
+            .verify(
+                &quorum.public_key,
+                message_digest.as_byte_array().as_slice(),
+            )
+            .is_ok()
         {
             return Ok(true);
         }
@@ -131,7 +135,7 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 /// instead of byte arrays
 struct InstantLockDebug<'a>(&'a InstantLock);
 
-impl<'a> Debug for InstantLockDebug<'a> {
+impl Debug for InstantLockDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let instant_lock = &self.0;
         f.debug_struct("InstantLock")

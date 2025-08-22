@@ -9,7 +9,7 @@ use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveDocumentQuery<'a> {
+impl DriveDocumentQuery<'_> {
     /// Verifies a proof for a collection of documents.
     ///
     /// This function takes a byte slice representing the serialized proof, verifies it, and returns a tuple consisting of the root hash

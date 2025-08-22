@@ -31,6 +31,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<FeeResult, Error>` - The resulting fee if successful, or an error.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_identity_revision(
         &self,
         identity_id: [u8; 32],

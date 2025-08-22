@@ -103,12 +103,22 @@ describe('GetIdentitiesContractKeysResponse', () => {
 
     const keys = getIdentitiesContractKeysResponse.getIdentitiesKeys();
     const proof = getIdentitiesContractKeysResponse.getProof();
+    const metadata = getIdentitiesContractKeysResponse.getMetadata();
 
     expect(keys).to.deep.equal({});
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+
+    expect(metadata.getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(metadata.getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(metadata.getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(metadata.getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
   });
 
   it('should create an instance from proto', () => {
@@ -122,12 +132,14 @@ describe('GetIdentitiesContractKeysResponse', () => {
       identitiesContractKeys,
     );
 
-    expect(getIdentitiesContractKeysResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getIdentitiesContractKeysResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getIdentitiesContractKeysResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentitiesContractKeysResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentitiesContractKeysResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getIdentitiesContractKeysResponse.getProof()).to.equal(undefined);
   });
@@ -148,7 +160,15 @@ describe('GetIdentitiesContractKeysResponse', () => {
       GetIdentitiesContractKeysResponseClass,
     );
     expect(getIdentitiesContractKeysResponse.getIdentitiesKeys()).to.deep.equal({});
-    expect(getIdentitiesContractKeysResponse.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getIdentitiesContractKeysResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getIdentitiesContractKeysResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentitiesContractKeysResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentitiesContractKeysResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getIdentitiesContractKeysResponse.getProof())
       .to.be.an.instanceOf(Proof);

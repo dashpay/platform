@@ -5,6 +5,7 @@ use crate::platform_types::cleaned_abci_messages::{cleaned_block_id, cleaned_com
 use crate::platform_types::commit::v0::CommitV0;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures;
+use dpp::bls_signatures::Bls12381G2Impl;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci::CommitInfo;
@@ -82,7 +83,7 @@ impl Commit {
     pub fn verify_signature(
         &self,
         signature: &[u8; 96],
-        public_key: &bls_signatures::PublicKey,
+        public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
     ) -> SimpleValidationResult<AbciError> {
         match self {
             Commit::V0(v0) => v0.verify_signature(signature, public_key),

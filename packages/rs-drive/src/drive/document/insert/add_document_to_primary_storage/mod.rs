@@ -30,6 +30,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_document_to_primary_storage(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,

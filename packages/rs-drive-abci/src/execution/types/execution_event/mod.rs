@@ -33,6 +33,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
+        /// Additional fee cost, these are processing fees where the user fee increase does not apply
+        additional_fixed_fee_cost: Option<Credits>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
     },
@@ -71,7 +73,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     },
 }
 
-impl<'a> ExecutionEvent<'a> {
+impl ExecutionEvent<'_> {
     pub(crate) fn create_from_state_transition_action(
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,
@@ -135,6 +137,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: None,
                         user_fee_increase,
                     })
                 } else {
@@ -154,6 +157,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: None,
                         user_fee_increase,
                     })
                 } else {
@@ -162,9 +166,9 @@ impl<'a> ExecutionEvent<'a> {
                     )))
                 }
             }
-            StateTransitionAction::DocumentsBatchAction(document_batch_action) => {
+            StateTransitionAction::BatchAction(batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
-                let removed_balance = document_batch_action.all_used_balances()?;
+                let removed_balance = batch_action.all_used_balances()?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -173,6 +177,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance,
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: None,
                         user_fee_increase,
                     })
                 } else {
@@ -193,6 +198,52 @@ impl<'a> ExecutionEvent<'a> {
                         .contested_document_single_vote_cost,
                 })
             }
+            StateTransitionAction::DataContractCreateAction(data_contract_create_action) => {
+                let user_fee_increase = action.user_fee_increase();
+                let registration_cost = data_contract_create_action
+                    .data_contract_ref()
+                    .registration_cost(platform_version)?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(ExecutionEvent::Paid {
+                        identity,
+                        removed_balance: None,
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: Some(registration_cost),
+                        user_fee_increase,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present for other state transitions",
+                    )))
+                }
+            }
+            StateTransitionAction::DataContractUpdateAction(data_contract_update_action) => {
+                let user_fee_increase = action.user_fee_increase();
+                // The update cost pays for the whole contract again, that's fine for now.
+                // It would be a lot of work to fix this, so we'll just go with this for now.
+                let registration_cost = data_contract_update_action
+                    .data_contract_ref()
+                    .registration_cost(platform_version)?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(ExecutionEvent::Paid {
+                        identity,
+                        removed_balance: None,
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: Some(registration_cost),
+                        user_fee_increase,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present for other state transitions",
+                    )))
+                }
+            }
             _ => {
                 let user_fee_increase = action.user_fee_increase();
                 let operations =
@@ -203,6 +254,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: None,
                         user_fee_increase,
                     })
                 } else {

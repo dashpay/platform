@@ -1,6 +1,8 @@
 pub(crate) mod identity_retrieval;
 mod structure;
 mod transform_into_action;
+
+use dpp::dashcore::Network;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -73,6 +75,7 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
 impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
     fn validate_basic_structure(
         &self,
+        _network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -121,8 +124,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn test_identity_top_up_validation() {
-        let platform_version = PlatformVersion::latest();
+    fn test_identity_top_up_validation_first_version() {
+        let platform_version = PlatformVersion::first();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -133,6 +136,7 @@ mod tests {
 
         let platform = TestPlatformBuilder::new()
             .with_config(platform_config)
+            .with_initial_protocol_version(1)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
@@ -150,7 +154,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key.clone());
+        signer.add_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -185,7 +189,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(critical_public_key.clone(), private_key.clone());
+        signer.add_key(critical_public_key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -248,5 +252,135 @@ mod tests {
             .expect("expected there to be an identity balance for this identity");
 
         assert_eq!(identity_balance, 149993654420); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+    }
+
+    #[test]
+    fn test_identity_top_up_validation_latest_version() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key);
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(999),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        let identity_already_in_system: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: 50000000000,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity_already_in_system.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        signer.add_key(critical_public_key.clone(), private_key);
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            None,
+        );
+
+        let identity_top_up_transition: StateTransition =
+            IdentityTopUpTransition::try_from_identity(
+                &identity_already_in_system,
+                asset_lock_proof,
+                pk.as_slice(),
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_top_up_serialized_transition = identity_top_up_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_top_up_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 588840);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let identity_balance = platform
+            .drive
+            .fetch_identity_balance(
+                identity_already_in_system.id().into_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to get identity balance")
+            .expect("expected there to be an identity balance for this identity");
+
+        assert_eq!(identity_balance, 149993606160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
 }

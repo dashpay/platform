@@ -87,7 +87,7 @@ mod tests {
             .prove_full_identity_by_unique_public_key_hash(first_key_hash, None, platform_version)
             .expect("should not error when proving an identity");
 
-        let (_, proved_identity) = Drive::verify_full_identity_by_public_key_hash(
+        let (_, proved_identity) = Drive::verify_full_identity_by_unique_public_key_hash(
             proof.as_slice(),
             first_key_hash,
             platform_version,

@@ -1,0 +1,63 @@
+{
+  "$format_version": "1",
+  "id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "ownerId": "HLfavpy1B2mVHnpYYDKDVM76eWJRqvPfuuASy7cyJBXC",
+  "version": 1,
+  "documentSchemas": {},
+  "tokens": {
+    "0": {
+      "$format_version": "0",
+      "conventions": {
+        "$format_version": "0",
+        "localizations": {
+          "en": {
+            "shouldCapitalize": true,
+            "singularForm": "flurgon",
+            "pluralForm": "flurgons"
+          }
+        },
+        "decimals": 8
+      },
+      "baseSupply": 10000000000,
+      "maxSupply": 50000000000,
+      "transferable": true,
+      "keepsHistory": false,
+      "freezeRules": {
+        "V0": {
+          "authorized_to_make_change": "ContractOwner",
+          "admin_action_takers": "ContractOwner",
+          "changing_authorized_action_takers_to_no_one_allowed": false,
+          "changing_admin_action_takers_to_no_one_allowed": false,
+          "self_changing_admin_action_takers_allowed": false
+        }
+      },
+      "unfreezeRules": {
+        "V0": {
+          "authorized_to_make_change": "ContractOwner",
+          "admin_action_takers": "ContractOwner",
+          "changing_authorized_action_takers_to_no_one_allowed": false,
+          "changing_admin_action_takers_to_no_one_allowed": false,
+          "self_changing_admin_action_takers_allowed": false
+        }
+      },
+      "destroyFrozenFundsRules": {
+        "V0": {
+          "authorized_to_make_change": "ContractOwner",
+          "admin_action_takers": "ContractOwner",
+          "changing_authorized_action_takers_to_no_one_allowed": false,
+          "changing_admin_action_takers_to_no_one_allowed": false,
+          "self_changing_admin_action_takers_allowed": false
+        }
+      },
+      "emergencyActionRules": {
+        "V0": {
+          "authorized_to_make_change": "ContractOwner",
+          "admin_action_takers": "ContractOwner",
+          "changing_authorized_action_takers_to_no_one_allowed": false,
+          "changing_admin_action_takers_to_no_one_allowed": false,
+          "self_changing_admin_action_takers_allowed": false
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -44,6 +45,13 @@ impl Drive {
             .deduct_from_prefunded_specialized_balance
         {
             0 => self.deduct_from_prefunded_specialized_balance_operations_v0(
+                specialized_balance_id,
+                amount,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            1 => self.deduct_from_prefunded_specialized_balance_operations_v1(
                 specialized_balance_id,
                 amount,
                 estimated_costs_only_with_layer_info,

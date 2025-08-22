@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::identity::identity_query_keys_tree_path_vec;
 
@@ -34,7 +34,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(identity_query_keys_tree_path_vec(identity_id)),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(4), //we can estimate that an identity will have amount 50 keys
                 //We can mark these as all subtrees, because the revision will be under
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),

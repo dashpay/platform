@@ -16,22 +16,27 @@ use std::convert::TryFrom;
 pub type Duffs = u64;
 
 /// Credits type
-
 pub type Credits = u64;
+
+/// Token Amount type
+pub type TokenAmount = u64;
+
+/// Signed Token Amount type
+pub type SignedTokenAmount = i64;
+
+/// Sum token amount
+pub type SumTokenAmount = i128;
 
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
-
 pub type SignedCredits = i64;
 
 /// Maximum value of credits
-
 pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 
 pub const CREDITS_PER_DUFF: Credits = 1000;
 
 /// Trait for signed and unsigned credits
-
 pub trait Creditable {
     /// Convert unsigned credit to singed
     fn to_signed(&self) -> Result<SignedCredits, ProtocolError>;

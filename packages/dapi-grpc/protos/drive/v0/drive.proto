@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package org.dash.platform.drive.v0;
+
+import "platform/v0/platform.proto";
+
+service DriveInternal {
+  rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
+}
+
+message GetProofsRequest {
+  bytes state_transition = 1;
+}
+
+message GetProofsResponse {
+  org.dash.platform.dapi.v0.Proof proof = 1; // Cryptographic proof for the requested data
+  org.dash.platform.dapi.v0.ResponseMetadata metadata = 2;  // Metadata about the blockchain state
+}

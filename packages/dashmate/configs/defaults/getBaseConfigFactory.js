@@ -118,7 +118,6 @@ export default function getBaseConfigFactory() {
         miner: {
           enable: false,
           interval: '2.5m',
-          mediantime: null,
           address: null,
         },
         devnet: {

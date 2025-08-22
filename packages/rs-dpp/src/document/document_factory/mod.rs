@@ -13,9 +13,11 @@ use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::{
-    document_transition::action_type::DocumentTransitionActionType, DocumentsBatchTransition,
+use crate::state_transition::batch_transition::{
+    batched_transition::document_transition_action_type::DocumentTransitionActionType,
+    BatchTransition,
 };
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::DocumentFactoryV0;
 
@@ -116,11 +118,16 @@ impl DocumentFactory {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
+                Vec<(
+                    Document,
+                    DocumentTypeRef<'a>,
+                    Bytes32,
+                    Option<TokenPaymentInfo>,
+                )>,
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransition, ProtocolError> {
+    ) -> Result<BatchTransition, ProtocolError> {
         match self {
             DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter, nonce_counter),
         }

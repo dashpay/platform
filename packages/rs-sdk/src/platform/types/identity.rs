@@ -9,6 +9,7 @@ use crate::{
 use dapi_grpc::platform::v0::get_identities_balances_request::GetIdentitiesBalancesRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
@@ -31,7 +32,8 @@ delegate_enum! {
     IdentityResponse,
     Identity,
     (GetIdentity,proto::GetIdentityRequest,proto::GetIdentityResponse),
-    (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse)
+    (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse),
+    (GetIdentityByNonUniquePublicKeyHash, proto::GetIdentityByNonUniquePublicKeyHashRequest, proto::GetIdentityByNonUniquePublicKeyHashResponse)
 }
 
 impl Query<IdentityRequest> for dpp::prelude::Identifier {
@@ -71,6 +73,36 @@ impl Query<IdentityRequest> for PublicKeyHash {
         };
 
         Ok(request.into())
+    }
+}
+
+/// Non-unique public key hash that can be used as a [Query] to find an identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NonUniquePublicKeyHashQuery {
+    pub key_hash: [u8; 20],
+    pub after: Option<[u8; 32]>,
+}
+
+impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
+    fn query(self, prove: bool) -> Result<IdentityRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request = proto::GetIdentityByNonUniquePublicKeyHashRequest {
+            version: Some(
+                proto::get_identity_by_non_unique_public_key_hash_request::Version::V0(
+                    GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                        public_key_hash: self.key_hash.to_vec(),
+                        start_after: self.after.map(|a| a.to_vec()),
+                        prove,
+                    },
+                ),
+            ),
+        }
+        .into();
+
+        Ok(request)
     }
 }
 

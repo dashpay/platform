@@ -5,7 +5,12 @@
 
 use crate::drive::credit_pools::epochs;
 use crate::drive::identity::IdentityRootStructure;
-use crate::drive::{credit_pools, RootTree};
+use crate::drive::{credit_pools, tokens, RootTree};
+use crate::util::batch::grovedb_op_batch::KnownPath::{
+    TokenBalancesRoot, TokenContractInfoRoot, TokenDirectSellPriceRoot, TokenDistributionRoot,
+    TokenIdentityInfoRoot, TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot,
+    TokenStatusRoot, TokenTimedDistributionRoot,
+};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::identity::{Purpose, SecurityLevel};
@@ -13,7 +18,7 @@ use dpp::prelude::Identifier;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveDbOpConsistencyResults, GroveOp, KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::proof::util::hex_to_ascii;
-use grovedb::Element;
+use grovedb::{Element, TreeType};
 use std::borrow::Cow;
 use std::fmt;
 
@@ -49,9 +54,19 @@ enum KnownPath {
     MiscRoot,                                                         //Level 1
     WithdrawalTransactionsRoot,                                       //Level 1
     BalancesRoot,                                                     //Level 1
-    TokenBalancesRoot,                                                //Level 1
+    TokenRoot,                                                        //Level 1
+    TokenBalancesRoot,                                                //Level 2
+    TokenDistributionRoot,                                            //Level 2
+    TokenDirectSellPriceRoot,                                         //Level 2
+    TokenTimedDistributionRoot,                                       //Level 3
+    TokenPreProgrammedDistributionRoot,                               //Level 3
+    TokenPerpetualDistributionRoot,                                   //Level 3
+    TokenIdentityInfoRoot,                                            //Level 2
+    TokenContractInfoRoot,                                            //Level 2
+    TokenStatusRoot,                                                  //Level 2
     VersionsRoot,                                                     //Level 1
     VotesRoot,                                                        //Level 1
+    GroupActionsRoot,                                                 //Level 1
 }
 
 impl From<RootTree> for KnownPath {
@@ -71,9 +86,10 @@ impl From<RootTree> for KnownPath {
             RootTree::Misc => KnownPath::MiscRoot,
             RootTree::WithdrawalTransactions => KnownPath::WithdrawalTransactionsRoot,
             RootTree::Balances => KnownPath::BalancesRoot,
-            RootTree::TokenBalances => KnownPath::TokenBalancesRoot,
+            RootTree::Tokens => KnownPath::TokenRoot,
             RootTree::Versions => KnownPath::VersionsRoot,
             RootTree::Votes => KnownPath::VotesRoot,
+            RootTree::GroupActions => KnownPath::GroupActionsRoot,
         }
     }
 }
@@ -102,7 +118,7 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::Root => {
                     if let Ok(root_tree) = RootTree::try_from(key[0]) {
                         (
-                            format!("{}({})", root_tree.to_string(), key[0]),
+                            format!("{}({})", root_tree, key[0]),
                             Some(root_tree.into()),
                         )
                     } else {
@@ -137,7 +153,7 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::IdentitiesRoot if key.len() == 1 => {
                     if let Ok(root_tree) = IdentityRootStructure::try_from(key[0]) {
                         (
-                            format!("{}({})", root_tree.to_string(), key[0]),
+                            format!("{}({})", root_tree, key[0]),
                             Some(root_tree.into()),
                         )
                     } else {
@@ -221,6 +237,60 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                         _ => (hex_to_ascii(key), None),
                     }
                 }
+                KnownPath::TokenRoot if key.len() == 1 => match key[0] {
+                    tokens::paths::TOKEN_DISTRIBUTIONS_KEY => {
+                            (format!("Distribution({})", tokens::paths::TOKEN_DISTRIBUTIONS_KEY), Some(TokenDistributionRoot))
+                    }
+                    tokens::paths::TOKEN_DIRECT_SELL_PRICE_KEY => {
+                        (format!("SellPrice({})", tokens::paths::TOKEN_DIRECT_SELL_PRICE_KEY), Some(TokenDirectSellPriceRoot))
+                    }
+                    tokens::paths::TOKEN_BALANCES_KEY => {
+                            (format!("Balances({})", tokens::paths::TOKEN_BALANCES_KEY), Some(TokenBalancesRoot))
+                    }
+                    tokens::paths::TOKEN_IDENTITY_INFO_KEY => {
+                            (format!("IdentityInfo({})", tokens::paths::TOKEN_IDENTITY_INFO_KEY), Some(TokenIdentityInfoRoot))
+                    }
+                    tokens::paths::TOKEN_CONTRACT_INFO_KEY => {
+                        (format!("ContractInfo({})", tokens::paths::TOKEN_CONTRACT_INFO_KEY), Some(TokenContractInfoRoot))
+                    }
+                    tokens::paths::TOKEN_STATUS_INFO_KEY => {
+                        (format!("Status({})", tokens::paths::TOKEN_STATUS_INFO_KEY), Some(TokenStatusRoot))
+                    }
+                    _ => (hex_to_ascii(key), None),
+                },
+                KnownPath::TokenDistributionRoot if key.len() == 1 => match key[0] {
+                    tokens::paths::TOKEN_TIMED_DISTRIBUTIONS_KEY => {
+                        (format!("TimedDistribution({})", tokens::paths::TOKEN_TIMED_DISTRIBUTIONS_KEY), Some(TokenTimedDistributionRoot))
+                    }
+                    tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_KEY => {
+                        (format!("PerpetualDistribution({})", tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_KEY), Some(TokenPerpetualDistributionRoot))
+                    }
+                    tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY => {
+                        (format!("PreProgrammedDistribution({})", tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY), Some(TokenPreProgrammedDistributionRoot))
+                    }
+                    _ => (hex_to_ascii(key), None),
+                },
+                KnownPath::TokenTimedDistributionRoot if key.len() == 1 => match key[0] {
+                    tokens::paths::TOKEN_MS_TIMED_DISTRIBUTIONS_KEY => {
+                        (format!("MillisecondTimedDistribution({})", tokens::paths::TOKEN_MS_TIMED_DISTRIBUTIONS_KEY), None)
+                    }
+                    tokens::paths::TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY => {
+                        (format!("BlockTimedDistribution({})", tokens::paths::TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY), None)
+                    }
+                    tokens::paths::TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY => {
+                        (format!("EpochTimedDistribution({})", tokens::paths::TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY), None)
+                    }
+                    _ => (hex_to_ascii(key), None),
+                },
+                KnownPath::TokenPerpetualDistributionRoot if key.len() == 1 => match key[0] {
+                    tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY => {
+                        (format!("PerpetualDistributionInfo({})", tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY), None)
+                    }
+                    tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY => {
+                        (format!("PerpetualDistributionLastClaim({})", tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY), None)
+                    }
+                    _ => (hex_to_ascii(key), None),
+                },
                 _ => (hex_to_ascii(key), None),
             }
         }
@@ -358,7 +428,7 @@ pub trait GroveDbOpBatchV0Methods {
     fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
-    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool);
+    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType);
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
     fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element);
@@ -510,9 +580,9 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
-    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool) {
+    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType) {
         self.operations
-            .push(QualifiedGroveDbOp::delete_tree_op(path, key, is_sum_tree))
+            .push(QualifiedGroveDbOp::delete_tree_op(path, key, tree_type))
     }
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.

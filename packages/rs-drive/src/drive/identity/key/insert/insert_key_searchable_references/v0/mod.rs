@@ -16,11 +16,12 @@ use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
     /// Generates a vector of operations for inserting key searchable references.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn insert_key_searchable_references_operations_v0(
         &self,
         identity_id: [u8; 32],
@@ -79,8 +80,8 @@ impl Drive {
                         BatchInsertTreeApplyType::StatefulBatchInsertTree
                     } else {
                         BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                            in_tree_using_sums: false,
-                            is_sum_tree: false,
+                            in_tree_type: TreeType::NormalTree,
+                            tree_type: TreeType::NormalTree,
                             flags_len: SINGLE_EPOCH_FLAGS_SIZE,
                         }
                     };

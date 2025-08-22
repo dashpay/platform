@@ -114,9 +114,7 @@ impl CborCanonicalMap {
 
         let map = CborValue::Map(self.inner);
 
-        ciborium::ser::SerializerOptions::default()
-            .serialize_null_as_undefined(true)
-            .into_writer(&map, &mut bytes)?;
+        ciborium::ser::into_writer(&map, &mut bytes)?;
 
         Ok(bytes)
     }

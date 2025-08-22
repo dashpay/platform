@@ -1,8 +1,8 @@
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
-use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
+use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{ProTxHash, QuorumHash, Txid};
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -38,6 +38,7 @@ pub fn generate_test_masternodes(
     updates: Option<GenerateTestMasternodeUpdates>,
     rng: &mut StdRng,
     add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+    add_payout_keys_to_signer: &mut Option<SimpleSigner>,
 ) -> (
     Vec<MasternodeListItemWithUpdates>,
     Vec<MasternodeListItemWithUpdates>,
@@ -157,11 +158,11 @@ pub fn generate_test_masternodes(
     }
 
     fn invert_btreemap(input: BTreeMap<u32, Vec<u16>>) -> BTreeMap<u16, Vec<u32>> {
-        let mut output = BTreeMap::new();
+        let mut output: BTreeMap<u16, Vec<u32>> = BTreeMap::new();
 
         for (key, values) in input {
             for value in values {
-                output.entry(value).or_insert_with(Vec::new).push(key);
+                output.entry(value).or_default().push(key);
             }
         }
 
@@ -208,14 +209,35 @@ pub fn generate_test_masternodes(
         }
     }
 
+    fn generate_payout_address(
+        rng: &mut StdRng,
+        add_transfer_keys_to_signer: &mut Option<SimpleSigner>,
+    ) -> [u8; 20] {
+        if let Some(simple_signer) = add_transfer_keys_to_signer {
+            let (identity_public_key, private_key) =
+                IdentityPublicKey::random_masternode_transfer_key_with_rng(
+                    0,
+                    rng,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected a random voting key");
+            simple_signer.add_key(identity_public_key.clone(), private_key);
+            identity_public_key.public_key_hash().unwrap()
+        } else {
+            rng.gen()
+        }
+    }
+
     for i in 0..masternode_count {
-        let private_key_operator =
-            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        )
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
+        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
         let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
@@ -233,7 +255,7 @@ pub fn generate_test_masternodes(
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: generate_payout_address(rng, add_payout_keys_to_signer),
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
@@ -345,13 +367,15 @@ pub fn generate_test_masternodes(
     }
 
     for i in 0..hpmn_count {
-        let private_key_operator =
-            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        )
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
+        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Evo,
             pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),
@@ -368,7 +392,7 @@ pub fn generate_test_masternodes(
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: generate_payout_address(rng, add_payout_keys_to_signer),
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
@@ -601,10 +625,22 @@ mod tests {
         let mut rng1 = StdRng::seed_from_u64(12345);
         let mut rng2 = StdRng::seed_from_u64(12345);
 
-        let (masternodes1, hpmn1) =
-            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1, &mut None);
-        let (masternodes2, hpmn2) =
-            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2, &mut None);
+        let (masternodes1, hpmn1) = generate_test_masternodes(
+            masternode_count,
+            hpmn_count,
+            None,
+            &mut rng1,
+            &mut None,
+            &mut None,
+        );
+        let (masternodes2, hpmn2) = generate_test_masternodes(
+            masternode_count,
+            hpmn_count,
+            None,
+            &mut rng2,
+            &mut None,
+            &mut None,
+        );
 
         assert_eq!(masternodes1, masternodes2);
         assert_eq!(hpmn1, hpmn2);
@@ -667,12 +703,14 @@ mod tests {
             updates.clone(),
             &mut rng1,
             &mut None,
+            &mut None,
         );
         let (masternodes2, hpmn2) = generate_test_masternodes(
             masternode_count,
             hpmn_count,
             updates.clone(),
             &mut rng2,
+            &mut None,
             &mut None,
         );
 
@@ -696,10 +734,22 @@ mod tests {
             };
             let hpmn_count = rng.gen_range(50..=150);
 
-            let (masternodes1, hpmn1) =
-                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1, &mut None);
-            let (masternodes2, hpmn2) =
-                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2, &mut None);
+            let (masternodes1, hpmn1) = generate_test_masternodes(
+                masternode_count,
+                hpmn_count,
+                None,
+                &mut rng1,
+                &mut None,
+                &mut None,
+            );
+            let (masternodes2, hpmn2) = generate_test_masternodes(
+                masternode_count,
+                hpmn_count,
+                None,
+                &mut rng2,
+                &mut None,
+                &mut None,
+            );
 
             assert_eq!(masternodes1, masternodes2);
             assert_eq!(hpmn1, hpmn2);
@@ -773,12 +823,14 @@ mod tests {
                 updates.clone(),
                 &mut rng1,
                 &mut None,
+                &mut None,
             );
             let (masternodes2, hpmn2) = generate_test_masternodes(
                 masternode_count,
                 hpmn_count,
                 updates.clone(),
                 &mut rng2,
+                &mut None,
                 &mut None,
             );
 

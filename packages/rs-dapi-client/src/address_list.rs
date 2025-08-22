@@ -1,7 +1,7 @@
 //! Subsystem to manage DAPI nodes.
 
+use crate::Uri;
 use chrono::Utc;
-use dapi_grpc::tonic::transport::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;

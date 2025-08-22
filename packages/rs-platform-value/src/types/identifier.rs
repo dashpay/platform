@@ -1,15 +1,16 @@
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use bincode::{Decode, Encode};
+use rand::distributions::Standard;
+use rand::prelude::Distribution;
 use rand::rngs::StdRng;
 use rand::Rng;
-use std::convert::{TryFrom, TryInto};
-use std::fmt;
-
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
+use std::convert::{TryFrom, TryInto};
+use std::fmt;
 
 use crate::string_encoding::{Encoding, ALL_ENCODINGS};
 use crate::types::encoding_string_to_encoding;
@@ -36,6 +37,13 @@ pub struct IdentifierBytes32(pub [u8; 32]);
     Decode,
 )]
 pub struct Identifier(pub IdentifierBytes32);
+
+impl Distribution<Identifier> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Identifier {
+        let bytes: [u8; 32] = rng.gen();
+        Identifier::new(bytes)
+    }
+}
 
 impl platform_serialization::PlatformVersionEncode for Identifier {
     fn platform_encode<E: Encoder>(
@@ -90,7 +98,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
         if deserializer.is_human_readable() {
             struct StringVisitor;
 
-            impl<'de> Visitor<'de> for StringVisitor {
+            impl Visitor<'_> for StringVisitor {
                 type Value = IdentifierBytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -103,7 +111,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 {
                     let bytes = bs58::decode(v)
                         .into_vec()
-                        .map_err(|e| E::custom(format!("{}", e)))?;
+                        .map_err(|e| E::custom(format!("expected base 58: {}", e)))?;
                     if bytes.len() != 32 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }
@@ -117,7 +125,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
         } else {
             struct BytesVisitor;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
+            impl Visitor<'_> for BytesVisitor {
                 type Value = IdentifierBytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -144,7 +152,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
 }
 
 impl Identifier {
-    pub fn new(buffer: [u8; 32]) -> Identifier {
+    pub const fn new(buffer: [u8; 32]) -> Identifier {
         Identifier(IdentifierBytes32(buffer))
     }
 

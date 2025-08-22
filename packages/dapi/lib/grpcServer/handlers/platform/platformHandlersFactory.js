@@ -60,16 +60,16 @@ const requestTenderRpcFactory = require('../../../externalApis/tenderdash/reques
 /**
  * @param {jaysonClient} rpcClient
  * @param {BlockchainListener} blockchainListener
- * @param {PlatformPromiseClient} driveClient
- * @param {DashPlatformProtocol} dpp
+ * @param {PlatformPromiseClient} platformClient
+ * @param {DrivePromiseClient} driveClient
  * @param {boolean} isProductionEnvironment
  * @returns {Object<string, function>}
  */
 function platformHandlersFactory(
   rpcClient,
   blockchainListener,
+  platformClient,
   driveClient,
-  dpp,
   isProductionEnvironment,
 ) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
@@ -110,7 +110,6 @@ function platformHandlersFactory(
     fetchProofForStateTransition,
     waitForTransactionToBeProvable,
     blockchainListener,
-    dpp,
     createGrpcErrorFromDriveResponse,
     parseInt(process.env.WAIT_FOR_ST_RESULT_TIMEOUT, 10),
   );
@@ -144,7 +143,7 @@ function platformHandlersFactory(
   // Get Status
   const getStatusHandler = getStatusHandlerFactory(
     blockchainListener,
-    driveClient,
+    platformClient,
     rpcClient,
   );
 

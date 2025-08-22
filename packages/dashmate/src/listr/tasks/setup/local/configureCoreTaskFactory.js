@@ -212,15 +212,6 @@ export default function configureCoreTaskFactory(
                 ));
 
                 ctx.seedRpcClient = ctx.seedCoreService.getRpcClient();
-
-                ctx.mockTime = 0;
-                ctx.bumpMockTime = async (time = 1) => {
-                  ctx.mockTime += time;
-
-                  await Promise.all(
-                    ctx.rpcClients.map((rpcClient) => rpcClient.setMockTime(ctx.mockTime)),
-                  );
-                };
               },
             },
             {
@@ -230,25 +221,6 @@ export default function configureCoreTaskFactory(
                   // TODO: Rename function "wait -> force"
                   waitForMasternodesSync(coreService.getRpcClient())
                 )));
-              },
-            },
-            {
-              title: 'Set initial mock time',
-              task: async () => {
-                // Set initial mock time from the last block
-                const { result: bestBlockHash } = await ctx.seedRpcClient.getBestBlockHash();
-                const { result: bestBlock } = await ctx.seedRpcClient.getBlock(bestBlockHash);
-
-                await ctx.bumpMockTime(bestBlock.time);
-
-                // Sync nodes
-                await ctx.bumpMockTime();
-
-                await generateBlocks(
-                  ctx.seedCoreService,
-                  1,
-                  NETWORK_LOCAL,
-                );
               },
             },
             {

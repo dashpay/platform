@@ -41,9 +41,9 @@ class GetEpochsInfoResponse extends AbstractResponse {
     if (epochsInfoList) {
       epochsInfo = epochsInfoList.map((epoch) => new EpochInfo(
         epoch.getNumber(),
-        epoch.getFirstBlockHeight(),
+        BigInt(epoch.getFirstBlockHeight()),
         epoch.getFirstCoreBlockHeight(),
-        epoch.getStartTime(),
+        BigInt(epoch.getStartTime()),
         epoch.getFeeMultiplier(),
       ));
     }

@@ -248,7 +248,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             ));
 
             if let Err(e) = signer::verify_hash_signature(
-                &signable_bytes_hasher.hash_bytes().as_slice(),
+                signable_bytes_hasher.hash_bytes().as_slice(),
                 self.signature().as_slice(),
                 public_key_hash,
             ) {

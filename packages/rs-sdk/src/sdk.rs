@@ -10,6 +10,8 @@ use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+#[cfg(not(target_arch = "wasm32"))]
+use dapi_grpc::tonic::transport::Certificate;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
@@ -45,6 +47,8 @@ use zeroize::Zeroizing;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
+/// How many token configs fit in the cache.
+pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
@@ -273,6 +277,7 @@ impl Sdk {
         Ok(())
     }
 
+    // TODO: Changed to public for tests
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -538,11 +543,14 @@ impl Sdk {
         }
     }
 
+    // TODO: Move to settings
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
         self.proofs
     }
 
+    // TODO: If we remove this setter we don't need to use ArcSwap.
+    //   It's good enough to set Context once when you initialize the SDK.
     /// Set the [ContextProvider] to use.
     ///
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
@@ -726,6 +734,10 @@ pub struct SdkBuilder {
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
 
+    /// Cache size for token configs. Used by mock [GrpcContextProvider].
+    #[cfg(feature = "mocks")]
+    token_config_cache_size: NonZeroUsize,
+
     /// Cache size for quorum public keys. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     quorum_public_keys_cache_size: NonZeroUsize,
@@ -750,6 +762,10 @@ pub struct SdkBuilder {
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
+
+    /// CA certificate to use for TLS connections.
+    #[cfg(not(target_arch = "wasm32"))]
+    ca_certificate: Option<Certificate>,
 }
 
 impl Default for SdkBuilder {
@@ -770,7 +786,12 @@ impl Default for SdkBuilder {
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
-                .expect("data conttact cache size must be positive"),
+                .expect("data contract cache size must be positive"),
+
+            #[cfg(feature = "mocks")]
+            token_config_cache_size: NonZeroUsize::new(DEFAULT_TOKEN_CONFIG_CACHE_SIZE)
+                .expect("token config cache size must be positive"),
+
             #[cfg(feature = "mocks")]
             quorum_public_keys_cache_size: NonZeroUsize::new(DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE)
                 .expect("quorum public keys cache size must be positive"),
@@ -780,6 +801,8 @@ impl Default for SdkBuilder {
             cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
+            #[cfg(not(target_arch = "wasm32"))]
+            ca_certificate: None,
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -816,6 +839,14 @@ impl SdkBuilder {
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
+    ///
+    /// ## Panics
+    ///
+    /// This method panics if the mainnet configuration cannot be loaded.
+    ///
+    /// ## Unstable
+    ///
+    /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
         unimplemented!(
             "Mainnet address list not implemented yet. Use new() and provide address list."
@@ -828,6 +859,43 @@ impl SdkBuilder {
     pub fn with_network(mut self, network: Network) -> Self {
         self.network = network;
         self
+    }
+
+    /// Configure CA certificate to use when verifying TLS connections.
+    ///
+    /// Used mainly for testing purposes and local networks.
+    ///
+    /// If not set, uses standard system CA certificates.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
+        self.ca_certificate = Some(pem_certificate);
+        self
+    }
+
+    /// Load CA certificate from file.
+    ///
+    /// This is a convenience method that reads the certificate from a file and sets it using
+    /// [SdkBuilder::with_ca_certificate()].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_ca_certificate_file(
+        self,
+        certificate_file_path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<Self> {
+        let pem = std::fs::read(certificate_file_path)?;
+
+        // parse the certificate and check if it's valid
+        let mut verified_pem = std::io::BufReader::new(pem.as_slice());
+        rustls_pemfile::certs(&mut verified_pem)
+            .next()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "No valid certificates found in the file",
+                )
+            })??;
+
+        let cert = Certificate::from_pem(pem);
+        Ok(self.with_ca_certificate(cert))
     }
 
     /// Configure request settings.
@@ -962,7 +1030,13 @@ impl SdkBuilder {
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let dapi = DapiClient::new(addresses,dapi_client_settings);
+                #[allow(unused_mut)] // needs to be mutable for features other than wasm
+                let mut dapi = DapiClient::new(addresses, dapi_client_settings);
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(pem) = self.ca_certificate {
+                    dapi = dapi.with_ca_certificate(pem);
+                }
+
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
@@ -990,7 +1064,7 @@ impl SdkBuilder {
                             "ContextProvider not set, falling back to a mock one; use SdkBuilder::with_context_provider() to set it up");
                         let mut context_provider = GrpcContextProvider::new(None,
                             &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                            self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+                            self.data_contract_cache_size, self.token_config_cache_size, self.quorum_public_keys_cache_size)?;
                         #[cfg(feature = "mocks")]
                         if sdk.dump_dir.is_some() {
                             context_provider.set_dump_dir(sdk.dump_dir.clone());

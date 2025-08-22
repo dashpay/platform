@@ -25,6 +25,14 @@ impl RetrieveIdentityInfo {
         }
     }
 
+    pub fn only_revision() -> Self {
+        RetrieveIdentityInfo {
+            query_by_key_id_key_count: 0,
+            request_balance: false,
+            request_revision: true,
+        }
+    }
+
     pub fn one_key() -> Self {
         RetrieveIdentityInfo {
             query_by_key_id_key_count: 1,
@@ -65,6 +73,7 @@ pub const SHA256_BLOCK_SIZE: u16 = 64;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationOperation {
     Protocol(ProtocolValidationOperation),
+    RetrieveIdentityTokenBalance,
     RetrieveIdentity(RetrieveIdentityInfo),
     RetrievePrefundedSpecializedBalance,
     PerformNetworkThresholdSigning,
@@ -78,6 +87,7 @@ pub enum ValidationOperation {
 pub trait OperationLike {
     fn processing_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error>;
 
+    #[allow(dead_code)]
     fn storage_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error>;
 }
 
@@ -216,6 +226,19 @@ impl ValidationOperation {
                         .fee_version
                         .processing
                         .perform_network_threshold_signing;
+
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(operation_cost)
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::RetrieveIdentityTokenBalance => {
+                    let operation_cost = platform_version
+                        .fee_version
+                        .processing
+                        .fetch_identity_token_balance_processing_cost;
 
                     fee_result.processing_fee = fee_result
                         .processing_fee

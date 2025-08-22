@@ -12,6 +12,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Deletes a document.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_apply_and_add_to_operations_v0(
         &self,
         document_id: Identifier,

@@ -18,6 +18,8 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
+#   purpose in local development environment
 #
 # # sccache cache backends
 #
@@ -44,7 +46,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.18
+ARG ALPINE_VERSION=3.21
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
@@ -66,24 +68,25 @@ FROM node:20-alpine${ALPINE_VERSION} AS deps-base
 # Install some dependencies
 #
 RUN apk add --no-cache \
-        alpine-sdk \
-        bash \
-        binutils \
-        ca-certificates \
-        clang-static clang-dev \
-        cmake \
-        git \
-        libc-dev \
-        linux-headers \
-        llvm-static llvm-dev  \
-        openssl-dev \
-        snappy-static snappy-dev \
-        perl \
-        python3 \
-        unzip \
-        wget \
-        xz \
-        zeromq-dev
+    alpine-sdk \
+    bash \
+    binutils \
+    ca-certificates \
+    clang-static clang-dev \
+    cmake \
+    curl \
+    git \
+    libc-dev \
+    linux-headers \
+    llvm-static llvm-dev  \
+    openssl-dev \
+    snappy-static snappy-dev \
+    perl \
+    python3 \
+    unzip \
+    wget \
+    xz \
+    zeromq-dev
 
 # Configure snappy, dependency of librocksdb-sys
 RUN <<EOS
@@ -106,30 +109,55 @@ WORKDIR /platform
 COPY rust-toolchain.toml .
 RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
-        --profile minimal \
-        -y \
-        --default-toolchain "${TOOLCHAIN_VERSION}" \
-        --target wasm32-unknown-unknown
+    --profile minimal \
+    -y \
+    --default-toolchain "${TOOLCHAIN_VERSION}" \
+    --target wasm32-unknown-unknown
 
 ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
 
-# Configure Rust toolchain
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
+# Configure Rust toolchain and C / C++ compiler
+RUN <<EOS
 # It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
-RUN echo 'source $HOME/.cargo/env' >> /root/env
+echo 'source $HOME/.cargo/env' >> /root/env
+
+# Enable gcc / g++ optimizations
+if [[ "$TARGETARCH" == "amd64" ]] ; then
+    if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
+        echo "export CFLAGS=-march=x86-64-v3" >> /root/env
+        echo "export CXXFLAGS=-march=x86-64-v3" >> /root/env
+        echo "export PORTABLE=x86-64-v3" >> /root/env
+    else
+        echo "export CFLAGS=-march=x86-64" >> /root/env
+        echo "export CXXFLAGS=-march=x86-64" >> /root/env
+        echo "export PORTABLE=x86-64" >> /root/env
+    fi
+else
+    echo "export PORTABLE=1" >> /root/env
+fi
+EOS
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
 ARG PROTOC_VERSION=27.3
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
-        -o /tmp/protoc.zip && \
+    -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
 # Switch to clang
-RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+# Note that CC / CXX can be updated later on (eg. when configuring sccache)
+RUN rm /usr/bin/cc && \
+    ln -s /usr/bin/clang /usr/bin/cc
+RUN <<EOS
+echo "export CXX='clang++'" >> /root/env
+echo "export CC='clang'" >> /root/env
+EOS
 
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
@@ -139,7 +167,7 @@ ENV NODE_ENV=${NODE_ENV}
 #
 # This stage is used to install sccache and configure it.
 # Later on, one should source /root/env before building to use sccache.
-# 
+#
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
 # ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. This is to prevent leaking secrets to the final image. The secrets are
 # loaded using docker buildx `--secret` flag and need to be explicitly mounted with `--mount=type=secret,id=SECRET_ID`.
@@ -152,9 +180,9 @@ ARG SCCHACHE_VERSION=0.8.2
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
-        tar -C /tmp -xz && \
-        mv /tmp/sccache-*/sccache /usr/bin/
+    https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+    tar -C /tmp -xz && \
+    mv /tmp/sccache-*/sccache /usr/bin/
 
 #
 # Configure sccache
@@ -186,7 +214,7 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
         # ACTIONS_RUNTIME_TOKEN is a secret so we quote it here, and it will be loaded when `source /root/env` is run
         echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/GHA)"' >> /root/env
-    
+
     ### AWS S3 ###
     elif [ -n "${SCCACHE_BUCKET}" ]; then
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
@@ -199,11 +227,11 @@ RUN --mount=type=secret,id=AWS <<EOS
         mkdir --mode=0700 -p "$HOME/.aws"
         ln -s /run/secrets/AWS "$HOME/.aws/credentials"
         echo "export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials" >> /root/env
-        
+
         # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
-        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { 
-            echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}; did you use RUN --mount=type=secret,id=AWS ?"; 
-            exit 1; 
+        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || {
+            echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}; did you use RUN --mount=type=secret,id=AWS ?";
+            exit 1;
         }' >> /root/env
 
     ### memcached ###
@@ -214,9 +242,9 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "Error: cannot determine sccache cache backend" >&2
         exit 1
     fi
-    
+
     echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
-    
+
     # Configure compilers to use sccache
     echo "export CXX='sccache clang++'" >> /root/env
     echo "export CC='sccache clang'" >> /root/env
@@ -258,15 +286,17 @@ WORKDIR /tmp/rocksdb
 # sccache -s
 # EOS
 
+# Select whether we want dev or release
+# This variable will be also visibe in next stages
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
 
-# Support any CPU architecture
-export PORTABLE=1
-
 make -j$(nproc) static_lib
+
 mkdir -p /opt/rocksdb/usr/local/lib
 cp librocksdb.a /opt/rocksdb/usr/local/lib/
 cp -r include /opt/rocksdb/usr/local/
@@ -297,11 +327,11 @@ RUN --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env; \
     if [ "$TARGETARCH" = "amd64" ]; then \
-        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
     else \
-        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    echo "Unsupported architecture: $TARGETARCH"; exit 1; \
     fi; \
     # Construct download URL
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
@@ -313,16 +343,12 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+    cargo binstall wasm-bindgen-cli@0.2.100 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
     --no-track \
     --no-confirm
-
-
-# Select whether we want dev or release
-ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 #
 # Rust build planner to speed up builds
@@ -353,6 +379,8 @@ COPY --parents \
     packages/feature-flags-contract \
     packages/dpns-contract \
     packages/wallet-utils-contract \
+    packages/token-history-contract \
+    packages/keyword-search-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -375,6 +403,11 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
+# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
+# This is only for testing purpose and should be used only for
+# local development environment
+ARG SDK_TEST_DATA
+
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
@@ -389,16 +422,19 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml; \
+    mv .cargo/config-release.toml .cargo/config.toml; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
+    export FEATURES_FLAG="--features=console,grovedbg"; \
+    fi && \
+    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+    mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     cargo chef cook \
-        --recipe-path recipe.json \
-        --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci \
-        ${FEATURES_FLAG} \
-        --locked && \
+    --recipe-path recipe.json \
+    --profile "$CARGO_BUILD_PROFILE" \
+    --package drive-abci \
+    ${FEATURES_FLAG} \
+    --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
@@ -419,6 +455,8 @@ COPY --parents \
     packages/rs-drive-abci \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
+    packages/token-history-contract \
+    packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
@@ -447,23 +485,27 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml && \
-        export OUT_DIRECTORY=release ; \
+    mv .cargo/config-release.toml .cargo/config.toml; \
+    export OUT_DIRECTORY=release; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
-        export OUT_DIRECTORY=debug ; \
+    export FEATURES_FLAG="--features=console,grovedbg"; \
+    export OUT_DIRECTORY=debug; \
+    fi && \
+    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+    mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
     cargo build \
-        --profile "${CARGO_BUILD_PROFILE}" \
-        --package drive-abci \
-        ${FEATURES_FLAG} \
-        --locked && \
+    --profile "${CARGO_BUILD_PROFILE}" \
+    --package drive-abci \
+    ${FEATURES_FLAG} \
+    --locked && \
     cp target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove /platform to reduce layer size
     rm -rf /platform
+
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
@@ -475,17 +517,19 @@ WORKDIR /platform
 COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
+# Note we unset CFLAGS and CXXFLAGS as they have `-march` included, which breaks wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset CFLAGS CXXFLAGS && \
     cargo chef cook \
-        --recipe-path recipe.json \
-        --profile "$CARGO_BUILD_PROFILE" \
-        --package wasm-dpp \
-        --target wasm32-unknown-unknown \
-        --locked && \
+    --recipe-path recipe.json \
+    --profile "$CARGO_BUILD_PROFILE" \
+    --package wasm-dpp \
+    --target wasm32-unknown-unknown \
+    --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 
@@ -508,6 +552,8 @@ COPY --parents \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
+    packages/token-history-contract \
+    packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
@@ -526,12 +572,14 @@ COPY --parents \
     packages/dash-spv \
     /platform/
 
+# We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset CFLAGS CXXFLAGS && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
@@ -628,6 +676,8 @@ COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
 COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
+COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
+COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
@@ -703,6 +753,8 @@ COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
+COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
+COPY --from=build-dapi /platform/packages/keyword-search-contract /platform/packages/keyword-search-contract
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

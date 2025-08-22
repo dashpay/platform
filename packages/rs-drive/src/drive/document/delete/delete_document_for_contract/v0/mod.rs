@@ -15,6 +15,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Deletes a document and returns the associated fee.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_v0(
         &self,
         document_id: Identifier,

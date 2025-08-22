@@ -3,6 +3,8 @@
 //! This module implements functions in Drive to distribute fees for a given Epoch.
 //!
 
+mod add_epoch_final_info_operation;
+mod add_epoch_processing_credits_for_distribution_operation;
 mod get_epoch_fee_multiplier;
 mod get_epoch_processing_credits_for_distribution;
 mod get_epoch_storage_credits_for_distribution;

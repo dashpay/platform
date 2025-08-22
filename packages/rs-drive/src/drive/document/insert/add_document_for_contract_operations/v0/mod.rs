@@ -12,12 +12,13 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_for_contract_operations_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
@@ -41,7 +42,7 @@ impl Drive {
             StatefulDirectQuery
         } else {
             StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(
                     document_and_contract_info
                         .document_type

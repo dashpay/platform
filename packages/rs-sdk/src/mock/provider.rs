@@ -5,7 +5,9 @@ use crate::platform::Fetch;
 use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
+use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::version::PlatformVersion;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 use std::hash::Hash;
@@ -29,7 +31,12 @@ pub struct GrpcContextProvider {
     /// Data contracts cache.
     ///
     /// Users can insert new data contracts into the cache using [`Cache::put`].
-    pub data_contracts_cache: Cache<Identifier, dpp::data_contract::DataContract>,
+    pub data_contracts_cache: Cache<Identifier, DataContract>,
+
+    /// Token configurations cache.
+    ///
+    /// Users can insert new token configurations into the cache using [`Cache::put`].
+    pub token_configurations_cache: Cache<Identifier, TokenConfiguration>,
 
     /// Quorum public keys cache.
     ///
@@ -52,6 +59,7 @@ impl GrpcContextProvider {
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     ///
     /// Sdk can be set later with [`GrpcContextProvider::set_sdk`].
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sdk: Option<Sdk>,
         core_ip: &str,
@@ -60,6 +68,7 @@ impl GrpcContextProvider {
         core_password: &str,
 
         data_contracts_cache_size: NonZeroUsize,
+        token_config_cache_size: NonZeroUsize,
         quorum_public_keys_cache_size: NonZeroUsize,
     ) -> Result<Self, Error> {
         let core_client =
@@ -68,6 +77,7 @@ impl GrpcContextProvider {
             core: core_client,
             sdk: ArcSwapAny::new(Arc::new(sdk)),
             data_contracts_cache: Cache::new(data_contracts_cache_size),
+            token_configurations_cache: Cache::new(token_config_cache_size),
             quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -180,6 +190,7 @@ impl ContextProvider for GrpcContextProvider {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
+        _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
@@ -212,6 +223,18 @@ impl ContextProvider for GrpcContextProvider {
         }
 
         Ok(data_contract.map(Arc::new))
+    }
+
+    fn get_token_configuration(
+        &self,
+        token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        if let Some(config) = self.token_configurations_cache.get(token_id) {
+            Ok(Some((*config).clone()))
+        } else {
+            tracing::warn!("token config cache miss");
+            Ok(None)
+        }
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

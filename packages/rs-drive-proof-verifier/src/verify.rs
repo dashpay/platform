@@ -1,12 +1,12 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bls_signatures;
 
+use crate::Error;
+use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},
 };
-
-use crate::Error;
 
 use crate::ContextProvider;
 
@@ -92,11 +92,10 @@ pub(crate) fn verify_tenderdash_proof(
         }
     })?;
 
-    let pubkey = bls_signatures::PublicKey::from_bytes(&pubkey_bytes).map_err(|e| {
-        Error::InvalidPublicKey {
+    let pubkey = bls_signatures::PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice())
+        .map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
-        }
-    })?;
+        })?;
 
     tracing::trace!(
         ?state_id,
@@ -123,18 +122,20 @@ pub(crate) fn verify_tenderdash_proof(
 pub fn verify_signature_digest(
     sign_digest: &[u8],
     signature: &[u8; 96],
-    public_key: &bls_signatures::PublicKey,
+    public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
 ) -> Result<bool, Error> {
     if signature == &[0; 96] {
         return Err(Error::SignatureVerificationError {
             error: "empty signature".to_string(),
         });
     }
-    let signature = bls_signatures::Signature::from_bytes(signature).map_err(|e| {
-        Error::SignatureVerificationError {
-            error: e.to_string(),
-        }
-    })?;
+    let signature = Signature::Basic(
+        <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
+            .into_option()
+            .ok_or(Error::SignatureVerificationError {
+                error: "Could not verify signature digest".to_string(),
+            })?,
+    );
 
-    Ok(public_key.verify(&signature, sign_digest))
+    Ok(signature.verify(public_key, sign_digest).is_ok())
 }

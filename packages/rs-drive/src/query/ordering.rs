@@ -14,9 +14,9 @@ pub struct OrderClause {
     pub ascending: bool,
 }
 
-impl<'a> OrderClause {
+impl OrderClause {
     /// Converts clause components to an `OrderClause`.
-    pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
+    pub fn from_components(clause_components: &[Value]) -> Result<Self, Error> {
         if clause_components.len() != 2 {
             return Err(Error::InvalidQuery(
                 "order clause should have exactly 2 components",

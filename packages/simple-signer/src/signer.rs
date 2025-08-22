@@ -2,6 +2,7 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use dashcore_rpc::dashcore::signer;
 use dpp::bincode::{Decode, Encode};
+use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -16,9 +17,9 @@ use std::fmt::{Debug, Formatter};
 #[derive(Default, Clone, PartialEq, Encode, Decode)]
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
-    pub private_keys: BTreeMap<IdentityPublicKey, Vec<u8>>,
+    pub private_keys: BTreeMap<IdentityPublicKey, [u8; 32]>,
     /// Private keys to be added at the end of a block
-    pub private_keys_in_creation: BTreeMap<IdentityPublicKey, Vec<u8>>,
+    pub private_keys_in_creation: BTreeMap<IdentityPublicKey, [u8; 32]>,
 }
 
 impl Debug for SimpleSigner {
@@ -46,12 +47,12 @@ impl Debug for SimpleSigner {
 
 impl SimpleSigner {
     /// Add a key to the signer
-    pub fn add_key(&mut self, public_key: IdentityPublicKey, private_key: Vec<u8>) {
+    pub fn add_key(&mut self, public_key: IdentityPublicKey, private_key: [u8; 32]) {
         self.private_keys.insert(public_key, private_key);
     }
 
     /// Add keys to the signer
-    pub fn add_keys<I: IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>>(&mut self, keys: I) {
+    pub fn add_keys<I: IntoIterator<Item = (IdentityPublicKey, [u8; 32])>>(&mut self, keys: I) {
         self.private_keys.extend(keys)
     }
 
@@ -81,17 +82,19 @@ impl Signer for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk =
-                    bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
-                        ProtocolError::Generic(
-                            "bls private key from bytes isn't correct".to_string(),
-                        )
-                    })?;
-                Ok(pk.sign(data).to_bytes().to_vec().into())
+                let pk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key)
+                    .into_option()
+                    .ok_or(ProtocolError::Generic(
+                        "bls private key from bytes isn't correct".to_string(),
+                    ))?;
+                let signature = pk
+                    .sign(SignatureSchemes::Basic, data)
+                    .map_err(|e| ProtocolError::Generic(format!("BLS signing failed {}", e)))?;
+                Ok(signature.as_raw_value().to_compressed().to_vec().into())
             }
             KeyType::EDDSA_25519_HASH160 => {
-                let key: [u8; 32] = private_key.clone().try_into().expect("expected 32 bytes");
-                let pk = ed25519_dalek::SigningKey::try_from(&key).map_err(|_e| {
+                #[allow(clippy::unnecessary_fallible_conversions)]
+                let pk = ed25519_dalek::SigningKey::try_from(private_key).map_err(|_e| {
                     ProtocolError::Generic(
                         "eddsa 25519 private key from bytes isn't correct".to_string(),
                     )

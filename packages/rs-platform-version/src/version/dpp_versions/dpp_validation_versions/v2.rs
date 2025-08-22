@@ -13,10 +13,13 @@ pub const DPP_VALIDATION_VERSIONS_V2: DPPValidationVersions = DPPValidationVersi
     data_contract: DataContractValidationVersions {
         validate: 0,
         validate_config_update: 0,
+        validate_token_config_update: 0,
         validate_index_definitions: 0,
         validate_index_naming_duplicates: 0,
         validate_not_defined_properties: 0,
         validate_property_definition: 0,
+        validate_token_config_groups_exist: 0,
+        validate_localizations: 0,
     },
     document_type: DocumentTypeValidationVersions {
         validate_update: 0,

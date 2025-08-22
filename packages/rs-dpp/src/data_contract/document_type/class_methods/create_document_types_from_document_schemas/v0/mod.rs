@@ -1,22 +1,22 @@
 use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::DocumentName;
+use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-impl DocumentTypeV0 {
+impl DocumentType {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v0(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
-        documents_keep_history_contract_default: bool,
-        documents_mutable_contract_default: bool,
-        documents_can_be_deleted_contract_default: bool,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+        data_contact_config: &DataContractConfig,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -41,9 +41,8 @@ impl DocumentTypeV0 {
                     &name,
                     schema,
                     schema_defs,
-                    documents_keep_history_contract_default,
-                    documents_mutable_contract_default,
-                    documents_can_be_deleted_contract_default,
+                    token_configurations,
+                    data_contact_config,
                     full_validation,
                     validation_operations,
                     platform_version,
@@ -80,12 +79,15 @@ mod tests {
     pub fn should_not_allow_creating_document_types_with_empty_schema() {
         let id = Identifier::random();
 
+        let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+            .expect("should create a default config");
+
         let result = DocumentType::create_document_types_from_document_schemas(
             id,
             Default::default(),
             None,
-            false,
-            false,
+            &BTreeMap::new(),
+            &config,
             false,
             false,
             &mut vec![],

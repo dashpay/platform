@@ -42,14 +42,24 @@ pub mod system;
 mod asset_lock;
 #[cfg(feature = "server")]
 mod platform_state;
-pub(crate) mod prefunded_specialized_balances;
+
+/// Prefunded specialized balances module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod prefunded_specialized_balances;
 
 /// Vote module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
+/// Group module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod group;
 #[cfg(feature = "server")]
 mod shared;
+
+/// Token module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod tokens;
 
 #[cfg(feature = "server")]
 use crate::cache::DriveCache;
@@ -78,10 +88,10 @@ pub struct Drive {
 //                                                                                DataContract_Documents 64
 //                                 /                                                                                                       \
 //                       Identities 32                                                                                                 Balances 96
-//             /                            \                                                                   /                                                       \
-//   Token_Balances 16                    Pools 48                                                 WithdrawalTransactions 80                                                Votes  112
-//       /      \                           /                     \                                            /                                               /                          \
-//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)           SpentAssetLockTransactions 72                             Misc 104                          Versions 120
+//             /                            \                                                                        /                                                       \
+//       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+//       /      \                           /                     \                                         /                           \                            /                          \
+//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -112,12 +122,14 @@ pub enum RootTree {
     WithdrawalTransactions = 80,
     /// Balances (For identities)
     Balances = 96,
-    /// Token Balances
-    TokenBalances = 16,
+    /// Token Balances and Info
+    Tokens = 16,
     /// Versions desired by proposers
     Versions = 120,
     /// Registered votes
     Votes = 112,
+    /// Group actions
+    GroupActions = 88,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -137,9 +149,10 @@ impl fmt::Display for RootTree {
             RootTree::Misc => "Misc",
             RootTree::WithdrawalTransactions => "WithdrawalTransactions",
             RootTree::Balances => "Balances",
-            RootTree::TokenBalances => "TokenBalances",
+            RootTree::Tokens => "TokenBalances",
             RootTree::Versions => "Versions",
             RootTree::Votes => "Votes",
+            RootTree::GroupActions => "GroupActions",
         };
         write!(f, "{}", variant_name)
     }
@@ -180,7 +193,7 @@ impl TryFrom<u8> for RootTree {
             104 => Ok(RootTree::Misc),
             80 => Ok(RootTree::WithdrawalTransactions),
             96 => Ok(RootTree::Balances),
-            16 => Ok(RootTree::TokenBalances),
+            16 => Ok(RootTree::Tokens),
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
             _ => Err(Error::Drive(DriveError::NotSupported(
@@ -204,10 +217,11 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],
-            RootTree::TokenBalances => &[16],
+            RootTree::Tokens => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],
+            RootTree::GroupActions => &[88],
         }
     }
 }
@@ -247,7 +261,7 @@ pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
 }
 
 /// Returns the path to the masternode key hashes.
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
     vec![vec![
         RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8,
@@ -264,7 +278,7 @@ pub(crate) fn non_unique_key_hashes_sub_tree_path(public_key_hash: &[u8]) -> [&[
 }
 
 /// Returns the path to the masternode key hashes sub tree.
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],

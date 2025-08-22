@@ -1,9 +1,11 @@
+mod old_structures;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::dashcore::{ProTxHash, QuorumHash};
 
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore::hashes::Hash;
@@ -143,7 +145,7 @@ pub struct PlatformStateForSavingV0 {
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
     #[bincode(with_serde)]
-    pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
+    pub validator_sets: Vec<(Bytes32, old_structures::OldStructureValidatorSet)>,
 
     /// The quorums used for validating chain locks
     pub chain_lock_validating_quorums: SignatureVerificationQuorumSetForSaving,
@@ -267,7 +269,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
             validator_sets: value
                 .validator_sets
                 .into_iter()
-                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
+                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
             chain_lock_validating_quorums: value.chain_lock_validating_quorums.into(),
             instant_lock_validating_quorums: value.instant_lock_validating_quorums.into(),
@@ -283,8 +285,8 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .collect(),
             previous_fee_versions: value
                 .previous_fee_versions
-                .into_iter()
-                .map(|(epoch_index, _)| (epoch_index, FeeVersion::first()))
+                .into_keys()
+                .map(|epoch_index| (epoch_index, FeeVersion::first()))
                 .collect(),
         }
     }
@@ -445,7 +447,7 @@ pub trait PlatformStateV0Methods {
         let mut validator_sets: Vec<&ValidatorSet> = self.validator_sets().values().collect();
 
         // Sort the validator sets by core height in descending order
-        validator_sets.sort_by(|a, b| b.core_height().cmp(&a.core_height()));
+        validator_sets.sort_by_key(|b| std::cmp::Reverse(b.core_height()));
 
         validator_sets
     }
@@ -702,7 +704,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.validator_sets
             .get(&self.current_validator_set_quorum_hash)
             .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
-                format!("current_validator_set: current validator quorum hash {} not in current known validator sets {} last committed block is {} (we might be processing new block)", self.current_validator_set_quorum_hash.to_string(), self.validator_sets.keys().into_iter().map(|quorum_hash| quorum_hash.to_string()).join(" | "),
+                format!("current_validator_set: current validator quorum hash {} not in current known validator sets {} last committed block is {} (we might be processing new block)", self.current_validator_set_quorum_hash, self.validator_sets.keys().map(|quorum_hash| quorum_hash.to_string()).join(" | "),
                         self.last_committed_block_info.as_ref().map(|block_info| block_info.basic_info().height).unwrap_or_default()),
             )))
     }

@@ -1,10 +1,11 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
-use dpp::bls_signatures;
-use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
+use dpp::bls_signatures::{
+    Bls12381G2Impl, PublicKey as BlsPublicKey, PublicKey, SecretKey as BlsPrivateKey, SecretKey,
+};
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::BTreeMap;
@@ -17,9 +18,9 @@ pub struct ValidatorInQuorum {
     /// The hash of the transaction that identifies this validator in the network.
     pub pro_tx_hash: ProTxHash,
     /// The private key for this validator's BLS signature scheme.
-    pub private_key: BlsPrivateKey,
+    pub private_key: BlsPrivateKey<Bls12381G2Impl>,
     /// The public key for this validator's BLS signature scheme.
-    pub public_key: BlsPublicKey,
+    pub public_key: BlsPublicKey<Bls12381G2Impl>,
     /// The node address
     pub node_ip: String,
     /// The node id
@@ -49,7 +50,7 @@ impl From<&ValidatorInQuorum> for ValidatorV0 {
         } = value;
         ValidatorV0 {
             pro_tx_hash: *pro_tx_hash,
-            public_key: Some(public_key.clone()),
+            public_key: Some(*public_key),
             node_ip: node_ip.to_string(),
             node_id: *node_id,
             core_port: *core_port,
@@ -102,9 +103,9 @@ pub struct TestQuorumInfo {
     /// A map of validators indexed by their `ProTxHash` identifiers.
     pub validator_map: BTreeMap<ProTxHash, ValidatorInQuorum>,
     /// The private key used to sign messages for the quorum (for testing purposes only).
-    pub private_key: BlsPrivateKey,
+    pub private_key: BlsPrivateKey<Bls12381G2Impl>,
     /// The public key corresponding to the private key used for signing.
-    pub public_key: BlsPublicKey,
+    pub public_key: BlsPublicKey<Bls12381G2Impl>,
 }
 
 fn random_ipv4_address(rng: &mut StdRng) -> Ipv4Addr {
@@ -135,6 +136,7 @@ impl TestQuorumInfo {
         pro_tx_hashes: Vec<ProTxHash>,
         rng: &mut StdRng,
     ) -> Self {
+        // We test on purpose with the bls library that Dash Core uses
         let private_keys = bls_signatures::PrivateKey::generate_dash_many(pro_tx_hashes.len(), rng)
             .expect("expected to generate private keys");
         let bls_id_private_key_pairs = private_keys
@@ -154,8 +156,12 @@ impl TestQuorumInfo {
                 ValidatorInQuorum {
                     pro_tx_hash: ProTxHash::from_slice(pro_tx_hash.as_slice())
                         .expect("expected 32 bytes for pro_tx_hash"),
-                    private_key: key,
-                    public_key,
+                    private_key: SecretKey::from_be_bytes(
+                        &key.to_bytes().to_vec().try_into().expect("32 bytes"),
+                    )
+                    .expect("expected conversion to work"),
+                    public_key: PublicKey::try_from(public_key.to_bytes().as_slice())
+                        .expect("expected conversion to work"),
                     node_ip: random_socket_addr(rng).to_string(),
                     node_id: PubkeyHash::from_slice(pro_tx_hash.split_at(20).0).unwrap(),
                     core_port: 1,
@@ -178,8 +184,16 @@ impl TestQuorumInfo {
             quorum_index,
             validator_set,
             validator_map: map,
-            private_key: recovered_private_key,
-            public_key,
+            private_key: SecretKey::from_be_bytes(
+                &recovered_private_key
+                    .to_bytes()
+                    .to_vec()
+                    .try_into()
+                    .expect("32 bytes"),
+            )
+            .expect("expected conversion to work"),
+            public_key: PublicKey::try_from(public_key.to_bytes().as_slice())
+                .expect("expected conversion to work"),
         }
     }
 }
@@ -203,7 +217,7 @@ impl From<&TestQuorumInfo> for ValidatorSetV0 {
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))
                 .collect(),
-            threshold_public_key: public_key.clone(),
+            threshold_public_key: *public_key,
             quorum_index: *quorum_index,
         }
     }
@@ -255,7 +269,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
                     pro_tx_hash: *pro_tx_hash,
                     pub_key_operator: vec![], //doesn't matter
                     valid: true,
-                    pub_key_share: Some(public_key.to_bytes().to_vec()),
+                    pub_key_share: Some(public_key.0.to_compressed().to_vec()),
                 }
             })
             .collect();
@@ -266,7 +280,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
             quorum_index: 0,
             mined_block: vec![],
             members,
-            quorum_public_key: public_key.to_bytes().to_vec(),
+            quorum_public_key: public_key.0.to_compressed().to_vec(),
             secret_key_share: None,
         }
     }

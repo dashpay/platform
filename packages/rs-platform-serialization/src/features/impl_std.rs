@@ -109,7 +109,7 @@ impl<'a, W: std::io::Write> IoWriter<'a, W> {
     }
 }
 
-impl<'storage, W: std::io::Write> Writer for IoWriter<'storage, W> {
+impl<W: std::io::Write> Writer for IoWriter<'_, W> {
     #[inline(always)]
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         self.writer
@@ -123,7 +123,7 @@ impl<'storage, W: std::io::Write> Writer for IoWriter<'storage, W> {
     }
 }
 
-impl<'a> PlatformVersionEncode for &'a CStr {
+impl PlatformVersionEncode for &CStr {
     fn platform_encode<E: Encoder>(
         &self,
         encoder: &mut E,

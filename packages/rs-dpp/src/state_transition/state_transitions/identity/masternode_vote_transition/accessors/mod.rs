@@ -41,6 +41,12 @@ impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
         }
     }
 
+    fn vote_owned(self) -> Vote {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.vote,
+        }
+    }
+
     fn set_vote(&mut self, vote: Vote) {
         match self {
             MasternodeVoteTransition::V0(transition) => {

@@ -21,7 +21,7 @@ pub enum DriveKeyInfo<'a> {
     KeySize(KeyInfo),
 }
 
-impl<'a> Default for DriveKeyInfo<'a> {
+impl Default for DriveKeyInfo<'_> {
     fn default() -> Self {
         Key(vec![])
     }

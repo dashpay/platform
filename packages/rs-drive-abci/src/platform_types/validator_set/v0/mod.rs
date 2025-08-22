@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::ProTxHash;
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator::v0::NewValidatorIfMasternodeInState;
@@ -55,8 +55,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
                 format!(
                     "updating validator set doesn't match threshold public key ours: {} theirs: {}",
-                    hex::encode(*self.threshold_public_key.to_bytes()),
-                    hex::encode(*rhs.threshold_public_key.to_bytes())
+                    hex::encode(self.threshold_public_key.0.to_compressed()),
+                    hex::encode(rhs.threshold_public_key.0.to_compressed())
                 ),
             )));
         }
@@ -97,10 +97,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                                 );
 
                                 Some(Ok(abci::ValidatorUpdate {
-                                    pub_key: public_key.clone().map(|public_key| {
-                                        crypto::PublicKey {
-                                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
-                                        }
+                                    pub_key: (*public_key).map(|public_key| crypto::PublicKey {
+                                        sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
                                     }),
                                     power: 100,
                                     pro_tx_hash: pro_tx_hash.as_byte_array().to_vec(),
@@ -129,10 +127,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                                 );
 
                                 Some(Ok(abci::ValidatorUpdate {
-                                    pub_key: public_key.clone().map(|public_key| {
-                                        crypto::PublicKey {
-                                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
-                                        }
+                                    pub_key: (*public_key).map(|public_key| crypto::PublicKey {
+                                        sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
                                     }),
                                     power: 100,
                                     pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),
@@ -148,7 +144,9 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
         Ok(ValidatorSetUpdate {
             validator_updates,
             threshold_public_key: Some(crypto::PublicKey {
-                sum: Some(Bls12381(self.threshold_public_key.to_bytes().to_vec())),
+                sum: Some(Bls12381(
+                    self.threshold_public_key.0.to_compressed().to_vec(),
+                )),
             }),
             quorum_hash: self.quorum_hash.to_byte_array().to_vec(),
         })
@@ -186,7 +184,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                     );
                     Some(abci::ValidatorUpdate {
                         pub_key: public_key.as_ref().map(|public_key| crypto::PublicKey {
-                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                            sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),
@@ -195,7 +193,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
-                sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
+                sum: Some(Bls12381(threshold_public_key.0.to_compressed().to_vec())),
             }),
             quorum_hash: quorum_hash.to_byte_array().to_vec(),
         }
@@ -233,7 +231,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
 
                     Some(abci::ValidatorUpdate {
                         pub_key: public_key.map(|public_key| crypto::PublicKey {
-                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                            sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),
@@ -242,7 +240,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
-                sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
+                sum: Some(Bls12381(threshold_public_key.0.to_compressed().to_vec())),
             }),
             quorum_hash: quorum_hash.to_byte_array().to_vec(),
         }
@@ -271,7 +269,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                 }
 
                 let public_key = if let Some(public_key_share) = quorum_member.pub_key_share {
-                    match BlsPublicKey::from_bytes(public_key_share.as_slice())
+                    match BlsPublicKey::try_from(public_key_share.as_slice())
                         .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
                     {
                         Ok(public_key) => Some(public_key),
@@ -290,7 +288,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             })
             .collect::<Result<BTreeMap<ProTxHash, ValidatorV0>, Error>>()?;
 
-        let threshold_public_key = BlsPublicKey::from_bytes(quorum_public_key.as_slice())
+        let threshold_public_key = BlsPublicKey::try_from(quorum_public_key.as_slice())
             .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
 
         let optional_quorum_index = if quorum_index == 0 {

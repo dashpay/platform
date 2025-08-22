@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
 
-impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
+impl DocumentJsonMethodsV0<'_> for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(
         &self,
         _platform_version: &PlatformVersion,

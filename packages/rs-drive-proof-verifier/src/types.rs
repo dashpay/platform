@@ -5,7 +5,16 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-mod evonode_status;
+/// Evonode status
+pub mod evonode_status;
+/// Groups
+pub mod groups;
+/// Identity token balance
+pub mod identity_token_balance;
+/// Token info
+pub mod token_info;
+/// Token status
+pub mod token_status;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
@@ -13,6 +22,7 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
@@ -22,12 +32,16 @@ use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDoc
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::{
-    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    block::{
+        epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo,
+        finalized_epoch_info::FinalizedEpochInfo,
+    },
     dashcore::ProTxHash,
     document::Document,
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
+    ProtocolError,
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
@@ -35,15 +49,14 @@ use drive::grovedb::Element;
 pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{dashcore::hashes::Hash, version as platform_version, ProtocolError},
+    dpp::version as platform_version,
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-
-pub use evonode_status::*;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -239,6 +252,7 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContestedResource(pub Value);
 
+#[cfg(feature = "mocks")]
 impl ContestedResource {
     /// Get the value.
     pub fn encode_to_vec(
@@ -509,6 +523,9 @@ pub type IdentityBalances = RetrievedObjects<Identifier, Credits>;
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
+/// Collection of finalized epoch information
+pub type FinalizedEpochInfos = RetrievedObjects<EpochIndex, FinalizedEpochInfo>;
+
 /// Results of protocol version upgrade voting.
 ///
 /// Information about the protocol version upgrade states and number of received votes, indexed by protocol version.
@@ -619,3 +636,6 @@ pub struct ProposerBlockCountByRange(pub u64);
 #[derive(Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposerBlockCountById(pub u64);
+
+/// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
+pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;

@@ -10,8 +10,13 @@ pub mod single_document;
 /// System components (Epoch info etc...) verification methods on proofs
 pub mod system;
 
+/// Group proof verification module
+pub mod group;
 /// Verifies that a state transition contents exist in the proof
 pub mod state_transition;
+/// Token proof verification module
+pub mod tokens;
+/// Voting proof verification module
 pub mod voting;
 
 /// Represents the root hash of the grovedb tree

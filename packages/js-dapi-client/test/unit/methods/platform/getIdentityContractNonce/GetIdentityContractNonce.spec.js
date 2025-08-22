@@ -22,7 +22,7 @@ describe('GetIdentityContractNonceResponse', () => {
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    nonce = 1;
+    nonce = BigInt(1);
     proofFixture = getProofFixture();
 
     const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
@@ -38,7 +38,6 @@ describe('GetIdentityContractNonceResponse', () => {
       new GetIdentityContractNonceResponseV0()
         .setIdentityContractNonce(nonce)
         .setMetadata(metadata),
-
     );
 
     getIdentityContractNonceResponse = new GetIdentityContractNonceResponseClass(
@@ -103,10 +102,19 @@ describe('GetIdentityContractNonceResponse', () => {
     getIdentityContractNonceResponse = GetIdentityContractNonceResponseClass.createFromProto(proto);
 
     expect(getIdentityContractNonceResponse.getIdentityContractNonce())
-      .to.deep.equal(0);
-    expect(getIdentityContractNonceResponse.getMetadata()).to.deep.equal(metadataFixture);
+      .to.deep.equal(BigInt(0));
+
+    expect(getIdentityContractNonceResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getIdentityContractNonceResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentityContractNonceResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentityContractNonceResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getIdentityContractNonceResponse.getProof();
+
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);

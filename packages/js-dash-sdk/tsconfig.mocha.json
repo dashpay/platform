@@ -2,9 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "target": "es6",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "outDir": "./build",
   },
-  "include": [
-    "src/**/*",
-  ],
-  "exclude": []
+  "include": ["src/**/*.spec.ts", "src/test/**/*.ts"],
 }

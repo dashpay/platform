@@ -9,6 +9,7 @@ pub mod dpp_state_transition_conversion_versions;
 pub mod dpp_state_transition_method_versions;
 pub mod dpp_state_transition_serialization_versions;
 pub mod dpp_state_transition_versions;
+pub mod dpp_token_versions;
 pub mod dpp_validation_versions;
 pub mod dpp_voting_versions;
 
@@ -23,6 +24,7 @@ use dpp_state_transition_conversion_versions::DPPStateTransitionConversionVersio
 use dpp_state_transition_method_versions::DPPStateTransitionMethodVersions;
 use dpp_state_transition_serialization_versions::DPPStateTransitionSerializationVersions;
 use dpp_state_transition_versions::DPPStateTransitionVersions;
+use dpp_token_versions::DPPTokenVersions;
 use dpp_validation_versions::DPPValidationVersions;
 use dpp_voting_versions::DPPVotingVersions;
 
@@ -39,6 +41,7 @@ pub struct DPPVersion {
     pub document_versions: DPPDocumentVersions,
     pub identity_versions: DPPIdentityVersions,
     pub voting_versions: DPPVotingVersions,
+    pub token_versions: DPPTokenVersions,
     pub asset_lock_versions: DPPAssetLockVersions,
     pub methods: DPPMethodVersions,
     pub factory_versions: DPPFactoryVersions,

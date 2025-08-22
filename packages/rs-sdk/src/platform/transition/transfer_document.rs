@@ -8,9 +8,10 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use rs_dapi_client::{DapiRequest, IntoInner};
 
 #[async_trait::async_trait]
@@ -18,23 +19,27 @@ use rs_dapi_client::{DapiRequest, IntoInner};
 pub trait TransferDocument<S: Signer>: Waitable {
     /// Transfers a document on platform
     /// Setting settings to `None` sets default connection behavior
+    #[allow(clippy::too_many_arguments)]
     async fn transfer_document_to_identity(
         &self,
         recipient_id: Identifier,
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
     /// Transfers a document on platform and waits for the response
+    #[allow(clippy::too_many_arguments)]
     async fn transfer_document_to_identity_and_wait_for_response(
         &self,
         recipient_id: Identifier,
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
@@ -48,6 +53,7 @@ impl<S: Signer> TransferDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
@@ -62,18 +68,17 @@ impl<S: Signer> TransferDocument<S> for Document {
 
         let settings = settings.unwrap_or_default();
 
-        let transition = DocumentsBatchTransition::new_document_transfer_transition_from_document(
+        let transition = BatchTransition::new_document_transfer_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             recipient_id,
             &identity_public_key,
             new_identity_contract_nonce,
             settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
             signer,
             sdk.version(),
-            None,
-            None,
-            None,
+            settings.state_transition_creation_options,
         )?;
 
         let request = transition.broadcast_request_for_state_transition()?;
@@ -95,6 +100,7 @@ impl<S: Signer> TransferDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
@@ -104,6 +110,7 @@ impl<S: Signer> TransferDocument<S> for Document {
                 sdk,
                 document_type,
                 identity_public_key,
+                token_payment_info,
                 signer,
                 settings,
             )

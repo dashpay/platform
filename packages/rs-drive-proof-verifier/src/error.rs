@@ -1,4 +1,7 @@
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
+use drive::grovedb::Error as GroveError;
+use drive::query::PathQuery;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +22,7 @@ pub enum Error {
     #[error("grovedb: {error}")]
     GroveDBError {
         proof_bytes: Vec<u8>,
+        path_query: Option<PathQuery>,
         height: u64,
         time_ms: u64,
         error: String,
@@ -108,6 +112,10 @@ pub enum ContextProviderError {
     #[error("cannot get data contract: {0}")]
     DataContractFailure(String),
 
+    /// Token configuration is invalid or not found, or some error occurred during token configuration retrieval
+    #[error("cannot get token configuration: {0}")]
+    TokenConfigurationFailure(String),
+
     /// Provided quorum is invalid
     #[error("invalid quorum: {0}")]
     InvalidQuorum(String),
@@ -133,6 +141,36 @@ impl From<ProtocolError> for Error {
     fn from(error: ProtocolError) -> Self {
         Self::ProtocolError {
             error: error.to_string(),
+        }
+    }
+}
+
+pub(crate) trait MapGroveDbError<O> {
+    fn map_drive_error(self, proof: &Proof, metadata: &ResponseMetadata) -> Result<O, Error>;
+}
+
+impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
+    fn map_drive_error(self, proof: &Proof, metadata: &ResponseMetadata) -> Result<O, Error> {
+        match self {
+            Ok(o) => Ok(o),
+
+            Err(drive::error::Error::GroveDB(grove_err)) => {
+                // If InvalidProof error is returned, extract the path query from it
+                let maybe_query = match &grove_err {
+                    GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
+                    _ => None,
+                };
+
+                Err(Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    path_query: maybe_query,
+                    height: metadata.height,
+                    time_ms: metadata.time_ms,
+                    error: grove_err.to_string(),
+                })
+            }
+
+            Err(other) => Err(other.into()),
         }
     }
 }

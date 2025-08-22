@@ -22,7 +22,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,
 };
 
-impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
+impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
     /// Verifies a proof for a collection of documents.
     ///
     /// This function takes a slice of bytes `proof` containing a serialized proof,
@@ -89,14 +89,14 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                 ))
             }
             ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
-                let mut elements_iter = proved_key_values.into_iter();
+                let elements_iter = proved_key_values.into_iter();
                 let mut contenders = vec![];
                 let mut locked_vote_tally: Option<u32> = None;
                 let mut abstaining_vote_tally: Option<u32> = None;
                 let mut winner = None;
 
                 // Handle ascending order
-                while let Some((path, first_key, element)) = elements_iter.next() {
+                for (path, first_key, element) in elements_iter {
                     let Some(element) = element else {
                         continue;
                     };
@@ -135,7 +135,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                             }
                         }
                         Element::Item(serialized_item_info, _) => {
-                            if first_key.as_slice() == &RESOURCE_STORED_INFO_KEY_U8_32 {
+                            if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                 // this is the stored info, let's check to see if the vote is over
                                 let finalized_contested_document_vote_poll_stored_info =
                                     ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(
@@ -246,7 +246,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                             }
                         }
                         Element::Item(serialized_item_info, _) => {
-                            if first_key.as_slice() == &RESOURCE_STORED_INFO_KEY_U8_32 {
+                            if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                 // this is the stored info, let's check to see if the vote is over
                                 let finalized_contested_document_vote_poll_stored_info =
                                     ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(

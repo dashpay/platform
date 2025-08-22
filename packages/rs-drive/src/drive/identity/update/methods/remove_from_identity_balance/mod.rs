@@ -29,6 +29,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<FeeResult, Error>` - The resulting fee result if successful, or an error.
+    #[allow(clippy::too_many_arguments)]
     pub fn remove_from_identity_balance(
         &self,
         identity_id: [u8; 32],

@@ -4,20 +4,35 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-#[cfg(feature = "json-schema-validation")]
-use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
+    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
+    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
+    InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
+    InvalidTokenDistributionFunctionIncoherenceError,
+    InvalidTokenDistributionFunctionInvalidParameterError,
+    InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
+    InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
+    NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
+    NonContiguousContractTokenPositionsError, RedundantDocumentPaidForByTokenWithContractId,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
+};
+use crate::consensus::basic::data_contract::{
+    InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
+    UnknownDocumentActionTokenEffectError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -51,8 +66,9 @@ use crate::consensus::basic::identity::{
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
-    MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -64,10 +80,23 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
+use super::data_contract::{
+    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
+    TooManyKeywordsError,
+};
+use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
+use crate::consensus::basic::token::{
+    ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
+    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
+    InvalidTokenConfigUpdateNoChangeError, InvalidTokenDistributionBlockIntervalTooShortError,
+    InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
+    InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
+    TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError,
+};
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
-#[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
@@ -120,12 +149,10 @@ pub enum BasicError {
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
-    #[cfg(feature = "json-schema-validation")]
     // Structure error
     #[error(transparent)]
     JsonSchemaCompilationError(JsonSchemaCompilationError),
 
-    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
 
@@ -157,7 +184,6 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError),
 
-    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     InvalidJsonSchemaRefError(InvalidJsonSchemaRefError),
 
@@ -402,6 +428,169 @@ pub enum BasicError {
 
     #[error(transparent)]
     ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
+
+    #[error(transparent)]
+    DataContractTokenConfigurationUpdateError(DataContractTokenConfigurationUpdateError),
+
+    #[error(transparent)]
+    NonContiguousContractTokenPositionsError(NonContiguousContractTokenPositionsError),
+
+    #[error(transparent)]
+    NonContiguousContractGroupPositionsError(NonContiguousContractGroupPositionsError),
+
+    #[error(transparent)]
+    InvalidTokenBaseSupplyError(InvalidTokenBaseSupplyError),
+
+    #[error(transparent)]
+    InvalidTokenIdError(InvalidTokenIdError),
+
+    #[error(transparent)]
+    InvalidTokenAmountError(InvalidTokenAmountError),
+
+    #[error(transparent)]
+    InvalidTokenPositionError(InvalidTokenPositionError),
+
+    #[error(transparent)]
+    InvalidTokenConfigUpdateNoChangeError(InvalidTokenConfigUpdateNoChangeError),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionDivideByZeroError(
+        InvalidTokenDistributionFunctionDivideByZeroError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionInvalidParameterError(
+        InvalidTokenDistributionFunctionInvalidParameterError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionInvalidParameterTupleError(
+        InvalidTokenDistributionFunctionInvalidParameterTupleError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionIncoherenceError(
+        InvalidTokenDistributionFunctionIncoherenceError,
+    ),
+
+    #[error(transparent)]
+    TokenTransferToOurselfError(TokenTransferToOurselfError),
+
+    #[error(transparent)]
+    InvalidTokenNoteTooBigError(InvalidTokenNoteTooBigError),
+
+    #[error(transparent)]
+    ContractHasNoTokensError(ContractHasNoTokensError),
+
+    #[error(transparent)]
+    GroupPositionDoesNotExistError(GroupPositionDoesNotExistError),
+
+    #[error(transparent)]
+    InvalidActionIdError(InvalidActionIdError),
+
+    #[error(transparent)]
+    DestinationIdentityForTokenMintingNotSetError(DestinationIdentityForTokenMintingNotSetError),
+
+    #[error(transparent)]
+    ChoosingTokenMintRecipientNotAllowedError(ChoosingTokenMintRecipientNotAllowedError),
+
+    #[error(transparent)]
+    GroupActionNotAllowedOnTransitionError(GroupActionNotAllowedOnTransitionError),
+
+    #[error(transparent)]
+    GroupExceedsMaxMembersError(GroupExceedsMaxMembersError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOfZeroError(GroupMemberHasPowerOfZeroError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOverLimitError(GroupMemberHasPowerOverLimitError),
+
+    #[error(transparent)]
+    GroupTotalPowerLessThanRequiredError(GroupTotalPowerLessThanRequiredError),
+
+    #[error(transparent)]
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(
+        GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    ),
+
+    #[error(transparent)]
+    MissingDefaultLocalizationError(MissingDefaultLocalizationError),
+
+    #[error(transparent)]
+    UnknownGasFeesPaidByError(UnknownGasFeesPaidByError),
+
+    #[error(transparent)]
+    UnknownDocumentActionTokenEffectError(UnknownDocumentActionTokenEffectError),
+
+    #[error(transparent)]
+    TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+        TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
+    ),
+
+    #[error(transparent)]
+    TooManyKeywordsError(TooManyKeywordsError),
+
+    #[error(transparent)]
+    DuplicateKeywordsError(DuplicateKeywordsError),
+
+    #[error(transparent)]
+    InvalidKeywordLengthError(InvalidKeywordLengthError),
+
+    #[error(transparent)]
+    InvalidDescriptionLengthError(InvalidDescriptionLengthError),
+
+    #[error(transparent)]
+    NewTokensDestinationIdentityOptionRequiredError(
+        NewTokensDestinationIdentityOptionRequiredError,
+    ),
+
+    #[error(transparent)]
+    InvalidKeywordCharacterError(InvalidKeywordCharacterError),
+
+    #[error(transparent)]
+    InvalidTokenNameCharacterError(InvalidTokenNameCharacterError),
+
+    #[error(transparent)]
+    DecimalsOverLimitError(DecimalsOverLimitError),
+
+    #[error(transparent)]
+    InvalidTokenNameLengthError(InvalidTokenNameLengthError),
+
+    #[error(transparent)]
+    InvalidTokenLanguageCodeError(InvalidTokenLanguageCodeError),
+
+    #[error(transparent)]
+    MainGroupIsNotDefinedError(MainGroupIsNotDefinedError),
+
+    #[error(transparent)]
+    GroupRequiredPowerIsInvalidError(GroupRequiredPowerIsInvalidError),
+
+    #[error(transparent)]
+    TokenNoteOnlyAllowedWhenProposerError(TokenNoteOnlyAllowedWhenProposerError),
+
+    #[error(transparent)]
+    InvalidTokenDistributionBlockIntervalTooShortError(
+        InvalidTokenDistributionBlockIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionTimeIntervalTooShortError(
+        InvalidTokenDistributionTimeIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(
+        InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    ),
+    #[error(transparent)]
+    RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
+
+    #[error(transparent)]
+    GroupHasTooFewMembersError(GroupHasTooFewMembersError),
+
+    #[error(transparent)]
+    InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -6,7 +6,7 @@ use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
 use drive::drive::identity::withdrawals::paths::get_withdrawal_transactions_sum_tree_path_vec;
-use drive::grovedb::{PathQuery, QueryItem, Transaction};
+use drive::grovedb::{MaybeTree, PathQuery, QueryItem, Transaction};
 use drive::util::grove_operations::BatchDeleteApplyType;
 
 impl<C> Platform<C>
@@ -49,7 +49,7 @@ where
             true,
             // we know that we are not deleting a subtree
             BatchDeleteApplyType::StatefulBatchDelete {
-                is_known_to_be_subtree_with_sum: Some((false, false)),
+                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
             },
             Some(transaction),
             &mut batch_operations,

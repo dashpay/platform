@@ -107,7 +107,6 @@ mod test {
         let data_contract = DataContract::from_cbor(cbor_bytes, true, platform_version)
             .expect("contract should be deserialized");
 
-        assert_eq!(0, data_contract.feature_version());
         assert_eq!(expect_id, data_contract.id().as_bytes());
         assert_eq!(expect_owner_id, data_contract.owner_id().as_bytes());
 
@@ -143,7 +142,7 @@ mod test {
             platform_version,
         )
         .expect("expected to get a contract")
-        .into_v0()
+        .into_latest()
         .unwrap();
 
         assert!(contract.config.documents_mutable_contract_default());
@@ -198,6 +197,58 @@ mod test {
 
     #[test]
     #[cfg(feature = "data-contract-cbor-conversion")]
+    fn mutability_properties_should_be_stored_and_restored_during_cbor_serialization_contract_v0() {
+        let platform_version = PlatformVersion::get(7).expect("expected version 7");
+
+        let mut contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get a cbor document")
+        .into_v0()
+        .unwrap();
+
+        assert!(!contract.config().readonly());
+        assert!(!contract.config.keeps_history());
+        assert!(contract.config.documents_mutable_contract_default());
+        assert!(!contract.config.documents_keep_history_contract_default());
+
+        contract.config.set_readonly(true);
+        contract.config.set_keeps_history(true);
+        contract
+            .config
+            .set_documents_mutable_contract_default(false);
+        contract
+            .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract
+            .config
+            .set_documents_keep_history_contract_default(true);
+
+        let contract_cbor = contract
+            .to_cbor(platform_version)
+            .expect("serialization shouldn't fail");
+        let deserialized_contract = DataContract::from_cbor(contract_cbor, true, platform_version)
+            .expect("deserialization shouldn't fail");
+
+        assert_matches!(
+            deserialized_contract.config(),
+            DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: true,
+                keeps_history: true,
+                documents_mutable_contract_default: false,
+                documents_keep_history_contract_default: true,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            })
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "data-contract-cbor-conversion")]
     fn mutability_properties_should_be_stored_and_restored_during_cbor_serialization() {
         let platform_version = PlatformVersion::latest();
 
@@ -207,7 +258,7 @@ mod test {
             platform_version,
         )
         .expect("expected to get a cbor document")
-        .into_v0()
+        .into_v1()
         .unwrap();
 
         assert!(!contract.config().readonly());
@@ -259,7 +310,7 @@ mod test {
         )
         .expect("expected to decode a contract");
 
-        let contract_v0 = contract.as_v0_mut().unwrap();
+        let contract_v0 = contract.as_latest_mut().unwrap();
 
         assert!(!contract_v0.config().readonly());
         assert!(!contract_v0.config.keeps_history());
@@ -286,7 +337,7 @@ mod test {
                 .expect("deserialization shouldn't fail");
 
         assert_eq!(
-            deserialized_contract.as_v0().unwrap().config,
+            deserialized_contract.as_latest().unwrap().config,
             DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
                 readonly: true,

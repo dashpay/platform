@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "1.7.1",
+  "version": "2.0.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -14,6 +14,7 @@
     "test:dashpay-contract": "ultra -r --filter \"packages/@(dashpay-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
     "test:dpns-contract": "ultra -r --filter \"packages/@(dpns-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
     "test:feature-flags-contract": "ultra -r --filter \"packages/@(feature-flags-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:token-history-contract": "ultra -r --filter \"packages/@(token-history-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
     "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
     "test:spv": "ultra -r --filter \"packages/@(dash-spv|js-dapi-client)\" test",
@@ -65,10 +66,13 @@
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
     "packages/wasm-dpp",
-    "packages/withdrawals-contract"
+    "packages/withdrawals-contract",
+    "packages/token-history-contract",
+    "packages/keyword-search-contract"
   ],
   "resolutions": {
-    "elliptic": "6.5.7",
+    "pbkdf2": "^3.1.3",
+    "elliptic": "6.6.1",
     "bn.js": "4.12.0",
     "fast-json-patch": "^3.1.1",
     "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
@@ -83,7 +87,7 @@
     "protobufjs": "^6.11.4",
     "browserify-sign": "4.2.2",
     "istanbul-lib-processinfo": "2.0.3",
-    "@babel/core": "7.23.3",
+    "@babel/runtime": "^7.26.10",
     "tsconfig-paths": "4.2.0",
     "ansi-regex": "5.0.1",
     "cacache": "18.0.0",
@@ -95,7 +99,9 @@
     "path-to-regexp": "^1.9.0",
     "cookie": "^0.7.0",
     "cross-spawn": "^7.0.5",
-    "nanoid": "^3.3.8"
+    "nanoid": "^3.3.8",
+    "tar-fs": "^3.0.9",
+    "brace-expansion": "^2.0.2"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"

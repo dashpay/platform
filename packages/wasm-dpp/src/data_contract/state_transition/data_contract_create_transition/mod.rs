@@ -55,9 +55,24 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
-    pub fn get_data_contract(&self) -> DataContractWasm {
-        DataContractWasm::try_from_serialization_format(self.0.data_contract().clone(), false)
-            .expect("should convert from serialziation format")
+    pub fn get_data_contract(
+        &self,
+        protocol_version: Option<u32>,
+    ) -> Result<DataContractWasm, JsValue> {
+        // Use provided protocol version or latest if not specified
+        let platform_version = if let Some(version) = protocol_version {
+            PlatformVersion::get(version)
+                .map_err(ProtocolError::PlatformVersionError)
+                .with_js_error()?
+        } else {
+            PlatformVersion::latest()
+        };
+
+        DataContractWasm::try_from_serialization_format_with_platform_version(
+            self.0.data_contract().clone(),
+            false,
+            platform_version,
+        )
     }
 
     // #[wasm_bindgen(js_name=setDataContractConfig)]
@@ -81,6 +96,27 @@ impl DataContractCreateTransitionWasm {
     pub fn get_type(&self) -> u32 {
         self.0.state_transition_type() as u32
     }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase()
+    }
+
+    #[wasm_bindgen(js_name=getSignature)]
+    pub fn get_signature(&self) -> Buffer {
+        Buffer::from_bytes(self.0.signature().as_slice())
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
+    }
+
     //
     // #[wasm_bindgen(js_name=toJSON)]
     // pub fn to_json(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {

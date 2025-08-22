@@ -5,7 +5,6 @@ pub use chain::*;
 pub use instant::*;
 use std::convert::TryInto;
 use wasm_bindgen::JsCast;
-use wasm_bindgen::__rt::Ref;
 
 use dpp::identity::errors::UnknownAssetLockProofTypeError;
 use wasm_bindgen::prelude::*;
@@ -144,13 +143,13 @@ pub fn create_asset_lock_proof_from_wasm_instance(
 
     match lock_type {
         AssetLockProofType::Instant => {
-            let instant: Ref<InstantAssetLockProofWasm> =
+            let instant =
                 generic_of_js_val::<InstantAssetLockProofWasm>(js_value, "InstantAssetLockProof")?;
 
             Ok(AssetLockProof::Instant(instant.clone().into()))
         }
         AssetLockProofType::Chain => {
-            let chain: Ref<ChainAssetLockProofWasm> =
+            let chain =
                 generic_of_js_val::<ChainAssetLockProofWasm>(js_value, "ChainAssetLockProof")?;
 
             Ok(AssetLockProof::Chain(chain.clone().into()))

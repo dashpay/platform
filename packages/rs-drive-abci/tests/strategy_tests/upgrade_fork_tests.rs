@@ -122,6 +122,7 @@ mod tests {
                     config.clone(),
                     13,
                     &mut None,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -406,6 +407,7 @@ mod tests {
                     config.clone(),
                     13,
                     &mut None,
+                    &mut None,
                 );
 
                 let platform = abci_app.platform;
@@ -645,6 +647,7 @@ mod tests {
             config.clone(),
             13,
             &mut None,
+            &mut None,
         );
 
         let platform = abci_app.platform;
@@ -783,7 +786,7 @@ mod tests {
                     chain_lock: ChainLockConfig::default_100_67(),
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
-                        verify_sum_trees: true,
+                        verify_sum_trees: false, //faster without this
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -828,6 +831,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     16,
+                    &mut None,
                     &mut None,
                 );
                 let platform = abci_app.platform;
@@ -1068,6 +1072,7 @@ mod tests {
                     strategy.clone(),
                     config.clone(),
                     15,
+                    &mut None,
                     &mut None,
                 );
 
@@ -1369,7 +1374,7 @@ mod tests {
                     chain_lock: ChainLockConfig::default_100_67(),
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
-                        verify_sum_trees: true,
+                        verify_sum_trees: false,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -1412,6 +1417,7 @@ mod tests {
                     strategy,
                     config.clone(),
                     15,
+                    &mut None,
                     &mut None,
                 );
                 let state = abci_app.platform.state.load();

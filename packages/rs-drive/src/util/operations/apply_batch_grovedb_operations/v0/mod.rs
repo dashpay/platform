@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Applies a batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
-    pub(crate) fn apply_batch_grovedb_operations_v0(
+    pub(super) fn apply_batch_grovedb_operations_v0(
         &self,
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

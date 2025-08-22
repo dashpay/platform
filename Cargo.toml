@@ -29,12 +29,12 @@ members = [
     "packages/rs-json-schema-compatibility-validator",
     "packages/check-features",
     "packages/wallet-utils-contract",
+    "packages/token-history-contract",
+    "packages/keyword-search-contract"
 ]
+
+exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
+
 [workspace.package]
 
-rust-version = "1.83"
-
-[patch.crates-io]
-tower-service = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }
-tower-layer = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }
-tower = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }
+rust-version = "1.85"

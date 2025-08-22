@@ -6,8 +6,6 @@ use crate::strategy::{
     StrategyRandomness, ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
     MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkType,
@@ -15,12 +13,14 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
-use dpp::bls_signatures::PrivateKey;
+use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey, SignatureSchemes};
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::FromMilis;
+use tenderdash_abci::proto::FromMillis;
 use tenderdash_abci::Application;
 
 pub const GENESIS_TIME_MS: u64 = 1681094380000;
@@ -55,6 +55,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
     config: PlatformConfig,
     seed: u64,
     add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+    add_payout_keys_to_signer: &mut Option<SimpleSigner>,
 ) -> ChainExecutionOutcome<'a> {
     // TODO: Do we want to sign instant locks or just disable verification?
 
@@ -122,6 +123,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
             generate_updates,
             &mut rng,
             add_voting_keys_to_signer,
+            add_payout_keys_to_signer,
         );
 
         let mut all_masternodes = initial_masternodes.clone();
@@ -173,6 +175,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
                         generate_updates,
                         &mut rng,
                         add_voting_keys_to_signer,
+                        add_payout_keys_to_signer,
                     );
 
                 if strategy.proposer_strategy.removed_masternodes.is_set() {
@@ -216,6 +219,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
             None,
             &mut rng,
             add_voting_keys_to_signer,
+            add_payout_keys_to_signer,
         );
         (
             initial_masternodes,
@@ -352,7 +356,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
                     instant_lock_quorums_infos
                         .iter()
                         .map(|(quorum_hash, info)| {
-                            let bytes = info.private_key.to_bytes();
+                            let bytes = info.private_key.to_be_bytes();
                             let fixed_bytes: [u8; 32] = bytes
                                 .as_slice()
                                 .try_into()
@@ -379,7 +383,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
             let signing_quorums = validator_quorums
                 .iter()
                 .map(|(quorum_hash, info)| {
-                    let bytes = info.private_key.to_bytes();
+                    let bytes = info.private_key.to_be_bytes();
                     let fixed_bytes: [u8; 32] = bytes
                         .as_slice()
                         .try_into()
@@ -653,7 +657,7 @@ pub(crate) fn run_chain_for_strategy<'a>(
     let chain_lock_quorums_private_keys: BTreeMap<QuorumHash, [u8; 32]> = chain_lock_quorums
         .iter()
         .map(|(quorum_hash, info)| {
-            let bytes = info.private_key.to_bytes();
+            let bytes = info.private_key.to_be_bytes();
             let fixed_bytes: [u8; 32] = bytes
                 .as_slice()
                 .try_into()
@@ -728,13 +732,18 @@ pub(crate) fn run_chain_for_strategy<'a>(
                 let message_digest = sha256d::Hash::from_engine(engine);
 
                 let quorum_private_key =
-                    PrivateKey::from_bytes(quorum_private_key.as_slice(), false)
+                    BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(quorum_private_key)
                         .expect("expected to have a valid private key");
-                let signature = quorum_private_key.sign(message_digest.as_byte_array());
+                let signature = quorum_private_key
+                    .sign(
+                        SignatureSchemes::Basic,
+                        message_digest.as_byte_array().as_slice(),
+                    )
+                    .expect("expected to sign");
                 let chain_lock = ChainLock {
                     block_height,
                     block_hash: BlockHash::from_byte_array(*block_hash),
-                    signature: (*signature.to_bytes()).into(),
+                    signature: signature.as_raw_value().to_compressed().into(),
                 };
 
                 Ok(chain_lock)
@@ -847,7 +856,9 @@ pub(crate) fn start_chain_for_strategy(
             .map(
                 |validator_in_quorum| tenderdash_abci::proto::abci::ValidatorUpdate {
                     pub_key: Some(tenderdash_abci::proto::crypto::PublicKey {
-                        sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
+                        sum: Some(Bls12381(
+                            validator_in_quorum.public_key.0.to_compressed().to_vec(),
+                        )),
                     }),
                     power: 100,
                     pro_tx_hash: validator_in_quorum.pro_tx_hash.to_byte_array().to_vec(),
@@ -857,7 +868,11 @@ pub(crate) fn start_chain_for_strategy(
             .collect(),
         threshold_public_key: Some(tenderdash_abci::proto::crypto::PublicKey {
             sum: Some(Bls12381(
-                current_quorum_with_test_info.public_key.to_bytes().to_vec(),
+                current_quorum_with_test_info
+                    .public_key
+                    .0
+                    .to_compressed()
+                    .to_vec(),
             )),
         }),
         quorum_hash: current_validator_quorum_hash.to_byte_array().to_vec(),
@@ -974,6 +989,8 @@ pub(crate) fn continue_chain_for_strategy(
 
         let current_core_height = state.last_committed_core_height();
 
+        let current_version = state.current_protocol_version_in_consensus();
+
         drop(state);
 
         let block_info = BlockInfo {
@@ -994,6 +1011,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
             platform,
+            block_start,
             &block_info,
             &mut current_identities,
             &mut current_identity_nonce_counter,
@@ -1022,7 +1040,7 @@ pub(crate) fn continue_chain_for_strategy(
                     *current_protocol_version
                 }
             })
-            .unwrap_or(1);
+            .unwrap_or(current_version);
 
         let rounds = strategy
             .failure_testing
@@ -1126,7 +1144,7 @@ pub(crate) fn continue_chain_for_strategy(
             verify_state_transitions_were_or_were_not_executed(
                 &abci_app,
                 &root_app_hash,
-                &state_transaction_results,
+                state_transaction_results.as_slice(),
                 &expected_validation_errors,
                 platform_version,
             );
@@ -1145,7 +1163,7 @@ pub(crate) fn continue_chain_for_strategy(
                     height: state_id.height as i64,
                     block_hash: &block_hash,
                     app_hash: &root_app_hash,
-                    time: Timestamp::from_milis(state_id.time),
+                    time: Timestamp::from_millis(state_id.time).expect("must convert to millis"),
                     signature: &signature,
                     public_key: &current_quorum_with_test_info.public_key,
                 },

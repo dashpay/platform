@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "1.7.1"
+version = "2.0.1"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -14,7 +14,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier
 integer-encoding = { version = "4.0.0" }
@@ -26,19 +26,19 @@ indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = [
+dpp = { package = "dpp", path = "../rs-dpp", features = [
   "state-transitions",
 ], default-features = false, optional = true }
-thiserror = { version = "1.0.63" }
+thiserror = { version = "2.0.12" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
 derive_more = { version = "1.0", features = ["from"] }
 hex = { version = "0.4.3" }
 
 # optional dependencies
 parking_lot = { version = "0.12.1", optional = true }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
+ciborium = { version = "0.2.2", optional = true }
 arc-swap = { version = "1.7.0", optional = true }
-serde = { version = "1.0.197", features = ["derive"], optional = true }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 rand = { version = "0.8.4", features = ["small_rng"], optional = true }
 moka = { version = "0.12", features = [
   "future",
@@ -49,15 +49,15 @@ bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.22.1", optional = true }
 tempfile = { version = "3", optional = true }
 enum-map = { version = "2.0.3", optional = true }
-intmap = { version = "2.0.0", features = ["serde"], optional = true }
+intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { version = "2.1.0", optional = true, default-features = false }
-grovedb-costs = { version = "2.1.0", optional = true }
-grovedb-path = { version = "2.1.0" }
-grovedb-storage = { version = "2.1.0", optional = true }
-grovedb-version = { version = "2.1.0" }
-grovedb-epoch-based-storage-flags = { version = "2.1.0" }
+grovedb = { version = "3.0.0", optional = true, default-features = false }
+grovedb-costs = { version = "3.0.0", optional = true }
+grovedb-path = { version = "3.0.0" }
+grovedb-storage = { version = "3.0.0",  optional = true }
+grovedb-version = { version = "3.0.0" }
+grovedb-epoch-based-storage-flags = { version = "3.0.0" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -85,6 +85,7 @@ name = "benchmarks"
 harness = false
 
 [features]
+
 default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
 grovedbg = ["grovedb/grovedbg"]
 fee-distribution = ["dpp/fee-distribution"]
@@ -100,11 +101,12 @@ server = [
   "parking_lot",
   "arc-swap",
   "moka",
+  "dpp/validation",
   "dpp/platform-value-json",
   "dpp/system_contracts",
   "dpp/state-transitions",
   "fee-distribution",
-  "grovedb/full",
+  "grovedb/minimal",
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",
@@ -116,4 +118,9 @@ server = [
 full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
-verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]
+verify = [
+  "grovedb/verify",
+  "grovedb-costs",
+  "dpp/state-transitions",
+  "dpp/system_contracts",
+]

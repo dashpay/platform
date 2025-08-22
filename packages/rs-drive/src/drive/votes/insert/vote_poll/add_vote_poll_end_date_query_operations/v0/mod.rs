@@ -22,13 +22,14 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::votes::insert) fn add_vote_poll_end_date_query_operations_v0(
         &self,
         creator_identity_id: Option<[u8; 32]>,
@@ -51,7 +52,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(vote_end_date_queries_tree_path()),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     // We can estimate that there is at least a vote concluding every block, and we put blocks at 6 seconds.
                     estimated_layer_count: ApproximateElements(201_600),
                     estimated_layer_sizes: AllSubtrees(
@@ -67,7 +68,7 @@ impl Drive {
                     vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_date),
                 ),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     // We can estimate that there is 2 votes ending per block.
                     estimated_layer_count: ApproximateElements(2),
                     estimated_layer_sizes: AllItems(
@@ -100,8 +101,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
                 flags_len: storage_flags
                     .as_ref()
                     .map(|s| s.serialized_size())
@@ -113,7 +114,7 @@ impl Drive {
         // end data in the documents batch transition
         self.batch_insert_empty_tree_if_not_exists(
             path_key_info.clone(),
-            false,
+            TreeType::NormalTree,
             storage_flags.as_ref(),
             apply_type,
             transaction,
@@ -133,7 +134,7 @@ impl Drive {
             BatchInsertApplyType::StatefulBatchInsert
         } else {
             BatchInsertApplyType::StatelessBatchInsert {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 // todo: figure out a default serialized size to make this faster
                 target: QueryTargetValue(
                     item.serialized_size(&platform_version.drive.grove_version)? as u32,

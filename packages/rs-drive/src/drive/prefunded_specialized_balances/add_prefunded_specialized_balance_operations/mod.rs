@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -50,9 +51,16 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_prefunded_specialized_balance_operations_v1(
+                specialized_balance_id,
+                amount,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_prefunded_specialized_balance_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

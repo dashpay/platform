@@ -1,5 +1,6 @@
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use dpp::fee::Credits;
+use dpp::identifier::Identifier;
 use dpp::version::FeatureVersion;
 
 /// Drive errors
@@ -126,7 +127,7 @@ pub enum DriveError {
 
     /// Error
     #[error("corrupted query returned non item error: {0}")]
-    CorruptedQueryReturnedNonItem(&'static str),
+    CorruptedQueryReturnedNonItem(String),
     /// Error
     #[error("corrupted withdrawal not an item error: {0}")]
     CorruptedWithdrawalNotItem(&'static str),
@@ -188,4 +189,16 @@ pub enum DriveError {
     /// Data Contract not found
     #[error("data contract not found: {0}")]
     DataContractNotFound(String),
+
+    /// Data Contract not found
+    #[error("data contract does not have a start moment: {0}")]
+    ContractDoesNotHaveAStartMoment(Identifier),
+
+    /// Invalid action
+    #[error("invalid action: {0}")]
+    InvalidAction(&'static str),
+
+    /// Element was not found
+    #[error("element not found: {0}")]
+    ElementNotFound(&'static str),
 }

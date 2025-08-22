@@ -210,7 +210,7 @@ impl FeeResult {
 
     /// Convenience method to get total fee
     pub fn total_base_fee(&self) -> Credits {
-        self.storage_fee + self.processing_fee
+        self.storage_fee.saturating_add(self.processing_fee)
     }
 
     /// Convenience method to get required removed balance
@@ -227,12 +227,7 @@ impl FeeResult {
             Ordering::Less => {
                 // If we refund more than require to pay we should nil the required
                 let required_removed_balance =
-                    if storage_credits_returned >= base_required_removed_balance {
-                        0
-                    } else {
-                        // otherwise we should require the difference between them
-                        base_required_removed_balance - storage_credits_returned
-                    };
+                    base_required_removed_balance.saturating_sub(storage_credits_returned);
 
                 let desired_removed_balance =
                     base_desired_removed_balance - storage_credits_returned;

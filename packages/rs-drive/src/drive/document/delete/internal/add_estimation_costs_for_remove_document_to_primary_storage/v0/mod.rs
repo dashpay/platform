@@ -1,8 +1,8 @@
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllItems;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -67,7 +67,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(primary_key_path),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_SIZE_U8,

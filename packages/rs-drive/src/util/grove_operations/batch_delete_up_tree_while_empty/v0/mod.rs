@@ -13,6 +13,7 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn batch_delete_up_tree_while_empty_v0(
         &self,
         path: KeyInfoPath,

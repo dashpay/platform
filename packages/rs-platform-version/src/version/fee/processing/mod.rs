@@ -9,6 +9,7 @@ pub struct FeeProcessingVersion {
     pub fetch_identity_revision_processing_cost: u64,
     pub fetch_identity_balance_and_revision_processing_cost: u64,
     pub fetch_identity_cost_per_look_up_key_by_id: u64,
+    pub fetch_identity_token_balance_processing_cost: u64,
     pub fetch_prefunded_specialized_balance_processing_cost: u64,
     pub fetch_single_identity_key_processing_cost: u64,
     pub validate_key_structure: u64,
@@ -39,6 +40,9 @@ impl From<FeeProcessingVersionFieldsBeforeVersion1Point4> for FeeProcessingVersi
                 .fetch_identity_balance_and_revision_processing_cost,
             fetch_identity_cost_per_look_up_key_by_id: old
                 .fetch_identity_cost_per_look_up_key_by_id,
+            fetch_identity_token_balance_processing_cost: FEE_VERSION1
+                .processing
+                .fetch_identity_token_balance_processing_cost,
             fetch_prefunded_specialized_balance_processing_cost: old
                 .fetch_prefunded_specialized_balance_processing_cost,
             fetch_single_identity_key_processing_cost: old

@@ -20,7 +20,9 @@ pub fn start(
     config: PlatformConfig,
     cancel: CancellationToken,
 ) {
-    let query_service = QueryService::new(Arc::clone(&platform));
+    let query_service = Arc::new(QueryService::new(Arc::clone(&platform)));
+
+    let drive_internal = Arc::clone(&query_service);
 
     let check_tx_core_rpc = DefaultCoreRPC::open(
         &config.core.check_tx_rpc.url(),
@@ -33,7 +35,14 @@ pub fn start(
         CheckTxAbciApplication::new(Arc::clone(&platform), Arc::new(check_tx_core_rpc));
 
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
-        .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_service))
+        .add_service(
+            dapi_grpc::drive::v0::drive_internal_server::DriveInternalServer::from_arc(
+                drive_internal,
+            ),
+        )
+        .add_service(
+            dapi_grpc::platform::v0::platform_server::PlatformServer::from_arc(query_service),
+        )
         .add_service(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
                 check_tx_service,
