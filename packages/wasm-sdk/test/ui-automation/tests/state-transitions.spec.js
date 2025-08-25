@@ -36,6 +36,18 @@ function validateBasicStateTransitionResult(result) {
 }
 
 /**
+ * Filter out placeholder options from dropdown arrays
+ * @param {string[]} options - Array of dropdown options
+ * @returns {string[]} - Filtered array without placeholders
+ */
+function filterPlaceholderOptions(options) {
+  return options.filter(option => 
+    !option.toLowerCase().includes('select') && 
+    option.trim() !== ''
+  );
+}
+
+/**
  * Parse and validate JSON response structure
  * @param {string} resultStr - The raw result string
  * @returns {Object} - The parsed contract data
@@ -359,7 +371,7 @@ test.describe('WASM SDK State Transition Tests', () => {
     });
   });
 
-  test.describe.skip('UI State and Navigation', () => {
+  test.describe('UI State and Navigation', () => {
     test('should switch to state transitions operation type correctly', async () => {
       // Start with queries, then switch to transitions
       await wasmSdkPage.setOperationType('queries');
@@ -377,11 +389,24 @@ test.describe('WASM SDK State Transition Tests', () => {
     test('should populate transition categories correctly', async () => {
       await wasmSdkPage.setOperationType('transitions');
       
-      // Get available categories
-      const categories = await wasmSdkPage.getAvailableQueryCategories();
+      // Get available categories and filter out placeholders
+      const allCategories = await wasmSdkPage.getAvailableQueryCategories();
+      const categories = filterPlaceholderOptions(allCategories);
       
-      // Should contain identity transitions
-      expect(categories).toContain('Identity Transitions');
+      // Define expected state transition categories
+      const expectedCategories = [
+        'Identity Transitions',
+        'Data Contract Transitions', 
+        'Document Transitions',
+        'Token Transitions',
+        'Voting Transitions'
+      ];
+      
+      // Verify exact match - contains all expected and no unexpected ones
+      expect(categories).toHaveLength(expectedCategories.length);
+      expectedCategories.forEach(expectedCategory => {
+        expect(categories).toContain(expectedCategory);
+      });
       
       console.log('✅ State transition categories populated correctly:', categories);
     });
@@ -390,14 +415,131 @@ test.describe('WASM SDK State Transition Tests', () => {
       await wasmSdkPage.setOperationType('transitions');
       await wasmSdkPage.setQueryCategory('identity');
       
-      // Get available transition types
-      const transitionTypes = await wasmSdkPage.getAvailableQueryTypes();
+      // Get available transition types and filter out placeholders
+      const allTransitionTypes = await wasmSdkPage.getAvailableQueryTypes();
+      const transitionTypes = filterPlaceholderOptions(allTransitionTypes);
       
-      // Should contain identity create and top-up
-      expect(transitionTypes).toContain('Identity Create');
-      expect(transitionTypes).toContain('Identity Top Up');
+      // Define expected identity transition types
+      const expectedTransitionTypes = [
+        'Identity Create',
+        'Identity Top Up', 
+        'Identity Update',
+        'Identity Credit Transfer',
+        'Identity Credit Withdrawal'
+      ];
+      
+      // Verify exact match - contains all expected and no unexpected ones
+      expect(transitionTypes).toHaveLength(expectedTransitionTypes.length);
+      expectedTransitionTypes.forEach(expectedType => {
+        expect(transitionTypes).toContain(expectedType);
+      });
       
       console.log('✅ Identity transition types populated correctly:', transitionTypes);
+    });
+
+    test('should populate data contract transition types correctly', async () => {
+      await wasmSdkPage.setOperationType('transitions');
+      await wasmSdkPage.setQueryCategory('dataContract');
+      
+      // Get available transition types and filter out placeholders
+      const allTransitionTypes = await wasmSdkPage.getAvailableQueryTypes();
+      const transitionTypes = filterPlaceholderOptions(allTransitionTypes);
+      
+      // Define expected data contract transition types
+      const expectedTransitionTypes = [
+        'Data Contract Create',
+        'Data Contract Update'
+      ];
+      
+      // Verify exact match - contains all expected and no unexpected ones
+      expect(transitionTypes).toHaveLength(expectedTransitionTypes.length);
+      expectedTransitionTypes.forEach(expectedType => {
+        expect(transitionTypes).toContain(expectedType);
+      });
+      
+      console.log('✅ Data contract transition types populated correctly:', transitionTypes);
+    });
+
+    test('should populate document transition types correctly', async () => {
+      await wasmSdkPage.setOperationType('transitions');
+      await wasmSdkPage.setQueryCategory('document');
+      
+      // Get available transition types and filter out placeholders
+      const allTransitionTypes = await wasmSdkPage.getAvailableQueryTypes();
+      const transitionTypes = filterPlaceholderOptions(allTransitionTypes);
+      
+      // Define expected document transition types
+      const expectedTransitionTypes = [
+        'Document Create',
+        'Document Replace',
+        'Document Delete',
+        'Document Transfer',
+        'Document Purchase',
+        'Document Set Price',
+        'DPNS Register Name'
+      ];
+      
+      // Verify exact match - contains all expected and no unexpected ones
+      expect(transitionTypes).toHaveLength(expectedTransitionTypes.length);
+      expectedTransitionTypes.forEach(expectedType => {
+        expect(transitionTypes).toContain(expectedType);
+      });
+      
+      console.log('✅ Document transition types populated correctly:', transitionTypes);
+    });
+
+    test('should populate token transition types correctly', async () => {
+      await wasmSdkPage.setOperationType('transitions');
+      await wasmSdkPage.setQueryCategory('token');
+      
+      // Get available transition types and filter out placeholders
+      const allTransitionTypes = await wasmSdkPage.getAvailableQueryTypes();
+      const transitionTypes = filterPlaceholderOptions(allTransitionTypes);
+      
+      // Define expected token transition types (based on docs.html)
+      const expectedTransitionTypes = [
+        'Token Burn',
+        'Token Mint',
+        'Token Claim',
+        'Token Set Price',
+        'Token Direct Purchase', 
+        'Token Config Update',
+        'Token Transfer',
+        'Token Freeze',
+        'Token Unfreeze',
+        'Token Destroy Frozen'
+      ];
+      
+      // Verify exact match - contains all expected and no unexpected ones
+      expect(transitionTypes).toHaveLength(expectedTransitionTypes.length);
+      expectedTransitionTypes.forEach(expectedType => {
+        expect(transitionTypes).toContain(expectedType);
+      });
+      
+      console.log('✅ Token transition types populated correctly:', transitionTypes);
+    });
+
+    test('should populate voting transition types correctly', async () => {
+      await wasmSdkPage.setOperationType('transitions');
+      await wasmSdkPage.setQueryCategory('voting');
+      
+      // Get available transition types and filter out placeholders
+      const allTransitionTypes = await wasmSdkPage.getAvailableQueryTypes();
+      const transitionTypes = filterPlaceholderOptions(allTransitionTypes);
+      
+      // Define expected voting transition types
+      const expectedTransitionTypes = [
+        'DPNS Username',
+        'Contested Resource'
+      ];
+      
+      // Verify exact match - contains all expected and no unexpected ones
+      expect(transitionTypes).toHaveLength(expectedTransitionTypes.length);
+      expectedTransitionTypes.forEach(expectedType => {
+        expect(transitionTypes).toContain(expectedType);
+      });
+      
+      console.log('✅ Voting transition types populated correctly:', transitionTypes);
     });
   });
 
