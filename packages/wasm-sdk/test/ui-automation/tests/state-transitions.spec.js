@@ -36,44 +36,47 @@ function validateBasicStateTransitionResult(result) {
 }
 
 /**
- * Helper function to validate data contract creation result
- * @param {string} resultStr - The raw result string from data contract creation
+ * Parse and validate JSON response structure
+ * @param {string} resultStr - The raw result string
+ * @returns {Object} - The parsed contract data
  */
-function validateDataContractCreateResult(resultStr) {
+function parseContractResponse(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const contractData = JSON.parse(resultStr);
   expect(contractData).toBeDefined();
   expect(contractData).toBeInstanceOf(Object);
-  
-  // Validate the expected response structure
-  expect(contractData.status).toBe('success');
-  expect(contractData.contractId).toBeDefined();
-  expect(contractData.ownerId).toBeDefined();
-  expect(contractData.version).toBeDefined();
-  expect(contractData.documentTypes).toBeDefined();
-  expect(Array.isArray(contractData.documentTypes)).toBe(true);
-  expect(contractData.message).toBeDefined();
-  expect(contractData.message).toContain('successfully');
-}
-
-/**
- * Helper function to validate data contract update result
- * @param {string} resultStr - The raw result string from data contract update
- */
-function validateDataContractUpdateResult(resultStr) {
-  expect(() => JSON.parse(resultStr)).not.toThrow();
-  const contractData = JSON.parse(resultStr);
-  expect(contractData).toBeDefined();
-  expect(contractData).toBeInstanceOf(Object);
-  
-  // Validate the expected response structure for updates
   expect(contractData.status).toBe('success');
   expect(contractData.contractId).toBeDefined();
   expect(contractData.version).toBeDefined();
   expect(typeof contractData.version).toBe('number');
-  expect(contractData.version).toBeGreaterThan(1); // Updates should increment version
   expect(contractData.message).toBeDefined();
-  expect(contractData.message).toContain('updated successfully');
+  return contractData;
+}
+
+/**
+ * Helper function to validate data contract result (both create and update)
+ * @param {string} resultStr - The raw result string from data contract operation
+ * @param {boolean} isUpdate - Whether this is an update operation (default: false for create)
+ * @returns {Object} - The parsed contract data for further use
+ */
+function validateDataContractResult(resultStr, isUpdate = false) {
+  const contractData = parseContractResponse(resultStr);
+  
+  // Conditional validations based on operation type
+  if (isUpdate) {
+    // Update: only has version and message specifics
+    expect(contractData.version).toBeGreaterThan(1); // Updates should increment version
+    expect(contractData.message).toContain('updated successfully');
+  } else {
+    // Create: has additional fields that updates don't have
+    expect(contractData.ownerId).toBeDefined();
+    expect(contractData.documentTypes).toBeDefined();
+    expect(Array.isArray(contractData.documentTypes)).toBe(true);
+    expect(contractData.version).toBe(1); // Creates start at version 1
+    expect(contractData.message).toContain('created successfully');
+  }
+  
+  return contractData;
 }
 
 /**
@@ -96,6 +99,27 @@ function validateDocumentCreateResult(resultStr) {
   expect(hasDocumentField).toBe(true);
 }
 
+/**
+ * Execute a state transition with custom parameters
+ * @param {WasmSdkPage} wasmSdkPage - The page object instance
+ * @param {ParameterInjector} parameterInjector - The parameter injector instance
+ * @param {string} category - State transition category
+ * @param {string} transitionType - Transition type
+ * @param {string} network - Network to use
+ * @param {Object} customParams - Custom parameters to override test data
+ * @returns {Promise<Object>} - The transition result object
+ */
+async function executeStateTransitionWithCustomParams(wasmSdkPage, parameterInjector, category, transitionType, network = 'testnet', customParams = {}) {
+  await wasmSdkPage.setupStateTransition(category, transitionType);
+  
+  const success = await parameterInjector.injectStateTransitionParameters(category, transitionType, network, customParams);
+  expect(success).toBe(true);
+  
+  const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+  
+  return result;
+}
+
 test.describe('WASM SDK State Transition Tests', () => {
   let wasmSdkPage;
   let parameterInjector;
@@ -107,7 +131,7 @@ test.describe('WASM SDK State Transition Tests', () => {
   });
 
   test.describe('Data Contract State Transitions', () => {
-    test('should execute data contract create transition', async () => {
+    test.skip('should execute data contract create transition', async () => {
       // Execute the data contract create transition
       const result = await executeStateTransition(
         wasmSdkPage, 
@@ -121,12 +145,12 @@ test.describe('WASM SDK State Transition Tests', () => {
       validateBasicStateTransitionResult(result);
       
       // Validate data contract creation specific result
-      validateDataContractCreateResult(result.result);
+      validateDataContractResult(result.result, false);
       
       console.log('✅ Data contract create state transition completed successfully');
     });
 
-    test('should execute data contract update transition', async () => {
+    test.skip('should execute data contract update transition', async () => {
       // Execute the data contract update transition
       const result = await executeStateTransition(
         wasmSdkPage, 
@@ -140,9 +164,55 @@ test.describe('WASM SDK State Transition Tests', () => {
       validateBasicStateTransitionResult(result);
       
       // Validate data contract update specific result
-      validateDataContractUpdateResult(result.result);
+      validateDataContractResult(result.result, true);
       
       console.log('✅ Data contract update state transition completed successfully');
+    });
+
+    test('should create data contract and then update it with author field', async () => {
+      // Set extended timeout for combined create+update operation
+      test.setTimeout(180000);
+      
+      let contractId;
+      
+      // Step 1: Create contract (reported separately)
+      await test.step('Create data contract', async () => {
+        console.log('Creating new data contract...');
+        const createResult = await executeStateTransition(
+          wasmSdkPage, 
+          parameterInjector, 
+          'dataContract', 
+          'dataContractCreate',
+          'testnet'
+        );
+        
+        // Validate create result
+        validateBasicStateTransitionResult(createResult);
+        validateDataContractResult(createResult.result, false);
+        
+        // Get the contract ID from create result
+        contractId = JSON.parse(createResult.result).contractId;
+        console.log('✅ Data contract created with ID:', contractId);
+      });
+      
+      // Step 2: Update contract (reported separately) 
+      await test.step('Update data contract with author field', async () => {
+        console.log('🔄 Updating data contract to add author field...');
+        const updateResult = await executeStateTransitionWithCustomParams(
+          wasmSdkPage, 
+          parameterInjector, 
+          'dataContract', 
+          'dataContractUpdate',
+          'testnet',
+          { dataContractId: contractId } // Override with dynamic contract ID
+        );
+        
+        // Validate update result
+        validateBasicStateTransitionResult(updateResult);
+        validateDataContractResult(updateResult.result, true);
+        
+        console.log('✅ Data contract updated successfully with author field');
+      });
     });
 
     test('should show authentication inputs for data contract transitions', async () => {

@@ -35,16 +35,21 @@ class ParameterInjector {
   /**
    * Inject parameters for a specific state transition based on test data
    */
-  async injectStateTransitionParameters(category, transitionType, network = 'testnet', parameterSetIndex = 0) {
+  async injectStateTransitionParameters(category, transitionType, network = 'testnet', customParams = {}) {
     try {
+      // Get base parameters from test data
       const allParameters = getAllStateTransitionParameters(category, transitionType, network);
       
       if (allParameters.length === 0) {
         console.warn(`⚠️  No state transition test parameters found for ${category}.${transitionType} on ${network}`);
         return false;
       }
-
-      const parameters = allParameters[parameterSetIndex] || allParameters[0];
+      
+      const baseParameters = allParameters[0];
+      
+      // Merge base parameters with custom overrides
+      const parameters = { ...baseParameters, ...customParams };
+      
       console.log(`📝 Injecting state transition parameters for ${category}.${transitionType}:`, parameters);
 
       await this.page.fillStateTransitionParameters(parameters);
