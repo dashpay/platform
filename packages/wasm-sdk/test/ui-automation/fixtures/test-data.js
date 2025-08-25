@@ -574,5 +574,7 @@ function getAllTestParameters(category, queryType, network = 'testnet') {
 module.exports = {
   testData,
   getTestParameters,
-  getAllTestParameters
+  getAllTestParameters,
+  getStateTransitionParameters,
+  getAllStateTransitionParameters
 };

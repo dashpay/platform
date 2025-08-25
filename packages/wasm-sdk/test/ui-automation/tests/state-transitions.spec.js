@@ -307,7 +307,7 @@ test.describe('WASM SDK State Transition Tests', () => {
     });
   });
 
-  test.describe.skip('Error Handling for State Transitions', () => {
+  test.describe('Error Handling for State Transitions', () => {
     test('should handle invalid JSON schema gracefully', async () => {
       await wasmSdkPage.setupStateTransition('dataContract', 'dataContractCreate');
       
@@ -347,13 +347,14 @@ test.describe('WASM SDK State Transition Tests', () => {
     });
 
     test('should handle invalid private key gracefully', async () => {
-      await wasmSdkPage.setupStateTransition('document', 'documentCreate');
+      await wasmSdkPage.setupStateTransition('dataContract', 'dataContractCreate');
       
       // Fill with invalid private key
       const invalidParams = {
-        contractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-        documentType: "domain",
-        documentData: '{"normalizedLabel":"testdomain","normalizedParentDomainName":"dash","label":"testdomain","parentDomainName":"dash"}',
+        canBeDeleted: false,
+        readonly: false,
+        keepsHistory: false,
+        documentSchemas: '{"note": {"type": "object", "properties": {"message": {"type": "string", "position": 0}}, "additionalProperties": false}}',
         identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
         privateKey: "invalid_private_key_here"
       };
@@ -543,25 +544,4 @@ test.describe('WASM SDK State Transition Tests', () => {
     });
   });
 
-  test.describe.skip('Network Switching for State Transitions', () => {
-    test('should execute state transitions on testnet', async () => {
-      // Ensure we're on testnet
-      await wasmSdkPage.setNetwork('testnet');
-      
-      const result = await executeStateTransition(
-        wasmSdkPage, 
-        parameterInjector, 
-        'dataContract', 
-        'dataContractCreate',
-        'testnet'
-      );
-      
-      // Verify transition executed successfully on testnet
-      expect(result.success).toBe(true);
-      expect(result.result).toBeDefined();
-      expect(result.hasError).toBe(false);
-      
-      console.log('✅ Data contract state transition executed successfully on testnet');
-    });
-  });
 });
