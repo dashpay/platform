@@ -557,6 +557,44 @@ const testData = {
             description: "Delete existing note document"
           }
         ]
+      },
+      documentTransfer: {
+        testnet: [
+          {
+            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
+            documentType: "note",
+            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
+            newOwnerId: "PLACEHOLDER_NEW_OWNER_ID", // Will be set to recipient identity
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC", // Current owner
+            description: "Transfer document ownership to another identity"
+          }
+        ]
+      },
+      documentPurchase: {
+        testnet: [
+          {
+            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
+            documentType: "note",
+            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
+            purchaseAmount: "1000000", // Amount in credits
+            identityId: "PLACEHOLDER_BUYER_ID", // Buyer identity
+            privateKey: "PLACEHOLDER_BUYER_KEY", // DON'T STORE - Buyer's key
+            description: "Purchase a priced document"
+          }
+        ]
+      },
+      documentSetPrice: {
+        testnet: [
+          {
+            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
+            documentType: "note",
+            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
+            price: "1000000", // Price in credits
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: "XHJz26s6jGmofxDUHfX2kfiEVTRxzaR5LQ8NJnnidpbPeSsyoczk", // DON'T STORE
+            description: "Set price for a document"
+          }
+        ]
       }
     },
   },

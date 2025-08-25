@@ -361,6 +361,72 @@ test.describe('WASM SDK State Transition Tests', () => {
       console.log('✅ Document replace state transition completed successfully');
     });
 
+    test.skip('should execute document transfer transition', async () => {
+      // TODO: Implementation needed
+      // This test should:
+      // 1. Create a document with identity A
+      // 2. Transfer ownership to identity B  
+      // 3. Validate new owner is identity B
+      // Note: Requires two funded identities with proper keys
+      
+      const result = await executeStateTransition(
+        wasmSdkPage, 
+        parameterInjector, 
+        'document', 
+        'documentTransfer',
+        'testnet'
+      );
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      console.log('✅ Document transfer state transition completed successfully');
+    });
+
+    test.skip('should execute document set price transition', async () => {
+      // TODO: Implementation needed
+      // This test should:
+      // 1. Create a document
+      // 2. Set a price for the document  
+      // 3. Validate price was set correctly
+      // Note: May require specific contract with pricing features enabled
+      
+      const result = await executeStateTransition(
+        wasmSdkPage, 
+        parameterInjector, 
+        'document', 
+        'documentSetPrice',
+        'testnet'
+      );
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      console.log('✅ Document set price state transition completed successfully');
+    });
+
+    test.skip('should execute document purchase transition', async () => {
+      // TODO: Implementation needed  
+      // This test should:
+      // 1. Create a document with identity A and set a price
+      // 2. Purchase the document with identity B
+      // 3. Validate purchase was successful and payment transferred
+      // Note: Requires two funded identities and priced document
+      
+      const result = await executeStateTransition(
+        wasmSdkPage, 
+        parameterInjector, 
+        'document', 
+        'documentPurchase',
+        'testnet'
+      );
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      console.log('✅ Document purchase state transition completed successfully');
+    });
+
     test('should create, replace, and delete a document', async () => {
       // Set extended timeout for combined create+replace+delete operation
       test.setTimeout(260000);
