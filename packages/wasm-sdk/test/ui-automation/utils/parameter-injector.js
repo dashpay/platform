@@ -1,4 +1,4 @@
-const { getTestParameters, getAllTestParameters, getStateTransitionParameters, getAllStateTransitionParameters } = require('../fixtures/test-data');
+const { testData, getTestParameters, getAllTestParameters, getStateTransitionParameters, getAllStateTransitionParameters } = require('../fixtures/test-data');
 
 /**
  * Parameter injection system for WASM SDK UI tests
@@ -7,6 +7,7 @@ const { getTestParameters, getAllTestParameters, getStateTransitionParameters, g
 class ParameterInjector {
   constructor(wasmSdkPage) {
     this.page = wasmSdkPage;
+    this.testData = testData;
   }
 
   /**

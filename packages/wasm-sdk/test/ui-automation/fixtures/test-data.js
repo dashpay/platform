@@ -519,6 +519,21 @@ const testData = {
         ]
       }
     },
+    document: {
+      documentCreate: {
+        testnet: [
+          {
+            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract (will be created by dataContractCreate test)
+            documentType: "note",
+            documentFields: {
+              message: "Document created for WASM-SDK UI testing"
+            },
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            description: "Create test note document with simple schema"
+          }
+        ]
+      },
+    },
   },
 
   // Common where clauses for document queries

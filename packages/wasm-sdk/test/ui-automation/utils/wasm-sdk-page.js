@@ -580,6 +580,9 @@ class WasmSdkPage extends BaseTest {
       } else if (key === 'keySelectionMode') {
         // Skip keySelectionMode for now - only needed for identity create
         console.log('Skipping keySelectionMode field (identity create only)');
+      } else if (key === 'documentFields') {
+        // Handle document fields - these need to be filled after schema fetch
+        console.log('Document fields will be handled after schema fetch');
       } else if (key === 'description') {
         // Skip description field - it's just for documentation
         console.log('Skipping description field (documentation only)');
@@ -668,6 +671,56 @@ class WasmSdkPage extends BaseTest {
     const assetLockVisible = await assetLockProofGroup.isVisible();
     
     return authVisible && assetLockVisible;
+  }
+
+  /**
+   * Fetch document schema and generate dynamic fields for document transitions
+   */
+  async fetchDocumentSchema() {
+    console.log('Attempting to fetch document schema...');
+    
+    // First check if the function exists and call it directly
+    try {
+      await this.page.evaluate(() => {
+        if (typeof window.fetchDocumentSchema === 'function') {
+          return window.fetchDocumentSchema();
+        } else {
+          throw new Error('fetchDocumentSchema function not found');
+        }
+      });
+      console.log('Called fetchDocumentSchema function directly');
+    } catch (error) {
+      console.error('Error calling fetchDocumentSchema:', error);
+      throw error;
+    }
+    
+    // Wait for schema to load and fields to be generated
+    await this.page.waitForTimeout(3000);
+    
+    // Check if dynamic fields container is visible
+    const dynamicFieldsContainer = this.page.locator('#dynamic_documentFields');
+    await dynamicFieldsContainer.waitFor({ state: 'visible', timeout: 15000 });
+    
+    console.log('Document schema fetched and fields generated');
+  }
+
+  /**
+   * Fill a specific document field by name
+   */
+  async fillDocumentField(fieldName, value) {
+    const fieldInput = this.page.locator(`#dynamic_documentFields input[data-field-name="${fieldName}"], #dynamic_documentFields textarea[data-field-name="${fieldName}"]`);
+    await fieldInput.fill(value.toString());
+    console.log(`Document field '${fieldName}' filled with value: ${value}`);
+  }
+
+  /**
+   * Fill multiple document fields
+   */
+  async fillDocumentFields(fields) {
+    for (const [fieldName, value] of Object.entries(fields)) {
+      await this.fillDocumentField(fieldName, value);
+    }
+    console.log('All document fields filled');
   }
 
   /**

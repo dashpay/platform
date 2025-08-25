@@ -97,18 +97,27 @@ function validateDataContractResult(resultStr, isUpdate = false) {
  */
 function validateDocumentCreateResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
-  const documentData = JSON.parse(resultStr);
-  expect(documentData).toBeDefined();
-  expect(documentData).toBeInstanceOf(Object);
+  const documentResponse = JSON.parse(resultStr);
+  expect(documentResponse).toBeDefined();
+  expect(documentResponse).toBeInstanceOf(Object);
   
-  // Should contain document or transaction data
-  const hasDocumentField = 'document' in documentData || 
-                          'documentId' in documentData || 
-                          'id' in documentData ||
-                          'transitionHash' in documentData ||
-                          'stateTransitionHash' in documentData;
+  // Validate the response structure for document creation
+  expect(documentResponse.type).toBe('DocumentCreated');
+  expect(documentResponse.documentId).toBeDefined();
+  expect(typeof documentResponse.documentId).toBe('string');
+  expect(documentResponse.documentId.length).toBeGreaterThan(0);
   
-  expect(hasDocumentField).toBe(true);
+  // Validate the document object
+  expect(documentResponse.document).toBeDefined();
+  expect(documentResponse.document.id).toBe(documentResponse.documentId);
+  expect(documentResponse.document.ownerId).toBeDefined();
+  expect(documentResponse.document.dataContractId).toBeDefined();
+  expect(documentResponse.document.documentType).toBeDefined();
+  expect(documentResponse.document.revision).toBe(1); // New documents start at revision 1
+  expect(documentResponse.document.data).toBeDefined();
+  expect(typeof documentResponse.document.data).toBe('object');
+  
+  return documentResponse;
 }
 
 /**
@@ -238,24 +247,41 @@ test.describe('WASM SDK State Transition Tests', () => {
     });
   });
 
-  test.describe.skip('Document State Transitions', () => {
+  test.describe('Document State Transitions', () => {
     test('should execute document create transition', async () => {
-      // Execute the document create transition
-      const result = await executeStateTransition(
-        wasmSdkPage, 
-        parameterInjector, 
-        'document', 
-        'documentCreate',
-        'testnet'
-      );
+      // Set up the document create transition manually due to special schema handling
+      await wasmSdkPage.setupStateTransition('document', 'documentCreate');
       
-      // Validate basic result structure
-      validateBasicStateTransitionResult(result);
+      // Inject basic parameters (contractId, documentType, identityId, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('document', 'documentCreate', 'testnet');
+      expect(success).toBe(true);
       
-      // Validate document creation specific result
-      validateDocumentCreateResult(result.result);
+      // Step 1: Fetch document schema to generate dynamic fields
+      await test.step('Fetch document schema', async () => {
+        await wasmSdkPage.fetchDocumentSchema();
+        console.log('✅ Document schema fetched and fields generated');
+      });
       
-      console.log('✅ Document create state transition completed successfully');
+      // Step 2: Fill document fields
+      await test.step('Fill document fields', async () => {
+        // Get document fields from test data
+        const testParams = parameterInjector.testData.stateTransitionParameters.document.documentCreate.testnet[0];
+        await wasmSdkPage.fillDocumentFields(testParams.documentFields);
+        console.log('✅ Document fields filled');
+      });
+      
+      // Step 3: Execute the transition
+      await test.step('Execute document create', async () => {
+        const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+        
+        // Validate basic result structure
+        validateBasicStateTransitionResult(result);
+        
+        // Validate document creation specific result
+        validateDocumentCreateResult(result.result);
+        
+        console.log('✅ Document create state transition completed successfully');
+      });
     });
 
     test('should execute document replace transition', async () => {
