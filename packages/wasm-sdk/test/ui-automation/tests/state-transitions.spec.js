@@ -342,21 +342,37 @@ test.describe('WASM SDK State Transition Tests', () => {
       });
     });
 
-    test.skip('should execute document replace transition', async () => {
-      // Execute the document replace transition
-      const result = await executeStateTransition(
-        wasmSdkPage, 
-        parameterInjector, 
-        'document', 
-        'documentReplace',
-        'testnet'
-      );
+    test('should execute document replace transition', async () => {
+      // Set up the document replace transition
+      await wasmSdkPage.setupStateTransition('document', 'documentReplace');
+      
+      // Inject basic parameters (contractId, documentType, documentId, identityId, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('document', 'documentReplace', 'testnet');
+      expect(success).toBe(true);
+      
+      // Load the existing document to get revision and populate fields
+      await wasmSdkPage.loadExistingDocument();
+      
+      // Create updated message with timestamp
+      const testParams = parameterInjector.testData.stateTransitionParameters.document.documentReplace.testnet[0];
+      const baseMessage = testParams.documentFields.message;
+      const timestamp = new Date().toISOString();
+      const updatedFields = {
+        message: `${baseMessage} - Updated at ${timestamp}`
+      };
+      
+      // Fill updated document fields
+      await wasmSdkPage.fillDocumentFields(updatedFields);
+      
+      // Execute the replace transition
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
       
       // Validate basic result structure
       validateBasicStateTransitionResult(result);
       
-      // Validate document replace specific result
-      validateDocumentCreateResult(result.result); // Same validation for replace
+      // Validate document replace specific result with expected document ID
+      const expectedDocumentId = testParams.documentId;
+      validateDocumentReplaceResult(result.result, expectedDocumentId);
       
       console.log('✅ Document replace state transition completed successfully');
     });

@@ -538,7 +538,7 @@ const testData = {
           {
             contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
             documentType: "note",
-            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
+            documentId: "Dy19ZeYPpqbEDcpsPcLwkviY5GZqT7yJL2EY4YfxTYjn", // Persistent testnet document
             documentFields: {
               message: "Updated document message for automation testing"
             },
