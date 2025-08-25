@@ -724,6 +724,33 @@ class WasmSdkPage extends BaseTest {
   }
 
   /**
+   * Load existing document for replacement (gets revision and populates fields)
+   */
+  async loadExistingDocument() {
+    console.log('Loading existing document for replacement...');
+    
+    // Call the loadExistingDocument function directly via page.evaluate
+    try {
+      await this.page.evaluate(() => {
+        if (typeof window.loadExistingDocument === 'function') {
+          return window.loadExistingDocument();
+        } else {
+          throw new Error('loadExistingDocument function not found');
+        }
+      });
+      console.log('Existing document loaded successfully');
+    } catch (error) {
+      console.error('Error loading existing document:', error);
+      throw error;
+    }
+    
+    // Wait for the document to be loaded and fields to be populated
+    await this.page.waitForTimeout(3000);
+    
+    console.log('Document loaded and fields populated');
+  }
+
+  /**
    * Fill complete state transition authentication (asset lock proof + private key)
    */
   async fillStateTransitionAuthentication(assetLockProof, privateKey, identityId = null) {

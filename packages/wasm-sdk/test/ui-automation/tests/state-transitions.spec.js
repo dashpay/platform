@@ -121,6 +121,64 @@ function validateDocumentCreateResult(resultStr) {
 }
 
 /**
+ * Helper function to validate document replace result
+ * @param {string} resultStr - The raw result string from document replacement
+ * @param {string} expectedDocumentId - Expected document ID to validate against
+ * @param {number} expectedMinRevision - Minimum expected revision (should be > 1)
+ */
+function validateDocumentReplaceResult(resultStr, expectedDocumentId, expectedMinRevision = 2) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const replaceResponse = JSON.parse(resultStr);
+  expect(replaceResponse).toBeDefined();
+  expect(replaceResponse).toBeInstanceOf(Object);
+  
+  // Validate the response structure for document replacement
+  expect(replaceResponse.type).toBe('DocumentReplaced');
+  expect(replaceResponse.documentId).toBe(expectedDocumentId);
+  expect(replaceResponse.document).toBeDefined();
+  
+  // Validate the document object matches the expected structure
+  expect(replaceResponse.document.id).toBe(expectedDocumentId);
+  expect(replaceResponse.document.ownerId).toBeDefined();
+  expect(replaceResponse.document.dataContractId).toBeDefined();
+  expect(replaceResponse.document.documentType).toBeDefined();
+  expect(replaceResponse.document.revision).toBeGreaterThanOrEqual(expectedMinRevision);
+  expect(replaceResponse.document.data).toBeDefined();
+  expect(typeof replaceResponse.document.data).toBe('object');
+  
+  console.log(`✅ Confirmed replacement of document: ${expectedDocumentId} (revision: ${replaceResponse.document.revision})`);
+  
+  return replaceResponse;
+}
+
+/**
+ * Helper function to validate document deletion result
+ * @param {string} resultStr - The raw result string from document deletion
+ * @param {string} expectedDocumentId - Optional expected document ID to validate against
+ */
+function validateDocumentDeleteResult(resultStr, expectedDocumentId = null) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const deleteResponse = JSON.parse(resultStr);
+  expect(deleteResponse).toBeDefined();
+  expect(deleteResponse).toBeInstanceOf(Object);
+  
+  // Validate the response structure for document deletion
+  expect(deleteResponse.type).toBe('DocumentDeleted');
+  expect(deleteResponse.documentId).toBeDefined();
+  expect(typeof deleteResponse.documentId).toBe('string');
+  expect(deleteResponse.documentId.length).toBeGreaterThan(0);
+  expect(deleteResponse.deleted).toBe(true);
+  
+  // If expectedDocumentId is provided, verify it matches the response
+  if (expectedDocumentId) {
+    expect(deleteResponse.documentId).toBe(expectedDocumentId);
+    console.log(`Confirmed deletion of correct document: ${expectedDocumentId}`);
+  }
+  
+  return deleteResponse;
+}
+
+/**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
  * @param {ParameterInjector} parameterInjector - The parameter injector instance
@@ -284,7 +342,7 @@ test.describe('WASM SDK State Transition Tests', () => {
       });
     });
 
-    test('should execute document replace transition', async () => {
+    test.skip('should execute document replace transition', async () => {
       // Execute the document replace transition
       const result = await executeStateTransition(
         wasmSdkPage, 
@@ -303,23 +361,107 @@ test.describe('WASM SDK State Transition Tests', () => {
       console.log('✅ Document replace state transition completed successfully');
     });
 
-    test('should execute document delete transition', async () => {
-      // Execute the document delete transition
-      const result = await executeStateTransition(
-        wasmSdkPage, 
-        parameterInjector, 
-        'document', 
-        'documentDelete',
-        'testnet'
-      );
+    test('should create, replace, and delete a document', async () => {
+      // Set extended timeout for combined create+replace+delete operation
+      test.setTimeout(260000);
       
-      // Validate basic result structure
-      validateBasicStateTransitionResult(result);
+      let documentId;
       
-      // Document delete may have different response structure
-      expect(result.result).toBeDefined();
+      // Step 1: Create document (reported separately)
+      await test.step('Create document', async () => {
+        console.log('Creating new document...');
+        
+        // Set up the document create transition
+        await wasmSdkPage.setupStateTransition('document', 'documentCreate');
+        
+        // Inject basic parameters (contractId, documentType, identityId, privateKey)
+        const success = await parameterInjector.injectStateTransitionParameters('document', 'documentCreate', 'testnet');
+        expect(success).toBe(true);
+        
+        // Fetch document schema to generate dynamic fields
+        await wasmSdkPage.fetchDocumentSchema();
+        
+        // Fill document fields
+        const testParams = parameterInjector.testData.stateTransitionParameters.document.documentCreate.testnet[0];
+        await wasmSdkPage.fillDocumentFields(testParams.documentFields);
+        
+        // Execute the transition
+        const createResult = await wasmSdkPage.executeStateTransitionAndGetResult();
+        
+        // Validate create result
+        validateBasicStateTransitionResult(createResult);
+        const documentResponse = validateDocumentCreateResult(createResult.result);
+        
+        // Get the document ID from create result
+        documentId = documentResponse.documentId;
+        console.log('✅ Document created with ID:', documentId);
+      });
       
-      console.log('✅ Document delete state transition completed successfully');
+      // Step 2: Replace the document (reported separately)
+      await test.step('Replace document', async () => {
+        console.log('Replacing the created document...');
+        
+        // Set up document replace transition
+        await wasmSdkPage.setupStateTransition('document', 'documentReplace');
+        
+        // Inject parameters with the created document ID
+        const success = await parameterInjector.injectStateTransitionParameters(
+          'document', 
+          'documentReplace', 
+          'testnet',
+          { documentId } // Override with the created document ID
+        );
+        expect(success).toBe(true);
+        
+        // Load the existing document to get revision
+        await wasmSdkPage.loadExistingDocument();
+        
+        // Create updated message with timestamp
+        const originalTestParams = parameterInjector.testData.stateTransitionParameters.document.documentCreate.testnet[0];
+        const originalMessage = originalTestParams.documentFields.message;
+        const timestamp = new Date().toISOString();
+        const updatedFields = {
+          message: `${originalMessage} - Updated at ${timestamp}`
+        };
+        
+        // Fill updated document fields
+        await wasmSdkPage.fillDocumentFields(updatedFields);
+        
+        // Execute the replace transition
+        const replaceResult = await wasmSdkPage.executeStateTransitionAndGetResult();
+        
+        // Validate replace result
+        validateBasicStateTransitionResult(replaceResult);
+        validateDocumentReplaceResult(replaceResult.result, documentId);
+        
+        console.log('✅ Document replaced successfully');
+      });
+      
+      // Step 3: Delete the document (reported separately)
+      await test.step('Delete document', async () => {
+        console.log('Deleting the created document...');
+        
+        // Set up document delete transition with the created document ID
+        await wasmSdkPage.setupStateTransition('document', 'documentDelete');
+        
+        // Inject parameters with the dynamic document ID
+        const success = await parameterInjector.injectStateTransitionParameters(
+          'document', 
+          'documentDelete', 
+          'testnet',
+          { documentId } // Override with the created document ID
+        );
+        expect(success).toBe(true);
+        
+        // Execute the delete transition
+        const deleteResult = await wasmSdkPage.executeStateTransitionAndGetResult();
+        
+        // Validate delete result with expected document ID
+        validateBasicStateTransitionResult(deleteResult);
+        validateDocumentDeleteResult(deleteResult.result, documentId);
+        
+        console.log('✅ Document deleted successfully');
+      });
     });
 
     test('should show authentication inputs for document transitions', async () => {

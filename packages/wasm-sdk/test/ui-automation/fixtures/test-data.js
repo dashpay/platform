@@ -533,6 +533,31 @@ const testData = {
           }
         ]
       },
+      documentReplace: {
+        testnet: [
+          {
+            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
+            documentType: "note",
+            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
+            documentFields: {
+              message: "Updated document message for automation testing"
+            },
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            description: "Replace existing note document"
+          }
+        ]
+      },
+      documentDelete: {
+        testnet: [
+          {
+            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
+            documentType: "note",
+            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            description: "Delete existing note document"
+          }
+        ]
+      }
     },
   },
 
