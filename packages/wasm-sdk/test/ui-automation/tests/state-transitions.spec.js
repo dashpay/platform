@@ -179,6 +179,31 @@ function validateDocumentDeleteResult(resultStr, expectedDocumentId = null) {
 }
 
 /**
+ * Helper function to validate identity credit transfer result
+ * @param {string} resultStr - The raw result string from identity credit transfer
+ * @param {string} expectedSenderId - Expected sender identity ID
+ * @param {string} expectedRecipientId - Expected recipient identity ID
+ * @param {number} expectedAmount - Expected transfer amount
+ */
+function validateIdentityCreditTransferResult(resultStr, expectedSenderId, expectedRecipientId, expectedAmount) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const transferResponse = JSON.parse(resultStr);
+  expect(transferResponse).toBeDefined();
+  expect(transferResponse).toBeInstanceOf(Object);
+  
+  // Validate the response structure for identity credit transfer
+  expect(transferResponse.status).toBe('success');
+  expect(transferResponse.senderId).toBe(expectedSenderId);
+  expect(transferResponse.recipientId).toBe(expectedRecipientId);
+  expect(transferResponse.amount).toBe(expectedAmount);
+  expect(transferResponse.message).toBeDefined();
+  
+  console.log(`✅ Confirmed credit transfer: ${expectedAmount} credits from ${expectedSenderId} to ${expectedRecipientId}`);
+  
+  return transferResponse;
+}
+
+/**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
  * @param {ParameterInjector} parameterInjector - The parameter injector instance
@@ -554,6 +579,46 @@ test.describe('WASM SDK State Transition Tests', () => {
       expect(hasAuthInputs).toBe(true);
       
       console.log('✅ Document state transition authentication inputs are visible');
+    });
+  });
+
+  test.describe('Identity State Transitions', () => {
+    test('should execute identity credit transfer transition', async () => {
+      // Set up the identity credit transfer transition
+      await wasmSdkPage.setupStateTransition('identity', 'identityCreditTransfer');
+      
+      // Inject parameters (senderId, recipientId, amount, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('identity', 'identityCreditTransfer', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the transfer
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.identity.identityCreditTransfer.testnet[0];
+      
+      // Validate identity credit transfer specific result
+      validateIdentityCreditTransferResult(
+        result.result,
+        testParams.identityId, // Sender is the identityId field
+        testParams.recipientId,
+        testParams.amount
+      );
+      
+      console.log('✅ Identity credit transfer state transition completed successfully');
+    });
+
+    test('should show authentication inputs for identity transitions', async () => {
+      await wasmSdkPage.setupStateTransition('identity', 'identityCreditTransfer');
+      
+      // Check that authentication inputs are visible
+      const hasAuthInputs = await wasmSdkPage.hasAuthenticationInputs();
+      expect(hasAuthInputs).toBe(true);
+      
+      console.log('✅ Identity state transition authentication inputs are visible');
     });
   });
 

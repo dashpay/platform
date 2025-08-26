@@ -495,6 +495,16 @@ const testData = {
 
   // State transition test parameters organized by category
   stateTransitionParameters: {
+      identityCreditTransfer: {
+        testnet: [
+          {
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            recipientId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG",
+            amount: 100000, // 0.000001 DASH in credits
+            description: "Transfer credits between identities"
+          }
+        ]
+      }
     dataContract: {
       dataContractCreate: {
         testnet: [
