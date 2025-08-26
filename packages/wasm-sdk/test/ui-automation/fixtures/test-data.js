@@ -695,6 +695,32 @@ const testData = {
           }
         ]
       },
+      tokenFreeze: {
+        testnet: [
+          {
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            identityToFreeze: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            publicNote: "Token freeze test",
+            description: "Freeze tokens for an identity"
+          }
+        ]
+      },
+      tokenUnfreeze: {
+        testnet: [
+          {
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            identityToUnfreeze: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            publicNote: "Token unfreeze test",
+            description: "Unfreeze tokens for an identity"
+          }
+        ]
+      },
     }
   },
 

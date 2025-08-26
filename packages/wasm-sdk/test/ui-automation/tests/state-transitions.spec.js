@@ -294,6 +294,40 @@ function validateTokenBurnResult(resultStr, expectedIdentityId, expectedAmount) 
 }
 
 /**
+ * Helper function to validate token freeze result
+ * @param {string} resultStr - The raw result string from token freeze
+ * @param {string} expectedIdentityId - Expected identity ID to freeze
+ */
+function validateTokenFreezeResult(resultStr, expectedIdentityId) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const freezeResponse = JSON.parse(resultStr);
+  expect(freezeResponse).toBeDefined();
+  expect(freezeResponse).toBeInstanceOf(Object);
+  
+  // Token freeze returns an empty object {} on success
+  console.log(`✅ Token freeze transaction submitted successfully for identity: ${expectedIdentityId}`);
+  
+  return freezeResponse;
+}
+
+/**
+ * Helper function to validate token unfreeze result
+ * @param {string} resultStr - The raw result string from token unfreeze
+ * @param {string} expectedIdentityId - Expected identity ID to unfreeze
+ */
+function validateTokenUnfreezeResult(resultStr, expectedIdentityId) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const unfreezeResponse = JSON.parse(resultStr);
+  expect(unfreezeResponse).toBeDefined();
+  expect(unfreezeResponse).toBeInstanceOf(Object);
+  
+  // Token unfreeze returns an empty object {} on success
+  console.log(`✅ Token unfreeze transaction submitted successfully for identity: ${expectedIdentityId}`);
+  
+  return unfreezeResponse;
+}
+
+/**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
  * @param {ParameterInjector} parameterInjector - The parameter injector instance
@@ -822,6 +856,52 @@ test.describe('WASM SDK State Transition Tests', () => {
       );
       
       console.log('✅ Token burn state transition completed successfully');
+    });
+
+    test('should execute token freeze transition', async () => {
+      // Set up the token freeze transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenFreeze');
+      
+      // Inject parameters (contractId, tokenPosition, identityId, identityToFreeze, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenFreeze', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the freeze
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenFreeze.testnet[0];
+      
+      // Validate token freeze specific result
+      validateTokenFreezeResult(result.result, testParams.identityToFreeze);
+      
+      console.log('✅ Token freeze state transition completed successfully');
+    });
+
+    test('should execute token unfreeze transition', async () => {
+      // Set up the token unfreeze transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenUnfreeze');
+      
+      // Inject parameters (contractId, tokenPosition, identityId, identityToUnfreeze, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenUnfreeze', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the unfreeze
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenUnfreeze.testnet[0];
+      
+      // Validate token unfreeze specific result
+      validateTokenUnfreezeResult(result.result, testParams.identityToUnfreeze);
+      
+      console.log('✅ Token unfreeze state transition completed successfully');
     });
 
     test('should show authentication inputs for token transitions', async () => {
