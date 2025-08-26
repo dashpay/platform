@@ -27,6 +27,12 @@ async function executeStateTransition(wasmSdkPage, parameterInjector, category, 
  * @param {Object} result - The state transition result object
  */
 function validateBasicStateTransitionResult(result) {
+  // Check for withdrawal-specific minimum amount error
+  if (!result.success && result.result && result.result.includes('Missing response message')) {
+    console.error('⚠️  Withdrawal may have failed due to insufficient amount. Minimum withdrawal is ~190,000 credits.');
+    console.error('Full error:', result.result);
+  }
+  
   expect(result.success).toBe(true);
   expect(result.result).toBeDefined();
   expect(result.hasError).toBe(false);
@@ -201,6 +207,32 @@ function validateIdentityCreditTransferResult(resultStr, expectedSenderId, expec
   console.log(`✅ Confirmed credit transfer: ${expectedAmount} credits from ${expectedSenderId} to ${expectedRecipientId}`);
   
   return transferResponse;
+}
+
+/**
+ * Helper function to validate identity credit withdrawal result
+ * @param {string} resultStr - The raw result string from identity credit withdrawal
+ * @param {string} expectedIdentityId - Expected identity ID
+ * @param {string} expectedWithdrawalAddress - Expected withdrawal address
+ * @param {number} expectedAmount - Expected withdrawal amount
+ */
+function validateIdentityCreditWithdrawalResult(resultStr, expectedIdentityId, expectedWithdrawalAddress, expectedAmount) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const withdrawalResponse = JSON.parse(resultStr);
+  expect(withdrawalResponse).toBeDefined();
+  expect(withdrawalResponse).toBeInstanceOf(Object);
+  
+  // Validate the response structure for identity credit withdrawal
+  expect(withdrawalResponse.status).toBe('success');
+  expect(withdrawalResponse.identityId).toBe(expectedIdentityId);
+  expect(withdrawalResponse.toAddress).toBe(expectedWithdrawalAddress);
+  expect(withdrawalResponse.amount).toBeDefined(); // Amount might be different due to fees
+  expect(withdrawalResponse.remainingBalance).toBeDefined();
+  expect(withdrawalResponse.message).toContain('withdrawn successfully');
+  
+  console.log(`✅ Confirmed credit withdrawal: ${withdrawalResponse.amount} credits from ${expectedIdentityId} to ${expectedWithdrawalAddress}`);
+  
+  return withdrawalResponse;
 }
 
 /**
@@ -609,6 +641,34 @@ test.describe('WASM SDK State Transition Tests', () => {
       );
       
       console.log('✅ Identity credit transfer state transition completed successfully');
+    });
+
+    test('should execute identity credit withdrawal transition', async () => {
+      // Set up the identity credit withdrawal transition
+      await wasmSdkPage.setupStateTransition('identity', 'identityCreditWithdrawal');
+      
+      // Inject parameters (identityId, withdrawalAddress, amount, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('identity', 'identityCreditWithdrawal', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the withdrawal
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.identity.identityCreditWithdrawal.testnet[0];
+      
+      // Validate identity credit withdrawal specific result
+      validateIdentityCreditWithdrawalResult(
+        result.result,
+        testParams.identityId,
+        testParams.toAddress,
+        testParams.amount
+      );
+      
+      console.log('✅ Identity credit withdrawal state transition completed successfully');
     });
 
     test('should show authentication inputs for identity transitions', async () => {

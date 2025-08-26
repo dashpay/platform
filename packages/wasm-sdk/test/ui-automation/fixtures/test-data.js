@@ -504,7 +504,18 @@ const testData = {
             description: "Transfer credits between identities"
           }
         ]
+      },
+      identityCreditWithdrawal: {
+        testnet: [
+          {
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            toAddress: "yQW6TmUFef5CDyhEYwjoN8aUTMmKLYYNDm",
+            amount: 190000, // 0.0000019 DASH in credits (minimum withdrawal amount)
+            description: "Withdraw credits to Dash address"
+          }
+        ]
       }
+    },
     dataContract: {
       dataContractCreate: {
         testnet: [
