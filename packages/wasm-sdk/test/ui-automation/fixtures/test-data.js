@@ -498,12 +498,37 @@ const testData = {
 
   // State transition test parameters organized by category
   stateTransitionParameters: {
+    identity: {
+      identityCreate: {
+        testnet: [
+          {
+            seedPhrase: process.env.TEST_SEED_PHRASE_1 || "placeholder seed phrase",
+            identityIndex: 0,
+            keySelectionMode: "simple",
+            assetLockProof: "a914b7e904ce25ed97594e72f7af0e66f298031c175487",
+            privateKey: process.env.TEST_PRIVATE_KEY_IDENTITY_1 || "PLACEHOLDER_IDENTITY_KEY_1",
+            expectedKeys: 2,
+            description: "Test identity creation with standard seed phrase"
+          }
+        ]
+      },
+      identityTopUp: {
+        testnet: [
+          {
+            identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
+            assetLockProof: "a914b7e904ce25ed97594e72f7af0e66f298031c175487",
+            privateKey: process.env.TEST_PRIVATE_KEY_IDENTITY_1 || "PLACEHOLDER_IDENTITY_KEY_1",
+            description: "Top up existing identity with credits"
+          }
+        ]
+      },
       identityCreditTransfer: {
         testnet: [
           {
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
             recipientId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG",
             amount: 100000, // 0.000001 DASH in credits
+            privateKey: process.env.TEST_PRIVATE_KEY_TRANSFER || "PLACEHOLDER_TRANSFER_KEY", // Transfer key
             description: "Transfer credits between identities"
           }
         ]
@@ -514,6 +539,7 @@ const testData = {
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
             toAddress: "yQW6TmUFef5CDyhEYwjoN8aUTMmKLYYNDm",
             amount: 190000, // 0.0000019 DASH in credits (minimum withdrawal amount)
+            privateKey: process.env.TEST_PRIVATE_KEY_TRANSFER || "PLACEHOLDER_TRANSFER_KEY",
             description: "Withdraw credits to Dash address"
           }
         ]
@@ -528,6 +554,7 @@ const testData = {
             keepsHistory: false,
             documentSchemas: '{"note": {"type": "object", "properties": {"message": {"type": "string", "position": 0}}, "additionalProperties": false}}',
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Create simple test data contract with document schema"
           }
         ]
@@ -538,6 +565,7 @@ const testData = {
             dataContractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Sample contract ID
             newDocumentSchemas: '{"note": {"type": "object", "properties": {"message": {"type": "string", "position": 0}, "author": {"type": "string", "position": 1}}, "additionalProperties": false}}',
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Update existing note document schema to add author field"
           }
         ]
@@ -553,6 +581,7 @@ const testData = {
               message: "Document created for WASM-SDK UI testing"
             },
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Create test note document with simple schema"
           }
         ]
@@ -567,6 +596,7 @@ const testData = {
               message: "Updated document message for automation testing"
             },
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Replace existing note document"
           }
         ]
@@ -578,6 +608,7 @@ const testData = {
             documentType: "note",
             documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Delete existing note document"
           }
         ]
@@ -590,6 +621,7 @@ const testData = {
             documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
             newOwnerId: "PLACEHOLDER_NEW_OWNER_ID", // Will be set to recipient identity
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC", // Current owner
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Transfer document ownership to another identity"
           }
         ]
@@ -615,7 +647,7 @@ const testData = {
             documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
             price: "1000000", // Price in credits
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
-            privateKey: "XHJz26s6jGmofxDUHfX2kfiEVTRxzaR5LQ8NJnnidpbPeSsyoczk", // DON'T STORE
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
             description: "Set price for a document"
           }
         ]
