@@ -332,6 +332,7 @@ test.describe('WASM SDK State Transition Tests', () => {
       });
       
       // Step 2: Update contract (reported separately) 
+      // This test is now flaky for some reason and frequently fails
       await test.step('Update data contract with author field', async () => {
         console.log('🔄 Updating data contract to add author field...');
         const updateResult = await executeStateTransitionWithCustomParams(
