@@ -653,6 +653,49 @@ const testData = {
         ]
       }
     },
+    token: {
+      tokenMint: {
+        testnet: [
+          {
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            amount: "1",
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            // issuedToIdentityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            publicNote: "Token mint test",
+            description: "Mint new tokens (may fail without permissions)"
+          }
+        ]
+      },      
+      tokenTransfer: {
+        testnet: [
+          {
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            amount: "1",
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            recipientId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG",            
+            publicNote: "Token transfer test",
+            description: "Transfer tokens between identities"
+          }
+        ]
+      },
+      tokenBurn: {
+        testnet: [
+          {
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            amount: "1",
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            publicNote: "Token burn test",
+            description: "Burn tokens from identity balance"
+          }
+        ]
+      },
+    }
   },
 
   // Common where clauses for document queries

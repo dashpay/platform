@@ -236,6 +236,64 @@ function validateIdentityCreditWithdrawalResult(resultStr, expectedIdentityId, e
 }
 
 /**
+ * Helper function to validate token mint result
+ * @param {string} resultStr - The raw result string from token mint
+ * @param {string} expectedIdentityId - Expected identity ID
+ * @param {string} expectedAmount - Expected mint amount
+ */
+function validateTokenMintResult(resultStr, expectedIdentityId, expectedAmount) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const mintResponse = JSON.parse(resultStr);
+  expect(mintResponse).toBeDefined();
+  expect(mintResponse).toBeInstanceOf(Object);
+  
+  // Token mint returns an empty object {} on success
+  // This indicates the transaction was submitted successfully
+  console.log(`✅ Token mint transaction submitted successfully: ${expectedAmount} tokens to ${expectedIdentityId}`);
+  
+  return mintResponse;
+}
+
+/**
+ * Helper function to validate token transfer result
+ * @param {string} resultStr - The raw result string from token transfer
+ * @param {string} expectedSenderId - Expected sender identity ID
+ * @param {string} expectedRecipientId - Expected recipient identity ID
+ * @param {string} expectedAmount - Expected transfer amount
+ */
+function validateTokenTransferResult(resultStr, expectedSenderId, expectedRecipientId, expectedAmount) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const transferResponse = JSON.parse(resultStr);
+  expect(transferResponse).toBeDefined();
+  expect(transferResponse).toBeInstanceOf(Object);
+  
+  // Token transfer returns an empty object {} on success
+  // This indicates the transaction was submitted successfully
+  console.log(`✅ Token transfer transaction submitted successfully: ${expectedAmount} tokens from ${expectedSenderId} to ${expectedRecipientId}`);
+  
+  return transferResponse;
+}
+
+/**
+ * Helper function to validate token burn result
+ * @param {string} resultStr - The raw result string from token burn
+ * @param {string} expectedIdentityId - Expected identity ID
+ * @param {string} expectedAmount - Expected burn amount
+ */
+function validateTokenBurnResult(resultStr, expectedIdentityId, expectedAmount) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const burnResponse = JSON.parse(resultStr);
+  expect(burnResponse).toBeDefined();
+  expect(burnResponse).toBeInstanceOf(Object);
+  
+  // Token burn returns an empty object {} on success
+  // This indicates the transaction was submitted successfully
+  console.log(`✅ Token burn transaction submitted successfully: ${expectedAmount} tokens burned from ${expectedIdentityId}`);
+  
+  return burnResponse;
+}
+
+/**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
  * @param {ParameterInjector} parameterInjector - The parameter injector instance
@@ -680,6 +738,100 @@ test.describe('WASM SDK State Transition Tests', () => {
       expect(hasAuthInputs).toBe(true);
       
       console.log('✅ Identity state transition authentication inputs are visible');
+    });
+  });
+
+  test.describe('Token State Transitions', () => {
+    test('should execute token mint transition', async () => {
+      // Set up the token mint transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenMint');
+      
+      // Inject parameters (contractId, tokenId, tokenPosition, amount, issuedToIdentityId, identityId, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenMint', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the mint
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenMint.testnet[0];
+      
+      // Validate token mint specific result
+      validateTokenMintResult(
+        result.result,
+        testParams.identityId,
+        testParams.amount
+      );
+      
+      console.log('✅ Token mint state transition completed successfully');
+    });
+        
+    test('should execute token transfer transition', async () => {
+      // Set up the token transfer transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenTransfer');
+      
+      // Inject parameters (contractId, tokenId, tokenPosition, amount, recipientId, identityId, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenTransfer', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the transfer
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenTransfer.testnet[0];
+      
+      // Validate token transfer specific result
+      validateTokenTransferResult(
+        result.result,
+        testParams.identityId,
+        testParams.recipientId,
+        testParams.amount
+      );
+      
+      console.log('✅ Token transfer state transition completed successfully');
+    });
+
+    test('should execute token burn transition', async () => {
+      // Set up the token burn transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenBurn');
+      
+      // Inject parameters (contractId, tokenId, tokenPosition, amount, identityId, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenBurn', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the burn
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenBurn.testnet[0];
+      
+      // Validate token burn specific result
+      validateTokenBurnResult(
+        result.result,
+        testParams.identityId,
+        testParams.amount
+      );
+      
+      console.log('✅ Token burn state transition completed successfully');
+    });
+
+    test('should show authentication inputs for token transitions', async () => {
+      await wasmSdkPage.setupStateTransition('token', 'tokenTransfer');
+      
+      // Check that authentication inputs are visible
+      const hasAuthInputs = await wasmSdkPage.hasAuthenticationInputs();
+      expect(hasAuthInputs).toBe(true);
+      
+      console.log('✅ Token state transition authentication inputs are visible');
     });
   });
 
