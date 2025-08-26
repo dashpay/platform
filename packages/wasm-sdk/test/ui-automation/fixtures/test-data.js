@@ -649,6 +649,41 @@ function getAllTestParameters(category, queryType, network = 'testnet') {
   return queryData[network] || [];
 }
 
+/**
+ * Get test parameters for a specific state transition
+ */
+function getStateTransitionParameters(category, transitionType, network = 'testnet') {
+  const categoryData = testData.stateTransitionParameters[category];
+  if (!categoryData) {
+    throw new Error(`No state transition test data found for category: ${category}`);
+  }
+
+  const transitionData = categoryData[transitionType];
+  if (!transitionData) {
+    throw new Error(`No state transition test data found for transition: ${category}.${transitionType}`);
+  }
+
+  const networkData = transitionData[network];
+  if (!networkData || networkData.length === 0) {
+    throw new Error(`No state transition test data found for ${category}.${transitionType} on ${network}`);
+  }
+
+  return networkData[0]; // Return first test case
+}
+
+/**
+ * Get all test parameters for a state transition (for parameterized testing)
+ */
+function getAllStateTransitionParameters(category, transitionType, network = 'testnet') {
+  const categoryData = testData.stateTransitionParameters[category];
+  if (!categoryData) return [];
+
+  const transitionData = categoryData[transitionType];
+  if (!transitionData) return [];
+
+  return transitionData[network] || [];
+}
+
 module.exports = {
   testData,
   getTestParameters,
