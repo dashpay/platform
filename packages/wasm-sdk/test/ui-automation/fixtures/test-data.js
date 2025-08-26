@@ -3,6 +3,9 @@
  * Based on update_inputs.py and existing test files
  */
 
+// Load environment variables for sensitive test data
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+
 const testData = {
   // Known testnet identity IDs for testing (from WASM SDK docs and tests)
   identityIds: {
