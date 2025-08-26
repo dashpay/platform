@@ -3248,7 +3248,7 @@ ${indentStr}]`;
           result = await sdk.tokenDestroyFrozen(
             values.contractId,
             Number(values.tokenPosition),
-            values.identityId, // identity whose frozen tokens to destroy
+            values.frozenIdentityId, // identity whose frozen tokens to destroy
             identityId, // destroyer ID
             privateKey,
             values.publicNote || null

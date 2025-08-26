@@ -708,6 +708,19 @@ const testData = {
           }
         ]
       },
+      tokenDestroyFrozen: {
+        testnet: [
+          {
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            frozenIdentityId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            publicNote: "Destroy frozen tokens test",
+            description: "Destroy frozen tokens from an identity"
+          }
+        ]
+      },
       tokenUnfreeze: {
         testnet: [
           {

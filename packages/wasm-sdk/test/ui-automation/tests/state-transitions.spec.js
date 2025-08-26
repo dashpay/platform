@@ -311,6 +311,24 @@ function validateTokenFreezeResult(resultStr, expectedIdentityId) {
 }
 
 /**
+ * Helper function to validate token destroy frozen result
+ * @param {string} resultStr - The raw result string from token destroy frozen
+ * @param {string} expectedIdentityId - Expected identity ID with frozen tokens
+ * @param {string} expectedAmount - Expected amount to destroy
+ */
+function validateTokenDestroyFrozenResult(resultStr, expectedIdentityId, expectedAmount) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const destroyResponse = JSON.parse(resultStr);
+  expect(destroyResponse).toBeDefined();
+  expect(destroyResponse).toBeInstanceOf(Object);
+  
+  // Token destroy frozen returns an empty object {} on success
+  console.log(`✅ Token destroy frozen transaction submitted successfully: ${expectedAmount} tokens from ${expectedIdentityId}`);
+  
+  return destroyResponse;
+}
+
+/**
  * Helper function to validate token unfreeze result
  * @param {string} resultStr - The raw result string from token unfreeze
  * @param {string} expectedIdentityId - Expected identity ID to unfreeze
@@ -879,6 +897,29 @@ test.describe('WASM SDK State Transition Tests', () => {
       validateTokenFreezeResult(result.result, testParams.identityToFreeze);
       
       console.log('✅ Token freeze state transition completed successfully');
+    });
+
+    test('should execute token destroy frozen transition', async () => {
+      // Set up the token destroy frozen transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenDestroyFrozen');
+      
+      // Inject parameters (contractId, tokenPosition, identityId, destroyFromIdentityId, amount, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenDestroyFrozen', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the destroy frozen
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenDestroyFrozen.testnet[0];
+      
+      // Validate token destroy frozen specific result
+      validateTokenDestroyFrozenResult(result.result, testParams.frozenIdentityId, testParams.amount);
+      
+      console.log('✅ Token destroy frozen state transition completed successfully');
     });
 
     test('should execute token unfreeze transition', async () => {

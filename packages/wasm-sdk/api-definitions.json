@@ -2079,7 +2079,7 @@
               "required": true
             },
             {
-              "name": "identityId",
+              "name": "frozenIdentityId",
               "type": "text",
               "label": "Identity ID whose frozen tokens to destroy",
               "required": true
