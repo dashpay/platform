@@ -112,7 +112,7 @@ const testData = {
             ],
             contractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             documentTypeName: "domain",
-            keyRequestType: "all"
+            purposes: ["0", "3"] // Authentication and Transfer
           }
         ]
       },

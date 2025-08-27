@@ -120,6 +120,18 @@ class WasmSdkPage extends BaseTest {
    * Fill a specific parameter by name
    */
   async fillParameterByName(paramName, value) {
+    // Special handling for multiselect checkboxes (like purposes)
+    if (paramName === 'purposes' && Array.isArray(value)) {
+      for (const purposeValue of value) {
+        const checkboxSelector = `input[name="purposes_${purposeValue}"][type="checkbox"]`;
+        const checkbox = this.page.locator(checkboxSelector);
+        if (await checkbox.count() > 0) {
+          await checkbox.check();
+        }
+      }
+      return;
+    }
+    
     // Special handling for array parameters that use dynamic input fields
     if (DYNAMIC_ARRAY_PARAMETERS[paramName]) {
       const enterValueInput = this.page.locator('input[placeholder="Enter value"]').first();
