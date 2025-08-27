@@ -734,6 +734,33 @@ const testData = {
           }
         ]
       },
+      tokenClaim: {
+        testnet: [
+          {
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            distributionType: "perpetual",
+            publicNote: "Token claim test",
+            description: "Claim tokens from distribution"
+          }
+        ]
+      },
+      tokenSetPriceForDirectPurchase: {
+        testnet: [
+          {
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            priceType: "single",
+            priceData: "1000",
+            publicNote: "Set token price test",
+            description: "Set price for direct token purchases"
+          }
+        ]
+      },
     }
   },
 

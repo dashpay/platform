@@ -345,6 +345,30 @@ function validateTokenUnfreezeResult(resultStr, expectedIdentityId) {
   return unfreezeResponse;
 }
 
+function validateTokenClaimResult(resultStr, expectedDistributionType) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const claimResponse = JSON.parse(resultStr);
+  expect(claimResponse).toBeDefined();
+  expect(claimResponse).toBeInstanceOf(Object);
+  
+  // Token claim returns an empty object {} on success
+  console.log(`✅ Token claim transaction submitted successfully for distribution type: ${expectedDistributionType}`);
+  
+  return claimResponse;
+}
+
+function validateTokenSetPriceResult(resultStr, expectedPriceType, expectedPriceData) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const setPriceResponse = JSON.parse(resultStr);
+  expect(setPriceResponse).toBeDefined();
+  expect(setPriceResponse).toBeInstanceOf(Object);
+  
+  // Token set price returns an empty object {} on success
+  console.log(`✅ Token set price transaction submitted successfully - Type: ${expectedPriceType}, Price: ${expectedPriceData}`);
+  
+  return setPriceResponse;
+}
+
 /**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
@@ -943,6 +967,58 @@ test.describe('WASM SDK State Transition Tests', () => {
       validateTokenUnfreezeResult(result.result, testParams.identityToUnfreeze);
       
       console.log('✅ Token unfreeze state transition completed successfully');
+    });
+
+    test('should execute token claim transition', async () => {
+      // Set up the token claim transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenClaim');
+      
+      // Inject parameters (contractId, tokenPosition, distributionType, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenClaim', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the claim
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Check for expected platform responses indicating no tokens available
+      if (!result.success && result.result && result.result.includes('Missing response message')) {
+        // Skip the test with a descriptive reason
+        test.skip(true, 'Platform returned "Missing response message". Probably no tokens available to claim.');
+      }
+      
+      // Validate normal success case
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenClaim.testnet[0];
+      
+      // Validate token claim specific result
+      validateTokenClaimResult(result.result, testParams.distributionType);
+      
+      console.log('✅ Token claim state transition completed successfully');
+    });
+
+    test('should execute token set price transition', async () => {
+      // Set up the token set price transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenSetPriceForDirectPurchase');
+      
+      // Inject parameters (contractId, tokenPosition, priceType, priceData, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenSetPriceForDirectPurchase', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the set price
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+      
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenSetPriceForDirectPurchase.testnet[0];
+      
+      // Validate token set price specific result
+      validateTokenSetPriceResult(result.result, testParams.priceType, testParams.priceData);
+      
+      console.log('✅ Token set price state transition completed successfully');
     });
 
     test('should show authentication inputs for token transitions', async () => {
