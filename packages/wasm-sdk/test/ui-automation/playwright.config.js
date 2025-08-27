@@ -6,14 +6,10 @@ const { defineConfig, devices } = require('@playwright/test');
  */
 module.exports = defineConfig({
   testDir: './tests',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Use single worker to avoid parallel execution issues */
-  workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [
     ['html', { outputFolder: 'playwright-report' }],
@@ -41,10 +37,26 @@ module.exports = defineConfig({
     navigationTimeout: 30000,
   },
 
-  /* Configure projects for major browsers */
+  /* Configure projects for different test execution modes */
   projects: [
     {
-      name: 'chromium',
+      name: 'parallel-tests',
+      testMatch: ['basic-smoke.spec.js', 'query-execution.spec.js', 'parameterized-queries.spec.js'],
+      fullyParallel: true,
+      workers: process.env.CI ? 1 : undefined,
+      use: { 
+        ...devices['Desktop Chrome'],
+        // Enable headless mode by default
+        headless: true,
+        // Use a larger viewport for better testing
+        viewport: { width: 1920, height: 1080 }
+      },
+    },
+    {
+      name: 'sequential-tests',
+      testMatch: ['state-transitions.spec.js'],
+      fullyParallel: false, // Tests in file run in order
+      workers: 1, // Single worker for sequential execution
       use: { 
         ...devices['Desktop Chrome'],
         // Enable headless mode by default
