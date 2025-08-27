@@ -23,13 +23,25 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+#dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+#  "std",
+#  "secp-recovery",
+#  "rand",
+#  "signer",
+#  "serde",
+#], default-features = false, rev = "a725e4dc7585441fb7d7ed1ea79453b24117637b" }
+dashcore = { path = "../../../rust-dashcore/dash", features = [
   "std",
   "secp-recovery",
   "rand",
   "signer",
   "serde",
-], default-features = false, tag = "v0.39.6" }
+], default-features = false }
+key-wallet = { path = "../../../rust-dashcore/key-wallet", optional = true }
+key-wallet-manager = { path = "../../../rust-dashcore/key-wallet-manager", optional = true }
+dash-spv = { path = "../../../rust-dashcore/dash-spv", optional = true }
+dashcore-rpc = { path = "../../../rust-dashcore/rpc-client", optional = true }
+
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
@@ -76,8 +88,16 @@ log = { version = "0.4.27" }
 
 [features]
 default = ["state-transitions"]
+core_bincode = ["dashcore/bincode"]
 core_verification = ["dashcore/message_verification"]
 core_quorum_validation = ["dashcore/quorum_validation"]
+core_key_wallet = ["dep:key-wallet"]
+core_key_wallet_bincode = ["dep:key-wallet", "key-wallet/bincode"]
+core_key_wallet_bip_38 = ["dep:key-wallet", "key-wallet/bip38"]
+core_key_wallet_manager = ["dep:key-wallet-manager"]
+core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
+core_spv = ["dep:dash-spv"]
+core_rpc_client = ["dep:dashcore-rpc"]
 bls-signatures = ["dashcore/bls"]
 ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
@@ -133,6 +153,7 @@ dash-sdk-features = [
   "state-transition-signing",
   "client",
   "platform-value-cbor",
+  "core_rpc_client"
 ]
 all_features_without_client = [
   "json-object",
@@ -188,6 +209,7 @@ abci = [
   "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
+  "core_rpc_client"
 ]
 cbor = ["ciborium"]
 validation = [

@@ -1,7 +1,7 @@
 use crate::platform_types::masternode::v0::accessors::MasternodeAccessorsV0;
 use crate::platform_types::masternode::Masternode;
-use dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::dashcore::{ProTxHash, Txid};
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 
 impl MasternodeAccessorsV0 for Masternode {
     fn node_type(&self) -> MasternodeType {

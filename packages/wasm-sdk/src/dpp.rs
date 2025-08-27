@@ -4,7 +4,7 @@ use dash_sdk::dpp::serialization::PlatformDeserializable;
 use dash_sdk::dpp::serialization::ValueConvertible;
 
 use crate::error::to_js_error;
-use dash_sdk::dashcore_rpc::dashcore::hashes::serde::Serialize;
+use dash_sdk::dpp::dashcore::hashes::serde::Serialize;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dash_sdk::dpp::version::PlatformVersion;
@@ -302,7 +302,7 @@ impl DataContractWasm {
         let platform_version = PlatformVersion::first();
 
         let json = self.0.to_json(platform_version)?;
-        let serializer = ::serde_wasm_bindgen::Serializer::json_compatible();
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         json.serialize(&serializer).map_err(to_js_error)
     }
 }

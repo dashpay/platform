@@ -25,15 +25,17 @@ impl CoreSignatureVerification for InstantLock {
         match core_rpc.verify_instant_lock(self, Some(core_chain_locked_height)) {
             Ok(result) => Ok(result),
             // Consider signature is invalid in case if instant lock data format is wrong for some reason
-            Err(dashcore_rpc::Error::JsonRpc(dashcore_rpc::jsonrpc::error::Error::Rpc(
-                dashcore_rpc::jsonrpc::error::RpcError {
-                    code:
-                        CORE_RPC_PARSE_ERROR
-                        | CORE_RPC_INVALID_ADDRESS_OR_KEY
-                        | CORE_RPC_INVALID_PARAMETER,
-                    ..
-                },
-            ))) => Ok(false),
+            Err(dpp::dashcore_rpc::Error::JsonRpc(
+                dpp::dashcore_rpc::jsonrpc::error::Error::Rpc(
+                    dpp::dashcore_rpc::jsonrpc::error::RpcError {
+                        code:
+                            CORE_RPC_PARSE_ERROR
+                            | CORE_RPC_INVALID_ADDRESS_OR_KEY
+                            | CORE_RPC_INVALID_PARAMETER,
+                        ..
+                    },
+                ),
+            )) => Ok(false),
             Err(e) => Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
                 format!("can't verify instant asset lock proof signature with core: {e}",),
             ))),

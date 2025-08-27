@@ -11,12 +11,12 @@ chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
-
 dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
+platform-wallet = { path = "../rs-platform-wallet", optional = true}
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
@@ -38,8 +38,6 @@ dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
 derive_more = { version = "1.0", features = ["from"] }
-# dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
@@ -71,6 +69,7 @@ assert_matches = "1.5.0"
 [features]
 # TODO: remove mocks from default features
 default = ["mocks", "offline-testing", "dapi-grpc/client", "token_reward_explanations"]
+spv-client = ["core_spv", "core_key_wallet_manager", "core_key_wallet", "core_bincode", "core_key_wallet_bincode"]
 
 mocks = [
   "dep:serde",
@@ -128,6 +127,20 @@ token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
+
+
+serde = ["dep:serde", "dep:serde_json"]
+core_bincode = ["dpp/core_bincode"]
+core_quorum-validation = ["dpp/core_quorum_validation"]
+core_verification = ["dpp/core_verification"]
+core_key_wallet = ["dpp/core_key_wallet"]
+core_key_wallet_serde = ["dpp/core_key_wallet_serde"]
+core_key_wallet_bincode = ["dpp/core_key_wallet_bincode"]
+core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
+core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
+core_spv = ["dpp/core_spv"]
+core_rpc_client = ["dpp/core_rpc_client"]
+platform_wallet_manager = ["platform-wallet/manager"]
 
 [[example]]
 

@@ -17,7 +17,7 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
     GetTokenDirectPurchasePricesRequest, GetVotePollsByEndDateRequest, Proof, ResponseMetadata,
 };
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore_rpc::dashcore::ProTxHash;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;

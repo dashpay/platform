@@ -1,8 +1,8 @@
 use crate::config::{ChainLockConfig, QuorumLikeConfig};
 use crate::platform_types::signature_verification_quorum_set::v0::quorums::Quorums;
 use crate::platform_types::signature_verification_quorum_set::VerificationQuorum;
-use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::QuorumHash;
+use dpp::dashcore_rpc::json::QuorumType;
 use std::vec::IntoIter;
 
 /// Offset for signature verification

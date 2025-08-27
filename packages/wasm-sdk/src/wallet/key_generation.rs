@@ -4,10 +4,11 @@
 
 use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
-use dashcore::{Network, PrivateKey, PublicKey, Address};
-use dashcore::secp256k1::{Secp256k1, SecretKey};
-use dashcore::hashes::{Hash, sha256};
+use dash_sdk::dpp::dashcore::{Network, PrivateKey, PublicKey, Address};
+use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
+use dash_sdk::dpp::dashcore::hashes::{Hash, sha256};
 use std::str::FromStr;
+use dash_sdk::dpp::dashcore;
 
 /// Key pair information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,7 +47,7 @@ pub fn generate_key_pair(network: &str) -> Result<JsValue, JsError> {
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(&key_bytes)
         .map_err(|e| JsError::new(&format!("Invalid secret key: {}", e)))?;
-    let public_key = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+    let public_key = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
     let public_key_bytes = public_key.serialize();
 
     // Get address
@@ -95,7 +96,7 @@ pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, JsError> {
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(&private_key.inner.secret_bytes())
         .map_err(|e| JsError::new(&format!("Invalid secret key: {}", e)))?;
-    let public_key = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+    let public_key = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
     let public_key_bytes = public_key.serialize();
 
     // Get address
@@ -185,7 +186,7 @@ pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, JsEr
     let secret_key = SecretKey::from_slice(&private_key.inner.secret_bytes())
         .map_err(|e| JsError::new(&format!("Invalid secret key: {}", e)))?;
     
-    let message_hash = dashcore::secp256k1::Message::from_digest(hash.to_byte_array());
+    let message_hash = dash_sdk::dpp::dashcore::secp256k1::Message::from_digest(hash.to_byte_array());
     let signature = secp.sign_ecdsa(&message_hash, &secret_key);
 
     Ok(hex::encode(signature.serialize_compact()))
