@@ -918,7 +918,7 @@ impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
             id.into_buffer(),
             platform_version,
         )
-            .map_drive_error(proof, mtd)?;
+        .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 

@@ -1,9 +1,10 @@
 //! Example showing how to get contested DPNS usernames with their contenders
 //!
-//! This example demonstrates using the updated get_contested_non_resolved_usernames
-//! method which returns a BTreeMap of names to their Contenders.
+//! This example demonstrates using the get_contested_non_resolved_usernames
+//! method which returns a BTreeMap of names to their ContestInfo (containing
+//! contenders and contest end time).
 
-use dash_sdk::{Sdk, SdkBuilder};
+use dash_sdk::SdkBuilder;
 use dpp::dashcore::Network;
 use dpp::platform_value::string_encoding::Encoding;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
@@ -29,49 +30,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     println!("Fetching contested non-resolved DPNS usernames with contenders...\n");
-    
+
     // Get contested non-resolved usernames with their contenders
     let non_resolved_names = sdk.get_contested_non_resolved_usernames(Some(10)).await?;
-    
+
     if non_resolved_names.is_empty() {
         println!("No contested non-resolved DPNS usernames found on testnet.");
         return Ok(());
     }
-    
-    println!("Found {} contested non-resolved usernames:\n", non_resolved_names.len());
-    
+
+    println!(
+        "Found {} contested non-resolved usernames:\n",
+        non_resolved_names.len()
+    );
+
     // Display each contested name with its contenders
-    for (name, contenders) in non_resolved_names {
+    for (name, contest_info) in non_resolved_names {
         println!("📌 Contested name: '{}'", name);
-        println!("   Contenders ({} total):", contenders.contenders.len());
-        
+        println!("   Contest ends at: {} ms", contest_info.end_time);
+        println!(
+            "   Contenders ({} total):",
+            contest_info.contenders.contenders.len()
+        );
+
         // Show up to 5 contenders
-        for (contender_id, votes) in contenders.contenders.iter().take(5) {
+        for (contender_id, votes) in contest_info.contenders.contenders.iter().take(5) {
             let id_str = contender_id.to_string(Encoding::Base58);
             println!("     • {} - {:?} votes", id_str, votes);
         }
-        
-        if contenders.contenders.len() > 5 {
-            println!("     ... and {} more contenders", contenders.contenders.len() - 5);
+
+        if contest_info.contenders.contenders.len() > 5 {
+            println!(
+                "     ... and {} more contenders",
+                contest_info.contenders.contenders.len() - 5
+            );
         }
-        
+
         // Show vote tallies if present
-        if let Some(abstain) = contenders.abstain_vote_tally {
+        if let Some(abstain) = contest_info.contenders.abstain_vote_tally {
             println!("   Abstain votes: {}", abstain);
         }
-        
-        if let Some(lock) = contenders.lock_vote_tally {
+
+        if let Some(lock) = contest_info.contenders.lock_vote_tally {
             println!("   Lock votes: {}", lock);
         }
-        
+
         // Confirm no winner (since these are unresolved)
-        match contenders.winner {
-            Some(_) => println!("   ⚠️ Unexpected: This name has a winner but was marked as unresolved"),
+        match contest_info.contenders.winner {
+            Some(_) => {
+                println!("   ⚠️ Unexpected: This name has a winner but was marked as unresolved")
+            }
             None => println!("   ✅ Status: Unresolved (no winner yet)"),
         }
-        
+
         println!();
     }
-    
+
     Ok(())
 }

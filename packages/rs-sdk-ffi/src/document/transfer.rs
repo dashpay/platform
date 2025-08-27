@@ -411,8 +411,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let recipient_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
@@ -426,8 +426,7 @@ mod tests {
                 recipient_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -447,7 +446,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
     }
@@ -460,8 +459,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let recipient_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
@@ -475,8 +474,7 @@ mod tests {
                 recipient_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -493,7 +491,7 @@ mod tests {
         // Clean up
         unsafe {
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -509,8 +507,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let document_type_name = CString::new("testDoc").unwrap();
@@ -523,8 +521,7 @@ mod tests {
                 ptr::null(), // null recipient ID
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -542,7 +539,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -558,8 +555,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let recipient_id = CString::new("invalid-base58-id!@#$").unwrap();
@@ -573,8 +570,7 @@ mod tests {
                 recipient_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -594,7 +590,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -608,8 +604,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let recipient_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
@@ -623,8 +619,7 @@ mod tests {
                 recipient_id.as_ptr(),
                 ptr::null(), // null data contract ID
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -657,8 +652,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let recipient_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
@@ -671,9 +666,7 @@ mod tests {
                 recipient_id.as_ptr(),
                 contract_id.as_ptr(),
                 ptr::null(), // null document type name
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -691,7 +684,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -707,8 +700,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let recipient_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
@@ -723,8 +716,7 @@ mod tests {
                 recipient_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -742,7 +734,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);

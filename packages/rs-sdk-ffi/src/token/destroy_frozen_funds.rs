@@ -218,6 +218,7 @@ mod tests {
 
     // Mock callbacks for signer
     unsafe extern "C" fn mock_sign_callback(
+        _signer: *const std::os::raw::c_void,
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
         _data: *const u8,
@@ -233,6 +234,7 @@ mod tests {
     }
 
     unsafe extern "C" fn mock_can_sign_callback(
+        _signer: *const std::os::raw::c_void,
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
     ) -> bool {

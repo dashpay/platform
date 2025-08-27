@@ -8,16 +8,23 @@ use dashcore::Transaction;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use indexmap::IndexMap;
-use key_wallet::account::managed_account_collection::ManagedAccountCollection;
+use key_wallet::account::AccountType;
+use key_wallet::account::ManagedAccountCollection;
+use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
+use key_wallet::wallet::immature_transaction::{
+    ImmatureTransaction, ImmatureTransactionCollection,
+};
 use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
+use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::transaction_building::{
     AccountTypePreference, TransactionError,
 };
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, TransactionRecord};
 use key_wallet::{Address, Network, Utxo, Wallet, WalletBalance};
+use std::collections::BTreeSet;
 pub mod identity_manager;
 pub mod managed_identity;
 
@@ -95,11 +102,49 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         tx: &Transaction,
         network: Network,
         context: TransactionContext,
-        update_state_if_found: bool,
+        update_state_with_wallet_if_found: Option<&Wallet>,
     ) -> TransactionCheckResult {
         // Delegate to the underlying wallet info
         self.wallet_info
-            .check_transaction(tx, network, context, update_state_if_found)
+            .check_transaction(tx, network, context, update_state_with_wallet_if_found)
+    }
+}
+
+/// Implement ManagedAccountOperations for PlatformWalletInfo
+impl ManagedAccountOperations for PlatformWalletInfo {
+    fn add_managed_account(
+        &mut self,
+        wallet: &Wallet,
+        account_type: AccountType,
+        network: Network,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info
+            .add_managed_account(wallet, account_type, network)
+    }
+
+    fn add_managed_account_with_passphrase(
+        &mut self,
+        wallet: &Wallet,
+        account_type: AccountType,
+        network: Network,
+        passphrase: &str,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info.add_managed_account_with_passphrase(
+            wallet,
+            account_type,
+            network,
+            passphrase,
+        )
+    }
+
+    fn add_managed_account_from_xpub(
+        &mut self,
+        account_type: AccountType,
+        network: Network,
+        account_xpub: ExtendedPubKey,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info
+            .add_managed_account_from_xpub(account_type, network, account_xpub)
     }
 }
 
@@ -126,12 +171,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn set_description(&mut self, description: Option<String>) {
-        if let Some(desc) = description {
-            self.wallet_info.set_description(desc);
-        } else {
-            // Clear description by setting empty string
-            self.wallet_info.description = None;
-        }
+        self.wallet_info.set_description(description)
     }
 
     fn birth_height(&self) -> Option<u32> {
@@ -158,20 +198,49 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.monitored_addresses(network)
     }
 
-    fn get_utxos(&self) -> Vec<Utxo> {
-        self.wallet_info.get_utxos().into_iter().cloned().collect()
+    fn utxos(&self) -> BTreeSet<&Utxo> {
+        self.wallet_info.utxos()
     }
 
-    fn get_balance(&self) -> WalletBalance {
-        self.wallet_info.get_balance()
+    fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
+        // Use the default trait implementation which filters utxos
+        self.utxos()
+            .into_iter()
+            .filter(|utxo| !utxo.is_locked && (utxo.is_confirmed || utxo.is_instantlocked))
+            .collect()
+    }
+
+    fn balance(&self) -> WalletBalance {
+        self.wallet_info.balance()
     }
 
     fn update_balance(&mut self) {
         self.wallet_info.update_balance()
     }
 
-    fn get_transaction_history(&self) -> Vec<&TransactionRecord> {
-        self.wallet_info.get_transaction_history()
+    fn transaction_history(&self) -> Vec<&TransactionRecord> {
+        self.wallet_info.transaction_history()
+    }
+
+    fn process_matured_transactions(
+        &mut self,
+        network: Network,
+        current_height: u32,
+    ) -> Vec<ImmatureTransaction> {
+        self.wallet_info
+            .process_matured_transactions(network, current_height)
+    }
+
+    fn add_immature_transaction(&mut self, network: Network, tx: ImmatureTransaction) {
+        self.wallet_info.add_immature_transaction(network, tx)
+    }
+
+    fn immature_transactions(&self, network: Network) -> Option<&ImmatureTransactionCollection> {
+        self.wallet_info.immature_transactions(network)
+    }
+
+    fn network_immature_balance(&self, network: Network) -> u64 {
+        self.wallet_info.network_immature_balance(network)
     }
 
     fn accounts_mut(&mut self, network: Network) -> Option<&mut ManagedAccountCollection> {

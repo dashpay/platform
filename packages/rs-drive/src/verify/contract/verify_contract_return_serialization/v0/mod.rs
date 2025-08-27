@@ -122,8 +122,15 @@ impl Drive {
                         .and_then(|bytes| {
                             // we don't need to validate the contract locally because it was proved to be in platform
                             // and hence it is valid
-                            Ok((DataContract::versioned_deserialize(&bytes, false, platform_version)
-                                .map_err(Error::Protocol)?, bytes))
+                            Ok((
+                                DataContract::versioned_deserialize(
+                                    &bytes,
+                                    false,
+                                    platform_version,
+                                )
+                                .map_err(Error::Protocol)?,
+                                bytes,
+                            ))
                         })
                 })
                 .transpose();

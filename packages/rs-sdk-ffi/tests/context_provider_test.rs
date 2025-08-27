@@ -1,18 +1,19 @@
 #[cfg(test)]
 mod tests {
-    use rs_sdk_ffi::*;
+    use rs_sdk_ffi::{
+        context_provider::CoreSDKHandle, dash_sdk_context_provider_destroy,
+        dash_sdk_context_provider_from_core, dash_sdk_create_extended, DashSDKConfig,
+        DashSDKConfigExtended, DashSDKNetwork,
+    };
     use std::ffi::CString;
     use std::ptr;
 
     #[test]
     fn test_context_provider_creation() {
         unsafe {
-            // Create a mock Core SDK handle
-            let mock_client = ptr::null_mut();
-            let core_handle = CoreSDKHandle {
-                client: mock_client,
-            };
-            let core_handle_ptr = &core_handle as *const CoreSDKHandle as *mut CoreSDKHandle;
+            // Create a mock Core SDK handle using an opaque pointer
+            // In real usage, this would come from the Core SDK
+            let core_handle_ptr = 1 as *mut CoreSDKHandle;
 
             // Create context provider from Core handle
             let context_provider = dash_sdk_context_provider_from_core(
@@ -35,17 +36,14 @@ mod tests {
     #[test]
     fn test_sdk_creation_with_context_provider() {
         unsafe {
-            // Create a mock Core SDK handle
-            let mock_client = ptr::null_mut();
-            let core_handle = CoreSDKHandle {
-                client: mock_client,
-            };
-            let core_handle_ptr = &core_handle as *const CoreSDKHandle as *mut CoreSDKHandle;
+            // Create a mock Core SDK handle using an opaque pointer
+            // In real usage, this would come from the Core SDK
+            let core_handle_ptr = 1 as *mut CoreSDKHandle;
 
             // Create base config
             let dapi_addresses = CString::new("https://testnet.dash.org:3000").unwrap();
             let base_config = DashSDKConfig {
-                network: DashSDKNetwork::Testnet,
+                network: DashSDKNetwork::SDKTestnet,
                 dapi_addresses: dapi_addresses.as_ptr(),
                 skip_asset_lock_proof_verification: false,
                 request_retry_count: 3,
@@ -64,7 +62,10 @@ mod tests {
 
             // In test mode with stubs, this might fail due to missing implementations
             // but we're mainly testing that the code compiles
-            println!("SDK creation result - has error: {}", result.tag == 1);
+            println!(
+                "SDK creation result - has error: {}",
+                !result.error.is_null()
+            );
         }
     }
 }

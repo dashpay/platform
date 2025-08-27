@@ -201,9 +201,18 @@ impl Sdk {
         signer: &S,
     ) -> Result<DocumentReplaceResult, Error> {
         eprintln!("📝 [DOCUMENT REPLACE SDK] Starting document replace");
-        eprintln!("📝 [DOCUMENT REPLACE SDK] Document ID: {}", replace_document_transition_builder.document.id());
-        eprintln!("📝 [DOCUMENT REPLACE SDK] Document revision: {}", replace_document_transition_builder.document.revision().unwrap_or(0));
-        
+        eprintln!(
+            "📝 [DOCUMENT REPLACE SDK] Document ID: {}",
+            replace_document_transition_builder.document.id()
+        );
+        eprintln!(
+            "📝 [DOCUMENT REPLACE SDK] Document revision: {}",
+            replace_document_transition_builder
+                .document
+                .revision()
+                .unwrap_or(0)
+        );
+
         let platform_version = self.version();
 
         let put_settings = replace_document_transition_builder.settings;
@@ -214,7 +223,9 @@ impl Sdk {
             .await?;
         eprintln!("✅ [DOCUMENT REPLACE SDK] State transition signed");
 
-        eprintln!("📝 [DOCUMENT REPLACE SDK] Broadcasting state transition and waiting for response...");
+        eprintln!(
+            "📝 [DOCUMENT REPLACE SDK] Broadcasting state transition and waiting for response..."
+        );
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;

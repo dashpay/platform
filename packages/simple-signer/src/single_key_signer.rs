@@ -1,6 +1,6 @@
-use dpp::dashcore::Network;
 use dpp::dashcore;
 use dpp::dashcore::signer;
+use dpp::dashcore::Network;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;

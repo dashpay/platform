@@ -2038,13 +2038,13 @@ impl DocumentPropertyType {
                     Some(bytes)
                 } else {
                     // If hex fails, try base64 decoding
-                    use base64::{Engine as _, engine::general_purpose};
+                    use base64::{engine::general_purpose, Engine as _};
                     general_purpose::STANDARD.decode(str_value).ok()
                 };
-                
+
                 if let Some(bytes) = decoded_bytes {
                     let byte_len = bytes.len() as u16;
-                    
+
                     // Check if the decoded bytes meet the size constraints
                     let size_ok = match (property_sizes.min_size, property_sizes.max_size) {
                         (Some(min), Some(max)) => byte_len >= min && byte_len <= max,
@@ -2052,7 +2052,7 @@ impl DocumentPropertyType {
                         (None, Some(max)) => byte_len <= max,
                         (None, None) => true,
                     };
-                    
+
                     if size_ok {
                         // Use specific byte array types for exact sizes
                         match bytes.len() {
@@ -2080,7 +2080,7 @@ impl DocumentPropertyType {
                 }
                 // If decoding fails, leave the value as is (validation will catch it later)
             }
-            
+
             // Convert hex or base58 strings to identifiers for Identifier fields
             (DocumentPropertyType::Identifier, Value::Text(str_value)) => {
                 // First try base58 decoding (most common for identifiers)
@@ -2089,7 +2089,7 @@ impl DocumentPropertyType {
                 }
                 // If both conversions fail, leave the value as is (validation will catch it later)
             }
-            
+
             // Ensure integers are in the correct range for their type
             (DocumentPropertyType::U8, Value::U8(_)) => {} // Already correct
             (DocumentPropertyType::U8, Value::U16(n)) if n <= u8::MAX as u16 => {
@@ -2104,7 +2104,7 @@ impl DocumentPropertyType {
             (DocumentPropertyType::U8, Value::U128(n)) if n <= u8::MAX as u128 => {
                 *value = Value::U8(n as u8);
             }
-            
+
             (DocumentPropertyType::U16, Value::U16(_)) => {} // Already correct
             (DocumentPropertyType::U16, Value::U8(n)) => {
                 *value = Value::U16(n as u16);
@@ -2118,7 +2118,7 @@ impl DocumentPropertyType {
             (DocumentPropertyType::U16, Value::U128(n)) if n <= u16::MAX as u128 => {
                 *value = Value::U16(n as u16);
             }
-            
+
             (DocumentPropertyType::U32, Value::U32(_)) => {} // Already correct
             (DocumentPropertyType::U32, Value::U8(n)) => {
                 *value = Value::U32(n as u32);
@@ -2132,7 +2132,7 @@ impl DocumentPropertyType {
             (DocumentPropertyType::U32, Value::U128(n)) if n <= u32::MAX as u128 => {
                 *value = Value::U32(n as u32);
             }
-            
+
             (DocumentPropertyType::U64, Value::U64(_)) => {} // Already correct
             (DocumentPropertyType::U64, Value::U8(n)) => {
                 *value = Value::U64(n as u64);
@@ -2146,7 +2146,7 @@ impl DocumentPropertyType {
             (DocumentPropertyType::U64, Value::U128(n)) if n <= u64::MAX as u128 => {
                 *value = Value::U64(n as u64);
             }
-            
+
             (DocumentPropertyType::U128, Value::U128(_)) => {} // Already correct
             (DocumentPropertyType::U128, Value::U8(n)) => {
                 *value = Value::U128(n as u128);
@@ -2160,36 +2160,50 @@ impl DocumentPropertyType {
             (DocumentPropertyType::U128, Value::U64(n)) => {
                 *value = Value::U128(n as u128);
             }
-            
+
             // Handle signed integers similarly
             (DocumentPropertyType::I8, Value::I8(_)) => {} // Already correct
-            (DocumentPropertyType::I8, Value::I16(n)) if n >= i8::MIN as i16 && n <= i8::MAX as i16 => {
+            (DocumentPropertyType::I8, Value::I16(n))
+                if n >= i8::MIN as i16 && n <= i8::MAX as i16 =>
+            {
                 *value = Value::I8(n as i8);
             }
-            (DocumentPropertyType::I8, Value::I32(n)) if n >= i8::MIN as i32 && n <= i8::MAX as i32 => {
+            (DocumentPropertyType::I8, Value::I32(n))
+                if n >= i8::MIN as i32 && n <= i8::MAX as i32 =>
+            {
                 *value = Value::I8(n as i8);
             }
-            (DocumentPropertyType::I8, Value::I64(n)) if n >= i8::MIN as i64 && n <= i8::MAX as i64 => {
+            (DocumentPropertyType::I8, Value::I64(n))
+                if n >= i8::MIN as i64 && n <= i8::MAX as i64 =>
+            {
                 *value = Value::I8(n as i8);
             }
-            (DocumentPropertyType::I8, Value::I128(n)) if n >= i8::MIN as i128 && n <= i8::MAX as i128 => {
+            (DocumentPropertyType::I8, Value::I128(n))
+                if n >= i8::MIN as i128 && n <= i8::MAX as i128 =>
+            {
                 *value = Value::I8(n as i8);
             }
-            
+
             (DocumentPropertyType::I16, Value::I16(_)) => {} // Already correct
             (DocumentPropertyType::I16, Value::I8(n)) => {
                 *value = Value::I16(n as i16);
             }
-            (DocumentPropertyType::I16, Value::I32(n)) if n >= i16::MIN as i32 && n <= i16::MAX as i32 => {
+            (DocumentPropertyType::I16, Value::I32(n))
+                if n >= i16::MIN as i32 && n <= i16::MAX as i32 =>
+            {
                 *value = Value::I16(n as i16);
             }
-            (DocumentPropertyType::I16, Value::I64(n)) if n >= i16::MIN as i64 && n <= i16::MAX as i64 => {
+            (DocumentPropertyType::I16, Value::I64(n))
+                if n >= i16::MIN as i64 && n <= i16::MAX as i64 =>
+            {
                 *value = Value::I16(n as i16);
             }
-            (DocumentPropertyType::I16, Value::I128(n)) if n >= i16::MIN as i128 && n <= i16::MAX as i128 => {
+            (DocumentPropertyType::I16, Value::I128(n))
+                if n >= i16::MIN as i128 && n <= i16::MAX as i128 =>
+            {
                 *value = Value::I16(n as i16);
             }
-            
+
             (DocumentPropertyType::I32, Value::I32(_)) => {} // Already correct
             (DocumentPropertyType::I32, Value::I8(n)) => {
                 *value = Value::I32(n as i32);
@@ -2197,13 +2211,17 @@ impl DocumentPropertyType {
             (DocumentPropertyType::I32, Value::I16(n)) => {
                 *value = Value::I32(n as i32);
             }
-            (DocumentPropertyType::I32, Value::I64(n)) if n >= i32::MIN as i64 && n <= i32::MAX as i64 => {
+            (DocumentPropertyType::I32, Value::I64(n))
+                if n >= i32::MIN as i64 && n <= i32::MAX as i64 =>
+            {
                 *value = Value::I32(n as i32);
             }
-            (DocumentPropertyType::I32, Value::I128(n)) if n >= i32::MIN as i128 && n <= i32::MAX as i128 => {
+            (DocumentPropertyType::I32, Value::I128(n))
+                if n >= i32::MIN as i128 && n <= i32::MAX as i128 =>
+            {
                 *value = Value::I32(n as i32);
             }
-            
+
             (DocumentPropertyType::I64, Value::I64(_)) => {} // Already correct
             (DocumentPropertyType::I64, Value::I8(n)) => {
                 *value = Value::I64(n as i64);
@@ -2214,10 +2232,12 @@ impl DocumentPropertyType {
             (DocumentPropertyType::I64, Value::I32(n)) => {
                 *value = Value::I64(n as i64);
             }
-            (DocumentPropertyType::I64, Value::I128(n)) if n >= i64::MIN as i128 && n <= i64::MAX as i128 => {
+            (DocumentPropertyType::I64, Value::I128(n))
+                if n >= i64::MIN as i128 && n <= i64::MAX as i128 =>
+            {
                 *value = Value::I64(n as i64);
             }
-            
+
             (DocumentPropertyType::I128, Value::I128(_)) => {} // Already correct
             (DocumentPropertyType::I128, Value::I8(n)) => {
                 *value = Value::I128(n as i128);
@@ -2231,7 +2251,7 @@ impl DocumentPropertyType {
             (DocumentPropertyType::I128, Value::I64(n)) => {
                 *value = Value::I128(n as i128);
             }
-            
+
             // Handle Date type - convert integers to date
             (DocumentPropertyType::Date, Value::U64(_)) => {
                 // Timestamp is already in the right format (milliseconds since epoch)
@@ -2241,20 +2261,22 @@ impl DocumentPropertyType {
             (DocumentPropertyType::Date, Value::I64(timestamp)) if timestamp >= 0 => {
                 *value = Value::U64(timestamp as u64);
             }
-            
+
             // Handle Object type - recursively sanitize nested fields
             (DocumentPropertyType::Object(schema), Value::Map(_)) => {
                 if let Value::Map(map) = value {
                     for (key, nested_value) in map.iter_mut() {
                         if let Value::Text(field_name) = key {
                             if let Some(field_property) = schema.get(field_name) {
-                                field_property.property_type.sanitize_value_mut(nested_value);
+                                field_property
+                                    .property_type
+                                    .sanitize_value_mut(nested_value);
                             }
                         }
                     }
                 }
             }
-            
+
             // Handle Array type - sanitize all elements
             (DocumentPropertyType::Array(item_type), Value::Array(_)) => {
                 if let Value::Array(items) = value {
@@ -2263,7 +2285,7 @@ impl DocumentPropertyType {
                     }
                 }
             }
-            
+
             // Handle VariableTypeArray - each item can have a different type
             (DocumentPropertyType::VariableTypeArray(item_types), Value::Array(_)) => {
                 if let Value::Array(items) = value {
@@ -2272,7 +2294,7 @@ impl DocumentPropertyType {
                     }
                 }
             }
-            
+
             // For all other cases, leave the value as is
             _ => {}
         }

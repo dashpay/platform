@@ -6,7 +6,7 @@
 mod callback_bridge;
 mod contested_resource;
 mod context_callbacks;
-mod context_provider;
+pub mod context_provider;
 #[cfg(test)]
 mod context_provider_stubs;
 mod core_sdk;

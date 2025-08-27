@@ -12,14 +12,13 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentPurchaseTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use hex;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 /// Purchase document (broadcast state transition)
 #[no_mangle]
@@ -401,14 +400,14 @@ mod tests {
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
         let document_type_name = CString::new("testDoc").unwrap();
         let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let price = 2000u64;
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase(
@@ -418,8 +417,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -438,6 +436,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
     }
@@ -448,6 +447,8 @@ mod tests {
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -455,9 +456,6 @@ mod tests {
         let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let price = 2000u64;
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase(
@@ -467,8 +465,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -484,6 +481,7 @@ mod tests {
 
         // Clean up
         unsafe {
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -497,15 +495,14 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
         let document_type_name = CString::new("testDoc").unwrap();
         let price = 2000u64;
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase(
@@ -515,9 +512,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 ptr::null(), // null purchaser ID
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -534,6 +529,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -547,6 +543,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -554,9 +552,6 @@ mod tests {
         let purchaser_id = CString::new("invalid-base58-id!@#$").unwrap();
         let price = 2000u64;
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase(
@@ -566,8 +561,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -586,6 +580,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -599,6 +594,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -606,9 +603,6 @@ mod tests {
         let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let price = 0u64; // Zero price
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase(
@@ -618,8 +612,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -627,13 +620,23 @@ mod tests {
             )
         };
 
-        // Should succeed - zero price might be valid for free documents
-        assert!(result.error.is_null());
-        assert!(!result.data.is_null());
+        // Mock SDK doesn't have trusted provider, so it will fail
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InternalError);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(
+                error_msg.contains("trusted context provider"),
+                "Expected trusted provider error, got: '{}'",
+                error_msg
+            );
+        }
 
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -647,6 +650,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -654,9 +659,6 @@ mod tests {
         let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let price = u64::MAX; // Maximum price
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase(
@@ -666,8 +668,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -675,13 +676,23 @@ mod tests {
             )
         };
 
-        // Should succeed - the function should handle max values
-        assert!(result.error.is_null());
-        assert!(!result.data.is_null());
+        // Mock SDK doesn't have trusted provider, so it will fail
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InternalError);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(
+                error_msg.contains("trusted context provider"),
+                "Expected trusted provider error, got: '{}'",
+                error_msg
+            );
+        }
 
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -695,6 +706,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -702,9 +715,6 @@ mod tests {
         let purchaser_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let price = 2000u64;
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         // Test with null SDK handle
         let result = unsafe {
@@ -715,8 +725,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -733,6 +742,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -746,6 +756,8 @@ mod tests {
         let signer = create_mock_signer();
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -753,9 +765,6 @@ mod tests {
         let purchaser_id = CString::new("not-a-valid-base58").unwrap();
         let price = 2000u64;
         let put_settings = create_put_settings();
-
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
 
         let result = unsafe {
             dash_sdk_document_purchase_and_wait(
@@ -765,8 +774,7 @@ mod tests {
                 document_type_name.as_ptr(),
                 price,
                 purchaser_id.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -785,6 +793,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);

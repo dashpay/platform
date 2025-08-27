@@ -257,6 +257,7 @@ mod tests {
 
     // Mock callbacks for signer
     unsafe extern "C" fn mock_sign_callback(
+        _signer: *const std::os::raw::c_void,
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
         _data: *const u8,
@@ -272,6 +273,7 @@ mod tests {
     }
 
     unsafe extern "C" fn mock_can_sign_callback(
+        _signer: *const std::os::raw::c_void,
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
     ) -> bool {
@@ -456,7 +458,8 @@ mod tests {
         let sdk_handle = create_mock_sdk_handle();
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_set_price_params();
-        let signer_handle = 1 as *const SignerHandle;
+        let signer = create_mock_signer();
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -489,7 +492,9 @@ mod tests {
         let sdk_handle = create_mock_sdk_handle();
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_set_price_params();
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
+        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -685,8 +690,11 @@ mod tests {
             params.single_price = price;
 
             let sdk_handle = create_mock_sdk_handle();
-            let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-            let signer_handle = 1 as *const SignerHandle;
+            let identity_public_key = create_mock_identity_public_key();
+            let signer = create_mock_signer();
+            let identity_public_key_handle =
+                Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+            let signer_handle = Box::into_raw(signer) as *const SignerHandle;
             let put_settings = create_put_settings();
             let state_transition_options: *const DashSDKStateTransitionCreationOptions =
                 ptr::null();
@@ -722,8 +730,11 @@ mod tests {
             params.token_position = position;
 
             let sdk_handle = create_mock_sdk_handle();
-            let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-            let signer_handle = 1 as *const SignerHandle;
+            let identity_public_key = create_mock_identity_public_key();
+            let signer = create_mock_signer();
+            let identity_public_key_handle =
+                Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+            let signer_handle = Box::into_raw(signer) as *const SignerHandle;
             let put_settings = create_put_settings();
             let state_transition_options: *const DashSDKStateTransitionCreationOptions =
                 ptr::null();

@@ -234,6 +234,7 @@ mod tests {
 
     // Mock signer callbacks
     unsafe extern "C" fn mock_sign_callback(
+        _signer: *const std::os::raw::c_void,
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
         _data: *const u8,
@@ -249,6 +250,7 @@ mod tests {
     }
 
     unsafe extern "C" fn mock_can_sign_callback(
+        _signer: *const std::os::raw::c_void,
         _identity_public_key_bytes: *const u8,
         _identity_public_key_len: usize,
     ) -> bool {
@@ -355,10 +357,13 @@ mod tests {
 
     #[test]
     fn test_emergency_action_with_null_transition_owner_id() {
-        let sdk_handle = 1 as *mut SDKHandle;
+        let sdk_handle = create_mock_sdk_handle();
         let params = create_valid_emergency_action_params();
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-        let signer_handle = 1 as *const SignerHandle;
+        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer = create_mock_signer();
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -383,15 +388,21 @@ mod tests {
         // Clean up params memory
         unsafe {
             cleanup_emergency_action_params(&params);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
+        destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
     fn test_emergency_action_with_null_params() {
-        let sdk_handle = 1 as *mut SDKHandle;
+        let sdk_handle = create_mock_sdk_handle();
         let transition_owner_id = create_valid_transition_owner_id();
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-        let signer_handle = 1 as *const SignerHandle;
+        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer = create_mock_signer();
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -411,17 +422,21 @@ mod tests {
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
 
         // No params to clean up since we passed null
+        destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
     fn test_emergency_action_with_null_identity_public_key() {
-        let sdk_handle = 1 as *mut SDKHandle;
+        let sdk_handle = create_mock_sdk_handle();
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_emergency_action_params();
-        let signer_handle = 1 as *const SignerHandle;
+        let signer = create_mock_signer();
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -446,15 +461,19 @@ mod tests {
         // Clean up params memory
         unsafe {
             cleanup_emergency_action_params(&params);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
+        destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
     fn test_emergency_action_with_null_signer() {
-        let sdk_handle = 1 as *mut SDKHandle;
+        let sdk_handle = create_mock_sdk_handle();
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_emergency_action_params();
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
+        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -479,7 +498,9 @@ mod tests {
         // Clean up params memory
         unsafe {
             cleanup_emergency_action_params(&params);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
         }
+        destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]
@@ -576,9 +597,12 @@ mod tests {
         params.serialized_contract = contract_data.as_ptr();
         params.serialized_contract_len = contract_data.len();
 
-        let sdk_handle = 1 as *mut SDKHandle;
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-        let signer_handle = 1 as *const SignerHandle;
+        let sdk_handle = create_mock_sdk_handle();
+        let identity_public_key = create_mock_identity_public_key();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+        let signer = create_mock_signer();
+        let signer_handle = Box::into_raw(signer) as *const SignerHandle;
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -599,7 +623,10 @@ mod tests {
         // Clean up params memory (but not the contract data since we don't own it)
         unsafe {
             let _ = CString::from_raw(params.token_contract_id as *mut std::os::raw::c_char);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
+            let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
+        destroy_mock_sdk_handle(sdk_handle);
     }
 
     #[test]

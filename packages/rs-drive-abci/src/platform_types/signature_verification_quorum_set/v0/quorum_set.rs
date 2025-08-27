@@ -76,7 +76,7 @@ pub trait SignatureVerificationQuorumSetV0Methods {
         &self,
         signing_height: u32,
         verification_height: u32,
-    ) -> SelectedQuorumSetIterator;
+    ) -> SelectedQuorumSetIterator<'_>;
 }
 
 /// Iterator over selected quorum sets and specific quorums based on request_id and quorum configuration
@@ -210,7 +210,7 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV
         &self,
         signing_height: u32,
         verification_height: u32,
-    ) -> SelectedQuorumSetIterator {
+    ) -> SelectedQuorumSetIterator<'_> {
         let mut quorums = Vec::new();
         let mut should_be_verifiable = false;
 

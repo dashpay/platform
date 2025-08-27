@@ -2,7 +2,7 @@
 
 use crate::types::SignerHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
-use dash_sdk::dashcore_rpc::dashcore::Network;
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use simple_signer::SingleKeySigner;

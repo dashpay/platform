@@ -201,7 +201,10 @@ impl MockResponse for (DataContract, Vec<u8>) {
     where
         Self: Sized,
     {
-        (DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data"), buf.to_vec())
+        (
+            DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data"),
+            buf.to_vec(),
+        )
     }
 }
 

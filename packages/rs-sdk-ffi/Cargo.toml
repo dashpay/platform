@@ -7,7 +7,7 @@ license = "MIT"
 description = "FFI bindings for Dash Platform SDK - C-compatible interface for cross-platform integration"
 
 [lib]
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 dash-sdk = { path = "../rs-sdk", features = ["mocks", "dpns-contract", "dashpay-contract"] }

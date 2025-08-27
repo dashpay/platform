@@ -2,13 +2,12 @@
 
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
@@ -389,6 +388,7 @@ mod tests {
     use dash_sdk::dpp::document::{Document, DocumentV0};
     use dash_sdk::dpp::platform_value::Value;
     use dash_sdk::dpp::prelude::Identifier;
+    use dash_sdk::platform::IdentityPublicKey;
 
     use std::collections::BTreeMap;
     use std::ffi::{CStr, CString};
@@ -423,28 +423,30 @@ mod tests {
 
     #[test]
     fn test_delete_with_null_sdk_handle() {
-        let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
-        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        // Create string IDs instead of using document handle
+        let document_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let document_type_name = CString::new("testDoc").unwrap();
+
+        // Use IdentityPublicKeyHandle instead of raw bytes
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
-        let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
 
         let result = unsafe {
             dash_sdk_document_delete(
                 ptr::null_mut(), // null SDK handle
-                document_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -462,9 +464,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(document_handle as *mut Document);
-            // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
     }
@@ -472,26 +472,27 @@ mod tests {
     #[test]
     fn test_delete_with_null_document() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = create_mock_data_contract();
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let document_type_name = CString::new("testDoc").unwrap();
+
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
-        let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
 
         let result = unsafe {
             dash_sdk_document_delete(
                 sdk_handle,
-                ptr::null(), // null document
+                ptr::null(), // null document_id
+                owner_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -507,8 +508,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -517,26 +517,27 @@ mod tests {
     #[test]
     fn test_delete_with_null_data_contract() {
         let sdk_handle = create_mock_sdk_handle();
-        let document = create_mock_document();
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
-        let document_handle = Box::into_raw(document) as *const DocumentHandle;
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let document_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
+        let document_type_name = CString::new("testDoc").unwrap();
+
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
-        let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
 
         let result = unsafe {
             dash_sdk_document_delete(
                 sdk_handle,
-                document_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
                 ptr::null(), // null data contract ID
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -552,8 +553,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(document_handle as *mut Document);
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -562,15 +562,15 @@ mod tests {
     #[test]
     fn test_delete_with_null_document_type_name() {
         let sdk_handle = create_mock_sdk_handle();
-        let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
-        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let document_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let put_settings = create_put_settings();
@@ -578,12 +578,11 @@ mod tests {
         let result = unsafe {
             dash_sdk_document_delete(
                 sdk_handle,
-                document_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
                 contract_id.as_ptr(),
                 ptr::null(), // null document type name
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -599,9 +598,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(document_handle as *mut Document);
-            // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -610,25 +607,25 @@ mod tests {
     #[test]
     fn test_delete_with_null_identity_public_key() {
         let sdk_handle = create_mock_sdk_handle();
-        let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
         let signer = create_mock_signer();
 
-        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let document_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let document_type_name = CString::new("testDoc").unwrap();
+
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
-        let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
 
         let result = unsafe {
             dash_sdk_document_delete(
                 sdk_handle,
-                document_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                ptr::null(), // null identity public key data
-                0,
+                ptr::null(), // null identity public key handle
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -644,8 +641,6 @@ mod tests {
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(document_handle as *mut Document);
-            // No longer need to clean up data contract handle
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -654,26 +649,26 @@ mod tests {
     #[test]
     fn test_delete_with_null_signer() {
         let sdk_handle = create_mock_sdk_handle();
-        let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
         let identity_public_key = create_mock_identity_public_key();
 
-        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let document_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
-
         let document_type_name = CString::new("testDoc").unwrap();
+
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
+
         let put_settings = create_put_settings();
 
         let result = unsafe {
             dash_sdk_document_delete(
                 sdk_handle,
-                document_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 ptr::null(), // null signer
                 ptr::null(),
                 &put_settings,
@@ -689,9 +684,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(document_handle as *mut Document);
-            // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
         }
         destroy_mock_sdk_handle(sdk_handle);
     }
@@ -700,29 +693,29 @@ mod tests {
     fn test_delete_and_wait_with_null_parameters() {
         // Similar tests for dash_sdk_document_delete_and_wait
         let sdk_handle = create_mock_sdk_handle();
-        let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
-        let document_handle = Box::into_raw(document) as *const DocumentHandle;
+        let document_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let owner_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let document_type_name = CString::new("testDoc").unwrap();
+
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
-        let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
 
         // Test with null SDK handle
         let result = unsafe {
             dash_sdk_document_delete_and_wait(
                 ptr::null_mut(),
-                document_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -738,9 +731,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(document_handle as *mut Document);
-            // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);

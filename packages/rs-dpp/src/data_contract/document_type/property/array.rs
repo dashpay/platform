@@ -26,13 +26,13 @@ impl ArrayItemType {
                     Some(bytes)
                 } else {
                     // If hex fails, try base64 decoding
-                    use base64::{Engine as _, engine::general_purpose};
+                    use base64::{engine::general_purpose, Engine as _};
                     general_purpose::STANDARD.decode(str_value.as_str()).ok()
                 };
-                
+
                 if let Some(bytes) = decoded_bytes {
                     let byte_len = bytes.len();
-                    
+
                     // Check if the decoded bytes meet the size constraints
                     let size_ok = match (*min_size, *max_size) {
                         (Some(min), Some(max)) => byte_len >= min && byte_len <= max,
@@ -40,7 +40,7 @@ impl ArrayItemType {
                         (None, Some(max)) => byte_len <= max,
                         (None, None) => true,
                     };
-                    
+
                     if size_ok {
                         // Use specific byte array types for exact sizes
                         match bytes.len() {
@@ -68,22 +68,27 @@ impl ArrayItemType {
                 }
                 // If decoding fails, leave the value as is (validation will catch it later)
             }
-            
+
             // Convert hex or base58 strings to identifiers for Identifier items
             (ArrayItemType::Identifier, Value::Text(str_value)) => {
                 use platform_value::Identifier;
                 // First try base58 decoding (most common for identifiers)
-                if let Ok(id) = Identifier::from_string(&str_value, platform_value::string_encoding::Encoding::Base58) {
+                if let Ok(id) = Identifier::from_string(
+                    &str_value,
+                    platform_value::string_encoding::Encoding::Base58,
+                ) {
                     *value = Value::Identifier(id.into_buffer());
                 } else {
                     // If base58 fails, try hex decoding
                     // Remove any spaces or non-hex characters
-                    let clean_hex: String = str_value.chars()
+                    let clean_hex: String = str_value
+                        .chars()
                         .filter(|c| c.is_ascii_hexdigit())
                         .collect();
-                    
+
                     // Try to decode hex string to identifier
-                    if clean_hex.len() == 64 {  // 32 bytes = 64 hex chars
+                    if clean_hex.len() == 64 {
+                        // 32 bytes = 64 hex chars
                         if let Ok(bytes) = hex::decode(&clean_hex) {
                             if let Ok(id) = Identifier::try_from(bytes.as_slice()) {
                                 *value = Value::Identifier(id.into_buffer());
@@ -93,12 +98,12 @@ impl ArrayItemType {
                 }
                 // If both conversions fail, leave the value as is (validation will catch it later)
             }
-            
+
             // Convert positive I64 to U64 for Date items
             (ArrayItemType::Date, Value::I64(timestamp)) if timestamp >= 0 => {
                 *value = Value::U64(timestamp as u64);
             }
-            
+
             // Ensure integers are converted properly
             (ArrayItemType::Integer, Value::U64(n)) if n <= i64::MAX as u64 => {
                 *value = Value::I64(n as i64);
@@ -112,7 +117,7 @@ impl ArrayItemType {
             (ArrayItemType::Integer, Value::U8(n)) => {
                 *value = Value::I64(n as i64);
             }
-            
+
             // Ensure numbers are converted to F64
             (ArrayItemType::Number, Value::I64(n)) => {
                 *value = Value::Float(n as f64);
@@ -138,12 +143,12 @@ impl ArrayItemType {
             (ArrayItemType::Number, Value::U8(n)) => {
                 *value = Value::Float(n as f64);
             }
-            
+
             // For all other cases, leave the value as is
             _ => {}
         }
     }
-    
+
     pub fn encode_value_with_size(&self, value: Value) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ArrayItemType::String(_, _) => {

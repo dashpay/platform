@@ -425,8 +425,8 @@ mod tests {
         let put_settings = create_put_settings();
         let contract_id = CString::new("4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF").unwrap();
 
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
 
         let result = unsafe {
             dash_sdk_document_put_to_platform(
@@ -435,9 +435,7 @@ mod tests {
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -456,6 +454,7 @@ mod tests {
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
     }
@@ -468,8 +467,8 @@ mod tests {
         let signer = create_mock_signer();
 
         // No longer need data contract handle
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let document_type_name = CString::new("testDoc").unwrap();
@@ -484,9 +483,7 @@ mod tests {
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -503,7 +500,7 @@ mod tests {
         // Clean up
         unsafe {
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -519,8 +516,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         // No longer need data contract handle
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let document_type_name = CString::new("testDoc").unwrap();
@@ -534,9 +531,7 @@ mod tests {
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 ptr::null(), // null entropy
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -554,7 +549,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -571,8 +566,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         // No longer need data contract handle
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let document_type_name = CString::new("testDoc").unwrap();
@@ -587,9 +582,7 @@ mod tests {
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -597,18 +590,24 @@ mod tests {
             )
         };
 
-        // Should succeed with serialized data (mock SDK returns success)
-        assert!(result.error.is_null());
-        assert!(!result.data.is_null());
-
-        // Check result type is binary data
-        assert_eq!(result.data_type, DashSDKResultDataType::BinaryData);
+        // Mock SDK doesn't have trusted provider, so it will fail
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InternalError);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(
+                error_msg.contains("trusted context provider"),
+                "Expected trusted provider error, got: '{}'",
+                error_msg
+            );
+        }
 
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -625,8 +624,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         // No longer need data contract handle
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let document_type_name = CString::new("testDoc").unwrap();
@@ -641,9 +640,7 @@ mod tests {
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -651,15 +648,24 @@ mod tests {
             )
         };
 
-        // Should succeed with serialized data (mock SDK returns success)
-        assert!(result.error.is_null());
-        assert!(!result.data.is_null());
+        // Mock SDK doesn't have trusted provider, so it will fail
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InternalError);
+            let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
+            assert!(
+                error_msg.contains("trusted context provider"),
+                "Expected trusted provider error, got: '{}'",
+                error_msg
+            );
+        }
 
         // Clean up
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
@@ -675,8 +681,8 @@ mod tests {
 
         let document_handle = Box::into_raw(document) as *const DocumentHandle;
         // No longer need data contract handle
-        // Serialize the identity public key
-        let key_bytes = identity_public_key.to_bytes().unwrap();
+        let identity_public_key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
         let signer_handle = Box::into_raw(signer) as *const SignerHandle;
 
         let document_type_name = CString::new("testDoc").unwrap();
@@ -692,9 +698,7 @@ mod tests {
                 contract_id.as_ptr(),
                 document_type_name.as_ptr(),
                 &entropy,
-                identity_public_key.id(),
-                key_bytes.as_ptr(),
-                key_bytes.len(),
+                identity_public_key_handle,
                 signer_handle,
                 ptr::null(),
                 &put_settings,
@@ -712,7 +716,7 @@ mod tests {
         unsafe {
             let _ = Box::from_raw(document_handle as *mut Document);
             // No longer need to clean up data contract handle
-            // No longer need to clean up identity public key handle
+            let _ = Box::from_raw(identity_public_key_handle as *mut IdentityPublicKey);
             let _ = Box::from_raw(signer_handle as *mut crate::signer::VTableSigner);
         }
         destroy_mock_sdk_handle(sdk_handle);
