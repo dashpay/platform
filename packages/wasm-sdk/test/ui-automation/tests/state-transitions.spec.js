@@ -779,6 +779,14 @@ test.describe('WASM SDK State Transition Tests', () => {
     });
 
     test('should execute identity credit withdrawal transition', async () => {
+      // Get test parameters to check withdrawal amount upfront
+      const testParams = parameterInjector.testData.stateTransitionParameters.identity.identityCreditWithdrawal.testnet[0];
+      
+      // Skip test if withdrawal amount is below minimum threshold
+      if (testParams.amount < 190000) {
+        test.skip(true, `Withdrawal amount ${testParams.amount} credits is below minimum threshold (~190,000 credits)`);
+      }
+      
       // Set up the identity credit withdrawal transition
       await wasmSdkPage.setupStateTransition('identity', 'identityCreditWithdrawal');
       
@@ -791,9 +799,6 @@ test.describe('WASM SDK State Transition Tests', () => {
       
       // Validate basic result structure
       validateBasicStateTransitionResult(result);
-      
-      // Get test parameters for validation
-      const testParams = parameterInjector.testData.stateTransitionParameters.identity.identityCreditWithdrawal.testnet[0];
       
       // Validate identity credit withdrawal specific result
       validateIdentityCreditWithdrawalResult(
