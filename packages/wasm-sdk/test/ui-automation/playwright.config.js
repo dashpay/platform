@@ -52,7 +52,9 @@ module.exports = defineConfig({
         viewport: { width: 1920, height: 1080 }
       },
     },
-    {
+    // Skip state transitions tests in CI environments
+    // These are very slow-running due to https://github.com/dashpay/platform/issues/2736
+    ...(process.env.CI ? [] : [{
       name: 'sequential-tests',
       testMatch: ['state-transitions.spec.js'],
       fullyParallel: false, // Tests in file run in order
@@ -64,7 +66,7 @@ module.exports = defineConfig({
         // Use a larger viewport for better testing
         viewport: { width: 1920, height: 1080 }
       },
-    },
+    }]),
   ],
 
   /* Run your local dev server before starting the tests */
