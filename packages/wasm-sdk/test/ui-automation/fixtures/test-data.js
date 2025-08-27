@@ -775,6 +775,20 @@ const testData = {
           }
         ]
       },
+      tokenConfigUpdate: {
+        testnet: [
+          {
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            contractId: "Afk9QSj9UDE14K1y9y3iSx6kUSm5LLmhbdAvPvWL4P2i",
+            tokenPosition: 0,
+            configItemType: "max_supply",
+            configValue: "1000000",
+            publicNote: "Update max supply test",
+            description: "Update token configuration max supply"
+          }
+        ]
+      },
     }
   },
 

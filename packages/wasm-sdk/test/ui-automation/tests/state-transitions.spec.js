@@ -381,6 +381,18 @@ function validateTokenDirectPurchaseResult(resultStr, expectedAmount, expectedTo
   return purchaseResponse;
 }
 
+function validateTokenConfigUpdateResult(resultStr, expectedConfigType, expectedConfigValue) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const configUpdateResponse = JSON.parse(resultStr);
+  expect(configUpdateResponse).toBeDefined();
+  expect(configUpdateResponse).toBeInstanceOf(Object);
+  
+  // Token config update returns an empty object {} on success
+  console.log(`✅ Token config update transaction submitted successfully - Type: ${expectedConfigType}, Value: ${expectedConfigValue}`);
+  
+  return configUpdateResponse;
+}
+
 /**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
@@ -1065,6 +1077,29 @@ test.describe('WASM SDK State Transition Tests', () => {
       validateTokenDirectPurchaseResult(result.result, testParams.amount, testParams.totalAgreedPrice);
       
       console.log('✅ Token direct purchase state transition completed successfully');
+    });
+
+    test('should execute token config update transition', async () => {
+      // Set up the token config update transition
+      await wasmSdkPage.setupStateTransition('token', 'tokenConfigUpdate');
+      
+      // Inject parameters (contractId, tokenPosition, configItemType, configValue, privateKey)
+      const success = await parameterInjector.injectStateTransitionParameters('token', 'tokenConfigUpdate', 'testnet');
+      expect(success).toBe(true);
+      
+      // Execute the config update
+      const result = await wasmSdkPage.executeStateTransitionAndGetResult();
+     
+      // Validate basic result structure
+      validateBasicStateTransitionResult(result);
+      
+      // Get test parameters for validation
+      const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenConfigUpdate.testnet[0];
+      
+      // Validate token config update specific result
+      validateTokenConfigUpdateResult(result.result, testParams.configItemType, testParams.configValue);
+      
+      console.log('✅ Token config update state transition completed successfully');
     });
 
     test('should show authentication inputs for token transitions', async () => {
