@@ -259,11 +259,11 @@ impl WasmSdk {
             )));
         }
         
-        // Get identity nonce
-        let identity_nonce = sdk
-            .get_identity_nonce(owner_identifier, true, None)
+        // Get identity contract nonce (contract updates use per-contract nonces)
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(owner_identifier, contract_identifier, true, None)
             .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to get identity nonce: {}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("Failed to get identity contract nonce: {}", e)))?;
         
         // Create partial identity for signing
         let partial_identity = dash_sdk::dpp::identity::PartialIdentity {
@@ -283,7 +283,7 @@ impl WasmSdk {
             updated_contract.clone(),
             &partial_identity,
             matching_key.id(),
-            identity_nonce,
+            identity_contract_nonce,
             dash_sdk::dpp::prelude::UserFeeIncrease::default(),
             &signer,
             sdk.version(),
