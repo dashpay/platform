@@ -616,12 +616,12 @@ const testData = {
       documentTransfer: {
         testnet: [
           {
-            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC", // Current owner
-            privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
+            identityId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG", // Current owner
+            privateKey: process.env.TEST_PRIVATE_KEY_SECONDARY || "PLACEHOLDER_CONTRACT_KEY",
             contractId: "HdRFTcxgwPSVgzdy6MTYutDLJdbpfLMXwuBaYLYKMVHv", // Use NFT contract
             documentType: "card",
             documentId: "EypPkQLgT6Jijht7NYs4jmK5TGzkNd1Z4WrQdH1hND59", // Existing trading card document
-            recipientId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG", // Transfer recipient
+            recipientId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC", // Transfer recipient
             description: "Transfer trading card ownership to secondary identity"
           }
         ]

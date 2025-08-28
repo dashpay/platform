@@ -748,7 +748,7 @@ test.describe('WASM SDK State Transition Tests', () => {
       });
 
       // Step 3: Transfer the card back to primary identity (tests transfer flow)
-      await test.step.skip('Transfer card back to primary identity', async () => {
+      await test.step('Transfer card back to primary identity', async () => {
         console.log('Transferring card back to primary identity...');
 
         // Execute the transfer transition
