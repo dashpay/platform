@@ -721,8 +721,19 @@ class WasmSdkPage extends BaseTest {
    */
   async fillDocumentField(fieldName, value) {
     const fieldInput = this.page.locator(`#dynamic_documentFields input[data-field-name="${fieldName}"], #dynamic_documentFields textarea[data-field-name="${fieldName}"]`);
-    await fieldInput.fill(value.toString());
-    console.log(`Document field '${fieldName}' filled with value: ${value}`);
+    
+    // Convert value to string based on type
+    let stringValue = '';
+    if (value === null || value === undefined) {
+      stringValue = '';
+    } else if (typeof value === 'object') {
+      stringValue = JSON.stringify(value);
+    } else {
+      stringValue = value.toString();
+    }
+    
+    await fieldInput.fill(stringValue);
+    console.log(`Document field '${fieldName}' filled with value: ${stringValue}`);
   }
 
   /**
