@@ -314,16 +314,15 @@ function validateTokenFreezeResult(resultStr, expectedIdentityId) {
  * Helper function to validate token destroy frozen result
  * @param {string} resultStr - The raw result string from token destroy frozen
  * @param {string} expectedIdentityId - Expected identity ID with frozen tokens
- * @param {string} expectedAmount - Expected amount to destroy
  */
-function validateTokenDestroyFrozenResult(resultStr, expectedIdentityId, expectedAmount) {
+function validateTokenDestroyFrozenResult(resultStr, expectedIdentityId) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const destroyResponse = JSON.parse(resultStr);
   expect(destroyResponse).toBeDefined();
   expect(destroyResponse).toBeInstanceOf(Object);
 
   // Token destroy frozen returns an empty object {} on success
-  console.log(`✅ Token destroy frozen transaction submitted successfully: ${expectedAmount} tokens from ${expectedIdentityId}`);
+  console.log(`✅ Token destroy frozen transaction submitted successfully: destroyed all frozen tokens from ${expectedIdentityId}`);
 
   return destroyResponse;
 }
@@ -970,7 +969,7 @@ test.describe('WASM SDK State Transition Tests', () => {
       const testParams = parameterInjector.testData.stateTransitionParameters.token.tokenDestroyFrozen.testnet[0];
 
       // Validate token destroy frozen specific result
-      validateTokenDestroyFrozenResult(result.result, testParams.frozenIdentityId, testParams.amount);
+      validateTokenDestroyFrozenResult(result.result, testParams.frozenIdentityId);
 
       console.log('✅ Token destroy frozen state transition completed successfully');
     });
