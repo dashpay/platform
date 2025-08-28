@@ -616,39 +616,39 @@ const testData = {
       documentTransfer: {
         testnet: [
           {
-            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
-            documentType: "note",
-            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
-            newOwnerId: "PLACEHOLDER_NEW_OWNER_ID", // Will be set to recipient identity
             identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC", // Current owner
             privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
-            description: "Transfer document ownership to another identity"
+            contractId: "HdRFTcxgwPSVgzdy6MTYutDLJdbpfLMXwuBaYLYKMVHv", // Use NFT contract
+            documentType: "card",
+            documentId: "EypPkQLgT6Jijht7NYs4jmK5TGzkNd1Z4WrQdH1hND59", // Existing trading card document
+            recipientId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG", // Transfer recipient
+            description: "Transfer trading card ownership to secondary identity"
           }
         ]
       },
       documentPurchase: {
         testnet: [
           {
-            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
-            documentType: "note",
-            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
-            purchaseAmount: "1000000", // Amount in credits
-            identityId: "PLACEHOLDER_BUYER_ID", // Buyer identity
-            privateKey: "PLACEHOLDER_BUYER_KEY", // DON'T STORE - Buyer's key
-            description: "Purchase a priced document"
+            identityId: "HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG", // Buyer identity
+            privateKey: process.env.TEST_PRIVATE_KEY_SECONDARY || "PLACEHOLDER_SECONDARY_KEY",
+            contractId: "HdRFTcxgwPSVgzdy6MTYutDLJdbpfLMXwuBaYLYKMVHv", // Use NFT contract
+            documentType: "card",
+            documentId: "EypPkQLgT6Jijht7NYs4jmK5TGzkNd1Z4WrQdH1hND59", // Existing trading card document
+            price: 1000, // Price in credits
+            description: "Purchase a priced trading card with secondary identity"
           }
         ]
       },
       documentSetPrice: {
         testnet: [
           {
-            contractId: "5kMgvQ9foEQ9TzDhz5jvbJ9Lhv5qqBpUeYEezHNEa6Ti", // Use simple note contract
-            documentType: "note",
-            documentId: "PLACEHOLDER_DOCUMENT_ID", // Will be set dynamically
-            price: "1000000", // Price in credits
-            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC",
+            identityId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC", // Primary identity owns card after creation
             privateKey: process.env.TEST_PRIVATE_KEY_CONTRACT || "PLACEHOLDER_CONTRACT_KEY",
-            description: "Set price for a document"
+            contractId: "HdRFTcxgwPSVgzdy6MTYutDLJdbpfLMXwuBaYLYKMVHv", // Use NFT contract
+            documentType: "card",
+            documentId: "EypPkQLgT6Jijht7NYs4jmK5TGzkNd1Z4WrQdH1hND59", // Existing trading card document
+            price: 1000, // Price in credits
+            description: "Set price for a trading card"
           }
         ]
       }

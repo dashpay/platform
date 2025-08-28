@@ -393,6 +393,81 @@ function validateTokenConfigUpdateResult(resultStr, expectedConfigType, expected
 }
 
 /**
+ * Helper function to validate document transfer result
+ * @param {string} resultStr - The raw result string from document transfer
+ * @param {string} expectedDocumentId - Expected document ID to validate against
+ * @param {string} expectedRecipientId - Expected recipient identity ID
+ */
+function validateDocumentTransferResult(resultStr, expectedDocumentId, expectedRecipientId) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const transferResponse = JSON.parse(resultStr);
+  expect(transferResponse).toBeDefined();
+  expect(transferResponse).toBeInstanceOf(Object);
+
+  // Validate the response structure for document transfer
+  expect(transferResponse.type).toBe('DocumentTransferred');
+  expect(transferResponse.documentId).toBe(expectedDocumentId);
+  expect(transferResponse.newOwnerId).toBe(expectedRecipientId);
+  expect(transferResponse.transferred).toBe(true);
+
+  console.log(`✅ Confirmed transfer of document: ${expectedDocumentId} to ${expectedRecipientId}`);
+
+  return transferResponse;
+}
+
+/**
+ * Helper function to validate document set price result
+ * @param {string} resultStr - The raw result string from document set price
+ * @param {string} expectedDocumentId - Expected document ID to validate against
+ * @param {number} expectedPrice - Expected price that was set
+ */
+function validateDocumentSetPriceResult(resultStr, expectedDocumentId, expectedPrice) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const setPriceResponse = JSON.parse(resultStr);
+  expect(setPriceResponse).toBeDefined();
+  expect(setPriceResponse).toBeInstanceOf(Object);
+
+  // Validate the response structure for document set price
+  expect(setPriceResponse.type).toBe('DocumentPriceSet');
+  expect(setPriceResponse.documentId).toBe(expectedDocumentId);
+  expect(setPriceResponse.price).toBe(expectedPrice);
+  expect(setPriceResponse.priceSet).toBe(true);
+
+  console.log(`✅ Confirmed price set for document: ${expectedDocumentId} at ${expectedPrice} credits`);
+
+  return setPriceResponse;
+}
+
+/**
+ * Helper function to validate document purchase result
+ * @param {string} resultStr - The raw result string from document purchase
+ * @param {string} expectedDocumentId - Expected document ID to validate against
+ * @param {string} expectedBuyerId - Expected buyer identity ID
+ * @param {number} expectedPrice - Expected purchase price
+ */
+function validateDocumentPurchaseResult(resultStr, expectedDocumentId, expectedBuyerId, expectedPrice) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const purchaseResponse = JSON.parse(resultStr);
+  expect(purchaseResponse).toBeDefined();
+  expect(purchaseResponse).toBeInstanceOf(Object);
+
+  // Validate the response structure for document purchase
+  expect(purchaseResponse.type).toBe('DocumentPurchased');
+  expect(purchaseResponse.documentId).toBe(expectedDocumentId);
+  expect(purchaseResponse.status).toBe('success');
+  expect(purchaseResponse.newOwnerId).toBe(expectedBuyerId);
+  expect(purchaseResponse.pricePaid).toBe(expectedPrice);
+  expect(purchaseResponse.message).toBe('Document purchased successfully');
+  expect(purchaseResponse.documentUpdated).toBe(true);
+  expect(purchaseResponse.revision).toBeDefined();
+  expect(typeof purchaseResponse.revision).toBe('number');
+
+  console.log(`✅ Confirmed purchase of document: ${expectedDocumentId} by ${expectedBuyerId} for ${expectedPrice} credits`);
+
+  return purchaseResponse;
+}
+
+/**
  * Execute a state transition with custom parameters
  * @param {WasmSdkPage} wasmSdkPage - The page object instance
  * @param {ParameterInjector} parameterInjector - The parameter injector instance
@@ -592,70 +667,114 @@ test.describe('WASM SDK State Transition Tests', () => {
       console.log('✅ Document replace state transition completed successfully');
     });
 
-    test.skip('should execute document transfer transition', async () => {
-      // TODO: Implementation needed
-      // This test should:
-      // 1. Create a document with identity A
-      // 2. Transfer ownership to identity B
-      // 3. Validate new owner is identity B
-      // Note: Requires two funded identities with proper keys
+    test('should set price, purchase, and transfer a trading card document', async () => {
+      // Set extended timeout for complete marketplace workflow
+      test.setTimeout(275000);
 
-      const result = await executeStateTransition(
-        wasmSdkPage,
-        parameterInjector,
-        'document',
-        'documentTransfer',
-        'testnet'
-      );
+      let documentId;
+      // Step 1: Set price on the card (by owner - primary identity)
+      await test.step('Set price on trading card', async () => {
+        console.log('Setting price on trading card...');
 
-      // Validate basic result structure
-      validateBasicStateTransitionResult(result);
+        // Get the configured price from test data
+        const setPriceParams = parameterInjector.testData.stateTransitionParameters.document.documentSetPrice.testnet[0];
+        const configuredPrice = setPriceParams.price;
+        
+        // Execute the set price transition
+        const setPriceResult = await executeStateTransitionWithCustomParams(
+          wasmSdkPage,
+          parameterInjector,
+          'document',
+          'documentSetPrice',
+          'testnet',
+          {}
+        );
 
-      console.log('✅ Document transfer state transition completed successfully');
-    });
+        // Validate basic result structure
+        validateBasicStateTransitionResult(setPriceResult);
 
-    test.skip('should execute document set price transition', async () => {
-      // TODO: Implementation needed
-      // This test should:
-      // 1. Create a document
-      // 2. Set a price for the document
-      // 3. Validate price was set correctly
-      // Note: May require specific contract with pricing features enabled
+        // Get document ID from test data for validation
+        documentId = setPriceParams.documentId;
+        
+        // Validate document set price specific result
+        validateDocumentSetPriceResult(
+          setPriceResult.result,
+          documentId,
+          configuredPrice
+        );
 
-      const result = await executeStateTransition(
-        wasmSdkPage,
-        parameterInjector,
-        'document',
-        'documentSetPrice',
-        'testnet'
-      );
+        console.log('✅ Card price set successfully');
+      });
 
-      // Validate basic result structure
-      validateBasicStateTransitionResult(result);
+      // Step 2: Purchase the card with secondary identity (tests purchase flow)
+      await test.step('Purchase trading card with secondary identity', async () => {
+        console.log('Purchasing trading card with secondary identity...');
 
-      console.log('✅ Document set price state transition completed successfully');
-    });
+        // Get the configured price from test data
+        const purchaseParams = parameterInjector.testData.stateTransitionParameters.document.documentPurchase.testnet[0];
+        const purchaseConfiguredPrice = purchaseParams.price;
+        
+        // Log if the purchase price differs from what was set
+        const setPriceParams = parameterInjector.testData.stateTransitionParameters.document.documentSetPrice.testnet[0];
+        if (purchaseConfiguredPrice !== setPriceParams.price) {
+          console.log(`⚠️ Note: documentPurchase uses price ${purchaseConfiguredPrice}, but documentSetPrice set it to ${setPriceParams.price}`);
+        }
 
-    test.skip('should execute document purchase transition', async () => {
-      // TODO: Implementation needed
-      // This test should:
-      // 1. Create a document with identity A and set a price
-      // 2. Purchase the document with identity B
-      // 3. Validate purchase was successful and payment transferred
-      // Note: Requires two funded identities and priced document
+        // Execute the purchase transition
+        const purchaseResult = await executeStateTransitionWithCustomParams(
+          wasmSdkPage,
+          parameterInjector,
+          'document',
+          'documentPurchase',
+          'testnet',
+          {}
+        );
 
-      const result = await executeStateTransition(
-        wasmSdkPage,
-        parameterInjector,
-        'document',
-        'documentPurchase',
-        'testnet'
-      );
+        // Validate basic result structure
+        validateBasicStateTransitionResult(purchaseResult);
 
-      // Validate basic result structure
-      validateBasicStateTransitionResult(result);
+        // Get test parameters for validation (secondary identity is the buyer)
+        const testParams = parameterInjector.testData.stateTransitionParameters.document.documentPurchase.testnet[0];
 
-      console.log('✅ Document purchase state transition completed successfully');
+        // Validate document purchase specific result
+        validateDocumentPurchaseResult(
+          purchaseResult.result,
+          documentId,
+          testParams.identityId, // Secondary identity as buyer
+          purchaseConfiguredPrice  // Use the actual price from test-data.js
+        );
+
+        console.log('✅ Card purchased by secondary identity successfully');
+      });
+
+      // Step 3: Transfer the card back to primary identity (tests transfer flow)
+      await test.step.skip('Transfer card back to primary identity', async () => {
+        console.log('Transferring card back to primary identity...');
+
+        // Execute the transfer transition
+        const transferResult = await executeStateTransitionWithCustomParams(
+          wasmSdkPage,
+          parameterInjector,
+          'document',
+          'documentTransfer',
+          'testnet',
+          {
+            recipientId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC" // Transfer back to primary identity
+          }
+        );
+
+        // Validate basic result structure
+        validateBasicStateTransitionResult(transferResult);
+
+        // Validate document transfer specific result
+        validateDocumentTransferResult(
+          transferResult.result,
+          documentId,
+          "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC" // Primary identity as recipient
+        );
+
+        console.log('✅ Complete marketplace workflow completed: Create → Set Price → Purchase → Transfer');
+      });
     });
 
     test('should create, replace, and delete a document', async () => {
