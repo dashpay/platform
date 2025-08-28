@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 📖 Essential Reading
+
+**IMPORTANT**: Before building any packages or working with this repository, you MUST read the [JavaScript-Developer-Guide.md](JavaScript-Developer-Guide.md) first. This comprehensive guide contains:
+
+- **Critical build procedures** and workspace setup
+- **Yarn workspace architecture** and dependency management
+- **JavaScript-only build optimization** (much faster than full platform builds)
+- **Package-specific development workflows**
+- **Troubleshooting and debugging strategies**
+- **Example script creation guidelines**
+
+The JavaScript Developer Guide provides the foundation for understanding how to work efficiently with this monorepo's 21 packages and complex dependency chains.
+
 ## IMPORTANT: Tool Usage Rules
 
 **ALWAYS use the swift-rust-ffi-engineer agent for:**
@@ -16,9 +29,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Build and Development
 
+**Note**: For detailed build procedures, workspace optimization, and JavaScript-only builds, see [JavaScript-Developer-Guide.md](JavaScript-Developer-Guide.md#5-build-and-packaging).
+
 ```bash
 # Initial setup (installs deps, builds, and configures)
 yarn setup
+
+# JavaScript-optimized setup (much faster for JS development)
+yarn install
+ultra --recursive --filter "packages/@(js-dash-sdk|wallet-lib|js-dapi-client|wasm-dpp|js-grpc-common|dapi-grpc)" --build
 
 # Start local development environment
 yarn start
@@ -121,6 +140,8 @@ Platform uses data contracts to define application data schemas:
 - `withdrawals-contract`: Platform credit withdrawals
 
 ### Development Workflow
+
+**For comprehensive workflow guidance**, see [JavaScript-Developer-Guide.md#3-development-workflow-best-practices](JavaScript-Developer-Guide.md#3-development-workflow-best-practices).
 
 1. **Monorepo Structure**: Uses Yarn workspaces to manage multiple packages
 2. **Cross-language Integration**: WASM bindings connect Rust and JavaScript code
