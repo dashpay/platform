@@ -965,6 +965,26 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch document: {}", e)))?
             .ok_or_else(|| JsValue::from_str("Document not found"))?;
         
+        // Get the current revision and increment it
+        let current_revision = document.revision().unwrap_or(0);
+        
+        // Create a modified document with incremented revision for the transfer transition
+        let transfer_document = Document::V0(DocumentV0 {
+            id: document.id(),
+            owner_id: document.owner_id(),
+            properties: document.properties().clone(),
+            revision: Some(current_revision + 1),
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
+        });
+        
         // Fetch the identity to get the correct key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
             .await
@@ -983,7 +1003,7 @@ impl WasmSdk {
         
         // Create a transfer transition
         let transition = BatchTransition::new_document_transfer_transition_from_document(
-            document,
+            transfer_document,
             document_type_ref,
             recipient_identifier,
             matching_key,
