@@ -848,6 +848,7 @@
         "getEvonodesProposedEpochBlocksByIds": {
           "label": "Get Evonodes Proposed Epoch Blocks by IDs",
           "description": "Get proposed blocks by evonode IDs",
+          "supportsProof": false,
           "inputs": [
             {
               "name": "epoch",
@@ -867,6 +868,7 @@
         "getEvonodesProposedEpochBlocksByRange": {
           "label": "Get Evonodes Proposed Epoch Blocks by Range",
           "description": "Get proposed blocks by range",
+          "supportsProof": false,
           "inputs": [
             {
               "name": "epoch",
@@ -1121,11 +1123,13 @@
         "getStatus": {
           "label": "Get Status",
           "description": "Get system status",
+          "supportsProof": false,
           "inputs": []
         },
         "getCurrentQuorumsInfo": {
           "label": "Get Current Quorums Info",
           "description": "Get information about current quorums",
+          "supportsProof": false,
           "inputs": []
         },
         "getPrefundedSpecializedBalance": {
@@ -1167,6 +1171,7 @@
         "waitForStateTransitionResult": {
           "label": "Wait for State Transition Result",
           "description": "Internal query to wait for and retrieve the result of a previously submitted state transition",
+          "supportsProof": false,
           "inputs": [
             {
               "name": "stateTransitionHash",
