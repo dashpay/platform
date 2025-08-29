@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The JavaScript Developer Guide provides the foundation for understanding how to work efficiently with this monorepo's 21 packages and complex dependency chains.
 
+<<<<<<< HEAD
 ## IMPORTANT: Tool Usage Rules
 
 **ALWAYS use the swift-rust-ffi-engineer agent for:**
@@ -26,52 +27,36 @@ The JavaScript Developer Guide provides the foundation for understanding how to 
 - Refactoring Swift code to properly wrap FFI functions
 
 ## Commands
+=======
+## Quick Command Reference
+>>>>>>> 12c4d0494 (refactor(docs): streamline CLAUDE.md to concise quick reference)
 
-### Build and Development
+### Essential Commands
 
-**Note**: For detailed build procedures, workspace optimization, and JavaScript-only builds, see [JavaScript-Developer-Guide.md](JavaScript-Developer-Guide.md#5-build-and-packaging).
+**For comprehensive build procedures and optimization strategies**, see [JavaScript-Developer-Guide.md](JavaScript-Developer-Guide.md#5-build-and-packaging).
 
 ```bash
-# Initial setup (installs deps, builds, and configures)
-yarn setup
+# Quick setup
+yarn setup                    # Full setup (15-20 min)
+yarn install && ultra --recursive --filter "packages/@(js-dash-sdk|wallet-lib|js-dapi-client|wasm-dpp|js-grpc-common|dapi-grpc)" --build  # JS-only (3-5 min)
 
-# JavaScript-optimized setup (much faster for JS development)
-yarn install
-ultra --recursive --filter "packages/@(js-dash-sdk|wallet-lib|js-dapi-client|wasm-dpp|js-grpc-common|dapi-grpc)" --build
-
-# Start local development environment
-yarn start
-
-# Stop local environment
-yarn stop
-
-# Restart services
-yarn restart
-
-# Rebuild after changes
-yarn build
-
-# Complete reset of data and builds
-yarn reset
+# Development environment  
+yarn start                    # Start local environment
+yarn stop                     # Stop environment
+yarn build                    # Rebuild all packages
+yarn reset                    # Nuclear reset
 ```
 
 ### Testing
 
+**For comprehensive testing strategies**, see [JavaScript-Developer-Guide.md#4-testing-strategy](JavaScript-Developer-Guide.md#4-testing-strategy).
+
 ```bash
-# Run full test suite (requires running node from yarn start)
-yarn test
-
-# Test specific packages
-yarn test:suite              # Platform test suite
-yarn test:dapi               # DAPI components
-yarn test:sdk                # JavaScript SDK
-yarn test:dpp                # Dash Platform Protocol
-yarn test:drive              # Drive storage layer
-yarn test:wallet-lib         # Wallet library
-yarn test:dapi-client        # DAPI client
-
-# Test specific workspace
-yarn workspace <package_name> test
+# Essential test commands
+yarn test                     # All tests (requires yarn start)
+yarn test:sdk                 # JavaScript SDK tests
+yarn test:wallet-lib          # Wallet library tests
+yarn workspace <pkg> test     # Specific package tests
 ```
 
 ### Rust Development
@@ -93,17 +78,12 @@ cargo clippy --workspace
 cargo fmt --all
 ```
 
-### Other Commands
+### Utility Commands
 
 ```bash
-# Run linters
-yarn lint
-
-# Access dashmate CLI
-yarn dashmate
-
-# Configure test suite network
-yarn configure:tests:network
+yarn lint                     # Run linters
+yarn dashmate                 # Node management CLI
+yarn configure:tests:network  # Configure test network
 ```
 
 ## Architecture
@@ -141,24 +121,29 @@ Platform uses data contracts to define application data schemas:
 
 ### Development Workflow
 
-**For comprehensive workflow guidance**, see [JavaScript-Developer-Guide.md#3-development-workflow-best-practices](JavaScript-Developer-Guide.md#3-development-workflow-best-practices).
+**For step-by-step workflows and best practices**, see [JavaScript-Developer-Guide.md#3-development-workflow-best-practices](JavaScript-Developer-Guide.md#3-development-workflow-best-practices).
 
-1. **Monorepo Structure**: Uses Yarn workspaces to manage multiple packages
-2. **Cross-language Integration**: WASM bindings connect Rust and JavaScript code
-3. **Local Development**: Docker Compose environment managed by dashmate
-4. **Testing**: Comprehensive test suites at unit, integration, and e2e levels
-5. **WASM SDK Development**: 
-   - Build with `./build.sh` in `packages/wasm-sdk`
-   - Test with web interface at `index.html`
-   - Keep docs in sync: `python3 generate_docs.py`
+**Key concepts:**
+- **Yarn workspaces**: 21 packages managed as a unified dependency graph
+- **WASM bridge**: Rust ↔ JavaScript integration via WebAssembly
+- **Docker environment**: Local development via dashmate
+- **Dependency order**: Build lower-level packages (wasm-dpp) before higher-level (js-dash-sdk)
 
-### Important Patterns
+## Quick Reference
 
+### Package Build Times (JavaScript development)
+- **Full platform**: `yarn setup` (15-20 minutes, all 21 packages)  
+- **JavaScript core**: `yarn install && ultra --filter "packages/@(js-dash-sdk|wallet-lib|js-dapi-client|wasm-dpp|js-grpc-common|dapi-grpc)" --build` (3-5 minutes)
+- **Individual WASM**: `cd packages/wasm-dpp && yarn build` (~1-2 minutes)
+
+### Key Architecture Patterns
+- **State Transitions**: All document/contract updates use state transitions
+- **WASM Integration**: Rust core → WASM bindings → JavaScript SDKs  
+- **Proof Verification**: All operations include cryptographic proofs
+- **Workspace Dependencies**: Changes cascade through dependency chain
 - **Platform Versioning**: Uses `rs-platform-version` for protocol versioning
 - **Serialization**: Custom serialization with `rs-platform-serialization`
 - **Value Handling**: `rs-platform-value` for cross-language data representation
-- **Proof Verification**: `rs-drive-proof-verifier` for cryptographic proofs
-- **State Transitions**: Documents and data contracts use state transitions for updates
 
 ## iOS Development
 
