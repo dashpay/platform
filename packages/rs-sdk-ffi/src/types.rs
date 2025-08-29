@@ -73,7 +73,7 @@ pub struct DashSDKConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashSDKResultDataType {
     /// No data (void/null)
-    None = 0,
+    NoData = 0,
     /// C string (char*)
     String = 1,
     /// Binary data with length
@@ -132,7 +132,7 @@ impl DashSDKResult {
     /// Create a success result (backward compatibility - assumes no data type)
     pub fn success(data: *mut c_void) -> Self {
         DashSDKResult {
-            data_type: DashSDKResultDataType::None,
+            data_type: DashSDKResultDataType::NoData,
             data,
             error: std::ptr::null_mut(),
         }
@@ -186,7 +186,7 @@ impl DashSDKResult {
     /// Create an error result
     pub fn error(error: super::DashSDKError) -> Self {
         DashSDKResult {
-            data_type: DashSDKResultDataType::None,
+            data_type: DashSDKResultDataType::NoData,
             data: std::ptr::null_mut(),
             error: Box::into_raw(Box::new(error)),
         }

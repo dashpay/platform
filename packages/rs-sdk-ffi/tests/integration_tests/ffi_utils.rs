@@ -67,7 +67,7 @@ pub unsafe fn parse_string_result(result: DashSDKResult) -> Result<Option<String
     }
 
     match result.data_type {
-        DashSDKResultDataType::None => Ok(None),
+        DashSDKResultDataType::NoData => Ok(None),
         DashSDKResultDataType::String => {
             if result.data.is_null() {
                 Ok(None)

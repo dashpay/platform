@@ -50,7 +50,7 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_resources(
                 Ok(s) => s,
                 Err(e) => {
                     return DashSDKResult {
-                        data_type: DashSDKResultDataType::None,
+                        data_type: DashSDKResultDataType::NoData,
                         data: std::ptr::null_mut(),
                         error: Box::into_raw(Box::new(DashSDKError::new(
                             DashSDKErrorCode::InternalError,
@@ -66,12 +66,12 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_resources(
             }
         }
         Ok(None) => DashSDKResult {
-            data_type: DashSDKResultDataType::None,
+            data_type: DashSDKResultDataType::NoData,
             data: std::ptr::null_mut(),
             error: std::ptr::null_mut(),
         },
         Err(e) => DashSDKResult {
-            data_type: DashSDKResultDataType::None,
+            data_type: DashSDKResultDataType::NoData,
             data: std::ptr::null_mut(),
             error: Box::into_raw(Box::new(DashSDKError::new(
                 DashSDKErrorCode::InternalError,

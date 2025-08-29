@@ -525,6 +525,7 @@ dependencies = [
  "bitcoin_hashes 0.13.0",
  "serde",
  "unicode-normalization",
+ "zeroize",
 ]
 
 [[package]]
@@ -837,6 +838,25 @@ checksum = "3fce8dd7fcfcbf3a0a87d8f515194b49d6135acab73e18bd380d1d93bb1a15eb"
 dependencies = [
  "clap 4.5.45",
  "heck 0.4.1",
+ "indexmap 2.10.0",
+ "log",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.106",
+ "tempfile",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "cbindgen"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "975982cdb7ad6a142be15bdf84aea7ec6a9e5d4d797c004d43185b24cfe4e684"
+dependencies = [
+ "clap 4.5.45",
+ "heck 0.5.0",
  "indexmap 2.10.0",
  "log",
  "proc-macro2",
@@ -1512,6 +1532,7 @@ dependencies = [
  "env_logger 0.10.2",
  "hex",
  "key-wallet",
+ "key-wallet-ffi",
  "key-wallet-manager",
  "libc",
  "log",
@@ -3389,6 +3410,21 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "zeroize",
+]
+
+[[package]]
+name = "key-wallet-ffi"
+version = "0.39.6"
+dependencies = [
+ "cbindgen 0.29.0",
+ "dash-network",
+ "dashcore",
+ "hex",
+ "key-wallet",
+ "key-wallet-manager",
+ "libc",
+ "secp256k1",
 ]
 
 [[package]]
@@ -3396,10 +3432,12 @@ name = "key-wallet-manager"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bincode 2.0.0-rc.3",
  "dashcore",
  "dashcore_hashes",
  "key-wallet",
  "secp256k1",
+ "zeroize",
 ]
 
 [[package]]
@@ -5015,6 +5053,7 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "key-wallet",
+ "key-wallet-ffi",
  "libc",
  "log",
  "once_cell",

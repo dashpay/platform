@@ -6,6 +6,7 @@
 
 use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 use dash_spv_ffi::*;
+use key_wallet_ffi::FFIBalance;
 use std::ffi::{c_char, CStr};
 
 // Note: We use FFIClientConfig and FFIDashSpvClient directly instead of type aliases
@@ -236,7 +237,7 @@ pub unsafe extern "C" fn dash_core_sdk_unwatch_address(
 #[no_mangle]
 pub unsafe extern "C" fn dash_core_sdk_get_total_balance(
     client: *mut FFIDashSpvClient,
-) -> *mut dash_spv_ffi::FFIBalance {
+) -> *mut FFIBalance {
     if client.is_null() {
         return std::ptr::null_mut();
     }

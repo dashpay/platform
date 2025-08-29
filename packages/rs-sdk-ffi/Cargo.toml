@@ -17,6 +17,7 @@ simple-signer = { path = "../simple-signer" }
 
 # Core SDK integration (always included for unified SDK)
 dash-spv-ffi = { path = "../../../rust-dashcore/dash-spv-ffi" }
+key-wallet-ffi = { path = "../../../rust-dashcore/key-wallet-ffi" }
 
 # Key and wallet management
 key-wallet = { path = "../../../rust-dashcore/key-wallet" }
