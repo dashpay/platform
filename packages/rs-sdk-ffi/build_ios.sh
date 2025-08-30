@@ -212,6 +212,9 @@ EOF
 // Dash SPV FFI Functions and Types
 // ============================================================================
 
+// Forward declaration for FFIClientConfig (opaque type)
+typedef struct FFIClientConfig FFIClientConfig;
+
 EOF
     
     # Extract SPV FFI content
@@ -223,6 +226,7 @@ EOF
         in_enum && /^\} FFINetwork;/ { skip = 0; in_enum = 0; next }
         /^typedef struct CoreSDKHandle \{/ { skip = 1 }
         /^\} CoreSDKHandle;/ && skip { skip = 0; next }
+        /^typedef ClientConfig FFIClientConfig;/ { next }  # Skip broken typedef
         !skip && !in_enum { print }
     ' "$SPV_HEADER_PATH" >> "$MERGED_HEADER"
     
@@ -349,3 +353,12 @@ fi
 
 echo -e "\n${GREEN}Build complete!${NC}"
 echo -e "Output: ${YELLOW}$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework${NC}"
+
+# Copy XCFramework to Swift SDK directory
+SWIFT_SDK_DIR="$PROJECT_ROOT/../swift-sdk"
+if [ -d "$SWIFT_SDK_DIR" ]; then
+    echo -e "\n${GREEN}Copying XCFramework to Swift SDK...${NC}"
+    rm -rf "$SWIFT_SDK_DIR/$FRAMEWORK_NAME.xcframework"
+    cp -R "$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework" "$SWIFT_SDK_DIR/"
+    echo -e "${GREEN}✓ XCFramework copied to ${YELLOW}$SWIFT_SDK_DIR/$FRAMEWORK_NAME.xcframework${NC}"
+fi

@@ -3425,6 +3425,7 @@ dependencies = [
  "key-wallet-manager",
  "libc",
  "secp256k1",
+ "tokio",
 ]
 
 [[package]]

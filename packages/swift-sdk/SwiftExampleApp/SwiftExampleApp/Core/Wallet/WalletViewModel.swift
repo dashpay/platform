@@ -22,18 +22,19 @@ public class WalletViewModel: ObservableObject {
     @Published public var requiresPIN = false
     
     // Services
-    private let walletManager: WalletManager
+    private let walletService: WalletService
+    private let walletManager: WalletManager?
     private let spvClient: SPVClient
     private var cancellables = Set<AnyCancellable>()
     private var unlockedSeed: Data?
     
     public init() throws {
-        self.walletManager = try WalletManager()
+        // Use the shared WalletService instance which has the properly initialized WalletManager
+        self.walletService = WalletService.shared
+        self.walletManager = walletService.walletManager
         
         // Initialize SPV client (placeholder until FFI is ready)
         self.spvClient = try SPVClient()
-        
-        // Transaction service is initialized by WalletManager internally
         
         setupBindings()
         
@@ -46,7 +47,7 @@ public class WalletViewModel: ObservableObject {
     
     private func setupBindings() {
         // Wallet changes
-        walletManager.$currentWallet
+        walletManager?.$currentWallet
             .receive(on: DispatchQueue.main)
             .sink { [weak self] wallet in
                 self?.currentWallet = wallet
@@ -58,12 +59,12 @@ public class WalletViewModel: ObservableObject {
             .store(in: &cancellables)
         
         // Transaction changes
-        walletManager.transactionService.$transactions
+        walletManager?.transactionService.$transactions
             .receive(on: DispatchQueue.main)
             .assign(to: &$transactions)
         
         // Balance changes
-        walletManager.utxoManager.$utxos
+        walletManager?.utxoManager.$utxos
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 Task {
@@ -89,6 +90,9 @@ public class WalletViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
+            guard let walletManager = walletManager else {
+                throw WalletError.notImplemented("WalletManager not initialized")
+            }
             let wallet = try await walletManager.createWallet(
                 label: label,
                 network: .testnet,
@@ -112,6 +116,9 @@ public class WalletViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
+            guard let walletManager = walletManager else {
+                throw WalletError.notImplemented("WalletManager not initialized")
+            }
             let wallet = try await walletManager.importWallet(
                 label: label,
                 network: .testnet,
@@ -133,6 +140,9 @@ public class WalletViewModel: ObservableObject {
     
     public func unlockWallet(pin: String) async {
         do {
+            guard let walletManager = walletManager else {
+                throw WalletError.notImplemented("WalletManager not initialized")
+            }
             unlockedSeed = try await walletManager.unlockWallet(with: pin)
             isUnlocked = true
             requiresPIN = false
@@ -161,6 +171,9 @@ public class WalletViewModel: ObservableObject {
             let amountDuffs = UInt64(amount * 100_000_000)
             
             // Create transaction
+            guard let walletManager = walletManager else {
+                throw WalletError.notImplemented("WalletManager not initialized")
+            }
             let builtTx = try await walletManager.transactionService.createTransaction(
                 to: address,
                 amount: amountDuffs
@@ -181,6 +194,9 @@ public class WalletViewModel: ObservableObject {
         let amountDuffs = UInt64(amount * 100_000_000)
         
         do {
+            guard let walletManager = walletManager else {
+                return 0.00002 // Default fee
+            }
             let feeDuffs = try walletManager.transactionService.estimateFee(for: amountDuffs)
             return Double(feeDuffs) / 100_000_000
         } catch {
@@ -194,6 +210,9 @@ public class WalletViewModel: ObservableObject {
         guard let account = currentWallet?.accounts.first else { return }
         
         do {
+            guard let walletManager = walletManager else {
+                throw WalletError.notImplemented("WalletManager not initialized")
+            }
             let address = try await walletManager.getUnusedAddress(for: account)
             await loadAddresses()
             
@@ -263,6 +282,10 @@ public class WalletViewModel: ObservableObject {
     private func processIncomingTransaction(_ txInfo: TransactionInfo) async {
         do {
             // Process transaction
+            guard let walletManager = walletManager else {
+                print("WalletManager not available")
+                return
+            }
             try await walletManager.transactionService.processIncomingTransaction(
                 txid: txInfo.txid,
                 rawTx: txInfo.rawTransaction,
@@ -314,6 +337,7 @@ public class WalletViewModel: ObservableObject {
     private func refreshBalance() async {
         guard let account = currentWallet?.accounts.first else { return }
         
+        guard let walletManager = walletManager else { return }
         balance = walletManager.utxoManager.calculateBalance(for: account)
         await walletManager.updateBalance(for: account)
     }
@@ -322,7 +346,7 @@ public class WalletViewModel: ObservableObject {
     
     private func loadWallet() async {
         // Check if we have existing wallets
-        if !walletManager.wallets.isEmpty {
+        if let walletManager = walletManager, !walletManager.wallets.isEmpty {
             currentWallet = walletManager.wallets.first
             requiresPIN = true // Require PIN to unlock
         }

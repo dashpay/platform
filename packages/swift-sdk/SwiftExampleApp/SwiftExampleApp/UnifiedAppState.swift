@@ -51,7 +51,7 @@ class UnifiedAppState: ObservableObject {
         
         // Initialize services
         self.walletService = WalletService.shared
-        self.walletService.configure(modelContext: modelContainer.mainContext)
+        self.walletService.configure(modelContainer: modelContainer)
         
         self.platformState = AppState()
         

@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT: Tool Usage Rules
+
+**ALWAYS use the swift-rust-ffi-engineer agent for:**
+- Any Swift/Rust FFI integration work
+- Swift wrapper implementations over FFI functions
+- Debugging Swift/FFI type compatibility issues
+- iOS SDK and SwiftExampleApp development
+- Memory management across Swift/Rust boundaries
+- Refactoring Swift code to properly wrap FFI functions
+
 ## Commands
 
 ### Build and Development

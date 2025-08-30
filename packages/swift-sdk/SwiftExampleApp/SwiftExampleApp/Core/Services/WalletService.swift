@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Combine
+import DashSDKFFI
 
 @MainActor
 public class WalletService: ObservableObject {
@@ -16,33 +17,69 @@ public class WalletService: ObservableObject {
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
     
     // Internal properties
-    private var modelContext: ModelContext?
+    private var modelContainer: ModelContainer?
     private var syncTask: Task<Void, Never>?
     private var balanceUpdateTask: Task<Void, Never>?
-    private var walletManager: WalletManager?
+    
+    // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
+    public private(set) var walletManager: WalletManager?
+    
+    // SPV Client for Core SDK functionality
+    private var spvClient: UnsafeMutablePointer<FFIDashSpvClient>?
     
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
     
     private init() {}
     
-    public func configure(modelContext: ModelContext) {
+    deinit {
+        // Clean up SPV client
+        if let client = spvClient {
+            dash_core_sdk_destroy_client(client)
+        }
+        // Note: WalletManager handles its own FFI cleanup
+    }
+    
+    public func configure(modelContainer: ModelContainer) {
         print("=== WalletService.configure START ===")
-        self.modelContext = modelContext
-        print("ModelContext set: \(modelContext)")
+        self.modelContainer = modelContainer
+        print("ModelContainer set: \(modelContainer)")
         
-        // Initialize WalletManager with the same container
-        do {
-            print("Initializing WalletManager with shared container...")
-            // Get the container from the modelContext
-            let container = modelContext.container
-            self.walletManager = try WalletManager(modelContainer: container)
-            print("✅ WalletManager initialized successfully with shared container")
-        } catch {
-            print("❌ Failed to initialize WalletManager:")
-            print("Error type: \(type(of: error))")
-            print("Error: \(error)")
-            print("Error localized: \(error.localizedDescription)")
+        // We'll initialize WalletManager from the SPV client after we create it
+        
+        // Initialize SPV Client for testnet
+        print("Initializing SPV Client for testnet...")
+        if let client = dash_core_sdk_create_client_testnet() {
+            self.spvClient = client
+            print("✅ SPV Client initialized successfully for testnet")
+        } else {
+            print("❌ Failed to initialize SPV Client")
+        }
+        
+        // Initialize WalletManager from SPV Client
+        print("Initializing WalletManager from SPV Client...")
+        if let client = self.spvClient {
+            // Get the FFI wallet manager pointer from SPV client
+            if let managerPtr = dash_spv_ffi_client_get_wallet_manager(client) {
+                let ffiWalletManagerPtr = OpaquePointer(managerPtr)
+                print("✅ FFI Wallet Manager pointer obtained from SPV Client")
+                
+                // Create our refactored WalletManager wrapper
+                do {
+                    self.walletManager = try WalletManager(
+                        ffiWalletManager: ffiWalletManagerPtr,
+                        modelContainer: modelContainer
+                    )
+                    print("✅ WalletManager wrapper initialized successfully")
+                } catch {
+                    print("❌ Failed to initialize WalletManager wrapper:")
+                    print("Error: \(error)")
+                }
+            } else {
+                print("❌ Failed to get FFI wallet manager from SPV Client")
+            }
+        } else {
+            print("❌ Cannot get WalletManager - SPV Client not initialized")
         }
         
         print("Loading current wallet...")
@@ -55,6 +92,11 @@ public class WalletService: ObservableObject {
         print("✅ WalletService configured with shared SDK")
     }
     
+    /// Get the SPV client handle
+    public func getSPVClient() -> UnsafeMutablePointer<FFIDashSpvClient>? {
+        return spvClient
+    }
+    
     // MARK: - Wallet Management
     
     public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234") async throws -> HDWallet {
@@ -62,7 +104,7 @@ public class WalletService: ObservableObject {
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
         print("PIN: \(pin)")
-        print("ModelContext available: \(modelContext != nil)")
+        print("ModelContainer available: \(modelContainer != nil)")
         
         guard let walletManager = walletManager else {
             print("ERROR: WalletManager not initialized")
@@ -71,7 +113,7 @@ public class WalletService: ObservableObject {
         }
         
         do {
-            // Create wallet using WalletManager
+            // Create wallet using our refactored WalletManager that wraps FFI
             print("WalletManager available, creating wallet...")
             let wallet = try await walletManager.createWallet(
                 label: label,
@@ -112,24 +154,25 @@ public class WalletService: ObservableObject {
     }
     
     private func loadCurrentWallet() {
-        guard let modelContext = modelContext else { return }
+        guard let modelContainer = modelContainer else { return }
         
-        // Placeholder - use WalletManager
-        let descriptor = FetchDescriptor<HDWallet>(
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
+        // The WalletManager will handle loading and restoring wallets from persistence
+        // It will restore the serialized wallet bytes to the FFI wallet manager
+        // This happens automatically in WalletManager.init() through loadWallets()
         
-        do {
-            let wallets = try modelContext.fetch(descriptor)
-            currentWallet = wallets.first
-            
-            if let wallet = currentWallet {
-                Task {
+        // Just sync the current wallet from WalletManager
+        if let walletManager = self.walletManager {
+            Task {
+                // WalletManager's loadWallets() is called in its init
+                // We just need to sync the current wallet
+                if let wallet = walletManager.currentWallet {
+                    self.currentWallet = wallet
                     await loadWallet(wallet)
+                } else if let firstWallet = walletManager.wallets.first {
+                    self.currentWallet = firstWallet
+                    await loadWallet(firstWallet)
                 }
             }
-        } catch {
-            print("Failed to load wallets: \(error)")
         }
     }
     
@@ -167,7 +210,7 @@ public class WalletService: ObservableObject {
                 if let wallet = currentWallet {
                     wallet.syncProgress = 1.0
                     // wallet.lastSyncedAt = Date() // Property not available
-                    try? modelContext?.save()
+                    try? modelContainer?.mainContext.save()
                 }
                 
             } catch {
@@ -196,7 +239,7 @@ public class WalletService: ObservableObject {
         }
         
         try await walletManager.generateAddresses(for: account, count: count, type: type)
-        try? modelContext?.save()
+        try? modelContainer?.mainContext.save()
     }
     
     // MARK: - Transaction Management
@@ -218,8 +261,8 @@ public class WalletService: ObservableObject {
         transaction.type = "sent"
         transaction.wallet = wallet
         
-        modelContext?.insert(transaction)
-        try? modelContext?.save()
+        modelContainer?.mainContext.insert(transaction)
+        try? modelContainer?.mainContext.save()
         
         // Update balance
         updateBalance()
@@ -288,8 +331,8 @@ public class WalletService: ObservableObject {
             account: currentAccount
         )
         
-        modelContext?.insert(hdAddress)
-        try? modelContext?.save()
+        modelContainer?.mainContext.insert(hdAddress)
+        try? modelContainer?.mainContext.save()
         
         return address
     }

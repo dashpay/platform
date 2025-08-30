@@ -4,7 +4,6 @@ import SwiftData
 struct WalletDetailView: View {
     @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
-    @State private var selectedTab = 0
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showAddressManagement = false
@@ -35,27 +34,18 @@ struct WalletDetailView: View {
             }
             .padding(.horizontal)
             
-            // Tab Selection
-            Picker("View", selection: $selectedTab) {
-                Text("Transactions").tag(0)
-                Text("Addresses").tag(1)
-                Text("UTXOs").tag(2)
+            // Section header
+            HStack {
+                Text("Accounts")
+                    .font(.headline)
+                    .padding(.horizontal)
+                Spacer()
             }
-            .pickerStyle(.segmented)
-            .padding()
+            .padding(.top)
             
-            // Tab Content
-            TabView(selection: $selectedTab) {
-                TransactionListView(transactions: wallet.transactions)
-                    .tag(0)
-                
-                AddressListView(addresses: wallet.addresses)
-                    .tag(1)
-                
-                UTXOListView(utxos: wallet.utxos)
-                    .tag(2)
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
+            // Account List
+            AccountListView(wallet: wallet)
+                .environmentObject(walletService)
         }
         .navigationTitle(wallet.label)
         .navigationBarTitleDisplayMode(.inline)
@@ -184,6 +174,11 @@ struct BalanceCardView: View {
     }
 }
 
+// MARK: - Legacy Views (kept for reference)
+// These views show transactions, addresses, and UTXOs directly
+// They have been replaced by AccountListView which shows account-level information
+
+/*
 struct TransactionListView: View {
     let transactions: [HDTransaction]
     
@@ -355,3 +350,4 @@ struct UTXORowView: View {
         return String(format: "%.8f DASH", dash)
     }
 }
+*/

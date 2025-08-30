@@ -12,6 +12,12 @@ public final class HDWallet: HDWalletModels {
     public var lastSyncedHeight: Int
     public var isWatchOnly: Bool
     
+    // FFI Wallet ID (32 bytes) - links to the rust-dashcore wallet
+    public var walletId: Data?
+    
+    // Serialized wallet bytes from FFI - used to restore wallet on app restart
+    public var serializedWalletBytes: Data?
+    
     // Encrypted seed (only for non-watch-only wallets)
     public var encryptedSeed: Data?
     

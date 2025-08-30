@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import DashSDKFFI
 
 // MARK: - UTXO Manager
 
@@ -34,6 +35,121 @@ public class UTXOManager: ObservableObject {
             utxos = try modelContainer.mainContext.fetch(descriptor)
         } catch {
             print("Failed to load UTXOs: \(error)")
+        }
+    }
+    
+    /// Sync UTXOs from managed wallet info
+    /// This retrieves the actual UTXO set from Rust and updates our UI models
+    public func syncUTXOsFromManagedInfo(for wallet: HDWallet, ffiWalletManager: OpaquePointer) async throws {
+        guard let walletId = wallet.walletId else {
+            throw UTXOError.walletNotAvailable
+        }
+        
+        var error = FFIError()
+        
+        // Get managed wallet info
+        let managedInfoPtr = walletId.withUnsafeBytes { idBytes in
+            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            return wallet_manager_get_managed_wallet_info(
+                ffiWalletManager,
+                idPtr,
+                &error
+            )
+        }
+        
+        defer {
+            if error.message != nil {
+                error_message_free(error.message)
+            }
+            if managedInfoPtr != nil {
+                managed_wallet_info_free(managedInfoPtr)
+            }
+        }
+        
+        guard managedInfoPtr != nil else {
+            let errorMessage = error.message != nil ? String(cString: error.message!) : "Failed to get managed wallet info"
+            throw UTXOError.ffiError(errorMessage)
+        }
+        
+        // Get UTXOs from managed info
+        var utxosPtr: UnsafeMutablePointer<FFIUTXO>?
+        var utxoCount: size_t = 0
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(1) : FFINetworks(0)
+        
+        let success = managed_wallet_get_utxos(
+            managedInfoPtr,
+            ffiNetwork,
+            &utxosPtr,
+            &utxoCount,
+            &error
+        )
+        
+        defer {
+            // Free the UTXOs array
+            if let ptr = utxosPtr, utxoCount > 0 {
+                // Free individual UTXO data if needed
+                for i in 0..<utxoCount {
+                    let utxo = ptr[i]
+                    // Free any allocated fields in FFIUTXO if needed
+                    if utxo.address != nil {
+                        address_free(utxo.address)
+                    }
+                }
+                // Free the array itself
+                utxo_array_free(ptr, utxoCount)
+            }
+        }
+        
+        if success, let utxoArray = utxosPtr {
+            // Clear existing UTXOs in the database
+            let existingDescriptor = FetchDescriptor<HDUTXO>()
+            let existingUTXOs = try modelContainer.mainContext.fetch(existingDescriptor)
+            for utxo in existingUTXOs {
+                modelContainer.mainContext.delete(utxo)
+            }
+            
+            // Add UTXOs from Rust
+            for i in 0..<utxoCount {
+                let ffiUTXO = utxoArray[i]
+                
+                // Find the corresponding address in our model
+                let addressStr = ffiUTXO.address != nil ? String(cString: ffiUTXO.address!) : ""
+                
+                // Find the address in our wallet
+                var foundAddress: HDAddress?
+                for account in wallet.accounts {
+                    if let addr = account.addresses.first(where: { $0.address == addressStr }) {
+                        foundAddress = addr
+                        break
+                    }
+                }
+                
+                if let address = foundAddress {
+                    // Create HDUTXO model
+                    // Convert txid byte array (C array imported as tuple) to hex string
+                    let txHashHex = withUnsafeBytes(of: ffiUTXO.txid) { bytes in
+                        bytes.map { String(format: "%02x", $0) }.joined()
+                    }
+                    
+                    let utxo = HDUTXO(
+                        txHash: txHashHex,
+                        outputIndex: ffiUTXO.vout,
+                        amount: ffiUTXO.amount,
+                        scriptPubKey: Data(), // Would need to get this from FFI
+                        address: address
+                    )
+                    utxo.blockHeight = Int(ffiUTXO.height)
+                    utxo.isSpent = false
+                    
+                    modelContainer.mainContext.insert(utxo)
+                    address.utxos.append(utxo)
+                    address.balance = address.utxos.reduce(0) { $0 + $1.amount }
+                    address.isUsed = true
+                }
+            }
+            
+            try modelContainer.mainContext.save()
+            await loadUTXOs()
         }
     }
     
@@ -217,6 +333,8 @@ public enum UTXOError: LocalizedError {
     case notFound
     case insufficientFunds
     case invalidUTXO
+    case walletNotAvailable
+    case ffiError(String)
     
     public var errorDescription: String? {
         switch self {
@@ -226,6 +344,10 @@ public enum UTXOError: LocalizedError {
             return "Insufficient funds"
         case .invalidUTXO:
             return "Invalid UTXO"
+        case .walletNotAvailable:
+            return "Wallet not available"
+        case .ffiError(let message):
+            return "FFI error: \(message)"
         }
     }
 }
