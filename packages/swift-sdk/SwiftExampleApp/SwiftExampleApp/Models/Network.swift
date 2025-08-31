@@ -31,4 +31,16 @@ enum Network: String, CaseIterable, Codable {
     static var defaultNetwork: Network {
         return .testnet
     }
+    
+    // Convert to DashNetwork for wallet operations
+    func toDashNetwork() -> DashNetwork {
+        switch self {
+        case .mainnet:
+            return .mainnet
+        case .testnet:
+            return .testnet
+        case .devnet:
+            return .devnet
+        }
+    }
 }

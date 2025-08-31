@@ -170,6 +170,9 @@ class AppState: ObservableObject {
             let newSDK = try SDK(network: sdkNetwork)
             sdk = newSDK
             
+            // Load known contracts into the SDK's trusted provider
+            await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+            
             // Reload data for the new network
             await loadPersistedData()
             
@@ -180,16 +183,21 @@ class AppState: ObservableObject {
         }
     }
     
-    func addIdentity(_ identity: IdentityModel) {
+    func addIdentity(_ identity: IdentityModel, walletId: Data? = nil) {
         guard let dataManager = dataManager else { return }
         
+        var updatedIdentity = identity
+        if let walletId = walletId {
+            updatedIdentity.walletId = walletId
+        }
+        
         if !identities.contains(where: { $0.id == identity.id }) {
-            identities.append(identity)
+            identities.append(updatedIdentity)
             
             // Save to persistence
             Task {
                 do {
-                    try dataManager.saveIdentity(identity)
+                    try dataManager.saveIdentity(updatedIdentity)
                 } catch {
                     print("Error saving identity: \(error)")
                 }
@@ -225,6 +233,24 @@ class AppState: ObservableObject {
                 try dataManager.deleteIdentity(withId: identity.id)
             } catch {
                 print("Error deleting identity: \(error)")
+            }
+        }
+    }
+    
+    func associateIdentityWithWallet(identityId: Data, walletId: Data) {
+        guard let dataManager = dataManager else { return }
+        
+        // Find and update the identity
+        if let index = identities.firstIndex(where: { $0.id == identityId }) {
+            identities[index].walletId = walletId
+            
+            // Update persistence
+            Task {
+                do {
+                    try dataManager.saveIdentity(identities[index])
+                } catch {
+                    print("Error updating identity wallet association: \(error)")
+                }
             }
         }
     }

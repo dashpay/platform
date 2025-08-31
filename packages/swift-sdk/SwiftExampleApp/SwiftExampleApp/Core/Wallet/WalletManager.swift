@@ -96,7 +96,7 @@ public class WalletManager: ObservableObject {
         var walletBytesLen: size_t = 0
         var walletId = [UInt8](repeating: 0, count: 32)
         
-        let ffiNetwork = network == .testnet ? FFINetworks(1) : FFINetworks(0)
+        let ffiNetwork = network == .testnet ? FFINetworks(2) : FFINetworks(1)
         var options = FFIWalletAccountCreationOptions()
         options.option_type = FFIAccountCreationOptionType(0) // Default type
         options.bip44_indices = nil
@@ -284,7 +284,7 @@ public class WalletManager: ObservableObject {
         wallet: HDWallet,
         account: HDAccount
     ) async throws {
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(1) : FFINetworks(0)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
         var error = FFIError()
         
         // Get external addresses from managed info
@@ -562,6 +562,439 @@ public class WalletManager: ObservableObject {
         }
     }
     
+    /// Get detailed account information including xpub and addresses
+    /// - Parameters:
+    ///   - wallet: The wallet containing the account
+    ///   - accountInfo: The account info to get details for
+    /// - Returns: Detailed account information
+    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
+        
+        var error = FFIError()
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
+        
+        // Get extended public key
+        var xpub: String?
+        
+        // Try to get xpub using wallet_get_account_xpub if available
+        // This is a BIP44 account derivation
+        if accountInfo.index <= 999 {
+            // BIP44 accounts
+            // First get the wallet handle from the manager
+            let walletHandle = walletId.withUnsafeBytes { idBytes in
+                let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+                return wallet_manager_get_wallet(ffiWalletManager, idPtr, &error)
+            }
+            
+            defer {
+                // Free the wallet handle after we're done
+                if walletHandle != nil {
+                    wallet_free_const(walletHandle)
+                }
+            }
+            
+            if walletHandle != nil {
+                let xpubPtr = wallet_get_account_xpub(walletHandle, ffiNetwork, accountInfo.index, &error)
+                if let ptr = xpubPtr {
+                    xpub = String(cString: ptr)
+                    string_free(ptr)
+                }
+            }
+        }
+        
+        // Get derivation path based on account type
+        let derivationPath = getDerivationPath(for: accountInfo.index, network: wallet.dashNetwork)
+        
+        // Get managed account collection to get address details
+        let collectionPtr = walletId.withUnsafeBytes { idBytes in
+            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            return managed_wallet_get_account_collection(
+                ffiWalletManager,
+                idPtr,
+                ffiNetwork,
+                &error
+            )
+        }
+        
+        defer {
+            if error.message != nil {
+                error_message_free(error.message)
+            }
+            if collectionPtr != nil {
+                managed_account_collection_free(collectionPtr)
+            }
+        }
+        
+        guard let collection = collectionPtr else {
+            let errorMessage = error.message != nil ? String(cString: error.message!) : "Failed to get account collection"
+            throw WalletError.walletError(errorMessage)
+        }
+        
+        // Get the specific managed account
+        let accountPtr: OpaquePointer? = getManagedAccount(from: collection, accountInfo: accountInfo)
+        
+        defer {
+            if let account = accountPtr {
+                managed_account_free(account)
+            }
+        }
+        
+        // Default values
+        var gapLimit: UInt32 = 20  // Default gap limit
+        var externalAddresses: [AddressDetail] = []
+        var internalAddresses: [AddressDetail] = []
+        var accountType: FFIAccountType = STANDARD_BIP44  // Default to BIP44
+        
+        if let account = accountPtr {
+            // Get the account type
+            var typeError: UInt32 = 0
+            accountType = managed_account_get_account_type(account, &typeError)
+            
+            // Check if this account type has internal/external addresses
+            let hasInternalExternal = (accountType == STANDARD_BIP44 || accountType == STANDARD_BIP32)
+            
+            if hasInternalExternal {
+                // BIP44/BIP32 accounts have external and internal pools
+                
+                // Get address pool info for external addresses
+                if let externalPool = managed_account_get_external_address_pool(account) {
+                    defer { address_pool_free(externalPool) }
+                    
+                    // Get external addresses
+                    var countOut: size_t = 0
+                    let addressesPtr = address_pool_get_addresses_in_range(
+                        externalPool,
+                        0,      // start index
+                        100,    // end index (reasonable limit for display)
+                        &countOut,
+                        &error
+                    )
+                    
+                    if let addresses = addressesPtr {
+                        for i in 0..<countOut {
+                            if let addressInfo = addresses[i] {
+                                let address = addressInfo.pointee.address != nil ? String(cString: addressInfo.pointee.address!) : ""
+                                let index = addressInfo.pointee.index
+                                let path = addressInfo.pointee.path != nil ? String(cString: addressInfo.pointee.path!) : ""
+                                let isUsed = addressInfo.pointee.used
+                                
+                                // Extract public key
+                                var publicKeyHex = ""
+                                if let pubKeyPtr = addressInfo.pointee.public_key {
+                                    let pubKeyData = Data(bytes: pubKeyPtr, count: addressInfo.pointee.public_key_len)
+                                    publicKeyHex = pubKeyData.toHexString()
+                                }
+                                
+                                externalAddresses.append(AddressDetail(
+                                    address: address,
+                                    index: index,
+                                    path: path,
+                                    isUsed: isUsed,
+                                    publicKey: publicKeyHex
+                                ))
+                                
+                                address_info_free(addressInfo)
+                            }
+                        }
+                        addresses.deallocate()
+                    }
+                }
+                
+                // Get address pool info for internal addresses
+                if let internalPool = managed_account_get_internal_address_pool(account) {
+                    defer { address_pool_free(internalPool) }
+                    
+                    // Get internal addresses
+                    var countOut: size_t = 0
+                    let addressesPtr = address_pool_get_addresses_in_range(
+                        internalPool,
+                        0,      // start index
+                        50,     // end index (reasonable limit for display)
+                        &countOut,
+                        &error
+                    )
+                    
+                    if let addresses = addressesPtr {
+                        for i in 0..<countOut {
+                            if let addressInfo = addresses[i] {
+                                let address = addressInfo.pointee.address != nil ? String(cString: addressInfo.pointee.address!) : ""
+                                let index = addressInfo.pointee.index
+                                let path = addressInfo.pointee.path != nil ? String(cString: addressInfo.pointee.path!) : ""
+                                let isUsed = addressInfo.pointee.used
+                                
+                                // Extract public key
+                                var publicKeyHex = ""
+                                if let pubKeyPtr = addressInfo.pointee.public_key {
+                                    let pubKeyData = Data(bytes: pubKeyPtr, count: addressInfo.pointee.public_key_len)
+                                    publicKeyHex = pubKeyData.toHexString()
+                                }
+                                
+                                internalAddresses.append(AddressDetail(
+                                    address: address,
+                                    index: index,
+                                    path: path,
+                                    isUsed: isUsed,
+                                    publicKey: publicKeyHex
+                                ))
+                                
+                                address_info_free(addressInfo)
+                            }
+                        }
+                        addresses.deallocate()
+                    }
+                }
+            } else {
+                // Non-BIP44/BIP32 accounts (Identity, CoinJoin, Provider keys) have a single address pool
+                // Use FFIAddressPoolType.Single (value 2) for these accounts
+                let singlePoolType = FFIAddressPoolType(2) // Single pool type
+                if let addressPool = managed_account_get_address_pool(account, singlePoolType) {
+                    defer { address_pool_free(addressPool) }
+                    
+                    // Get addresses from the single pool
+                    var countOut: size_t = 0
+                    let addressesPtr = address_pool_get_addresses_in_range(
+                        addressPool,
+                        0,      // start index
+                        100,    // end index (reasonable limit for display)
+                        &countOut,
+                        &error
+                    )
+                    
+                    if let addresses = addressesPtr {
+                        for i in 0..<countOut {
+                            if let addressInfo = addresses[i] {
+                                let address = addressInfo.pointee.address != nil ? String(cString: addressInfo.pointee.address!) : ""
+                                let index = addressInfo.pointee.index
+                                let path = addressInfo.pointee.path != nil ? String(cString: addressInfo.pointee.path!) : ""
+                                let isUsed = addressInfo.pointee.used
+                                
+                                // Extract public key
+                                var publicKeyHex = ""
+                                if let pubKeyPtr = addressInfo.pointee.public_key {
+                                    let pubKeyData = Data(bytes: pubKeyPtr, count: addressInfo.pointee.public_key_len)
+                                    publicKeyHex = pubKeyData.toHexString()
+                                }
+                                
+                                // Put all addresses in external array for non-BIP44/BIP32 accounts
+                                externalAddresses.append(AddressDetail(
+                                    address: address,
+                                    index: index,
+                                    path: path,
+                                    isUsed: isUsed,
+                                    publicKey: publicKeyHex
+                                ))
+                                
+                                address_info_free(addressInfo)
+                            }
+                        }
+                        addresses.deallocate()
+                    }
+                }
+            }
+        }
+        
+        // Calculate used/unused addresses
+        let usedAddresses = externalAddresses.filter { $0.isUsed }.count + internalAddresses.filter { $0.isUsed }.count
+        let unusedAddresses = externalAddresses.filter { !$0.isUsed }.count + internalAddresses.filter { !$0.isUsed }.count
+        
+        return AccountDetailInfo(
+            account: accountInfo,
+            accountType: accountType,
+            xpub: xpub,
+            derivationPath: derivationPath,
+            gapLimit: gapLimit,
+            usedAddresses: usedAddresses,
+            unusedAddresses: unusedAddresses,
+            externalAddresses: externalAddresses,
+            internalAddresses: internalAddresses
+        )
+    }
+    
+    /// Derive a private key as WIF from seed using a specific path
+    public func derivePrivateKeyAsWIF(from seed: Data, path: String, network: DashNetwork) async throws -> String {
+        // First derive the private key bytes
+        let privateKeyData = try await derivePrivateKey(from: seed, path: path, network: network)
+        
+        // Convert to hex string
+        let privateKeyHex = privateKeyData.toHexString()
+        
+        // Convert to WIF using the FFI function
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                privateKeyHex.withCString { hexCString in
+                    let result = dash_sdk_private_key_to_wif(hexCString, network == .testnet)
+                    
+                    if result.error == nil, let data = result.data {
+                        // The data should be a C string for WIF
+                        let wif = String(cString: data.assumingMemoryBound(to: CChar.self))
+                        // Note: We don't free the string as it's managed by the SDK
+                        continuation.resume(returning: wif)
+                    } else if let error = result.error {
+                        let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Failed to convert to WIF"
+                        dash_sdk_error_free(error)
+                        continuation.resume(throwing: WalletError.walletError(errorMessage))
+                    } else {
+                        continuation.resume(throwing: WalletError.walletError("Failed to convert to WIF"))
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Derive a private key from seed using a specific path
+    public func derivePrivateKey(from seed: Data, path: String, network: DashNetwork) async throws -> Data {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                var error = FFIError()
+                
+                // Convert DashNetwork to FFINetworks enum value
+                let ffiNetwork: FFINetworks = network == .mainnet ? DASH : TESTNET
+                
+                let extPrivKey = seed.withUnsafeBytes { seedBytes in
+                    path.withCString { pathCString in
+                        derivation_derive_private_key_from_seed(
+                            seedBytes.bindMemory(to: UInt8.self).baseAddress,
+                            seed.count,
+                            pathCString,
+                            ffiNetwork,
+                            &error
+                        )
+                    }
+                }
+                
+                if error.message != nil {
+                    let errorMessage = String(cString: error.message!)
+                    error_message_free(error.message)
+                    continuation.resume(throwing: WalletError.walletError(errorMessage))
+                    return
+                }
+                
+                guard let extPrivKey = extPrivKey else {
+                    continuation.resume(throwing: WalletError.walletError("Failed to derive private key"))
+                    return
+                }
+                
+                defer { derivation_xpriv_free(extPrivKey) }
+                
+                // Get the private key bytes
+                var privateKeyData = Data(count: 32)
+                let result = privateKeyData.withUnsafeMutableBytes { buffer in
+                    if let baseAddress = buffer.bindMemory(to: UInt8.self).baseAddress {
+                        return dash_key_xprv_private_key(extPrivKey, baseAddress)
+                    }
+                    return Int32(-1)
+                }
+                
+                if result != 0 {
+                    continuation.resume(throwing: WalletError.walletError("Failed to extract private key bytes"))
+                    return
+                }
+                
+                continuation.resume(returning: privateKeyData)
+            }
+        }
+    }
+    
+    /// Get the derivation path for an account based on its index
+    private func getDerivationPath(for accountIndex: UInt32, network: DashNetwork) -> String {
+        let coinType = network == .testnet ? "1'" : "5'"  // Dash coin type
+        
+        switch accountIndex {
+        case 0...999:
+            // BIP44 accounts
+            return "m/44'/\(coinType)/\(accountIndex)'"
+        case 1000...1999:
+            // CoinJoin accounts
+            let index = accountIndex - 1000
+            return "m/9'/\(coinType)/\(index)'"
+        case 5000...5999:
+            // BIP32 accounts
+            let index = accountIndex - 5000
+            return "m/\(index)'"
+        case 9000:
+            // Identity Registration
+            return "m/9'/\(coinType)/5'/0"
+        case 9001:
+            // Identity Invitation
+            return "m/9'/\(coinType)/5'/1"
+        case 9002:
+            // Identity Topup (Not Bound)
+            return "m/9'/\(coinType)/5'/2"
+        case 9100...9199:
+            // Identity Topup accounts
+            let index = accountIndex - 9100
+            return "m/9'/\(coinType)/5'/3/\(index)'"
+        case 10000...10999:
+            // Provider Voting Keys
+            let index = accountIndex - 10000
+            return "m/9'/\(coinType)/6'/\(index)'"
+        case 11000:
+            // Provider Owner Keys
+            return "m/9'/\(coinType)/7'/0"
+        case 11001:
+            // Provider Operator Keys (BLS)
+            return "m/9'/\(coinType)/7'/1"
+        case 11002:
+            // Provider Platform Keys (EdDSA)
+            return "m/9'/\(coinType)/7'/2"
+        default:
+            return "m/custom/\(accountIndex)'"
+        }
+    }
+    
+    
+    /// Get managed account from collection based on account info
+    private func getManagedAccount(from collection: OpaquePointer, accountInfo: AccountInfo) -> OpaquePointer? {
+        switch accountInfo.index {
+        case 0...999:
+            // BIP44 accounts
+            return managed_account_collection_get_bip44_account(collection, accountInfo.index)
+        case 1000...1999:
+            // CoinJoin accounts
+            let index = accountInfo.index - 1000
+            return managed_account_collection_get_coinjoin_account(collection, index)
+        case 5000...5999:
+            // BIP32 accounts
+            let index = accountInfo.index - 5000
+            return managed_account_collection_get_bip32_account(collection, index)
+        case 9000:
+            // Identity Registration
+            return managed_account_collection_get_identity_registration(collection)
+        case 9001:
+            // Identity Invitation
+            return managed_account_collection_get_identity_invitation(collection)
+        case 9002:
+            // Identity Topup (Not Bound)
+            return managed_account_collection_get_identity_topup_not_bound(collection)
+        case 9100...9199:
+            // Identity Topup accounts
+            let index = accountInfo.index - 9100
+            return managed_account_collection_get_identity_topup(collection, index)
+        case 10000...10999:
+            // Provider Voting Keys
+            return managed_account_collection_get_provider_voting_keys(collection)
+        case 11000:
+            // Provider Owner Keys
+            return managed_account_collection_get_provider_owner_keys(collection)
+        case 11001:
+            // Provider Operator Keys (BLS)
+            if let voidPtr = managed_account_collection_get_provider_operator_keys(collection) {
+                return OpaquePointer(voidPtr)
+            }
+            return nil
+        case 11002:
+            // Provider Platform Keys (EdDSA)
+            if let voidPtr = managed_account_collection_get_provider_platform_keys(collection) {
+                return OpaquePointer(voidPtr)
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+    
     /// Get all accounts for a wallet from the FFI wallet manager
     /// Returns account information including balances and address counts
     public func getAccounts(for wallet: HDWallet) async throws -> [AccountInfo] {
@@ -573,7 +1006,7 @@ public class WalletManager: ObservableObject {
         var accounts: [AccountInfo] = []
         
         // Get network from wallet (respecting app settings)
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(1) : FFINetworks(0)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
         
         // Get the managed account collection
         let collectionPtr = walletId.withUnsafeBytes { idBytes in
@@ -896,7 +1329,7 @@ public class WalletManager: ObservableObject {
         
         // Generate addresses through the managed wallet
         // This ensures Rust maintains proper state
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(1) : FFINetworks(0)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
         
         for _ in 0..<count {
             if type == .external {
@@ -1035,6 +1468,12 @@ public class WalletManager: ObservableObject {
         }
     }
     
+    // MARK: - Public Utility Methods
+    
+    public func reloadWallets() async {
+        await loadWallets()
+    }
+    
     // MARK: - Private Methods
     
     private func loadWallets() async {
@@ -1044,6 +1483,20 @@ public class WalletManager: ObservableObject {
             
             // Restore each wallet to the FFI wallet manager
             for wallet in wallets {
+                // Migrate networks field if not set (for existing wallets)
+                if wallet.networks == 0 {
+                    // Set networks based on the wallet's current network
+                    switch wallet.dashNetwork {
+                    case .mainnet:
+                        wallet.networks = 1  // DASH
+                    case .testnet:
+                        wallet.networks = 2  // TESTNET
+                    case .devnet:
+                        wallet.networks = 8  // DEVNET
+                    }
+                    print("Migrated networks field for wallet '\(wallet.label)' to \(wallet.networks)")
+                }
+                
                 if let walletBytes = wallet.serializedWalletBytes {
                     do {
                         // Restore wallet to FFI and update the wallet ID

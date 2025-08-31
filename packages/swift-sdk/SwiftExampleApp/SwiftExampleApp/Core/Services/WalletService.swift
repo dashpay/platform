@@ -15,6 +15,7 @@ public class WalletService: ObservableObject {
     @Published public var detailedSyncProgress: Any? // Use SPVClient.SyncProgress
     @Published public var lastSyncError: Error?
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
+    @Published public var currentNetwork: DashNetwork = .testnet
     
     // Internal properties
     private var modelContainer: ModelContainer?
@@ -40,18 +41,31 @@ public class WalletService: ObservableObject {
         // Note: WalletManager handles its own FFI cleanup
     }
     
-    public func configure(modelContainer: ModelContainer) {
+    public func configure(modelContainer: ModelContainer, network: DashNetwork = .testnet) {
         print("=== WalletService.configure START ===")
         self.modelContainer = modelContainer
+        self.currentNetwork = network
         print("ModelContainer set: \(modelContainer)")
+        print("Network set: \(network.rawValue)")
         
         // We'll initialize WalletManager from the SPV client after we create it
         
-        // Initialize SPV Client for testnet
-        print("Initializing SPV Client for testnet...")
-        if let client = dash_core_sdk_create_client_testnet() {
+        // Initialize SPV Client for the specified network
+        print("Initializing SPV Client for \(network.rawValue)...")
+        let client: UnsafeMutablePointer<FFIDashSpvClient>?
+        switch network {
+        case .mainnet:
+            client = dash_core_sdk_create_client_mainnet()
+        case .testnet:
+            client = dash_core_sdk_create_client_testnet()
+        case .devnet:
+            // For devnet, we'll use testnet for now as devnet requires custom configuration
+            client = dash_core_sdk_create_client_testnet()
+        }
+        
+        if let client = client {
             self.spvClient = client
-            print("✅ SPV Client initialized successfully for testnet")
+            print("✅ SPV Client initialized successfully for \(network.rawValue)")
         } else {
             print("❌ Failed to initialize SPV Client")
         }
@@ -99,7 +113,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
     
-    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234") async throws -> HDWallet {
+    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: DashNetwork? = nil) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -115,9 +129,11 @@ public class WalletService: ObservableObject {
         do {
             // Create wallet using our refactored WalletManager that wraps FFI
             print("WalletManager available, creating wallet...")
+            let walletNetwork = network ?? currentNetwork
+            let dashNetwork = walletNetwork  // Already a DashNetwork
             let wallet = try await walletManager.createWallet(
                 label: label,
-                network: .testnet,
+                network: dashNetwork,
                 mnemonic: mnemonic,
                 pin: pin
             )
@@ -231,6 +247,38 @@ public class WalletService: ObservableObject {
         detailedSyncProgress = nil
     }
     
+    // MARK: - Network Management
+    
+    public func switchNetwork(to network: DashNetwork) async {
+        guard network != currentNetwork else { return }
+        
+        print("=== WalletService.switchNetwork START ===")
+        print("Switching from \(currentNetwork.rawValue) to \(network.rawValue)")
+        
+        // Stop any ongoing sync
+        await stopSync()
+        
+        // Clean up current SPV client
+        if let client = spvClient {
+            dash_core_sdk_destroy_client(client)
+            spvClient = nil
+        }
+        
+        // Clear current wallet manager
+        walletManager = nil
+        currentWallet = nil
+        transactions = []
+        balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
+        
+        // Reconfigure with new network
+        currentNetwork = network
+        if let modelContainer = modelContainer {
+            configure(modelContainer: modelContainer, network: network)
+        }
+        
+        print("=== WalletService.switchNetwork END ===")
+    }
+    
     // MARK: - Address Management
     
     public func generateAddresses(for account: HDAccount, count: Int, type: AddressType) async throws {
@@ -335,6 +383,27 @@ public class WalletService: ObservableObject {
         try? modelContainer?.mainContext.save()
         
         return address
+    }
+    
+    // MARK: - Wallet Deletion
+    
+    public func walletDeleted(_ wallet: HDWallet) async {
+        // If this was the current wallet, clear it
+        if currentWallet?.id == wallet.id {
+            currentWallet = nil
+            transactions = []
+            balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
+        }
+        
+        // Reload wallets from the wallet manager
+        if let walletManager = walletManager {
+            await walletManager.reloadWallets()
+            
+            // Set a new current wallet if available
+            if currentWallet == nil, let firstWallet = walletManager.wallets.first {
+                await loadWallet(firstWallet)
+            }
+        }
     }
     
     // MARK: - Helpers

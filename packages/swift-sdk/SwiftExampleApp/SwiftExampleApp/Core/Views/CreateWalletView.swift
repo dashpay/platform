@@ -3,6 +3,7 @@ import SwiftUI
 struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
     
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
@@ -13,11 +14,25 @@ struct CreateWalletView: View {
     @State private var error: Error? = nil
     @FocusState private var focusedField: Field?
     
+    // Network selection states
+    @State private var createForMainnet: Bool = false
+    @State private var createForTestnet: Bool = false
+    @State private var createForDevnet: Bool = false
+    
     enum Field: Hashable {
         case walletName
         case pin
         case confirmPin
         case mnemonic
+    }
+    
+    var currentNetwork: Network {
+        unifiedAppState.platformState.currentNetwork
+    }
+    
+    // Only show devnet option if currently on devnet
+    var shouldShowDevnet: Bool {
+        currentNetwork == .devnet
     }
     
     var body: some View {
@@ -32,6 +47,53 @@ struct CreateWalletView: View {
                     }
             } header: {
                 Text("Wallet Information")
+            }
+            
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Create wallet for:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    // Always show Mainnet and Testnet
+                    Toggle(isOn: $createForMainnet) {
+                        HStack {
+                            Image(systemName: "network")
+                                .foregroundColor(.orange)
+                            Text("Mainnet")
+                                .font(.body)
+                        }
+                    }
+                    .toggleStyle(CheckboxToggleStyle())
+                    
+                    Toggle(isOn: $createForTestnet) {
+                        HStack {
+                            Image(systemName: "network")
+                                .foregroundColor(.blue)
+                            Text("Testnet")
+                                .font(.body)
+                        }
+                    }
+                    .toggleStyle(CheckboxToggleStyle())
+                    
+                    // Only show Devnet if currently on Devnet
+                    if shouldShowDevnet {
+                        Toggle(isOn: $createForDevnet) {
+                            HStack {
+                                Image(systemName: "network")
+                                    .foregroundColor(.green)
+                                Text("Devnet")
+                                    .font(.body)
+                            }
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Networks")
+            } footer: {
+                Text("Select which networks to create wallets for. The same seed will be used for all selected networks.")
             }
             
             Section {
@@ -93,17 +155,14 @@ struct CreateWalletView: View {
                 Button("Create") {
                     createWallet()
                 }
-                .disabled(walletLabel.isEmpty || walletPin.isEmpty || walletPin != confirmPin || isCreating)
+                .disabled(!canCreateWallet)
             }
         }
         .disabled(isCreating)
-        .overlay {
-            if isCreating {
-                ProgressView("Creating wallet...")
-                    .padding()
-                    .background(Color.gray.opacity(0.9))
-                    .cornerRadius(10)
-            }
+        .alert("Wallet Created", isPresented: .constant(false)) {
+            Button("OK") { }
+        } message: {
+            Text("Wallet created successfully")
         }
         .alert("Error", isPresented: .constant(error != nil)) {
             Button("OK") {
@@ -114,26 +173,43 @@ struct CreateWalletView: View {
                 Text(error.localizedDescription)
             }
         }
+        .onAppear {
+            setupInitialNetworkSelection()
+        }
+    }
+    
+    private var canCreateWallet: Bool {
+        !walletLabel.isEmpty &&
+        !walletPin.isEmpty &&
+        walletPin == confirmPin &&
+        !isCreating &&
+        hasNetworkSelected
+    }
+    
+    private var hasNetworkSelected: Bool {
+        createForMainnet || createForTestnet || createForDevnet
+    }
+    
+    private func setupInitialNetworkSelection() {
+        // Set the current network as selected by default
+        switch currentNetwork {
+        case .mainnet:
+            createForMainnet = true
+        case .testnet:
+            createForTestnet = true
+        case .devnet:
+            createForDevnet = true
+        }
     }
     
     private func createWallet() {
-        guard !walletLabel.isEmpty else {
-            error = WalletError.notImplemented("Wallet name is required")
-            return
-        }
-        
-        guard !walletPin.isEmpty else {
-            error = WalletError.notImplemented("PIN is required")
-            return
-        }
-        
-        guard walletPin == confirmPin else {
-            error = WalletError.notImplemented("PINs do not match")
-            return
-        }
-        
-        guard walletPin.count >= 4 && walletPin.count <= 6 else {
-            error = WalletError.notImplemented("PIN must be 4-6 digits")
+        guard !walletLabel.isEmpty,
+              walletPin == confirmPin,
+              walletPin.count >= 4 && walletPin.count <= 6 else {
+            print("=== WALLET CREATION VALIDATION FAILED ===")
+            print("Label empty: \(walletLabel.isEmpty)")
+            print("PINs match: \(walletPin == confirmPin)")
+            print("PIN length valid: \(walletPin.count >= 4 && walletPin.count <= 6)")
             return
         }
         
@@ -141,32 +217,88 @@ struct CreateWalletView: View {
         
         Task {
             do {
-                let mnemonic = showImportOption && !importMnemonic.isEmpty ? importMnemonic : nil
-                print("=== WALLET CREATION START ===")
-                print("Label: \(walletLabel)")
+                print("=== STARTING WALLET CREATION ===")
+                
+                let mnemonic: String? = showImportOption && !importMnemonic.isEmpty ? importMnemonic : nil
                 print("Has mnemonic: \(mnemonic != nil)")
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
                 
-                let wallet = try await walletService.createWallet(label: walletLabel, mnemonic: mnemonic, pin: walletPin)
+                // Create wallets for selected networks
+                var createdWalletCount = 0
                 
-                print("Wallet created successfully: \(wallet.id)")
-                print("=== WALLET CREATION SUCCESS ===")
+                if createForMainnet {
+                    let wallet = try await walletService.createWallet(
+                        label: "\(walletLabel) (Mainnet)",
+                        mnemonic: mnemonic,
+                        pin: walletPin,
+                        network: DashNetwork.mainnet
+                    )
+                    print("Mainnet wallet created: \(wallet.id)")
+                    createdWalletCount += 1
+                }
+                
+                if createForTestnet {
+                    let wallet = try await walletService.createWallet(
+                        label: "\(walletLabel) (Testnet)",
+                        mnemonic: mnemonic,
+                        pin: walletPin,
+                        network: DashNetwork.testnet
+                    )
+                    print("Testnet wallet created: \(wallet.id)")
+                    createdWalletCount += 1
+                }
+                
+                if createForDevnet && shouldShowDevnet {
+                    let wallet = try await walletService.createWallet(
+                        label: "\(walletLabel) (Devnet)",
+                        mnemonic: mnemonic,
+                        pin: walletPin,
+                        network: DashNetwork.devnet
+                    )
+                    print("Devnet wallet created: \(wallet.id)")
+                    createdWalletCount += 1
+                }
+                
+                print("=== WALLET CREATION SUCCESS - Created \(createdWalletCount) wallet(s) ===")
                 
                 await MainActor.run {
                     dismiss()
                 }
             } catch {
-                print("=== WALLET CREATION FAILED ===")
-                print("Error type: \(type(of: error))")
+                print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")
-                print("Error localized: \(error.localizedDescription)")
                 
                 await MainActor.run {
                     self.error = error
-                    self.isCreating = false
+                    isCreating = false
                 }
             }
+        }
+    }
+}
+
+// Custom checkbox style for better visual
+struct CheckboxToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
+                .foregroundColor(configuration.isOn ? .blue : .secondary)
+                .onTapGesture {
+                    configuration.isOn.toggle()
+                }
+            
+            configuration.label
+            
+            Spacer()
+        }
+    }
+}
+
+struct CreateWalletView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            CreateWalletView()
         }
     }
 }

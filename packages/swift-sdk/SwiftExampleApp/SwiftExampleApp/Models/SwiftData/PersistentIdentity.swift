@@ -31,6 +31,10 @@ final class PersistentIdentity {
     // MARK: - Network
     var network: String
     
+    // MARK: - Wallet Association
+    // The wallet ID this identity belongs to (32-byte hash)
+    var walletId: Data?
+    
     // MARK: - Relationships
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) var tokenBalances: [PersistentTokenBalance]
@@ -48,7 +52,8 @@ final class PersistentIdentity {
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
-        network: String = "testnet"
+        network: String = "testnet",
+        walletId: Data? = nil
     ) {
         self.identityId = identityId
         self.balance = balance
@@ -62,6 +67,7 @@ final class PersistentIdentity {
         self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
         self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
         self.network = network
+        self.walletId = walletId
         self.publicKeys = []
         self.documents = []
         self.tokenBalances = []

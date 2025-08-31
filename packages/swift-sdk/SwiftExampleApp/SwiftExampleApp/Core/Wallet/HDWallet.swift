@@ -30,6 +30,10 @@ public final class HDWallet: HDWalletModels {
     // Sync progress (0.0 to 1.0)
     public var syncProgress: Double
     
+    // Networks bitfield - tracks which networks this wallet is available on
+    // Uses FFINetworks values: DASH(mainnet)=1, TESTNET=2, DEVNET=8
+    public var networks: UInt32
+    
     public init(label: String, network: DashNetwork, isWatchOnly: Bool = false) {
         self.id = UUID()
         self.label = label
@@ -39,6 +43,16 @@ public final class HDWallet: HDWalletModels {
         self.isWatchOnly = isWatchOnly
         self.currentAccountIndex = 0
         self.syncProgress = 0.0
+        
+        // Initialize networks bitfield based on the initial network
+        switch network {
+        case .mainnet:
+            self.networks = 1  // DASH
+        case .testnet:
+            self.networks = 2  // TESTNET
+        case .devnet:
+            self.networks = 8  // DEVNET
+        }
     }
     
     public var dashNetwork: DashNetwork {

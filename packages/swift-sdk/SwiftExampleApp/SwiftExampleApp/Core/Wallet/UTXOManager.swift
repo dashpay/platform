@@ -74,7 +74,7 @@ public class UTXOManager: ObservableObject {
         // Get UTXOs from managed info
         var utxosPtr: UnsafeMutablePointer<FFIUTXO>?
         var utxoCount: size_t = 0
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(1) : FFINetworks(0)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
         
         let success = managed_wallet_get_utxos(
             managedInfoPtr,

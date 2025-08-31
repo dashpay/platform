@@ -132,6 +132,7 @@ struct CoreWalletView: View {
         NavigationStack {
             CoreContentView()
                 .environmentObject(unifiedState.walletService)
+                .environmentObject(unifiedState)
                 .environment(\.modelContext, unifiedState.modelContainer.mainContext)
         }
     }
@@ -141,60 +142,8 @@ struct SettingsView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Network") {
-                    HStack {
-                        Text("Network")
-                        Spacer()
-                        Text("Testnet")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("Core Sync")
-                        Spacer()
-                        if let progress = unifiedState.walletService.detailedSyncProgress as? SyncProgress {
-                            Text("\(Int(progress.progress * 100))%")
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Not syncing")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    HStack {
-                        Text("Platform Sync")
-                        Spacer()
-                        Text(unifiedState.unifiedState.isPlatformSynced ? "Synced" : "Offline")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Section("Data") {
-                    NavigationLink(destination: LocalDataContractsView()) {
-                        Text("Local Data Contracts")
-                    }
-                }
-                
-                Section("About") {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("Build")
-                        Spacer()
-                        Text(AppVersion.gitCommit)
-                            .foregroundColor(.secondary)
-                            .font(.system(.caption, design: .monospaced))
-                    }
-                }
-            }
-            .navigationTitle("Settings")
-        }
+        OptionsView()
+            .environmentObject(unifiedState.platformState)
+            .environmentObject(unifiedState)
     }
 }

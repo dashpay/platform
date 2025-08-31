@@ -3,60 +3,159 @@ import SwiftData
 
 struct CoreContentView: View {
     @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
     @State private var showingCreateWallet = false
     
+    // Filter wallets by current network - show wallets that support the current network
+    private var walletsForCurrentNetwork: [HDWallet] {
+        let currentNetwork = unifiedAppState.platformState.currentNetwork
+        let dashNetwork = currentNetwork.toDashNetwork()
+        
+        // Check if wallet supports the current network using the networks bitfield
+        let networkBit: UInt32
+        switch dashNetwork {
+        case .mainnet:
+            networkBit = 1  // DASH
+        case .testnet:
+            networkBit = 2  // TESTNET
+        case .devnet:
+            networkBit = 8  // DEVNET
+        }
+        
+        return wallets.filter { wallet in
+            // Check if the wallet has this network enabled in its bitfield
+            (wallet.networks & networkBit) != 0
+        }
+    }
+    @State private var isSyncing = false
+    @State private var headerProgress: Double = 0.0
+    @State private var masternodeProgress: Double = 0.0
+    @State private var transactionProgress: Double = 0.0
+    
+    // Computed properties to ensure progress values are always valid
+    private var safeHeaderProgress: Double {
+        min(max(headerProgress, 0.0), 1.0)
+    }
+    
+    private var safeMasternodeProgress: Double {
+        min(max(masternodeProgress, 0.0), 1.0)
+    }
+    
+    private var safeTransactionProgress: Double {
+        min(max(transactionProgress, 0.0), 1.0)
+    }
+    
     var body: some View {
-        VStack {
-            if wallets.isEmpty {
-                VStack(spacing: 20) {
-                    Spacer()
-                    
-                    Image(systemName: "wallet.pass")
-                        .font(.system(size: 60))
-                        .foregroundColor(.gray)
-                    
-                    Text("No Wallets")
-                        .font(.title)
-                        .fontWeight(.semibold)
-                    
-                    Text("Create a wallet to get started")
-                        .foregroundColor(.secondary)
-                    
-                    Button {
-                        showingCreateWallet = true
-                    } label: {
-                        Text("Create Wallet")
+        List {
+            // Section 1: Sync Status
+            Section("Sync Status") {
+                VStack(spacing: 16) {
+                    // Main sync control
+                    HStack {
+                        if isSyncing {
+                            Label("Syncing", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.headline)
+                                .foregroundColor(.blue)
+                        } else {
+                            Label("Sync Paused", systemImage: "pause.circle")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: toggleSync) {
+                            HStack(spacing: 4) {
+                                Image(systemName: isSyncing ? "pause.fill" : "play.fill")
+                                Text(isSyncing ? "Pause" : "Start")
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(isSyncing ? Color.orange : Color.blue)
                             .foregroundColor(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.blue)
                             .cornerRadius(8)
+                        }
                     }
                     
-                    Spacer()
+                    // Headers sync progress
+                    SyncProgressRow(
+                        title: "Headers",
+                        progress: safeHeaderProgress,
+                        detail: "\(Int(safeHeaderProgress * 100))% complete",
+                        icon: "doc.text",
+                        onRestart: restartHeaderSync
+                    )
+                    
+                    // Masternode list sync progress
+                    SyncProgressRow(
+                        title: "Masternode List",
+                        progress: safeMasternodeProgress,
+                        detail: "\(Int(safeMasternodeProgress * 100))% complete",
+                        icon: "server.rack",
+                        onRestart: restartMasternodeSync
+                    )
+                    
+                    // Transactions sync progress (filters/blocks)
+                    SyncProgressRow(
+                        title: "Transactions",
+                        progress: safeTransactionProgress,
+                        detail: "Filters & Blocks: \(Int(safeTransactionProgress * 100))%",
+                        icon: "arrow.left.arrow.right",
+                        onRestart: restartTransactionSync
+                    )
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("Wallets")
-                .navigationBarTitleDisplayMode(.large)
-            } else {
-                List(wallets) { wallet in
-                    NavigationLink {
-                        WalletDetailView(wallet: wallet)
-                    } label: {
-                        WalletRowView(wallet: wallet)
-                    }
-                }
-                .navigationTitle("Wallets")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                .padding(.vertical, 8)
+            }
+            
+            // Section 2: Wallets
+            Section("Wallets (\(unifiedAppState.platformState.currentNetwork.displayName))") {
+                if walletsForCurrentNetwork.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "wallet.pass")
+                            .font(.system(size: 40))
+                            .foregroundColor(.gray)
+                        
+                        Text("No \(unifiedAppState.platformState.currentNetwork.displayName) Wallets")
+                            .font(.headline)
+                        
+                        Text("Create a wallet for \(unifiedAppState.platformState.currentNetwork.displayName)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
                         Button {
                             showingCreateWallet = true
                         } label: {
-                            Image(systemName: "plus")
+                            Text("Create Wallet")
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .cornerRadius(8)
                         }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                } else {
+                    ForEach(walletsForCurrentNetwork) { wallet in
+                        NavigationLink {
+                            WalletDetailView(wallet: wallet)
+                                .environmentObject(unifiedAppState)
+                        } label: {
+                            WalletRowView(wallet: wallet)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Wallets")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingCreateWallet = true
+                } label: {
+                    Image(systemName: "plus")
                 }
             }
         }
@@ -64,21 +163,193 @@ struct CoreContentView: View {
             NavigationStack {
                 CreateWalletView()
                     .environmentObject(walletService)
+                    .environmentObject(unifiedAppState)
                     .environment(\.modelContext, modelContext)
+            }
+        }
+        .onAppear {
+            startSyncMonitoring()
+        }
+    }
+    
+    // MARK: - Sync Methods
+    
+    private func toggleSync() {
+        if isSyncing {
+            pauseSync()
+        } else {
+            startSync()
+        }
+    }
+    
+    private func startSync() {
+        isSyncing = true
+        // TODO: Call walletService.startSync() when implemented
+        simulateSyncProgress()
+    }
+    
+    private func pauseSync() {
+        isSyncing = false
+        // TODO: Call walletService.pauseSync() when implemented
+    }
+    
+    private func restartHeaderSync() {
+        headerProgress = 0.0
+        if isSyncing {
+            // TODO: Call walletService.restartHeaderSync() when implemented
+            print("Restarting header sync...")
+        }
+    }
+    
+    private func restartMasternodeSync() {
+        masternodeProgress = 0.0
+        if isSyncing {
+            // TODO: Call walletService.restartMasternodeSync() when implemented
+            print("Restarting masternode sync...")
+        }
+    }
+    
+    private func restartTransactionSync() {
+        transactionProgress = 0.0
+        if isSyncing {
+            // TODO: Call walletService.restartTransactionSync() when implemented
+            print("Restarting transaction sync...")
+        }
+    }
+    
+    private func startSyncMonitoring() {
+        // TODO: Monitor real sync progress from walletService
+        // For now, simulate progress
+        simulateSyncProgress()
+    }
+    
+    private func simulateSyncProgress() {
+        // Temporary simulation - replace with real sync monitoring
+        guard isSyncing else { return }
+        
+        withAnimation(.easeInOut(duration: 0.5)) {
+            if headerProgress < 1.0 {
+                headerProgress += 0.1
+            }
+            if headerProgress >= 0.5 && masternodeProgress < 1.0 {
+                masternodeProgress += 0.05
+            }
+            if masternodeProgress >= 0.5 && transactionProgress < 1.0 {
+                transactionProgress += 0.02
+            }
+        }
+        
+        if headerProgress < 1.0 || masternodeProgress < 1.0 || transactionProgress < 1.0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                simulateSyncProgress()
             }
         }
     }
 }
 
+// MARK: - Sync Progress Row
+
+struct SyncProgressRow: View {
+    let title: String
+    let progress: Double
+    let detail: String
+    let icon: String
+    let onRestart: () -> Void
+    
+    // Ensure progress is always between 0 and 1
+    private var safeProgress: Double {
+        min(max(progress, 0.0), 1.0)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Button(action: onRestart) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: safeProgress)
+                    .progressViewStyle(LinearProgressViewStyle())
+                    .tint(progressColor(for: safeProgress))
+                
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    private func progressColor(for value: Double) -> Color {
+        if value >= 1.0 {
+            return .green
+        } else if value >= 0.5 {
+            return .blue
+        } else {
+            return .orange
+        }
+    }
+}
+
+// MARK: - Wallet Row View
+
 struct WalletRowView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     
-    var platformBalance: UInt64 {
-        // Sum all identity balances linked to this wallet
-        unifiedAppState.platformState.identities.reduce(0) { sum, identity in
-            sum + identity.balance
+    private func getNetworksList() -> String {
+        var networks: [String] = []
+        
+        // Check each network bit
+        if (wallet.networks & 1) != 0 {
+            networks.append("Mainnet")
         }
+        if (wallet.networks & 2) != 0 {
+            networks.append("Testnet")
+        }
+        if (wallet.networks & 8) != 0 {
+            networks.append("Devnet")
+        }
+        
+        // If no networks set (shouldn't happen after migration), show the original network
+        if networks.isEmpty {
+            return wallet.dashNetwork.rawValue.capitalized
+        }
+        
+        return networks.joined(separator: ", ")
+    }
+    
+    var platformBalance: UInt64 {
+        // Only sum balances of identities that belong to this specific wallet
+        // and are on the same network
+        
+        // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
+        // don't show any platform balance
+        guard let walletId = wallet.walletId else {
+            return 0
+        }
+        
+        return unifiedAppState.platformState.identities
+            .filter { identity in
+                // Check if identity belongs to this wallet and is on the same network
+                // Only count identities that have been explicitly associated with this wallet
+                identity.walletId == walletId &&
+                identity.network == wallet.dashNetwork.rawValue
+            }
+            .reduce(0) { sum, identity in
+                sum + identity.balance
+            }
     }
     
     var body: some View {
@@ -90,15 +361,23 @@ struct WalletRowView: View {
                 Spacer()
                 
                 if wallet.syncProgress < 1.0 {
-                    ProgressView(value: wallet.syncProgress)
+                    ProgressView(value: min(max(wallet.syncProgress, 0.0), 1.0))
                         .frame(width: 50)
                 }
             }
             
             HStack {
-                Label(wallet.network.capitalized, systemImage: "network")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Show all networks this wallet supports
+                HStack(spacing: 4) {
+                    Image(systemName: "network")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    // Build the network list
+                    Text(getNetworksList())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 
                 Spacer()
                 

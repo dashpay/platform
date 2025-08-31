@@ -2,25 +2,54 @@ import SwiftUI
 
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var showingContracts = false
+    @State private var isSwitchingNetwork = false
     
     var body: some View {
         NavigationView {
             Form {
                 Section("Network") {
-                    Picker("Current Network", selection: $appState.currentNetwork) {
+                    Picker("Current Network", selection: Binding(
+                        get: { appState.currentNetwork },
+                        set: { newNetwork in
+                            if newNetwork != appState.currentNetwork {
+                                isSwitchingNetwork = true
+                                Task {
+                                    // Update platform state (which will trigger SDK switch)
+                                    appState.currentNetwork = newNetwork
+                                    
+                                    // Also update wallet service
+                                    await unifiedAppState.handleNetworkSwitch(to: newNetwork)
+                                    
+                                    await MainActor.run {
+                                        isSwitchingNetwork = false
+                                    }
+                                }
+                            }
+                        }
+                    )) {
                         ForEach(Network.allCases, id: \.self) { network in
                             Text(network.displayName).tag(network)
                         }
                     }
                     .pickerStyle(SegmentedPickerStyle())
+                    .disabled(isSwitchingNetwork)
                     
                     HStack {
                         Text("Network Status")
                         Spacer()
-                        if appState.sdk != nil {
+                        if isSwitchingNetwork {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("Switching...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else if appState.sdk != nil {
                             Label("Connected", systemImage: "checkmark.circle.fill")
                                 .font(.caption)
                                 .foregroundColor(.green)

@@ -51,9 +51,10 @@ class UnifiedAppState: ObservableObject {
         
         // Initialize services
         self.walletService = WalletService.shared
-        self.walletService.configure(modelContainer: modelContainer)
-        
         self.platformState = AppState()
+        
+        // Configure wallet service with the current network from platform state
+        self.walletService.configure(modelContainer: modelContainer, network: platformState.currentNetwork.toDashNetwork())
         
         // Initialize unified state (will be updated with real SDKs during async init)
         self.unifiedState = UnifiedStateManager()
@@ -91,5 +92,13 @@ class UnifiedAppState: ObservableObject {
         platformState.contracts = []
         platformState.tokens = []
         platformState.documents = []
+    }
+    
+    // Handle network switching - called when platformState.currentNetwork changes
+    func handleNetworkSwitch(to network: Network) async {
+        // Switch wallet service to new network (convert to DashNetwork)
+        await walletService.switchNetwork(to: network.toDashNetwork())
+        
+        // The platform state handles its own network switching in AppState.switchNetwork
     }
 }

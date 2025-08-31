@@ -1,15 +1,31 @@
 import SwiftUI
 import SwiftData
+import DashSDKFFI
 
 struct WalletDetailView: View {
     @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
     let wallet: HDWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
-    @State private var showAddressManagement = false
+    @State private var showWalletInfo = false
     
     var body: some View {
         VStack(spacing: 0) {
+            // Network indicator
+            HStack {
+                Label(unifiedAppState.platformState.currentNetwork.displayName, systemImage: "network")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .cornerRadius(8)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
             // Balance Card
             BalanceCardView(wallet: wallet)
                 .padding()
@@ -52,34 +68,311 @@ struct WalletDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
-                    showAddressManagement = true
+                    showWalletInfo = true
                 } label: {
-                    Image(systemName: "key.fill")
+                    Image(systemName: "info.circle")
                 }
             }
         }
         .sheet(isPresented: $showReceiveAddress) {
             ReceiveAddressView(wallet: wallet)
+                .environmentObject(walletService)
         }
         .sheet(isPresented: $showSendTransaction) {
             SendTransactionView(wallet: wallet)
+                .environmentObject(walletService)
+                .environmentObject(unifiedAppState)
         }
-        .sheet(isPresented: $showAddressManagement) {
-            if let account = wallet.accounts.first {
-                NavigationStack {
-                    AddressManagementView(account: account)
-                        .toolbar {
-                            ToolbarItem(placement: .navigationBarTrailing) {
-                                Button("Done") {
-                                    showAddressManagement = false
-                                }
-                            }
-                        }
-                }
-            }
+        .sheet(isPresented: $showWalletInfo) {
+            WalletInfoView(wallet: wallet)
+                .environmentObject(walletService)
         }
         .task {
             await walletService.loadWallet(wallet)
+        }
+    }
+}
+
+// MARK: - Wallet Info View
+
+struct WalletInfoView: View {
+    @EnvironmentObject var walletService: WalletService
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) var modelContext
+    let wallet: HDWallet
+    
+    @State private var editedName: String = ""
+    @State private var isEditingName = false
+    @State private var mainnetEnabled: Bool = false
+    @State private var testnetEnabled: Bool = false
+    @State private var devnetEnabled: Bool = false
+    @State private var isUpdatingNetworks = false
+    @State private var errorMessage: String?
+    @State private var showError = false
+    @State private var showDeleteConfirmation = false
+    @State private var isDeleting = false
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                // Wallet Name Section
+                Section("Wallet Name") {
+                    if isEditingName {
+                        HStack {
+                            TextField("Wallet Name", text: $editedName)
+                                .textFieldStyle(.plain)
+                            
+                            Button("Cancel") {
+                                editedName = wallet.label
+                                isEditingName = false
+                            }
+                            .buttonStyle(.bordered)
+                            
+                            Button("Save") {
+                                saveWalletName()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(editedName.isEmpty)
+                        }
+                    } else {
+                        HStack {
+                            Text(wallet.label)
+                            Spacer()
+                            Button("Edit") {
+                                editedName = wallet.label
+                                isEditingName = true
+                            }
+                        }
+                    }
+                }
+                
+                // Networks Section
+                Section("Networks") {
+                    HStack {
+                        Text("Mainnet")
+                        Spacer()
+                        if mainnetEnabled {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Button(action: {
+                                Task {
+                                    await enableNetwork(.mainnet)
+                                }
+                            }) {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isUpdatingNetworks)
+                        }
+                    }
+                    
+                    HStack {
+                        Text("Testnet")
+                        Spacer()
+                        if testnetEnabled {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Button(action: {
+                                Task {
+                                    await enableNetwork(.testnet)
+                                }
+                            }) {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isUpdatingNetworks)
+                        }
+                    }
+                    
+                    HStack {
+                        Text("Devnet")
+                        Spacer()
+                        if devnetEnabled {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Button(action: {
+                                Task {
+                                    await enableNetwork(.devnet)
+                                }
+                            }) {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isUpdatingNetworks)
+                        }
+                    }
+                }
+                
+                Section {
+                    Text("Once a network is enabled, it cannot be removed. Tap + to add a network.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Wallet Info Section
+                Section("Information") {
+                    HStack {
+                        Text("Created")
+                        Spacer()
+                        Text(wallet.createdAt, style: .date)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    if let walletId = wallet.walletId {
+                        HStack {
+                            Text("Wallet ID")
+                            Spacer()
+                            Text(String(walletId.toHexString().prefix(16)) + "...")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    HStack {
+                        Text("Total Accounts")
+                        Spacer()
+                        Text("\(wallet.accounts.count)")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // Delete Wallet Section
+                Section {
+                    Button(action: {
+                        showDeleteConfirmation = true
+                    }) {
+                        HStack {
+                            Spacer()
+                            if isDeleting {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                            } else {
+                                Label("Delete Wallet", systemImage: "trash")
+                                    .foregroundColor(.white)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(isDeleting)
+                    .listRowBackground(Color.red)
+                }
+            }
+            .navigationTitle("Wallet Info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                loadNetworkStates()
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK") { }
+            } message: {
+                Text(errorMessage ?? "An error occurred")
+            }
+            .alert("Delete Wallet", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    Task {
+                        await deleteWallet()
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to delete this wallet? This action cannot be undone and you will lose access to all funds unless you have backed up your recovery phrase.")
+            }
+        }
+    }
+    
+    private func loadNetworkStates() {
+        // Check which networks this wallet is on
+        let networks = wallet.networks
+        mainnetEnabled = (networks & 1) != 0  // DASH
+        testnetEnabled = (networks & 2) != 0  // TESTNET
+        devnetEnabled = (networks & 8) != 0   // DEVNET
+    }
+    
+    private func saveWalletName() {
+        wallet.label = editedName
+        do {
+            try modelContext.save()
+            isEditingName = false
+        } catch {
+            errorMessage = "Failed to save wallet name: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+    
+    private func enableNetwork(_ network: DashNetwork) async {
+        isUpdatingNetworks = true
+        defer { isUpdatingNetworks = false }
+        
+        do {
+            // Add the network to the wallet
+            let networkBit: UInt32
+            switch network {
+            case .mainnet:
+                networkBit = 1  // DASH
+            case .testnet:
+                networkBit = 2  // TESTNET
+            case .devnet:
+                networkBit = 8  // DEVNET
+            }
+            
+            // Update the wallet's networks bitfield
+            wallet.networks = wallet.networks | networkBit
+            
+            // Save to Core Data
+            try modelContext.save()
+            
+            // Reload network states
+            loadNetworkStates()
+            
+            // TODO: Call FFI to actually add the network to the wallet
+            // This would involve reinitializing the wallet with the new networks
+            
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to enable network: \(error.localizedDescription)"
+                showError = true
+            }
+        }
+    }
+    
+    private func deleteWallet() async {
+        isDeleting = true
+        defer { 
+            Task { @MainActor in
+                isDeleting = false
+            }
+        }
+        
+        do {
+            // Delete the wallet from Core Data
+            modelContext.delete(wallet)
+            try modelContext.save()
+            
+            // Dismiss both the info view and the wallet detail view
+            await MainActor.run {
+                dismiss()
+                // The navigation will automatically go back when the wallet is deleted
+            }
+            
+            // Notify the wallet service to reload
+            await walletService.walletDeleted(wallet)
+            
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
+                showError = true
+            }
         }
     }
 }
@@ -89,10 +382,25 @@ struct BalanceCardView: View {
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     
     var platformBalance: UInt64 {
-        // Sum all identity balances linked to this wallet
-        unifiedAppState.platformState.identities.reduce(0) { sum, identity in
-            sum + identity.balance
+        // Only sum balances of identities that belong to this specific wallet
+        // and are on the same network
+        
+        // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
+        // don't show any platform balance
+        guard let walletId = wallet.walletId else {
+            return 0
         }
+        
+        return unifiedAppState.platformState.identities
+            .filter { identity in
+                // Check if identity belongs to this wallet and is on the same network
+                // Only count identities that have been explicitly associated with this wallet
+                identity.walletId == walletId &&
+                identity.network == wallet.dashNetwork.rawValue
+            }
+            .reduce(0) { sum, identity in
+                sum + identity.balance
+            }
     }
     
     var body: some View {
