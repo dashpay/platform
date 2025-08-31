@@ -135,7 +135,9 @@ public class TransactionService: ObservableObject {
         
         do {
             // Broadcast through SPV
-            try await spvClient.broadcastTransaction(transaction.rawTransaction)
+            // TODO: Implement broadcast with new SPV client
+            // try await spvClient.broadcastTransaction(transaction.rawTransaction)
+            throw TransactionError.broadcastFailed("SPV broadcast not yet implemented")
             
             // Create transaction record
             let hdTransaction = HDTransaction(txHash: transaction.txid)
@@ -231,7 +233,9 @@ public class TransactionService: ObservableObject {
                              account.coinJoinAddresses + account.identityFundingAddresses
             
             for address in allAddresses {
-                try await spvClient.watchAddress(address.address)
+                // TODO: Implement watch address with new SPV client
+                // try await spvClient.watchAddress(address.address)
+                print("Would watch address: \(address.address)")
             }
         }
         

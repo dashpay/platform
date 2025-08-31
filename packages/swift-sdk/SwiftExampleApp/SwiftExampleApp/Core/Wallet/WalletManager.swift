@@ -96,7 +96,7 @@ public class WalletManager: ObservableObject {
         var walletBytesLen: size_t = 0
         var walletId = [UInt8](repeating: 0, count: 32)
         
-        let ffiNetwork = network == .testnet ? FFINetworks(2) : FFINetworks(1)
+        let ffiNetwork = network == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
         var options = FFIWalletAccountCreationOptions()
         options.option_type = FFIAccountCreationOptionType(0) // Default type
         options.bip44_indices = nil
@@ -284,7 +284,7 @@ public class WalletManager: ObservableObject {
         wallet: HDWallet,
         account: HDAccount
     ) async throws {
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
         var error = FFIError()
         
         // Get external addresses from managed info
@@ -573,7 +573,7 @@ public class WalletManager: ObservableObject {
         }
         
         var error = FFIError()
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
         
         // Get extended public key
         var xpub: String?
@@ -849,8 +849,8 @@ public class WalletManager: ObservableObject {
             DispatchQueue.global().async {
                 var error = FFIError()
                 
-                // Convert DashNetwork to FFINetworks enum value
-                let ffiNetwork: FFINetworks = network == .mainnet ? DASH : TESTNET
+                // Convert DashNetwork to FFINetwork enum value
+                let ffiNetwork = FFINetwork(rawValue: network == .mainnet ? 0 : 1)
                 
                 let extPrivKey = seed.withUnsafeBytes { seedBytes in
                     path.withCString { pathCString in
@@ -1006,7 +1006,7 @@ public class WalletManager: ObservableObject {
         var accounts: [AccountInfo] = []
         
         // Get network from wallet (respecting app settings)
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
         
         // Get the managed account collection
         let collectionPtr = walletId.withUnsafeBytes { idBytes in
@@ -1329,7 +1329,7 @@ public class WalletManager: ObservableObject {
         
         // Generate addresses through the managed wallet
         // This ensures Rust maintains proper state
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(2) : FFINetworks(1)
+        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
         
         for _ in 0..<count {
             if type == .external {
@@ -1488,9 +1488,9 @@ public class WalletManager: ObservableObject {
                     // Set networks based on the wallet's current network
                     switch wallet.dashNetwork {
                     case .mainnet:
-                        wallet.networks = 1  // DASH
+                        wallet.networks = 1 << 0  // DASH_FLAG
                     case .testnet:
-                        wallet.networks = 2  // TESTNET
+                        wallet.networks = 1 << 1  // TESTNET_FLAG
                     case .devnet:
                         wallet.networks = 8  // DEVNET
                     }

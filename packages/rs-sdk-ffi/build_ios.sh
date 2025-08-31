@@ -174,13 +174,15 @@ EOF
     # 2. Skip header guards and pragma once
     # 3. Strip out all __cplusplus extern "C" blocks (we'll add them properly at the end)
     # 4. Fix ManagedWalletInfo reference to FFIManagedWalletInfo
-    # 5. Stop at the header guard closing
+    # 5. Include all content (including FFINetworks enum which Swift needs)
+    # 6. Stop at the header guard closing
     awk '
         BEGIN { found_stdlib = 0; in_content = 0 }
         /^#include <stdlib\.h>/ { found_stdlib = 1; next }
         /^#include <stdint\.h>/ { next }
         /^#include <stddef\.h>/ { next }
         /^#include <stdbool\.h>/ { next }
+        /^#include <stdarg\.h>/ { next }
         /^#ifndef KEY_WALLET_FFI_H/ { next }
         /^#define KEY_WALLET_FFI_H/ { next }
         /^#pragma once/ { next }
@@ -218,16 +220,22 @@ typedef struct FFIClientConfig FFIClientConfig;
 EOF
     
     # Extract SPV FFI content
-    # Skip duplicate types that conflict with key-wallet-ffi
+    # Skip duplicate types and problematic parts
     awk '
-        BEGIN { skip = 0; in_enum = 0 }
+        BEGIN { skip = 0 }
         /^#include/ { next }
-        /^typedef enum FFINetwork \{/ { skip = 1; in_enum = 1; next }
-        in_enum && /^\} FFINetwork;/ { skip = 0; in_enum = 0; next }
+        /^#ifndef DASH_SPV_FFI_H/ { next }
+        /^#define DASH_SPV_FFI_H/ { next }
+        /^#pragma once/ { next }
         /^typedef struct CoreSDKHandle \{/ { skip = 1 }
         /^\} CoreSDKHandle;/ && skip { skip = 0; next }
         /^typedef ClientConfig FFIClientConfig;/ { next }  # Skip broken typedef
-        !skip && !in_enum { print }
+        /^#ifdef __cplusplus$/ { next }
+        /^extern "C" \{$/ { next }
+        /^}  \/\/ extern "C"$/ { next }
+        /^#endif.*__cplusplus/ { next }
+        /^#endif.*DASH_SPV_FFI_H/ { next }
+        !skip { print }
     ' "$SPV_HEADER_PATH" >> "$MERGED_HEADER"
     
     # Add separator and SDK content
@@ -264,7 +272,8 @@ EOF
 // 3. Dash SDK FFI - Platform SDK for identities and documents
 //
 // Naming conflicts have been resolved:
-// - FFINetwork enum is used from key-wallet-ffi only
+// - FFINetwork enum from key-wallet-ffi (single network selection)
+// - FFINetworks enum from key-wallet-ffi (bit flags for multiple networks)
 // - CoreSDKHandle from SPV header is removed to avoid conflicts
 // - ManagedWalletInfo references are properly prefixed with FFI
 
@@ -355,7 +364,7 @@ echo -e "\n${GREEN}Build complete!${NC}"
 echo -e "Output: ${YELLOW}$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework${NC}"
 
 # Copy XCFramework to Swift SDK directory
-SWIFT_SDK_DIR="$PROJECT_ROOT/../swift-sdk"
+SWIFT_SDK_DIR="$PROJECT_ROOT/packages/swift-sdk"
 if [ -d "$SWIFT_SDK_DIR" ]; then
     echo -e "\n${GREEN}Copying XCFramework to Swift SDK...${NC}"
     rm -rf "$SWIFT_SDK_DIR/$FRAMEWORK_NAME.xcframework"

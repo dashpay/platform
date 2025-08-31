@@ -54,7 +54,7 @@ struct CoreContentView: View {
                 VStack(spacing: 16) {
                     // Main sync control
                     HStack {
-                        if isSyncing {
+                        if walletService.isSyncing {
                             Label("Syncing", systemImage: "arrow.triangle.2.circlepath")
                                 .font(.headline)
                                 .foregroundColor(.blue)
@@ -183,14 +183,15 @@ struct CoreContentView: View {
     }
     
     private func startSync() {
-        isSyncing = true
-        // TODO: Call walletService.startSync() when implemented
-        simulateSyncProgress()
+        Task {
+            isSyncing = true
+            await walletService.startSync()
+        }
     }
     
     private func pauseSync() {
+        walletService.stopSync()
         isSyncing = false
-        // TODO: Call walletService.pauseSync() when implemented
     }
     
     private func restartHeaderSync() {
@@ -218,30 +219,39 @@ struct CoreContentView: View {
     }
     
     private func startSyncMonitoring() {
-        // TODO: Monitor real sync progress from walletService
-        // For now, simulate progress
-        simulateSyncProgress()
-    }
-    
-    private func simulateSyncProgress() {
-        // Temporary simulation - replace with real sync monitoring
-        guard isSyncing else { return }
-        
-        withAnimation(.easeInOut(duration: 0.5)) {
-            if headerProgress < 1.0 {
-                headerProgress += 0.1
-            }
-            if headerProgress >= 0.5 && masternodeProgress < 1.0 {
-                masternodeProgress += 0.05
-            }
-            if masternodeProgress >= 0.5 && transactionProgress < 1.0 {
-                transactionProgress += 0.02
-            }
-        }
-        
-        if headerProgress < 1.0 || masternodeProgress < 1.0 || transactionProgress < 1.0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                simulateSyncProgress()
+        // Monitor real sync progress from walletService
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            if let progress = walletService.detailedSyncProgress {
+                let syncProgress = progress as! SyncProgress
+                
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    // Map sync stages to individual progress values
+                    switch syncProgress.stage {
+                    case .headers:
+                        headerProgress = syncProgress.progress
+                        masternodeProgress = 0
+                        transactionProgress = 0
+                    case .filters:  // Masternodes
+                        headerProgress = 1.0
+                        masternodeProgress = syncProgress.progress
+                        transactionProgress = 0
+                    case .downloading:  // Transactions
+                        headerProgress = 1.0
+                        masternodeProgress = 1.0
+                        transactionProgress = syncProgress.progress
+                    case .complete:
+                        headerProgress = 1.0
+                        masternodeProgress = 1.0
+                        transactionProgress = 1.0
+                    default:
+                        break
+                    }
+                }
+                
+                // Stop monitoring when sync is complete
+                if syncProgress.stage == .complete && !walletService.isSyncing {
+                    timer.invalidate()
+                }
             }
         }
     }

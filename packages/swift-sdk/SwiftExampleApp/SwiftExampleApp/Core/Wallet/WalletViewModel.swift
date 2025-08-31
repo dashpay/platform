@@ -24,7 +24,7 @@ public class WalletViewModel: ObservableObject {
     // Services
     private let walletService: WalletService
     private let walletManager: WalletManager?
-    private let spvClient: SPVClient
+    // private let spvClient: SPVClient  // Now managed by WalletService
     private var cancellables = Set<AnyCancellable>()
     private var unlockedSeed: Data?
     
@@ -33,8 +33,8 @@ public class WalletViewModel: ObservableObject {
         self.walletService = WalletService.shared
         self.walletManager = walletService.walletManager
         
-        // Initialize SPV client (placeholder until FFI is ready)
-        self.spvClient = try SPVClient()
+        // SPV client is now managed by WalletService
+        // self.spvClient = try SPVClient()
         
         setupBindings()
         
@@ -73,14 +73,14 @@ public class WalletViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // SPV sync progress
-        spvClient.syncProgressPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] progress in
-                self?.syncProgress = progress.progress
-                self?.isSyncing = progress.stage != .idle
-            }
-            .store(in: &cancellables)
+        // SPV sync progress now handled by WalletService
+        // spvClient.syncProgressPublisher
+        //     .receive(on: DispatchQueue.main)
+        //     .sink { [weak self] progress in
+        //         self?.syncProgress = progress.progress
+        //         self?.isSyncing = progress.stage != .idle
+        //     }
+        //     .store(in: &cancellables)
     }
     
     // MARK: - Wallet Management
@@ -217,7 +217,9 @@ public class WalletViewModel: ObservableObject {
             await loadAddresses()
             
             // Watch new address in SPV
-            try await spvClient.watchAddress(address.address)
+            // TODO: Implement watch address with new SPV client
+            // try await spvClient.watchAddress(address.address)
+            print("Would watch address: \(address.address)")
         } catch {
             self.error = error
             showError = true
@@ -247,19 +249,24 @@ public class WalletViewModel: ObservableObject {
                 let allAddresses = account.externalAddresses + account.internalAddresses
                 
                 for address in allAddresses {
-                    try await spvClient.watchAddress(address.address)
+                    // TODO: Implement watch address with new SPV client
+            // try await spvClient.watchAddress(address.address)
+            print("Would watch address: \(address.address)")
                 }
             }
             
             // Set up callbacks for new transactions
-            await spvClient.onTransaction { [weak self] txInfo in
-                Task { @MainActor in
-                    await self?.processIncomingTransaction(txInfo)
-                }
-            }
+            // TODO: Set up transaction callbacks with new SPV client
+            // await spvClient.onTransaction { [weak self] txInfo in
+            //     Task { @MainActor in
+            //         await self?.processIncomingTransaction(txInfo)
+            //     }
+            // }
             
             // Start sync
-            try await spvClient.startSync()
+            // TODO: Implement start sync with new SPV client
+            // try await spvClient.startSync()
+            print("Would start sync")
         } catch {
             self.error = error
             showError = true
@@ -269,7 +276,9 @@ public class WalletViewModel: ObservableObject {
     
     public func stopSync() async {
         do {
-            try await spvClient.stopSync()
+            // TODO: Implement stop sync with new SPV client
+            // try await spvClient.stopSync()
+            print("Would stop sync")
             isSyncing = false
         } catch {
             self.error = error

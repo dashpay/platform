@@ -25,8 +25,8 @@ public class WalletService: ObservableObject {
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     public private(set) var walletManager: WalletManager?
     
-    // SPV Client for Core SDK functionality
-    private var spvClient: UnsafeMutablePointer<FFIDashSpvClient>?
+    // SPV Client - new wrapper with proper sync support
+    private var spvClient: SPVClient?
     
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
@@ -34,11 +34,10 @@ public class WalletService: ObservableObject {
     private init() {}
     
     deinit {
-        // Clean up SPV client
-        if let client = spvClient {
-            dash_core_sdk_destroy_client(client)
+        // SPVClient handles its own cleanup
+        Task { @MainActor in
+            spvClient?.stop()
         }
-        // Note: WalletManager handles its own FFI cleanup
     }
     
     public func configure(modelContainer: ModelContainer, network: DashNetwork = .testnet) {
@@ -48,40 +47,28 @@ public class WalletService: ObservableObject {
         print("ModelContainer set: \(modelContainer)")
         print("Network set: \(network.rawValue)")
         
-        // We'll initialize WalletManager from the SPV client after we create it
-        
-        // Initialize SPV Client for the specified network
+        // Initialize SPV Client wrapper
         print("Initializing SPV Client for \(network.rawValue)...")
-        let client: UnsafeMutablePointer<FFIDashSpvClient>?
-        switch network {
-        case .mainnet:
-            client = dash_core_sdk_create_client_mainnet()
-        case .testnet:
-            client = dash_core_sdk_create_client_testnet()
-        case .devnet:
-            // For devnet, we'll use testnet for now as devnet requires custom configuration
-            client = dash_core_sdk_create_client_testnet()
-        }
+        spvClient = SPVClient(network: network)
+        spvClient?.delegate = self
         
-        if let client = client {
-            self.spvClient = client
-            print("✅ SPV Client initialized successfully for \(network.rawValue)")
-        } else {
-            print("❌ Failed to initialize SPV Client")
-        }
-        
-        // Initialize WalletManager from SPV Client
-        print("Initializing WalletManager from SPV Client...")
-        if let client = self.spvClient {
-            // Get the FFI wallet manager pointer from SPV client
-            if let managerPtr = dash_spv_ffi_client_get_wallet_manager(client) {
-                let ffiWalletManagerPtr = OpaquePointer(managerPtr)
+        do {
+            // Initialize the SPV client with proper configuration
+            let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
+            try spvClient?.initialize(dataDir: dataDir)
+            
+            // Start the SPV client
+            try spvClient?.start()
+            print("✅ SPV Client initialized and started successfully for \(network.rawValue)")
+            
+            // Get wallet manager from SPV client
+            if let walletManagerPtr = spvClient?.getWalletManager() {
                 print("✅ FFI Wallet Manager pointer obtained from SPV Client")
                 
                 // Create our refactored WalletManager wrapper
                 do {
                     self.walletManager = try WalletManager(
-                        ffiWalletManager: ffiWalletManagerPtr,
+                        ffiWalletManager: walletManagerPtr,
                         modelContainer: modelContainer
                     )
                     print("✅ WalletManager wrapper initialized successfully")
@@ -92,8 +79,9 @@ public class WalletService: ObservableObject {
             } else {
                 print("❌ Failed to get FFI wallet manager from SPV Client")
             }
-        } else {
-            print("❌ Cannot get WalletManager - SPV Client not initialized")
+        } catch {
+            print("❌ Failed to initialize SPV Client: \(error)")
+            lastSyncError = error
         }
         
         print("Loading current wallet...")
@@ -106,10 +94,6 @@ public class WalletService: ObservableObject {
         print("✅ WalletService configured with shared SDK")
     }
     
-    /// Get the SPV client handle
-    public func getSPVClient() -> UnsafeMutablePointer<FFIDashSpvClient>? {
-        return spvClient
-    }
     
     // MARK: - Wallet Management
     
@@ -196,52 +180,31 @@ public class WalletService: ObservableObject {
     
     public func startSync() async {
         guard !isSyncing else { return }
+        guard let spvClient = spvClient else {
+            print("❌ SPV Client not initialized")
+            return
+        }
         
         isSyncing = true
         lastSyncError = nil
         
-        syncTask?.cancel()
-        syncTask = Task {
-            do {
-                // Mock sync progress
-                for i in 0...100 {
-                    if Task.isCancelled { break }
-                    
-                    let progress = Double(i) / 100.0
-                    await MainActor.run {
-                        self.syncProgress = progress
-                        self.detailedSyncProgress = SyncProgress(
-                            current: UInt64(i),
-                            total: 100,
-                            rate: 1,
-                            progress: progress,
-                            stage: .downloading
-                        )
-                    }
-                    
-                    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                }
-                
-                // Update wallet sync status
-                if let wallet = currentWallet {
-                    wallet.syncProgress = 1.0
-                    // wallet.lastSyncedAt = Date() // Property not available
-                    try? modelContainer?.mainContext.save()
-                }
-                
-            } catch {
-                lastSyncError = error
-            }
+        do {
+            // Start real SPV sync
+            try await spvClient.startSync()
             
-            isSyncing = false
-            syncProgress = nil
-            detailedSyncProgress = nil
+            // Update wallet sync status
+            if let wallet = currentWallet {
+                wallet.syncProgress = 1.0
+                try? modelContainer?.mainContext.save()
+            }
+        } catch {
+            lastSyncError = error
+            print("❌ Sync failed: \(error)")
         }
     }
     
     public func stopSync() {
-        syncTask?.cancel()
-        syncTask = nil
+        spvClient?.cancelSync()
         isSyncing = false
         syncProgress = nil
         detailedSyncProgress = nil
@@ -259,10 +222,8 @@ public class WalletService: ObservableObject {
         await stopSync()
         
         // Clean up current SPV client
-        if let client = spvClient {
-            dash_core_sdk_destroy_client(client)
-            spvClient = nil
-        }
+        spvClient?.stop()
+        spvClient = nil
         
         // Clear current wallet manager
         walletManager = nil
@@ -416,4 +377,96 @@ public class WalletService: ObservableObject {
     }
 }
 
+// MARK: - SPVClientDelegate
+
+extension WalletService: SPVClientDelegate {
+    nonisolated public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
+        Task { @MainActor in
+            // Update published properties
+            self.syncProgress = progress.overallProgress
+            
+            // Convert to detailed progress for UI
+            self.detailedSyncProgress = SyncProgress(
+                current: UInt64(progress.currentHeight),
+                total: UInt64(progress.targetHeight),
+                rate: progress.rate,
+                progress: progress.overallProgress,
+                stage: mapSyncStage(progress.stage)
+            )
+            
+            print("📊 Sync progress: \(progress.stage.rawValue) - \(Int(progress.overallProgress * 100))%")
+        }
+    }
+    
+    nonisolated public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
+        print("📦 New block: height=\(block.height)")
+    }
+    
+    nonisolated public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
+        print("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)")
+        
+        // Update transactions and balance
+        Task { @MainActor in
+            await loadTransactions()
+            updateBalance()
+        }
+    }
+    
+    nonisolated public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
+        Task { @MainActor in
+            isSyncing = false
+            
+            if success {
+                print("✅ Sync completed successfully")
+            } else {
+                print("❌ Sync failed: \(error ?? "Unknown error")")
+                lastSyncError = SPVError.syncFailed(error ?? "Unknown error")
+            }
+        }
+    }
+    
+    nonisolated public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
+        print("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers")
+    }
+    
+    private func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
+        switch stage {
+        case .idle:
+            return .idle
+        case .headers:
+            return .headers
+        case .masternodes:
+            return .filters
+        case .transactions:
+            return .downloading
+        case .complete:
+            return .complete
+        }
+    }
+}
+
 // SyncProgress is now defined in SPVClient.swift
+// But we need to keep the old SyncProgress for compatibility
+public struct SyncProgress {
+    public let current: UInt64
+    public let total: UInt64
+    public let rate: Double
+    public let progress: Double
+    public let stage: SyncStage
+}
+
+public enum SyncStage {
+    case idle
+    case connecting
+    case headers
+    case filters
+    case downloading
+    case complete
+}
+
+// Extension for Data to hex string
+extension Data {
+    var hexString: String {
+        return map { String(format: "%02hhx", $0) }.joined()
+    }
+}
