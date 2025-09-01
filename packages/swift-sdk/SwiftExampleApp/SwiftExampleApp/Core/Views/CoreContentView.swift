@@ -11,11 +11,11 @@ struct CoreContentView: View {
     // Filter wallets by current network - show wallets that support the current network
     private var walletsForCurrentNetwork: [HDWallet] {
         let currentNetwork = unifiedAppState.platformState.currentNetwork
-        let dashNetwork = currentNetwork.toDashNetwork()
+        // No conversion needed, just use currentNetwork directly
         
         // Check if wallet supports the current network using the networks bitfield
         let networkBit: UInt32
-        switch dashNetwork {
+        switch currentNetwork {
         case .mainnet:
             networkBit = 1  // DASH
         case .testnet:

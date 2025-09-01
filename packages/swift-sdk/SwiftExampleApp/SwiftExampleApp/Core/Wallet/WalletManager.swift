@@ -1,13 +1,13 @@
 import Foundation
 import SwiftData
 import Combine
-import DashSDKFFI
+import SwiftDashSDK
 
 // MARK: - Wallet Manager
 
-/// WalletManager is a wrapper around the FFI wallet manager from rust-dashcore
-/// It delegates all wallet operations to the FFI layer while maintaining
-/// SwiftUI compatibility through ObservableObject
+/// WalletManager is a wrapper around the SDK's WalletManager
+/// It delegates all wallet operations to the SDK layer while maintaining
+/// SwiftUI compatibility through ObservableObject and SwiftData persistence
 @MainActor
 public class WalletManager: ObservableObject {
     @Published public private(set) var wallets: [HDWallet] = []
@@ -15,8 +15,8 @@ public class WalletManager: ObservableObject {
     @Published public private(set) var isLoading = false
     @Published public private(set) var error: WalletError?
     
-    // FFI wallet manager handle - this is the real wallet manager from Rust
-    private let ffiWalletManager: OpaquePointer
+    // SDK wallet manager - this is the real wallet manager from the SDK
+    private let sdkWalletManager: SwiftDashSDK.WalletManager
     private let modelContainer: ModelContainer
     private let storage = WalletStorage()
     
@@ -24,14 +24,14 @@ public class WalletManager: ObservableObject {
     public private(set) var utxoManager: UTXOManager!
     public private(set) var transactionService: TransactionService!
     
-    /// Initialize with an FFI wallet manager from SPV client
+    /// Initialize with an SDK wallet manager
     /// - Parameters:
-    ///   - ffiWalletManager: The FFI wallet manager handle from rust-dashcore
+    ///   - sdkWalletManager: The SDK wallet manager from SwiftDashSDK
     ///   - modelContainer: SwiftData model container for persistence
-    public init(ffiWalletManager: OpaquePointer, modelContainer: ModelContainer? = nil) throws {
+    public init(sdkWalletManager: SwiftDashSDK.WalletManager, modelContainer: ModelContainer? = nil) throws {
         print("=== WalletManager.init START ===")
         
-        self.ffiWalletManager = ffiWalletManager
+        self.sdkWalletManager = sdkWalletManager
         
         if let container = modelContainer {
             print("Using provided ModelContainer")
@@ -67,93 +67,70 @@ public class WalletManager: ObservableObject {
     
     // MARK: - Wallet Management
     
-    public func createWallet(label: String, network: DashNetwork, mnemonic: String? = nil, pin: String) async throws -> HDWallet {
+    public func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
         
-        // Generate or validate mnemonic
+        // Generate or validate mnemonic using SDK
         let finalMnemonic: String
         if let mnemonic = mnemonic {
             print("Validating provided mnemonic...")
-            guard WalletFFIBridge.shared.validateMnemonic(mnemonic) else {
+            guard SwiftDashSDK.Mnemonic.validate(mnemonic) else {
                 print("Mnemonic validation failed")
                 throw WalletError.invalidMnemonic
             }
             finalMnemonic = mnemonic
         } else {
             print("Generating new mnemonic...")
-            guard let generated = WalletFFIBridge.shared.generateMnemonic() else {
+            do {
+                finalMnemonic = try SwiftDashSDK.Mnemonic.generate(wordCount: 12)
+                print("Generated mnemonic: \(finalMnemonic)")
+            } catch {
+                print("Failed to generate mnemonic: \(error)")
                 throw WalletError.seedGenerationFailed
             }
-            finalMnemonic = generated
-            print("Generated mnemonic: \(finalMnemonic)")
         }
         
-        // Add wallet through FFI
-        var error = FFIError()
-        var walletBytesPtr: UnsafeMutablePointer<UInt8>?
-        var walletBytesLen: size_t = 0
-        var walletId = [UInt8](repeating: 0, count: 32)
-        
-        let ffiNetwork = network == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
-        var options = FFIWalletAccountCreationOptions()
-        options.option_type = FFIAccountCreationOptionType(0) // Default type
-        options.bip44_indices = nil
-        options.bip44_count = 0
-        options.bip32_indices = nil
-        options.bip32_count = 0
-        options.coinjoin_indices = nil
-        options.coinjoin_count = 0
-        options.topup_indices = nil
-        options.topup_count = 0
-        options.special_account_types = nil
-        options.special_account_types_count = 0
-        
-        let success = finalMnemonic.withCString { mnemonicCStr in
-            wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
-                ffiWalletManager,
-                mnemonicCStr,
-                nil, // No passphrase
-                ffiNetwork,
-                0, // Birth height
-                &options,
-                false, // Don't downgrade to public key wallet
-                false, // Don't allow external signing
-                &walletBytesPtr,
-                &walletBytesLen,
-                &walletId,
-                &error
+        // Add wallet through SDK
+        let walletId: Data
+        do {
+            // Convert Network to KeyWalletNetwork
+            let keyWalletNetwork = network.toKeyWalletNetwork()
+            
+            // Add wallet using SDK's WalletManager
+            walletId = try sdkWalletManager.addWallet(
+                mnemonic: finalMnemonic,
+                passphrase: nil,
+                network: keyWalletNetwork,
+                accountOptions: .default
             )
-        }
-        
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            if let ptr = walletBytesPtr {
-                wallet_manager_free_wallet_bytes(ptr, walletBytesLen)
-            }
-        }
-        
-        guard success else {
-            let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
-            throw WalletError.walletError(errorMessage)
+            
+            print("Wallet added with ID: \(walletId.hexString)")
+        } catch {
+            print("Failed to add wallet: \(error)")
+            throw WalletError.walletError("Failed to add wallet: \(error.localizedDescription)")
         }
         
         // Create HDWallet model for SwiftUI
         let wallet = HDWallet(label: label, network: network)
-        wallet.walletId = Data(walletId)
+        wallet.walletId = walletId
         
-        // Store the serialized wallet bytes for persistence
-        if let ptr = walletBytesPtr, walletBytesLen > 0 {
-            wallet.serializedWalletBytes = Data(bytes: ptr, count: walletBytesLen)
+        // Get the wallet from SDK to store serialized bytes
+        if let sdkWallet = try? sdkWalletManager.getWallet(id: walletId) {
+            // TODO: We need a way to serialize the wallet for persistence
+            // For now, just store the wallet ID
+            print("Got wallet from SDK")
         }
         
         // Store encrypted seed (if needed for UI purposes)
-        if let seed = WalletFFIBridge.shared.mnemonicToSeed(finalMnemonic) {
+        do {
+            let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: finalMnemonic)
             let encryptedSeed = try storage.storeSeed(seed, pin: pin)
             wallet.encryptedSeed = encryptedSeed
+        } catch {
+            print("Failed to store seed: \(error)")
+            // Continue anyway - wallet is already created
         }
         
         // Insert wallet into context
@@ -174,39 +151,15 @@ public class WalletManager: ObservableObject {
         return wallet
     }
     
-    public func importWallet(label: String, network: DashNetwork, mnemonic: String, pin: String) async throws -> HDWallet {
+    public func importWallet(label: String, network: Network, mnemonic: String, pin: String) async throws -> HDWallet {
         return try await createWallet(label: label, network: network, mnemonic: mnemonic, pin: pin)
     }
     
     /// Restore a wallet from serialized bytes
     /// This is used to restore wallets from persistence on app startup
     public func restoreWalletFromBytes(_ walletBytes: Data) throws -> Data {
-        var error = FFIError()
-        var walletId = [UInt8](repeating: 0, count: 32)
-        
-        let success = walletBytes.withUnsafeBytes { bytes in
-            let ptr = bytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_import_wallet_from_bytes(
-                ffiWalletManager,
-                ptr,
-                walletBytes.count,
-                &walletId,
-                &error
-            )
-        }
-        
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-        
-        guard success else {
-            let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
-            throw WalletError.walletError("Failed to restore wallet: \(errorMessage)")
-        }
-        
-        return Data(walletId)
+        // Use SDK's importWallet method
+        return try sdkWalletManager.importWallet(from: walletBytes)
     }
     
     /// Sync wallet data from FFI managed wallet info to Swift models
@@ -284,7 +237,7 @@ public class WalletManager: ObservableObject {
         wallet: HDWallet,
         account: HDAccount
     ) async throws {
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
+        let ffiNetwork = wallet.dashNetwork.toKeyWalletNetwork().ffiValue
         var error = FFIError()
         
         // Get external addresses from managed info
@@ -493,7 +446,7 @@ public class WalletManager: ObservableObject {
         return try storage.retrieveSeedWithBiometric()
     }
     
-    public func createWatchOnlyWallet(label: String, network: DashNetwork, extendedPublicKey: String) async throws -> HDWallet {
+    public func createWatchOnlyWallet(label: String, network: Network, extendedPublicKey: String) async throws -> HDWallet {
         isLoading = true
         defer { isLoading = false }
         
@@ -573,7 +526,7 @@ public class WalletManager: ObservableObject {
         }
         
         var error = FFIError()
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
+        let ffiNetwork = wallet.dashNetwork.toKeyWalletNetwork().ffiValue
         
         // Get extended public key
         var xpub: String?
@@ -813,7 +766,7 @@ public class WalletManager: ObservableObject {
     }
     
     /// Derive a private key as WIF from seed using a specific path
-    public func derivePrivateKeyAsWIF(from seed: Data, path: String, network: DashNetwork) async throws -> String {
+    public func derivePrivateKeyAsWIF(from seed: Data, path: String, network: Network) async throws -> String {
         // First derive the private key bytes
         let privateKeyData = try await derivePrivateKey(from: seed, path: path, network: network)
         
@@ -844,7 +797,7 @@ public class WalletManager: ObservableObject {
     }
     
     /// Derive a private key from seed using a specific path
-    public func derivePrivateKey(from seed: Data, path: String, network: DashNetwork) async throws -> Data {
+    public func derivePrivateKey(from seed: Data, path: String, network: Network) async throws -> Data {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var error = FFIError()
@@ -898,7 +851,7 @@ public class WalletManager: ObservableObject {
     }
     
     /// Get the derivation path for an account based on its index
-    private func getDerivationPath(for accountIndex: UInt32, network: DashNetwork) -> String {
+    private func getDerivationPath(for accountIndex: UInt32, network: Network) -> String {
         let coinType = network == .testnet ? "1'" : "5'"  // Dash coin type
         
         switch accountIndex {
@@ -1006,7 +959,7 @@ public class WalletManager: ObservableObject {
         var accounts: [AccountInfo] = []
         
         // Get network from wallet (respecting app settings)
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
+        let ffiNetwork = wallet.dashNetwork.toKeyWalletNetwork().ffiValue
         
         // Get the managed account collection
         let collectionPtr = walletId.withUnsafeBytes { idBytes in
@@ -1329,7 +1282,7 @@ public class WalletManager: ObservableObject {
         
         // Generate addresses through the managed wallet
         // This ensures Rust maintains proper state
-        let ffiNetwork = wallet.dashNetwork == .testnet ? FFINetworks(rawValue: 1 << 1) : FFINetworks(rawValue: 1 << 0)
+        let ffiNetwork = wallet.dashNetwork.toKeyWalletNetwork().ffiValue
         
         for _ in 0..<count {
             if type == .external {

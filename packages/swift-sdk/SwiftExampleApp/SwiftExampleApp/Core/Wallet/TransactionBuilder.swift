@@ -10,10 +10,10 @@ public class TransactionBuilder {
     private var inputs: [(utxo: HDUTXO, address: HDAddress, privateKey: Data)] = []
     private var outputs: [(address: String, amount: UInt64)] = []
     private var changeAddress: String?
-    private let network: DashNetwork
+    private let network: Network
     private let feePerKB: UInt64
     
-    public init(network: DashNetwork, feePerKB: UInt64 = 1000) {
+    public init(network: Network, feePerKB: UInt64 = 1000) {
         self.network = network
         self.feePerKB = feePerKB
         self.transaction = ffi.createTransaction()

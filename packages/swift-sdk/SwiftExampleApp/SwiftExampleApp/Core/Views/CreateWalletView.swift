@@ -232,7 +232,7 @@ struct CreateWalletView: View {
                         label: "\(walletLabel) (Mainnet)",
                         mnemonic: mnemonic,
                         pin: walletPin,
-                        network: DashNetwork.mainnet
+                        network: Network.mainnet
                     )
                     print("Mainnet wallet created: \(wallet.id)")
                     createdWalletCount += 1
@@ -243,7 +243,7 @@ struct CreateWalletView: View {
                         label: "\(walletLabel) (Testnet)",
                         mnemonic: mnemonic,
                         pin: walletPin,
-                        network: DashNetwork.testnet
+                        network: Network.testnet
                     )
                     print("Testnet wallet created: \(wallet.id)")
                     createdWalletCount += 1
@@ -254,7 +254,7 @@ struct CreateWalletView: View {
                         label: "\(walletLabel) (Devnet)",
                         mnemonic: mnemonic,
                         pin: walletPin,
-                        network: DashNetwork.devnet
+                        network: Network.devnet
                     )
                     print("Devnet wallet created: \(wallet.id)")
                     createdWalletCount += 1

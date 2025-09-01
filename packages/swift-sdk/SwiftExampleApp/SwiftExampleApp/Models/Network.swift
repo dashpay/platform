@@ -32,8 +32,8 @@ enum Network: String, CaseIterable, Codable {
         return .testnet
     }
     
-    // Convert to DashNetwork for wallet operations
-    func toDashNetwork() -> DashNetwork {
+    // Convert to KeyWalletNetwork for wallet operations
+    func toKeyWalletNetwork() -> KeyWalletNetwork {
         switch self {
         case .mainnet:
             return .mainnet

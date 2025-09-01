@@ -15,7 +15,7 @@ public class WalletService: ObservableObject {
     @Published public var detailedSyncProgress: Any? // Use SPVClient.SyncProgress
     @Published public var lastSyncError: Error?
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
-    @Published public var currentNetwork: DashNetwork = .testnet
+    @Published public var currentNetwork: Network = .testnet
     
     // Internal properties
     private var modelContainer: ModelContainer?
@@ -40,7 +40,7 @@ public class WalletService: ObservableObject {
         }
     }
     
-    public func configure(modelContainer: ModelContainer, network: DashNetwork = .testnet) {
+    public func configure(modelContainer: ModelContainer, network: Network = .testnet) {
         print("=== WalletService.configure START ===")
         self.modelContainer = modelContainer
         self.currentNetwork = network
@@ -97,7 +97,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
     
-    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: DashNetwork? = nil) async throws -> HDWallet {
+    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -212,7 +212,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Network Management
     
-    public func switchNetwork(to network: DashNetwork) async {
+    public func switchNetwork(to network: Network) async {
         guard network != currentNetwork else { return }
         
         print("=== WalletService.switchNetwork START ===")
