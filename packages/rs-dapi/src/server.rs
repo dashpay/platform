@@ -396,7 +396,7 @@ async fn handle_jsonrpc_request(
     {
         Ok(resp) => resp.into_inner(),
         Err(e) => {
-            let dapi_error = crate::errors::DapiError::Internal(format!("gRPC error: {}", e));
+            let dapi_error = crate::error::DapiError::Internal(format!("gRPC error: {}", e));
             let error_response = state.translator.error_response(dapi_error, request_id);
             return Json(serde_json::to_value(error_response).unwrap_or_default());
         }

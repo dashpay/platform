@@ -1,7 +1,15 @@
 // Custom error types for rs-dapi using thiserror
 
+use std::thread::JoinHandle;
+
 use sha2::Digest;
 use thiserror::Error;
+// For converting dashcore-rpc errors into DapiError
+use dashcore_rpc::{self, jsonrpc};
+use tokio::task::JoinError;
+
+/// Result type alias for DAPI operations
+pub type DapiResult<T> = std::result::Result<T, DapiError>;
 
 /// Main error type for DAPI operations
 #[derive(Error, Debug)]
@@ -61,6 +69,28 @@ pub enum DapiError {
     #[error("Invalid data: {0}")]
     InvalidData(String),
 
+    // Standardized categories for RPC-like errors
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    #[error("Already exists: {0}")]
+    AlreadyExists(String),
+
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+
+    #[error("Resource exhausted: {0}")]
+    ResourceExhausted(String),
+
+    #[error("Aborted: {0}")]
+    Aborted(String),
+
+    #[error("Unavailable: {0}")]
+    Unavailable(String),
+
+    #[error("Failed precondition: {0}")]
+    FailedPrecondition(String),
+
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
 
@@ -103,6 +133,15 @@ impl DapiError {
     pub fn to_status(&self) -> tonic::Status {
         match self {
             DapiError::Status(status) => status.clone(),
+            DapiError::NotFound(msg) => tonic::Status::not_found(msg.clone()),
+            DapiError::AlreadyExists(msg) => tonic::Status::already_exists(msg.clone()),
+            DapiError::InvalidArgument(msg) => tonic::Status::invalid_argument(msg.clone()),
+            DapiError::ResourceExhausted(msg) => tonic::Status::resource_exhausted(msg.clone()),
+            DapiError::Aborted(msg) => tonic::Status::aborted(msg.clone()),
+            DapiError::Unavailable(msg) | DapiError::ServiceUnavailable(msg) => {
+                tonic::Status::unavailable(msg.clone())
+            }
+            DapiError::FailedPrecondition(msg) => tonic::Status::failed_precondition(msg.clone()),
             _ => tonic::Status::internal(self.to_string()),
         }
     }
@@ -162,5 +201,71 @@ impl DapiError {
     /// Create an internal error
     pub fn internal<S: Into<String>>(msg: S) -> Self {
         Self::Internal(msg.into())
+    }
+
+    /// Handle task join errors
+    pub fn map_join_result<T: Sized, E: Into<Self>>(
+        msg: Result<Result<T, E>, JoinError>,
+    ) -> Result<T, Self> {
+        match msg {
+            Ok(Ok(inner)) => Ok(inner),
+            Ok(Err(e)) => Err(e.into()),
+            Err(join_err) => Err(DapiError::TaskJoin(join_err)),
+        }
+    }
+}
+
+pub trait MapToDapiResult<T: Sized> {
+    fn to_dapi_result(self) -> DAPIResult<T>;
+}
+
+impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<Result<T, E>, JoinError> {
+    fn to_dapi_result(self) -> DAPIResult<T> {
+        match self {
+            Ok(Ok(inner)) => Ok(inner),
+            Ok(Err(e)) => Err(e.into()),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+impl<T: Sized> MapToDapiResult<T> for DapiResult<T> {
+    fn to_dapi_result(self) -> DAPIResult<T> {
+        self
+    }
+}
+
+// Provide a conversion from dashcore-rpc Error to our DapiError so callers can
+// use generic helpers like MapToDapiResult without custom closures.
+impl From<dashcore_rpc::Error> for DapiError {
+    fn from(e: dashcore_rpc::Error) -> Self {
+        match e {
+            dashcore_rpc::Error::JsonRpc(jerr) => match jerr {
+                jsonrpc::Error::Rpc(rpc) => {
+                    let code = rpc.code;
+                    let msg = rpc.message;
+                    match code {
+                        -5 => DapiError::NotFound(msg), // Invalid address or key / Not found
+                        -27 => DapiError::AlreadyExists(msg), // Already in chain
+                        -26 => DapiError::FailedPrecondition(msg), // RPC_VERIFY_REJECTED
+                        -25 | -22 => DapiError::InvalidArgument(msg), // Deserialization/Verify error
+                        _ => DapiError::Unavailable(format!("Core RPC error {}: {}", code, msg)),
+                    }
+                }
+                jsonrpc::Error::Transport(_) => DapiError::Unavailable(jerr.to_string()),
+                jsonrpc::Error::Json(_) => DapiError::InvalidData(jerr.to_string()),
+                _ => DapiError::Unavailable(jerr.to_string()),
+            },
+            dashcore_rpc::Error::BitcoinSerialization(e) => DapiError::InvalidData(e.to_string()),
+            dashcore_rpc::Error::Hex(e) => DapiError::InvalidData(e.to_string()),
+            dashcore_rpc::Error::Json(e) => DapiError::InvalidData(e.to_string()),
+            dashcore_rpc::Error::Io(e) => DapiError::Io(e),
+            dashcore_rpc::Error::InvalidAmount(e) => DapiError::InvalidData(e.to_string()),
+            dashcore_rpc::Error::Secp256k1(e) => DapiError::InvalidData(e.to_string()),
+            dashcore_rpc::Error::InvalidCookieFile => {
+                DapiError::Unavailable("invalid cookie file".to_string())
+            }
+            dashcore_rpc::Error::UnexpectedStructure(s) => DapiError::InvalidData(s),
+        }
     }
 }

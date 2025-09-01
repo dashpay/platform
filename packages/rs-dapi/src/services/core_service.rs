@@ -62,17 +62,17 @@ impl Core for CoreServiceImpl {
                     .core_client
                     .get_block_hash(height)
                     .await
-                    .map_err(|e| Status::unavailable(e.to_string()))?;
+                    .map_err(tonic::Status::from)?;
                 self.core_client
                     .get_block_bytes_by_hash(hash)
                     .await
-                    .map_err(|e| Status::unavailable(e.to_string()))?
+                    .map_err(tonic::Status::from)?
             }
             Some(dapi_grpc::core::v0::get_block_request::Block::Hash(hash_hex)) => self
                 .core_client
                 .get_block_bytes_by_hash_hex(&hash_hex)
                 .await
-                .map_err(|e| Status::invalid_argument(e.to_string()))?,
+                .map_err(tonic::Status::from)?,
             None => {
                 return Err(Status::invalid_argument(
                     "either height or hash must be provided",
@@ -94,16 +94,19 @@ impl Core for CoreServiceImpl {
             .core_client
             .get_transaction_info(&txid)
             .await
-            .map_err(|e| Status::unavailable(e.to_string()))?;
+            .map_err(tonic::Status::from)?;
 
         let transaction = info.hex.clone();
         let block_hash = info
             .blockhash
             .map(|h| hex::decode(h.to_string()).unwrap_or_default())
             .unwrap_or_default();
-        let height = info.height.unwrap_or(0) as u32;
+        let height = match info.height {
+            Some(h) if h >= 0 => h as u32,
+            _ => 0,
+        };
         let confirmations = info.confirmations.unwrap_or(0);
-        let is_instant_locked = info.instantlock;
+        let is_instant_locked = info.instantlock_internal;
         let is_chain_locked = info.chainlock;
 
         let response = GetTransactionResponse {
@@ -126,7 +129,7 @@ impl Core for CoreServiceImpl {
             .core_client
             .get_block_count()
             .await
-            .map_err(|e| Status::unavailable(e.to_string()))?;
+            .map_err(tonic::Status::from)?;
 
         Ok(Response::new(GetBestBlockHeightResponse { height }))
     }
@@ -146,7 +149,7 @@ impl Core for CoreServiceImpl {
             .core_client
             .send_raw_transaction(&req.transaction)
             .await
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+            .map_err(tonic::Status::from)?;
 
         Ok(Response::new(BroadcastTransactionResponse {
             transaction_id: txid,
@@ -163,8 +166,8 @@ impl Core for CoreServiceImpl {
             self.core_client.get_network_info()
         );
 
-        let bc_info = bc_info.map_err(|e| Status::unavailable(e.to_string()))?;
-        let net_info = net_info.map_err(|e| Status::unavailable(e.to_string()))?;
+        let bc_info = bc_info.map_err(tonic::Status::from)?;
+        let net_info = net_info.map_err(tonic::Status::from)?;
 
         use dapi_grpc::core::v0::get_blockchain_status_response as respmod;
 
@@ -241,8 +244,8 @@ impl Core for CoreServiceImpl {
             self.core_client.mnsync_status()
         );
 
-        let mn_status = mn_status_res.map_err(|e| Status::unavailable(e.to_string()))?;
-        let mnsync = mnsync_res.map_err(|e| Status::unavailable(e.to_string()))?;
+        let mn_status = mn_status_res.map_err(tonic::Status::from)?;
+        let mnsync = mnsync_res.map_err(tonic::Status::from)?;
 
         // Map masternode state to gRPC enum
         let status_enum = match mn_status.state {
@@ -295,7 +298,7 @@ impl Core for CoreServiceImpl {
             .core_client
             .estimate_smart_fee_btc_per_kb(blocks)
             .await
-            .map_err(|e| Status::unavailable(e.to_string()))?
+            .map_err(tonic::Status::from)?
             .unwrap_or(0.0);
 
         Ok(Response::new(GetEstimatedTransactionFeeResponse { fee }))

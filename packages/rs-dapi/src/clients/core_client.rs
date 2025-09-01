@@ -1,8 +1,8 @@
+use crate::error::MapToDapiResult;
+use crate::{DAPIResult, DapiError};
 use dashcore_rpc::{Auth, Client, RpcApi};
 use std::sync::Arc;
 use tracing::trace;
-
-use crate::{DAPIResult, DapiError};
 use zeroize::Zeroizing;
 
 #[derive(Debug, Clone)]
@@ -24,8 +24,7 @@ impl CoreClient {
         let client = self.client.clone();
         let height = tokio::task::spawn_blocking(move || client.get_block_count())
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
 
         Ok(height as u32)
     }
@@ -39,10 +38,10 @@ impl CoreClient {
         let txid = dashcore_rpc::dashcore::Txid::from_str(txid_hex)
             .map_err(|e| DapiError::client(format!("Invalid txid: {}", e)))?;
         let client = self.client.clone();
-        let info = tokio::task::spawn_blocking(move || client.get_raw_transaction_info(&txid, None))
-            .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        let info =
+            tokio::task::spawn_blocking(move || client.get_raw_transaction_info(&txid, None))
+                .await
+                .to_dapi_result()?;
         Ok(info)
     }
 
@@ -52,18 +51,19 @@ impl CoreClient {
         let client = self.client.clone();
         let txid = tokio::task::spawn_blocking(move || client.send_raw_transaction(&raw_vec))
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(txid.to_string())
     }
 
-    pub async fn get_block_hash(&self, height: u32) -> DAPIResult<dashcore_rpc::dashcore::BlockHash> {
+    pub async fn get_block_hash(
+        &self,
+        height: u32,
+    ) -> DAPIResult<dashcore_rpc::dashcore::BlockHash> {
         trace!("Core RPC: get_block_hash");
         let client = self.client.clone();
         let hash = tokio::task::spawn_blocking(move || client.get_block_hash(height))
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(hash)
     }
 
@@ -76,8 +76,7 @@ impl CoreClient {
         let client = self.client.clone();
         let block = tokio::task::spawn_blocking(move || client.get_block(&hash))
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(serialize(&block))
     }
 
@@ -95,45 +94,34 @@ impl CoreClient {
         let client = self.client.clone();
         let info = tokio::task::spawn_blocking(move || client.get_blockchain_info())
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(info)
     }
 
-    pub async fn get_network_info(
-        &self,
-    ) -> DAPIResult<dashcore_rpc::json::GetNetworkInfoResult> {
+    pub async fn get_network_info(&self) -> DAPIResult<dashcore_rpc::json::GetNetworkInfoResult> {
         trace!("Core RPC: get_network_info");
         let client = self.client.clone();
         let info = tokio::task::spawn_blocking(move || client.get_network_info())
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(info)
     }
 
-    pub async fn estimate_smart_fee_btc_per_kb(
-        &self,
-        blocks: u16,
-    ) -> DAPIResult<Option<f64>> {
+    pub async fn estimate_smart_fee_btc_per_kb(&self, blocks: u16) -> DAPIResult<Option<f64>> {
         trace!("Core RPC: estimatesmartfee");
         let client = self.client.clone();
         let result = tokio::task::spawn_blocking(move || client.estimate_smart_fee(blocks, None))
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(result.fee_rate.map(|a| a.to_dash()))
     }
 
-    pub async fn get_masternode_status(
-        &self,
-    ) -> DAPIResult<dashcore_rpc::json::MasternodeStatus> {
+    pub async fn get_masternode_status(&self) -> DAPIResult<dashcore_rpc::json::MasternodeStatus> {
         trace!("Core RPC: masternode status");
         let client = self.client.clone();
         let st = tokio::task::spawn_blocking(move || client.get_masternode_status())
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(st)
     }
 
@@ -142,8 +130,7 @@ impl CoreClient {
         let client = self.client.clone();
         let st = tokio::task::spawn_blocking(move || client.mnsync_status())
             .await
-            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            .to_dapi_result()?;
         Ok(st)
     }
 
@@ -156,10 +143,11 @@ impl CoreClient {
         let filter = pro_tx_hash_hex.to_string();
         let client = self.client.clone();
         let map: HashMap<String, dashcore_rpc::json::Masternode> =
-            tokio::task::spawn_blocking(move || client.get_masternode_list(Some("json"), Some(&filter)))
-                .await
-                .map_err(|e| DapiError::client(format!("Join error: {}", e)))
-                .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+            tokio::task::spawn_blocking(move || {
+                client.get_masternode_list(Some("json"), Some(&filter))
+            })
+            .await
+            .to_dapi_result()?;
 
         // Find the entry matching the filter
         if let Some((_k, v)) = map.into_iter().next() {

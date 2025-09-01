@@ -1,7 +1,8 @@
 // Native gRPC protocol handler - direct pass-through
 
-use crate::errors::DapiResult;
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
+
+use crate::error::DapiResult;
 
 #[derive(Debug, Default)]
 pub struct GrpcNativeHandler;

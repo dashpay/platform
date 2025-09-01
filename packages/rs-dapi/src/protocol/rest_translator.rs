@@ -1,6 +1,6 @@
 // REST to gRPC translator
 
-use crate::errors::{DapiError, DapiResult};
+use crate::error::{DapiError, DapiResult};
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 use serde_json::Value;
 
