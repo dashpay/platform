@@ -2,19 +2,35 @@ use dapi_grpc::Message;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
+use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
-
 #[derive(Clone)]
 pub struct LruResponseCache {
     inner: Arc<RwLock<LruCache<[u8; 32], Bytes>>>,
+    /// Background workers for cache management; will be aborted when last reference is dropped
+    #[allow(dead_code)]
+    workers: Arc<JoinSet<()>>,
 }
 
 impl LruResponseCache {
-    pub fn new(capacity: usize) -> Self {
+    /// Create a cache and start a background worker that clears the cache
+    /// whenever a signal is received on the provided broadcast receiver.
+    pub fn new(capacity: usize, mut rx: broadcast::Receiver<()>) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
+        let inner = Arc::new(RwLock::new(LruCache::new(cap)));
+        let inner_clone = inner.clone();
+        let mut workers = tokio::task::join_set::JoinSet::new();
+        workers.spawn(async move {
+            while rx.recv().await.is_ok() {
+                inner_clone.write().await.clear();
+            }
+            tracing::debug!("Cache invalidation task exiting");
+        });
+
         Self {
-            inner: Arc::new(RwLock::new(LruCache::new(cap))),
+            inner,
+            workers: Arc::new(workers),
         }
     }
 

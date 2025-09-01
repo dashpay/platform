@@ -178,16 +178,19 @@ pub struct TenderdashWebSocketClient {
     ws_url: String,
     event_sender: broadcast::Sender<TransactionEvent>,
     is_connected: Arc<AtomicBool>,
+    block_sender: broadcast::Sender<()>,
 }
 
 impl TenderdashWebSocketClient {
     pub fn new(ws_url: String, buffer_size: usize) -> Self {
         let (event_sender, _) = broadcast::channel(buffer_size);
+        let (block_sender, _) = broadcast::channel(buffer_size);
 
         Self {
             ws_url,
             event_sender,
             is_connected: Arc::new(AtomicBool::new(false)),
+            block_sender,
         }
     }
 
@@ -197,6 +200,10 @@ impl TenderdashWebSocketClient {
 
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::Relaxed)
+    }
+
+    pub fn subscribe_blocks(&self) -> broadcast::Receiver<()> {
+        self.block_sender.subscribe()
     }
 
     /// Test WebSocket connection without establishing a persistent connection
@@ -237,6 +244,19 @@ impl TenderdashWebSocketClient {
 
         ws_sender
             .send(Message::Text(subscribe_msg.to_string()))
+            .await?;
+
+        // Subscribe to new block events
+        let subscribe_block_msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "subscribe",
+            "id": 2,
+            "params": {
+                "query": "tm.event = 'NewBlock'"
+            }
+        });
+        ws_sender
+            .send(Message::Text(subscribe_block_msg.to_string()))
             .await?;
 
         debug!("Subscribed to Tenderdash transaction events");
@@ -294,7 +314,15 @@ impl TenderdashWebSocketClient {
 
         let result = ws_message.result.unwrap();
 
-        // Check if this is an event message
+        // NewBlock notifications include a query matching NewBlock
+        if let Some(query) = result.get("query").and_then(|q| q.as_str()) {
+            if query.contains("NewBlock") {
+                let _ = self.block_sender.send(());
+                return Ok(());
+            }
+        }
+
+        // Check if this is a tx event message
         if result.get("events").is_some() {
             if let Some(data) = result.get("data") {
                 if let Some(value) = data.get("value") {

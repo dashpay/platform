@@ -39,6 +39,7 @@ pub struct StreamingServiceImpl {
     pub zmq_listener: Arc<dyn ZmqListenerTrait>,
     pub subscriber_manager: Arc<SubscriberManager>,
     pub cache: CacheStore,
+    pub block_notify: broadcast::Sender<()>,
 }
 
 impl StreamingServiceImpl {
@@ -64,6 +65,7 @@ impl StreamingServiceImpl {
         trace!("Creating streaming service with custom ZMQ listener");
         let subscriber_manager = Arc::new(SubscriberManager::new());
 
+        let (block_notify, _) = broadcast::channel(32);
         let service = Self {
             drive_client,
             tenderdash_client,
@@ -71,6 +73,7 @@ impl StreamingServiceImpl {
             zmq_listener,
             subscriber_manager,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            block_notify,
         };
 
         info!("Starting streaming service background tasks");
@@ -87,6 +90,7 @@ impl StreamingServiceImpl {
 
         // Start event processing task
         let subscriber_manager = self.subscriber_manager.clone();
+        let block_notify = self.block_notify.clone();
         tokio::spawn(async move {
             let zmq_events = match zmq_listener.subscribe().await {
                 Ok(zmq) => zmq,
@@ -97,7 +101,7 @@ impl StreamingServiceImpl {
             };
 
             trace!("ZMQ listener started successfully, processing events");
-            Self::process_zmq_events(zmq_events, subscriber_manager).await;
+            Self::process_zmq_events(zmq_events, subscriber_manager, block_notify).await;
             Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
         });
     }
@@ -106,6 +110,7 @@ impl StreamingServiceImpl {
     async fn process_zmq_events(
         mut zmq_events: broadcast::Receiver<ZmqEvent>,
         subscriber_manager: Arc<SubscriberManager>,
+        block_notify: broadcast::Sender<()>,
     ) {
         trace!("Starting ZMQ event processing loop");
         while let Ok(event) = zmq_events.recv().await {
@@ -119,6 +124,7 @@ impl StreamingServiceImpl {
                 ZmqEvent::RawBlock { data } => {
                     trace!("Processing raw block event");
                     subscriber_manager.notify_block_subscribers(&data).await;
+                    let _ = block_notify.send(());
                 }
                 ZmqEvent::RawTransactionLock { data } => {
                     trace!("Processing transaction lock event");
@@ -135,10 +141,15 @@ impl StreamingServiceImpl {
                 ZmqEvent::HashBlock { hash } => {
                     trace!("Processing new block hash event");
                     subscriber_manager.notify_new_block_subscribers(&hash).await;
+                    let _ = block_notify.send(());
                 }
             }
         }
         trace!("ZMQ event processing loop ended");
+    }
+
+    pub fn subscribe_blocks(&self) -> broadcast::Receiver<()> {
+        self.block_notify.subscribe()
     }
 
     /// Get a cached response if it exists and is still fresh

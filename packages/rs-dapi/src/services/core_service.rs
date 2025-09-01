@@ -1,5 +1,6 @@
 // Core service implementation
 
+use crate::cache::LruResponseCache;
 use crate::clients::CoreClient;
 use crate::config::Config;
 use crate::services::streaming_service::StreamingServiceImpl;
@@ -24,6 +25,7 @@ pub struct CoreServiceImpl {
     pub streaming_service: Arc<StreamingServiceImpl>,
     pub config: Arc<Config>,
     pub core_client: CoreClient,
+    pub core_cache: LruResponseCache,
 }
 
 impl CoreServiceImpl {
@@ -32,10 +34,12 @@ impl CoreServiceImpl {
         config: Arc<Config>,
         core_client: CoreClient,
     ) -> Self {
+        let rx = streaming_service.subscribe_blocks();
         Self {
             streaming_service,
             config,
             core_client,
+            core_cache: LruResponseCache::new(1024, rx),
         }
     }
 }
@@ -276,10 +280,10 @@ impl Core for CoreServiceImpl {
         // Sync flags and progress computed from AssetID (JS parity)
         let is_synced = mnsync.is_synced;
         let sync_progress = match mnsync.asset_id {
-            999 => 1.0,       // FINISHED
-            0 => 0.0,         // INITIAL
-            1 => 1.0 / 3.0,   // BLOCKCHAIN
-            4 => 2.0 / 3.0,   // GOVERNANCE (legacy numeric value)
+            999 => 1.0,     // FINISHED
+            0 => 0.0,       // INITIAL
+            1 => 1.0 / 3.0, // BLOCKCHAIN
+            4 => 2.0 / 3.0, // GOVERNANCE (legacy numeric value)
             _ => 0.0,
         };
 

@@ -89,13 +89,14 @@ impl PlatformServiceImpl {
             1000,
         ));
 
-        let cache = crate::cache::LruResponseCache::new(1024);
+        let block_rx = websocket_client.subscribe_blocks();
+
         Self {
             drive_client,
             tenderdash_client,
             websocket_client,
             config,
-            platform_cache: cache,
+            platform_cache: crate::cache::LruResponseCache::new(1024, block_rx),
         }
     }
 }
