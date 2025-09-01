@@ -21,6 +21,7 @@ public class WalletService: ObservableObject {
     private var modelContainer: ModelContainer?
     private var syncTask: Task<Void, Never>?
     private var balanceUpdateTask: Task<Void, Never>?
+    private var spvStatsTimer: Timer?
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     private(set) var walletManager: WalletManager?
@@ -30,6 +31,10 @@ public class WalletService: ObservableObject {
     
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
+    // Latest sync stats (for UI)
+    @Published var latestHeaderHeight: Int = 0
+    @Published var latestFilterHeight: Int = 0
+    @Published var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
     
     private init() {}
     
@@ -60,6 +65,12 @@ public class WalletService: ObservableObject {
             // Start the SPV client
             try spvClient?.start()
             print("✅ SPV Client initialized and started successfully for \(network.rawValue)")
+
+            // Seed UI with latest checkpoint height if we don't have a header yet
+            if self.latestHeaderHeight == 0, let cp = spvClient?.getLatestCheckpointHeight() {
+                self.latestHeaderHeight = Int(cp)
+            }
+            beginSPVStatsPolling()
             
             // Create SDK wallet manager (unified, not tied to SPV pointer for now)
             do {
@@ -175,6 +186,11 @@ public class WalletService: ObservableObject {
             }
         }
     }
+
+    // MARK: - Trusted Mode / Masternode Sync
+    public func disableMasternodeSync() throws {
+        try spvClient?.setMasternodeSyncEnabled(false)
+    }
     
     // MARK: - Sync Management
     
@@ -188,18 +204,17 @@ public class WalletService: ObservableObject {
         isSyncing = true
         lastSyncError = nil
         
-        do {
-            // Start real SPV sync
-            try await spvClient.startSync()
-            
-            // Update wallet sync status
-            if let wallet = currentWallet {
-                wallet.syncProgress = 1.0
-                try? modelContainer?.mainContext.save()
+        // Kick off sync without blocking the main thread
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                try await spvClient.startSync()
+            } catch {
+                await MainActor.run {
+                    self?.lastSyncError = error
+                    self?.isSyncing = false
+                }
+                print("❌ Sync failed: \(error)")
             }
-        } catch {
-            lastSyncError = error
-            print("❌ Sync failed: \(error)")
         }
     }
     
@@ -208,6 +223,8 @@ public class WalletService: ObservableObject {
         isSyncing = false
         syncProgress = nil
         detailedSyncProgress = nil
+        spvStatsTimer?.invalidate()
+        spvStatsTimer = nil
     }
     
     // MARK: - Network Management
@@ -377,6 +394,27 @@ public class WalletService: ObservableObject {
     }
 }
 
+// MARK: - SPV Stats Polling
+extension WalletService {
+    private func beginSPVStatsPolling() {
+        spvStatsTimer?.invalidate()
+        spvStatsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self = self, let stats = self.spvClient?.getStats() else { return }
+            DispatchQueue.main.async {
+                // Only overwrite with positive values; keep seeded values otherwise
+                if stats.headerHeight > 0 {
+                    self.latestHeaderHeight = max(self.latestHeaderHeight, stats.headerHeight)
+                }
+                if stats.filterHeight > 0 {
+                    self.latestFilterHeight = max(self.latestFilterHeight, stats.filterHeight)
+                }
+                // Keep latestMasternodeListHeight as 0 until available
+            }
+        }
+        if let t = spvStatsTimer { RunLoop.main.add(t, forMode: .common) }
+    }
+}
+
 // MARK: - SPVClientDelegate
 
 extension WalletService: SPVClientDelegate {
@@ -394,16 +432,22 @@ extension WalletService: SPVClientDelegate {
                 stage: mapSyncStage(progress.stage)
             )
             
-            print("📊 Sync progress: \(progress.stage.rawValue) - \(Int(progress.overallProgress * 100))%")
+            if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
+                print("📊 Sync progress: \(progress.stage.rawValue) - \(Int(progress.overallProgress * 100))%")
+            }
         }
     }
     
     nonisolated public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
-        print("📦 New block: height=\(block.height)")
+        if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
+            print("📦 New block: height=\(block.height)")
+        }
     }
     
     nonisolated public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
-        print("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)")
+        if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
+            print("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)")
+        }
         
         // Update transactions and balance
         Task { @MainActor in
@@ -417,16 +461,22 @@ extension WalletService: SPVClientDelegate {
             isSyncing = false
             
             if success {
-                print("✅ Sync completed successfully")
+                if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
+                    print("✅ Sync completed successfully")
+                }
             } else {
-                print("❌ Sync failed: \(error ?? "Unknown error")")
+                if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
+                    print("❌ Sync failed: \(error ?? "Unknown error")")
+                }
                 lastSyncError = SPVError.syncFailed(error ?? "Unknown error")
             }
         }
     }
     
     nonisolated public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
-        print("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers")
+        if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
+            print("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers")
+        }
     }
     
     private func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {

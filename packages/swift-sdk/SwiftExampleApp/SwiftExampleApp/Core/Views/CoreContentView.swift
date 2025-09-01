@@ -85,6 +85,7 @@ struct CoreContentView: View {
                         progress: safeHeaderProgress,
                         detail: "\(Int(safeHeaderProgress * 100))% complete",
                         icon: "doc.text",
+                        trailingValue: formattedHeight(walletService.latestHeaderHeight),
                         onRestart: restartHeaderSync
                     )
                     
@@ -94,6 +95,7 @@ struct CoreContentView: View {
                         progress: safeMasternodeProgress,
                         detail: "\(Int(safeMasternodeProgress * 100))% complete",
                         icon: "server.rack",
+                        trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
                         onRestart: restartMasternodeSync
                     )
                     
@@ -103,6 +105,7 @@ struct CoreContentView: View {
                         progress: safeTransactionProgress,
                         detail: "Filters & Blocks: \(Int(safeTransactionProgress * 100))%",
                         icon: "arrow.left.arrow.right",
+                        trailingValue: formattedHeight(walletService.latestFilterHeight),
                         onRestart: restartTransactionSync
                     )
                 }
@@ -264,6 +267,7 @@ struct SyncProgressRow: View {
     let progress: Double
     let detail: String
     let icon: String
+    let trailingValue: String?
     let onRestart: () -> Void
     
     // Ensure progress is always between 0 and 1
@@ -279,6 +283,12 @@ struct SyncProgressRow: View {
                     .foregroundColor(.primary)
                 
                 Spacer()
+                
+                if let trailingValue = trailingValue {
+                    Text(trailingValue)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 
                 Button(action: onRestart) {
                     Image(systemName: "arrow.clockwise")
@@ -444,5 +454,17 @@ struct WalletRowView: View {
         let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
             .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
         return "\(trimmed) DASH"
+    }
+}
+
+// MARK: - Formatting Helpers
+extension CoreContentView {
+    func formattedHeight(_ height: Int) -> String {
+        guard height > 0 else { return "—" }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        return formatter.string(from: NSNumber(value: height)) ?? String(height)
     }
 }

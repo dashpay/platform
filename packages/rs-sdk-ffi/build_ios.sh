@@ -316,7 +316,7 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
 fi
 
-# Create module map for both DashSDKFFI and DashSPVFFI
+# Create module map; include SDK, SPV, and KeyWallet headers
 cat > "$OUTPUT_DIR/module.modulemap" << EOF
 module DashSDKFFI {
     header "dash_sdk_ffi.h"
@@ -324,7 +324,12 @@ module DashSDKFFI {
 }
 
 module DashSPVFFI {
-    header "dash_sdk_ffi.h"
+    header "dash_spv_ffi.h"
+    export *
+}
+
+module KeyWalletFFI {
+    header "key_wallet_ffi.h"
     export *
 }
 EOF
@@ -334,6 +339,23 @@ HEADERS_DIR="$OUTPUT_DIR/headers"
 mkdir -p "$HEADERS_DIR"
 cp "$OUTPUT_DIR/dash_sdk_ffi.h" "$HEADERS_DIR/"
 cp "$OUTPUT_DIR/module.modulemap" "$HEADERS_DIR/"
+
+# Also copy raw SPV and KeyWallet headers (SPV now includes KeyWallet)
+RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
+KEY_WALLET_HEADER_PATH="$RUST_DASHCORE_PATH/key-wallet-ffi/include/key_wallet_ffi.h"
+SPV_HEADER_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi/include/dash_spv_ffi.h"
+
+if [ -f "$SPV_HEADER_PATH" ]; then
+  cp "$SPV_HEADER_PATH" "$HEADERS_DIR/"
+else
+  echo -e "${YELLOW}⚠ Missing SPV header at $SPV_HEADER_PATH${NC}"
+fi
+
+if [ -f "$KEY_WALLET_HEADER_PATH" ]; then
+  cp "$KEY_WALLET_HEADER_PATH" "$HEADERS_DIR/"
+else
+  echo -e "${YELLOW}⚠ Missing KeyWallet header at $KEY_WALLET_HEADER_PATH${NC}"
+fi
 
 # Create XCFramework
 echo -e "${GREEN}Creating XCFramework...${NC}"

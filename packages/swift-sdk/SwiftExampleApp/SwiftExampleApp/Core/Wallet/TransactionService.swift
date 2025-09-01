@@ -153,8 +153,10 @@ class TransactionService: ObservableObject {
             }
         }
         
-        // Start sync
-        try await spvClient.startSync()
+        // Start sync without blocking UI
+        Task.detached(priority: .userInitiated) {
+            try? await spvClient.startSync()
+        }
     }
     
     // MARK: - Fee Estimation

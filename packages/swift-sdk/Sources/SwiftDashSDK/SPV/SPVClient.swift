@@ -86,7 +86,6 @@ public protocol SPVClientDelegate: AnyObject {
 
 // MARK: - SPV Client
 
-@MainActor
 public class SPVClient: ObservableObject {
     // Published properties for SwiftUI
     @Published public var isConnected = false
@@ -107,11 +106,20 @@ public class SPVClient: ObservableObject {
     
     // Network
     private let network: Network
+    private var masternodeSyncEnabled: Bool = true
     
     // Sync tracking
     private var syncStartTime: Date?
     private var lastBlockHeight: UInt32 = 0
     internal var syncCancelled = false
+    fileprivate var lastProgressUIUpdate: TimeInterval = 0
+    fileprivate let progressUICoalesceInterval: TimeInterval = 0.2
+    fileprivate let swiftLoggingEnabled: Bool = {
+        if let env = ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"], env.lowercased() == "1" || env.lowercased() == "true" {
+            return true
+        }
+        return false
+    }()
     
     public init(network: Network = DashSDKNetwork(rawValue: 1)) {
         self.network = network
@@ -126,11 +134,24 @@ public class SPVClient: ObservableObject {
     
     // MARK: - Client Lifecycle
     
-    public func initialize(dataDir: String? = nil) throws {
+    public func initialize(dataDir: String? = nil, masternodesEnabled: Bool? = nil) throws {
         guard client == nil else {
             throw SPVError.alreadyInitialized
         }
         
+        // Initialize SPV logging (one-time). Default to off unless SPV_LOG is provided.
+        struct SPVLogInit { static var done = false }
+        if !SPVLogInit.done {
+            let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
+            level.withCString { cstr in
+                dash_spv_ffi_init_logging(cstr)
+            }
+            SPVLogInit.done = true
+            if swiftLoggingEnabled {
+                print("[SPV][Log] Initialized SPV logging level=\(level)")
+            }
+        }
+
         // Create configuration based on network raw value
         let rawConfigPtr: UnsafeMutableRawPointer? = {
             switch network {
@@ -163,6 +184,12 @@ public class SPVClient: ObservableObject {
         // Enable mempool tracking
         dash_spv_ffi_config_set_mempool_tracking(configPtr, true)
         dash_spv_ffi_config_set_mempool_strategy(configPtr, FFIMempoolStrategy(rawValue: 1)) // BloomFilter
+
+        // Optionally override masternode sync behavior
+        if let m = masternodesEnabled {
+            self.masternodeSyncEnabled = m
+        }
+        _ = dash_spv_ffi_config_set_masternode_sync_enabled(configPtr, masternodeSyncEnabled)
         
         // Create client
         client = dash_spv_ffi_client_new(configPtr)
@@ -173,8 +200,21 @@ public class SPVClient: ObservableObject {
         // Store config for cleanup
         config = configPtr
         
-        // Set up event callbacks
+        // Set up event callbacks with stable context
         setupEventCallbacks()
+    }
+
+    /// Enable/disable masternode sync. If the client is running, apply the update immediately.
+    public func setMasternodeSyncEnabled(_ enabled: Bool) throws {
+        self.masternodeSyncEnabled = enabled
+        if let config = self.config {
+            let rc = dash_spv_ffi_config_set_masternode_sync_enabled(config, enabled)
+            if rc != 0 { throw SPVError.configurationFailed }
+        }
+        if let client = self.client, let config = self.config {
+            let rc2 = dash_spv_ffi_client_update_config(client, config)
+            if rc2 != 0 { throw SPVError.configurationFailed }
+        }
     }
     
     public func start() throws {
@@ -186,22 +226,24 @@ public class SPVClient: ObservableObject {
         if result != 0 {
             if let errorMsg = dash_spv_ffi_get_last_error() {
                 let error = String(cString: errorMsg)
-                lastError = error
+                Task { @MainActor in self.lastError = error }
                 throw SPVError.startFailed(error)
             }
             throw SPVError.startFailed("Unknown error")
         }
         
-        isConnected = true
+        Task { @MainActor in self.isConnected = true }
     }
     
     public func stop() {
         guard let client = client else { return }
         
         dash_spv_ffi_client_stop(client)
-        isConnected = false
-        isSyncing = false
-        syncProgress = nil
+        Task { @MainActor in
+            self.isConnected = false
+            self.isSyncing = false
+            self.syncProgress = nil
+        }
     }
     
     private func destroyClient() {
@@ -229,27 +271,39 @@ public class SPVClient: ObservableObject {
             throw SPVError.alreadySyncing
         }
         
-        isSyncing = true
+        await MainActor.run {
+            self.isSyncing = true
+        }
         syncCancelled = false
         syncStartTime = Date()
         
-        // Create callback context that captures self weakly
-        let context = CallbackContext(client: self)
-        self.callbackContext = context
+        // Use a stable callback context; create if needed
+        let context: CallbackContext
+        if let existing = self.callbackContext {
+            context = existing
+        } else {
+            context = CallbackContext(client: self)
+            self.callbackContext = context
+        }
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
         
-        // Start sync with progress callbacks
-        // Use global C callbacks that can access context via userData
-        let result = dash_spv_ffi_client_sync_to_tip_with_progress(
-            client,
-            spvProgressCallback,
-            spvCompletionCallback,
-            contextPtr
-        )
-        
-        if result != 0 {
-            isSyncing = false
-            throw SPVError.syncFailed(lastError ?? "Unknown error")
+        // Start sync in the background to avoid blocking the main thread
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self, let client = self.client else { return }
+            let result = dash_spv_ffi_client_sync_to_tip_with_progress(
+                client,
+                spvProgressCallback,
+                spvCompletionCallback,
+                contextPtr
+            )
+
+            if result != 0 {
+                let error = self.lastError ?? "Unknown error"
+                Task { @MainActor in
+                    self.isSyncing = false
+                    self.lastError = error
+                }
+            }
         }
     }
     
@@ -328,7 +382,11 @@ public class SPVClient: ObservableObject {
             hash: hash,
             timestamp: Date()
         )
-        
+
+        if swiftLoggingEnabled {
+            print("[SPV][Block] height=\(height) hash=\(hash.map { String(format: "%02x", $0) }.joined().prefix(16))…")
+        }
+
         delegate?.spvClient(self, didReceiveBlock: block)
         
         // Update sync progress if we're syncing
@@ -366,7 +424,14 @@ public class SPVClient: ObservableObject {
             addresses: addresses,
             blockHeight: blockHeight
         )
-        
+
+        // Debug: print tx event summary
+        if swiftLoggingEnabled {
+            let txidHex = txid.map { String(format: "%02x", $0) }.joined()
+            let bh = blockHeight.map(String.init) ?? "nil"
+            print("[SPV][Tx] txid=\(txidHex.prefix(16))… confirmed=\(confirmed) amount=\(amount) blockHeight=\(bh)")
+        }
+
         delegate?.spvClient(self, didReceiveTransaction: transaction)
     }
     
@@ -399,6 +464,32 @@ public class SPVClient: ObservableObject {
         
         return stats
     }
+
+    // MARK: - Checkpoints
+    // Tries to fetch the latest checkpoint height for this client's network.
+    // Requires newer FFI with dash_spv_ffi_checkpoint_latest. Returns nil if unavailable.
+    public func getLatestCheckpointHeight() -> UInt32? {
+        // Derive FFINetwork matching how we built config
+        let ffiNet: FFINetwork
+        switch network {
+        case DashSDKNetwork(rawValue: 0): // mainnet
+            ffiNet = FFINetwork(rawValue: 0)
+        case DashSDKNetwork(rawValue: 1): // testnet
+            ffiNet = FFINetwork(rawValue: 1)
+        case DashSDKNetwork(rawValue: 2): // devnet
+            ffiNet = FFINetwork(rawValue: 3)
+        default:
+            ffiNet = FFINetwork(rawValue: 1)
+        }
+
+        var outHeight: UInt32 = 0
+        var outHash = [UInt8](repeating: 0, count: 32)
+        let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
+            dash_spv_ffi_checkpoint_latest(ffiNet, &outHeight, buf.baseAddress)
+        }
+        guard rc == 0 else { return nil }
+        return outHeight
+    }
 }
 
 // MARK: - Callback Context
@@ -409,10 +500,10 @@ private class CallbackContext {
     init(client: SPVClient) {
         self.client = client
     }
-    
+
     func handleProgressUpdate(_ progressPtr: UnsafePointer<FFIDetailedSyncProgress>) {
         let ffiProgress = progressPtr.pointee
-        
+
         // Determine sync stage based on percentage
         let stage: SPVSyncStage
         if ffiProgress.percentage < 0.3 {
@@ -424,13 +515,22 @@ private class CallbackContext {
         } else {
             stage = .complete
         }
-        
+
         // Calculate estimated time remaining
         var estimatedTime: TimeInterval? = nil
         if ffiProgress.estimated_seconds_remaining > 0 {
             estimatedTime = Double(ffiProgress.estimated_seconds_remaining)
         }
-        
+
+        if client?.swiftLoggingEnabled == true {
+            let pct = max(0.0, min(ffiProgress.percentage, 1.0)) * 100.0
+            let cur = ffiProgress.current_height
+            let tot = ffiProgress.total_height
+            let rate = ffiProgress.headers_per_second
+            let eta = ffiProgress.estimated_seconds_remaining
+            print("[SPV][Progress] stage=\(stage.rawValue) pct=\(String(format: "%.2f", pct))% height=\(cur)/\(tot) rate=\(String(format: "%.2f", rate)) hdr/s eta=\(eta)s")
+        }
+
         let progress = SPVSyncProgress(
             stage: stage,
             headerProgress: min(ffiProgress.percentage / 0.3, 1.0),
@@ -442,10 +542,14 @@ private class CallbackContext {
             estimatedTimeRemaining: estimatedTime
         )
         
-        Task { @MainActor in
-            guard let client = self.client else { return }
-            client.syncProgress = progress
-            client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
+        let now = Date().timeIntervalSince1970
+        if let client = self.client, now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
+            client.lastProgressUIUpdate = now
+            Task { @MainActor in
+                guard let clientStrong = self.client else { return }
+                clientStrong.syncProgress = progress
+                clientStrong.delegate?.spvClient(clientStrong, didUpdateSyncProgress: progress)
+            }
         }
     }
     
@@ -454,7 +558,15 @@ private class CallbackContext {
         if let errorMsg = errorMsg {
             error = String(cString: errorMsg)
         }
-        
+
+        if client?.swiftLoggingEnabled == true {
+            if success {
+                print("[SPV][Complete] Sync finished successfully")
+            } else {
+                print("[SPV][Complete] Sync failed: \(error ?? "unknown error")")
+            }
+        }
+
         Task { @MainActor in
             guard let client = self.client else { return }
             client.isSyncing = false

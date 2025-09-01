@@ -69,6 +69,19 @@ class UnifiedAppState: ObservableObject {
             
             // Wait for Platform SDK to be ready
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+
+            // If SDK reports trusted mode, disable masternode SPV sync
+            if let sdk = platformState.sdk {
+                do {
+                    let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
+                    let isTrusted = status.mode.lowercased() == "trusted"
+                    if isTrusted {
+                        try? walletService.disableMasternodeSync()
+                    }
+                } catch {
+                    // Ignore status errors; SPV defaults remain
+                }
+            }
             
             isInitialized = true
         } catch {
