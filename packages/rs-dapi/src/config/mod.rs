@@ -118,7 +118,7 @@ pub struct CoreConfig {
     pub rpc_user: String,
     /// Dash Core RPC password
     #[serde(rename = "dapi_core_rpc_pass")]
-    pub rpc_pass: zeroize::Zeroizing<String>,
+    pub rpc_pass: String,
 }
 
 impl Default for DapiConfig {
@@ -157,7 +157,7 @@ impl Default for CoreConfig {
             zmq_url: "tcp://127.0.0.1:29998".to_string(),
             rpc_url: "http://127.0.0.1:9998".to_string(),
             rpc_user: String::new(),
-            rpc_pass: String::new().into(),
+            rpc_pass: String::new(),
         }
     }
 }

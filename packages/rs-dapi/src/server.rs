@@ -65,7 +65,7 @@ impl DapiServer {
         let core_client = CoreClient::new(
             config.dapi.core.rpc_url.clone(),
             config.dapi.core.rpc_user.clone(),
-            config.dapi.core.rpc_pass.clone(),
+            config.dapi.core.rpc_pass.clone().into(),
         )
         .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
 
@@ -121,7 +121,7 @@ impl DapiServer {
         let core_client = CoreClient::new(
             config.dapi.core.rpc_url.clone(),
             config.dapi.core.rpc_user.clone(),
-            config.dapi.core.rpc_pass.clone(),
+            config.dapi.core.rpc_pass.clone().into(),
         )
         .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
 

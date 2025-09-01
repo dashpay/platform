@@ -56,4 +56,115 @@ impl CoreClient {
             .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
         Ok(txid.to_string())
     }
+
+    pub async fn get_block_hash(&self, height: u32) -> DAPIResult<dashcore_rpc::dashcore::BlockHash> {
+        trace!("Core RPC: get_block_hash");
+        let client = self.client.clone();
+        let hash = tokio::task::spawn_blocking(move || client.get_block_hash(height))
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(hash)
+    }
+
+    pub async fn get_block_bytes_by_hash(
+        &self,
+        hash: dashcore_rpc::dashcore::BlockHash,
+    ) -> DAPIResult<Vec<u8>> {
+        use dashcore_rpc::dashcore::consensus::encode::serialize;
+        trace!("Core RPC: get_block (bytes)");
+        let client = self.client.clone();
+        let block = tokio::task::spawn_blocking(move || client.get_block(&hash))
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(serialize(&block))
+    }
+
+    pub async fn get_block_bytes_by_hash_hex(&self, hash_hex: &str) -> DAPIResult<Vec<u8>> {
+        use std::str::FromStr;
+        let hash = dashcore_rpc::dashcore::BlockHash::from_str(hash_hex)
+            .map_err(|e| DapiError::client(format!("Invalid block hash: {}", e)))?;
+        self.get_block_bytes_by_hash(hash).await
+    }
+
+    pub async fn get_blockchain_info(
+        &self,
+    ) -> DAPIResult<dashcore_rpc::json::GetBlockchainInfoResult> {
+        trace!("Core RPC: get_blockchain_info");
+        let client = self.client.clone();
+        let info = tokio::task::spawn_blocking(move || client.get_blockchain_info())
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(info)
+    }
+
+    pub async fn get_network_info(
+        &self,
+    ) -> DAPIResult<dashcore_rpc::json::GetNetworkInfoResult> {
+        trace!("Core RPC: get_network_info");
+        let client = self.client.clone();
+        let info = tokio::task::spawn_blocking(move || client.get_network_info())
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(info)
+    }
+
+    pub async fn estimate_smart_fee_btc_per_kb(
+        &self,
+        blocks: u16,
+    ) -> DAPIResult<Option<f64>> {
+        trace!("Core RPC: estimatesmartfee");
+        let client = self.client.clone();
+        let result = tokio::task::spawn_blocking(move || client.estimate_smart_fee(blocks, None))
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(result.fee_rate.map(|a| a.to_dash()))
+    }
+
+    pub async fn get_masternode_status(
+        &self,
+    ) -> DAPIResult<dashcore_rpc::json::MasternodeStatus> {
+        trace!("Core RPC: masternode status");
+        let client = self.client.clone();
+        let st = tokio::task::spawn_blocking(move || client.get_masternode_status())
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(st)
+    }
+
+    pub async fn mnsync_status(&self) -> DAPIResult<dashcore_rpc::json::MnSyncStatus> {
+        trace!("Core RPC: mnsync status");
+        let client = self.client.clone();
+        let st = tokio::task::spawn_blocking(move || client.mnsync_status())
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(st)
+    }
+
+    pub async fn get_masternode_pos_penalty(
+        &self,
+        pro_tx_hash_hex: &str,
+    ) -> DAPIResult<Option<u32>> {
+        use std::collections::HashMap;
+        trace!("Core RPC: masternode list (filter)");
+        let filter = pro_tx_hash_hex.to_string();
+        let client = self.client.clone();
+        let map: HashMap<String, dashcore_rpc::json::Masternode> =
+            tokio::task::spawn_blocking(move || client.get_masternode_list(Some("json"), Some(&filter)))
+                .await
+                .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+                .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+
+        // Find the entry matching the filter
+        if let Some((_k, v)) = map.into_iter().next() {
+            return Ok(Some(v.pos_penalty_score));
+        }
+        Ok(None)
+    }
 }
