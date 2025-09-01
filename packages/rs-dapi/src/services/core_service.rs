@@ -59,10 +59,36 @@ impl Core for CoreServiceImpl {
 
     async fn get_transaction(
         &self,
-        _request: Request<GetTransactionRequest>,
+        request: Request<GetTransactionRequest>,
     ) -> Result<Response<GetTransactionResponse>, Status> {
         trace!("Received get_transaction request");
-        Err(Status::unimplemented("get_transaction not yet implemented"))
+        let txid = request.into_inner().id;
+
+        let info = self
+            .core_client
+            .get_transaction_info(&txid)
+            .await
+            .map_err(|e| Status::unavailable(e.to_string()))?;
+
+        let transaction = info.hex.clone();
+        let block_hash = info
+            .blockhash
+            .map(|h| h.to_byte_array().to_vec())
+            .unwrap_or_default();
+        let height = info.height.unwrap_or(0).try_into().unwrap_or(0);
+        let confirmations = info.confirmations.unwrap_or(0);
+        let is_instant_locked = info.instantlock;
+        let is_chain_locked = info.chainlock;
+
+        let response = GetTransactionResponse {
+            transaction,
+            block_hash,
+            height,
+            confirmations,
+            is_instant_locked,
+            is_chain_locked,
+        };
+        Ok(Response::new(response))
     }
 
     async fn get_best_block_height(
@@ -81,12 +107,22 @@ impl Core for CoreServiceImpl {
 
     async fn broadcast_transaction(
         &self,
-        _request: Request<BroadcastTransactionRequest>,
+        request: Request<BroadcastTransactionRequest>,
     ) -> Result<Response<BroadcastTransactionResponse>, Status> {
         trace!("Received broadcast_transaction request");
-        Err(Status::unimplemented(
-            "broadcast_transaction not yet implemented",
-        ))
+        let req = request.into_inner();
+        let _allow_high_fees = req.allow_high_fees;
+        let _bypass_limits = req.bypass_limits;
+
+        // NOTE: dashcore-rpc Client does not expose options for allowhighfees/bypasslimits.
+        // We broadcast as-is. Future: add support if library exposes those options.
+        let txid = self
+            .core_client
+            .send_raw_transaction(&req.transaction)
+            .await
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+
+        Ok(Response::new(BroadcastTransactionResponse { transaction_id: txid }))
     }
 
     async fn get_blockchain_status(

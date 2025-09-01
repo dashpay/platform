@@ -29,4 +29,31 @@ impl CoreClient {
 
         Ok(height as u32)
     }
+
+    pub async fn get_transaction_info(
+        &self,
+        txid_hex: &str,
+    ) -> DAPIResult<dashcore_rpc::json::GetRawTransactionResult> {
+        use std::str::FromStr;
+        trace!("Core RPC: get_raw_transaction_info");
+        let txid = dashcore_rpc::dashcore::Txid::from_str(txid_hex)
+            .map_err(|e| DapiError::client(format!("Invalid txid: {}", e)))?;
+        let client = self.client.clone();
+        let info = tokio::task::spawn_blocking(move || client.get_raw_transaction_info(&txid, None))
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(info)
+    }
+
+    pub async fn send_raw_transaction(&self, raw: &[u8]) -> DAPIResult<String> {
+        trace!("Core RPC: send_raw_transaction");
+        let raw_vec = raw.to_vec();
+        let client = self.client.clone();
+        let txid = tokio::task::spawn_blocking(move || client.send_raw_transaction(&raw_vec))
+            .await
+            .map_err(|e| DapiError::client(format!("Join error: {}", e)))
+            .and_then(|res| res.map_err(|e| DapiError::client(e.to_string())))?;
+        Ok(txid.to_string())
+    }
 }
