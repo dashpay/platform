@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftDashSDK
 
 /// Service to manage SwiftData operations for the app
 @MainActor

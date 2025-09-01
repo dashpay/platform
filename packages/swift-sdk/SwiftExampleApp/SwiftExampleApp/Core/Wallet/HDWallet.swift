@@ -34,7 +34,7 @@ public final class HDWallet: HDWalletModels {
     // Uses FFINetworks values: DASH(mainnet)=1, TESTNET=2, DEVNET=8
     public var networks: UInt32
     
-    public init(label: String, network: Network, isWatchOnly: Bool = false) {
+    init(label: String, network: Network, isWatchOnly: Bool = false) {
         self.id = UUID()
         self.label = label
         self.network = network.rawValue
@@ -55,7 +55,7 @@ public final class HDWallet: HDWalletModels {
         }
     }
     
-    public var dashNetwork: Network {
+    var dashNetwork: Network {
         return Network(rawValue: network) ?? .testnet
     }
     

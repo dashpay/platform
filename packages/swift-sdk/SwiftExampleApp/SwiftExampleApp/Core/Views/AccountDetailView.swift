@@ -83,7 +83,7 @@ struct AccountDetailView: View {
                     }
                     
                     // Balance Card (if applicable)
-                    if WalletManager.shouldShowBalance(for: account.index) {
+                    if WalletManager.shouldShowBalance(for: account.index ?? 0) {
                         balanceCard()
                     }
                     
@@ -518,31 +518,10 @@ struct AccountDetailView: View {
     // MARK: - Helper Properties
     
     private var hasAccountIndex: Bool {
-        switch account.index {
-        case 0...999,        // BIP44 accounts
-             1000...1999,    // CoinJoin accounts
-             5000...5999,    // BIP32 accounts
-             9100...9199:    // Identity TopUp accounts (have registration index)
-            return true
-        default:
-            return false
-        }
+        return account.index != nil
     }
     
-    private var accountDisplayIndex: UInt32 {
-        switch account.index {
-        case 0...999:
-            return account.index  // BIP44 account index
-        case 1000...1999:
-            return account.index - 1000  // CoinJoin account index
-        case 5000...5999:
-            return account.index - 5000  // BIP32 account index
-        case 9100...9199:
-            return account.index - 9100  // Identity TopUp registration index
-        default:
-            return account.index
-        }
-    }
+    private var accountDisplayIndex: UInt32 { account.index ?? 0 }
     
     private var hasInternalExternalAddresses: Bool {
         guard let info = detailInfo else { return false }

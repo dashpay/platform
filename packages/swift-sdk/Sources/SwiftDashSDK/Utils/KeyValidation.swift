@@ -1,11 +1,10 @@
 import Foundation
 import DashSDKFFI
-import SwiftDashSDK
 
 /// Helper for validating private keys against public keys
-enum KeyValidation {
+public enum KeyValidation {
     /// Validate that a private key matches a public key
-    static func validatePrivateKeyForPublicKey(
+    public static func validatePrivateKeyForPublicKey(
         privateKeyHex: String,
         publicKeyHex: String,
         keyType: KeyType,
@@ -35,10 +34,9 @@ enum KeyValidation {
         // Check for errors
         if result.error != nil {
             let error = result.error!.pointee
-            defer {
-                dash_sdk_error_free(result.error)
-            }
-            print("Validation error: \(error.message != nil ? String(cString: error.message!) : "Unknown")")
+            defer { dash_sdk_error_free(result.error) }
+            let message = error.message != nil ? String(cString: error.message!) : "Unknown"
+            print("Validation error: \(message)")
             return false
         }
         
@@ -58,7 +56,7 @@ enum KeyValidation {
     
     /// Match a private key to its corresponding public key in a list of public keys
     /// Returns the matching public key or nil if no match found
-    static func matchPrivateKeyToPublicKeys(
+    public static func matchPrivateKeyToPublicKeys(
         privateKeyData: Data,
         publicKeys: [IdentityPublicKey],
         isTestnet: Bool = true

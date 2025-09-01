@@ -1,28 +1,26 @@
 import Foundation
 import SwiftData
+import SwiftDashSDK
 
 // MARK: - Transaction Service
 
 @MainActor
-public class TransactionService: ObservableObject {
+class TransactionService: ObservableObject {
     @Published public private(set) var transactions: [HDTransaction] = []
     @Published public private(set) var isLoading = false
     @Published public private(set) var isBroadcasting = false
     @Published public private(set) var lastError: Error?
     
     private let walletManager: WalletManager
-    private let utxoManager: UTXOManager
     private let modelContainer: ModelContainer
-    private let spvClient: SPVClient?
+    private let spvClient: SwiftDashSDK.SPVClient?
     
-    public init(
+    init(
         walletManager: WalletManager,
-        utxoManager: UTXOManager,
         modelContainer: ModelContainer,
-        spvClient: SPVClient? = nil
+        spvClient: SwiftDashSDK.SPVClient? = nil
     ) {
         self.walletManager = walletManager
-        self.utxoManager = utxoManager
         self.modelContainer = modelContainer
         self.spvClient = spvClient
         
@@ -33,101 +31,25 @@ public class TransactionService: ObservableObject {
     
     // MARK: - Transaction Creation
     
-    public func createTransaction(
+    func createTransaction(
         to address: String,
         amount: UInt64,
         from account: HDAccount? = nil,
         feePerKB: UInt64 = 1000
     ) async throws -> BuiltTransaction {
-        guard let wallet = walletManager.currentWallet else {
-            throw TransactionError.noWallet
-        }
-        
-        // Select coins
-        let coinSelection = try utxoManager.selectCoins(
-            amount: amount,
-            feePerKB: feePerKB,
-            account: account ?? wallet.accounts.first
-        )
-        
-        // Get change address
-        let changeAddress = try await walletManager.getUnusedAddress(
-            for: account ?? wallet.accounts[0],
-            type: .internal
-        )
-        
-        // Build transaction
-        let builder = TransactionBuilder(network: wallet.dashNetwork, feePerKB: feePerKB)
-        try builder.setChangeAddress(changeAddress.address)
-        
-        // Add inputs with private keys
-        for utxo in coinSelection.utxos {
-            guard let address = utxo.address,
-                  let account = address.account else {
-                throw TransactionError.invalidInput("UTXO missing address or account")
-            }
-            
-            // Derive private key for the address
-            guard let seed = walletManager.decryptSeed(wallet.encryptedSeed ?? Data()) else {
-                throw TransactionError.seedNotAvailable
-            }
-            
-            let path: DerivationPath
-            switch address.type {
-            case .external:
-                path = DerivationPath.dashBIP44(
-                    account: account.accountNumber,
-                    change: 0,
-                    index: address.index,
-                    testnet: wallet.dashNetwork == .testnet
-                )
-            case .internal:
-                path = DerivationPath.dashBIP44(
-                    account: account.accountNumber,
-                    change: 1,
-                    index: address.index,
-                    testnet: wallet.dashNetwork == .testnet
-                )
-            case .coinJoin:
-                path = DerivationPath.coinJoin(
-                    account: account.accountNumber,
-                    change: address.addressType.contains("external") ? 0 : 1,
-                    index: address.index,
-                    testnet: wallet.dashNetwork == .testnet
-                )
-            case .identity:
-                path = DerivationPath.dip13Identity(
-                    account: account.accountNumber,
-                    identityIndex: 0,
-                    keyType: .topup,
-                    keyIndex: address.index,
-                    testnet: wallet.dashNetwork == .testnet
-                )
-            }
-            
-            guard let derivedKey = WalletFFIBridge.shared.deriveKey(
-                seed: seed,
-                path: path.stringRepresentation,
-                network: wallet.dashNetwork
-            ) else {
-                throw TransactionError.keyDerivationFailed
-            }
-            
-            try builder.addInput(utxo: utxo, address: address, privateKey: derivedKey.privateKey)
-        }
-        
-        // Add output
-        try builder.addOutput(address: address, amount: amount)
-        
-        // Build and sign
-        return try builder.build()
+        // Route to SDK transaction builder (stubbed for now)
+        guard let wallet = walletManager.currentWallet else { throw TransactionError.invalidState }
+        let builder = SwiftDashSDK.SDKTransactionBuilder(network: wallet.dashNetwork.sdkNetwork, feePerKB: feePerKB)
+        // TODO: integrate coin selection + key derivation via SDK and add inputs/outputs
+        _ = builder // silence unused
+        throw TransactionError.notSupported("Transaction building is not yet wired to SwiftDashSDK")
     }
     
     // MARK: - Transaction Broadcasting
     
-    public func broadcastTransaction(_ transaction: BuiltTransaction) async throws {
-        guard let spvClient = spvClient else {
-            throw TransactionError.noSPVClient
+    func broadcastTransaction(_ transaction: BuiltTransaction) async throws {
+        guard let _ = spvClient else {
+            throw TransactionError.invalidState
         }
         
         isBroadcasting = true
@@ -148,15 +70,7 @@ public class TransactionService: ObservableObject {
             hdTransaction.isPending = true
             hdTransaction.wallet = walletManager.currentWallet
             
-            // Mark UTXOs as spent
-            for (index, utxo) in transaction.inputs.enumerated() {
-                try await utxoManager.markUTXOAsSpent(
-                    txHash: utxo.txHash,
-                    outputIndex: utxo.outputIndex,
-                    spendingTxHash: transaction.txid,
-                    spendingInputIndex: UInt32(index)
-                )
-            }
+            // TODO: update UTXO state via SDK once available
             
             modelContainer.mainContext.insert(hdTransaction)
             try modelContainer.mainContext.save()
@@ -246,28 +160,7 @@ public class TransactionService: ObservableObject {
     // MARK: - Fee Estimation
     
     public func estimateFee(for amount: UInt64, account: HDAccount? = nil) throws -> UInt64 {
-        let feePerKB: UInt64 = 1000 // Default fee rate
-        
-        // Try to select coins to get accurate fee estimate
-        do {
-            let coinSelection = try utxoManager.selectCoins(
-                amount: amount,
-                feePerKB: feePerKB,
-                account: account
-            )
-            return coinSelection.fee
-        } catch {
-            // Fallback estimate
-            return 2000 // 2000 duffs as fallback
-        }
+        // Placeholder fixed fee until SDK fee estimator is wired
+        return 2000
     }
-}
-
-// MARK: - Transaction Errors Extension
-
-extension TransactionError {
-    static let noWallet = TransactionError.invalidState
-    static let noSPVClient = TransactionError.invalidState
-    static let seedNotAvailable = TransactionError.signingFailed
-    static let keyDerivationFailed = TransactionError.signingFailed
 }

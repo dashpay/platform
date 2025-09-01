@@ -370,4 +370,26 @@ if [ -d "$SWIFT_SDK_DIR" ]; then
     rm -rf "$SWIFT_SDK_DIR/$FRAMEWORK_NAME.xcframework"
     cp -R "$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework" "$SWIFT_SDK_DIR/"
     echo -e "${GREEN}✓ XCFramework copied to ${YELLOW}$SWIFT_SDK_DIR/$FRAMEWORK_NAME.xcframework${NC}"
+
+    # Best-effort: resolve package dependencies and clean stale references in Xcode project
+    if command -v xcodebuild >/dev/null 2>&1; then
+        if [ -d "$SWIFT_SDK_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj" ]; then
+            echo -e "\n${GREEN}Resolving Swift package dependencies for SwiftExampleApp...${NC}"
+            (cd "$SWIFT_SDK_DIR" && xcodebuild -project SwiftExampleApp/SwiftExampleApp.xcodeproj -resolvePackageDependencies >/tmp/xcode_resolve.log 2>&1 || true)
+
+            # Optional clean of DerivedData for a fresh build
+            if [ "${CLEAN_DERIVED_DATA:-0}" = "1" ]; then
+                echo -e "${YELLOW}Cleaning DerivedData for SwiftExampleApp (CLEAN_DERIVED_DATA=1)...${NC}"
+                rm -rf "$HOME/Library/Developer/Xcode/DerivedData"/SwiftExampleApp-* 2>/dev/null || true
+            fi
+
+            # Validate headers and module visibility
+            echo -e "${GREEN}Validating DashSDKFFI.xcframework presence in SwiftDashSDK Package.swift...${NC}"
+            if ! grep -q "DashSDKFFI.xcframework" "$SWIFT_SDK_DIR/Package.swift"; then
+                echo -e "${YELLOW}⚠ DashSDKFFI.xcframework not referenced in Package.swift. Please update the binaryTarget path.${NC}"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}xcodebuild not found; skipping Xcode project dependency resolution.${NC}"
+    fi
 fi

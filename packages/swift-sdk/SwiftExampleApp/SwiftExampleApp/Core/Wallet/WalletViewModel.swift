@@ -58,20 +58,12 @@ public class WalletViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // Transaction changes
-        walletManager?.transactionService.$transactions
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$transactions)
-        
-        // Balance changes
-        walletManager?.utxoManager.$utxos
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                Task {
-                    await self?.refreshBalance()
-                }
-            }
-            .store(in: &cancellables)
+        // Transaction changes (if service configured)
+        if let ts = walletManager?.transactionService {
+            ts.$transactions
+                .receive(on: DispatchQueue.main)
+                .assign(to: &$transactions)
+        }
         
         // SPV sync progress now handled by WalletService
         // spvClient.syncProgressPublisher
@@ -174,13 +166,16 @@ public class WalletViewModel: ObservableObject {
             guard let walletManager = walletManager else {
                 throw WalletError.notImplemented("WalletManager not initialized")
             }
-            let builtTx = try await walletManager.transactionService.createTransaction(
+            guard let txService = walletManager.transactionService else {
+                throw WalletError.notImplemented("Transaction service not configured")
+            }
+            let builtTx = try await txService.createTransaction(
                 to: address,
                 amount: amountDuffs
             )
             
             // Broadcast
-            try await walletManager.transactionService.broadcastTransaction(builtTx)
+            try await txService.broadcastTransaction(builtTx)
             
             // Refresh balance
             await refreshBalance()
@@ -197,7 +192,8 @@ public class WalletViewModel: ObservableObject {
             guard let walletManager = walletManager else {
                 return 0.00002 // Default fee
             }
-            let feeDuffs = try walletManager.transactionService.estimateFee(for: amountDuffs)
+            guard let txService = walletManager.transactionService else { return 0.00002 }
+            let feeDuffs = try txService.estimateFee(for: amountDuffs)
             return Double(feeDuffs) / 100_000_000
         } catch {
             return 0.00002 // Default fee
@@ -295,29 +291,13 @@ public class WalletViewModel: ObservableObject {
                 print("WalletManager not available")
                 return
             }
-            try await walletManager.transactionService.processIncomingTransaction(
+            guard let txService = walletManager.transactionService else { return }
+            try await txService.processIncomingTransaction(
                 txid: txInfo.txid,
                 rawTx: txInfo.rawTransaction,
                 blockHeight: txInfo.blockHeight,
                 timestamp: Date(timeIntervalSince1970: TimeInterval(txInfo.timestamp))
             )
-            
-            // Check for UTXOs
-            if let outputs = txInfo.outputs {
-                for (index, output) in outputs.enumerated() {
-                    if let outputAddress = output.address,
-                       let address = findAddress(outputAddress) {
-                        try await walletManager.utxoManager.addUTXO(
-                            txHash: txInfo.txid,
-                            outputIndex: UInt32(index),
-                            amount: output.amount,
-                            scriptPubKey: output.script,
-                            address: address,
-                            blockHeight: txInfo.blockHeight
-                        )
-                    }
-                }
-            }
             
             // Refresh balance
             await refreshBalance()
@@ -347,8 +327,8 @@ public class WalletViewModel: ObservableObject {
         guard let account = currentWallet?.accounts.first else { return }
         
         guard let walletManager = walletManager else { return }
-        balance = walletManager.utxoManager.calculateBalance(for: account)
         await walletManager.updateBalance(for: account)
+        balance = Balance(confirmed: account.confirmedBalance, unconfirmed: account.unconfirmedBalance, immature: 0)
     }
     
     // MARK: - Wallet Loading

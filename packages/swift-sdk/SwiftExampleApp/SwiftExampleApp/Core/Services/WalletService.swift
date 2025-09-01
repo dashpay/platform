@@ -1,21 +1,21 @@
 import Foundation
 import SwiftData
 import Combine
-import DashSDKFFI
+import SwiftDashSDK
 
 @MainActor
 public class WalletService: ObservableObject {
     public static let shared = WalletService()
     
     // Published properties
-    @Published public var currentWallet: HDWallet? // Placeholder - use WalletManager instead
+    @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var isSyncing = false
     @Published public var syncProgress: Double?
     @Published public var detailedSyncProgress: Any? // Use SPVClient.SyncProgress
     @Published public var lastSyncError: Error?
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
-    @Published public var currentNetwork: Network = .testnet
+    @Published var currentNetwork: Network = .testnet
     
     // Internal properties
     private var modelContainer: ModelContainer?
@@ -23,7 +23,7 @@ public class WalletService: ObservableObject {
     private var balanceUpdateTask: Task<Void, Never>?
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
-    public private(set) var walletManager: WalletManager?
+    private(set) var walletManager: WalletManager?
     
     // SPV Client - new wrapper with proper sync support
     private var spvClient: SPVClient?
@@ -40,7 +40,7 @@ public class WalletService: ObservableObject {
         }
     }
     
-    public func configure(modelContainer: ModelContainer, network: Network = .testnet) {
+    func configure(modelContainer: ModelContainer, network: Network = .testnet) {
         print("=== WalletService.configure START ===")
         self.modelContainer = modelContainer
         self.currentNetwork = network
@@ -49,7 +49,7 @@ public class WalletService: ObservableObject {
         
         // Initialize SPV Client wrapper
         print("Initializing SPV Client for \(network.rawValue)...")
-        spvClient = SPVClient(network: network)
+        spvClient = SPVClient(network: network.sdkNetwork)
         spvClient?.delegate = self
         
         do {
@@ -61,23 +61,23 @@ public class WalletService: ObservableObject {
             try spvClient?.start()
             print("✅ SPV Client initialized and started successfully for \(network.rawValue)")
             
-            // Get wallet manager from SPV client
-            if let walletManagerPtr = spvClient?.getWalletManager() {
-                print("✅ FFI Wallet Manager pointer obtained from SPV Client")
-                
-                // Create our refactored WalletManager wrapper
-                do {
-                    self.walletManager = try WalletManager(
-                        ffiWalletManager: walletManagerPtr,
-                        modelContainer: modelContainer
-                    )
-                    print("✅ WalletManager wrapper initialized successfully")
-                } catch {
-                    print("❌ Failed to initialize WalletManager wrapper:")
-                    print("Error: \(error)")
-                }
-            } else {
-                print("❌ Failed to get FFI wallet manager from SPV Client")
+            // Create SDK wallet manager (unified, not tied to SPV pointer for now)
+            do {
+                let sdkWalletManager = try SwiftDashSDK.WalletManager()
+                self.walletManager = try WalletManager(
+                    sdkWalletManager: sdkWalletManager,
+                    modelContainer: modelContainer
+                )
+                // Attach a transaction service (SDK-backed in the future)
+                self.walletManager?.transactionService = TransactionService(
+                    walletManager: self.walletManager!,
+                    modelContainer: modelContainer,
+                    spvClient: spvClient
+                )
+                print("✅ WalletManager wrapper initialized successfully")
+            } catch {
+                print("❌ Failed to initialize WalletManager wrapper:")
+                print("Error: \(error)")
             }
         } catch {
             print("❌ Failed to initialize SPV Client: \(error)")
@@ -97,7 +97,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
     
-    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil) async throws -> HDWallet {
+    func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -212,7 +212,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Network Management
     
-    public func switchNetwork(to network: Network) async {
+    func switchNetwork(to network: Network) async {
         guard network != currentNetwork else { return }
         
         print("=== WalletService.switchNetwork START ===")

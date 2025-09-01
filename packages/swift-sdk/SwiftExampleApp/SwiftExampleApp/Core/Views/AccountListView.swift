@@ -1,20 +1,61 @@
 import SwiftUI
 import SwiftData
 
-// MARK: - Account Info from FFI
-public struct AccountInfo {
-    public let index: UInt32
+// MARK: - Account Model (UI)
+
+public enum AccountCategory: Equatable, Hashable {
+    case bip44
+    case bip32
+    case coinjoin
+    case identityRegistration
+    case identityInvitation
+    case identityTopupNotBound
+    case identityTopup
+    case providerVotingKeys
+    case providerOwnerKeys
+    case providerOperatorKeys
+    case providerPlatformKeys
+}
+
+public struct AccountInfo: Identifiable, Hashable {
+    public let id: String
+    public let category: AccountCategory
+    public let index: UInt32? // present only for indexed account types
     public let label: String
     public let balance: (confirmed: UInt64, unconfirmed: UInt64)
     public let addressCount: (external: Int, internal: Int)
     public let nextReceiveAddress: String?
-    
-    public init(index: UInt32, label: String, balance: (confirmed: UInt64, unconfirmed: UInt64), addressCount: (external: Int, internal: Int), nextReceiveAddress: String?) {
+
+    public init(category: AccountCategory,
+                index: UInt32? = nil,
+                label: String,
+                balance: (confirmed: UInt64, unconfirmed: UInt64),
+                addressCount: (external: Int, internal: Int),
+                nextReceiveAddress: String?) {
+        self.category = category
         self.index = index
         self.label = label
         self.balance = balance
         self.addressCount = addressCount
         self.nextReceiveAddress = nextReceiveAddress
+        // Build a stable id
+        if let idx = index {
+            self.id = "\(category)-\(idx)"
+        } else {
+            self.id = "\(category)"
+        }
+    }
+}
+
+extension AccountInfo: Equatable {
+    public static func == (lhs: AccountInfo, rhs: AccountInfo) -> Bool {
+        return lhs.id == rhs.id
+    }
+}
+
+extension AccountInfo {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }
 
@@ -44,7 +85,7 @@ struct AccountListView: View {
                     description: Text("Create an account to get started")
                 )
             } else {
-                List(accounts, id: \.index) { account in
+                List(accounts) { account in
                     NavigationLink(destination: AccountDetailView(wallet: wallet, account: account)) {
                         AccountRowView(account: account)
                     }
@@ -86,53 +127,55 @@ struct AccountRowView: View {
     
     /// Determines if this account type should show balance in UI
     var shouldShowBalance: Bool {
-        WalletManager.shouldShowBalance(for: account.index)
+        switch account.category {
+        case .bip44, .bip32, .coinjoin:
+            return true
+        default:
+            return false
+        }
     }
     
     var accountTypeBadge: String {
-        switch account.index {
-        case 0: return "Main"
-        case 1...999: return "#\(account.index)"
-        case 1000...1999: return "CoinJoin"
-        case 9000: return "Identity"
-        case 9001: return "Invitation"
-        case 9002: return "Top-up"
-        case 10000...10999: return "Voting"
-        case 11000...11999: return "Owner"
-        case 12000...12999: return "Operator"
-        case 13000...13999: return "Platform"
-        default: return "Special"
+        switch account.category {
+        case .bip44: return (account.index == 0) ? "Main" : (account.index.map { "#\($0)" } ?? "BIP44")
+        case .bip32: return account.index.map { "BIP32 #\($0)" } ?? "BIP32"
+        case .coinjoin: return account.index.map { "CoinJoin #\($0)" } ?? "CoinJoin"
+        case .identityRegistration: return "Identity"
+        case .identityInvitation: return "Invitation"
+        case .identityTopupNotBound: return "Top-up"
+        case .identityTopup: return account.index.map { "Top-up #\($0)" } ?? "Top-up"
+        case .providerVotingKeys: return "Voting"
+        case .providerOwnerKeys: return "Owner"
+        case .providerOperatorKeys: return "Operator"
+        case .providerPlatformKeys: return "Platform"
         }
     }
     
     var accountTypeIcon: String {
-        // Special account types have different icons
-        switch account.index {
-        case 0: return "star.circle.fill" // Main account
-        case 1...999: return "folder" // Regular BIP44 accounts
-        case 1000...1999: return "shuffle.circle" // CoinJoin accounts
-        case 9000: return "person.crop.circle" // Identity Registration
-        case 9001: return "envelope.circle" // Identity Invitation
-        case 9002: return "arrow.up.circle" // Identity Top-up
-        case 10000...10999: return "key.viewfinder" // Provider Voting Keys
-        case 11000...11999: return "key.horizontal" // Provider Owner Keys
-        case 12000...12999: return "wrench.and.screwdriver" // Provider Operator Keys
-        case 13000...13999: return "network" // Provider Platform Keys
-        default: return "questionmark.circle" // Unknown special accounts
+        switch account.category {
+        case .bip44: return account.index == 0 ? "star.circle.fill" : "folder"
+        case .bip32: return "tray.full"
+        case .coinjoin: return "shuffle.circle"
+        case .identityRegistration: return "person.crop.circle"
+        case .identityInvitation: return "envelope.circle"
+        case .identityTopupNotBound, .identityTopup: return "arrow.up.circle"
+        case .providerVotingKeys: return "key.viewfinder"
+        case .providerOwnerKeys: return "key.horizontal"
+        case .providerOperatorKeys: return "wrench.and.screwdriver"
+        case .providerPlatformKeys: return "network"
         }
     }
     
     var accountTypeColor: Color {
-        switch account.index {
-        case 0: return .green // Main account
-        case 1...999: return .blue // Regular accounts
-        case 1000...1999: return .orange // CoinJoin accounts
-        case 9000...9002: return .purple // Identity accounts
-        case 10000...10999: return .red // Provider Voting Keys
-        case 11000...11999: return .pink // Provider Owner Keys
-        case 12000...12999: return .indigo // Provider Operator Keys
-        case 13000...13999: return .teal // Provider Platform Keys
-        default: return .gray // Unknown accounts
+        switch account.category {
+        case .bip44: return (account.index == 0) ? .green : .blue
+        case .bip32: return .teal
+        case .coinjoin: return .orange
+        case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup: return .purple
+        case .providerVotingKeys: return .red
+        case .providerOwnerKeys: return .pink
+        case .providerOperatorKeys: return .indigo
+        case .providerPlatformKeys: return .teal
         }
     }
     
