@@ -273,9 +273,15 @@ impl Core for CoreServiceImpl {
             _ => 0,
         };
 
-        // Sync flags
+        // Sync flags and progress computed from AssetID (JS parity)
         let is_synced = mnsync.is_synced;
-        let sync_progress = if is_synced { 1.0 } else { 0.0 };
+        let sync_progress = match mnsync.asset_id {
+            999 => 1.0,       // FINISHED
+            0 => 0.0,         // INITIAL
+            1 => 1.0 / 3.0,   // BLOCKCHAIN
+            4 => 2.0 / 3.0,   // GOVERNANCE (legacy numeric value)
+            _ => 0.0,
+        };
 
         let response = GetMasternodeStatusResponse {
             status: status_enum,

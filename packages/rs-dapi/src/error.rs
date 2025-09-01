@@ -245,11 +245,16 @@ impl From<dashcore_rpc::Error> for DapiError {
                     let code = rpc.code;
                     let msg = rpc.message;
                     match code {
-                        -5 => DapiError::NotFound(msg), // Invalid address or key / Not found
-                        -27 => DapiError::AlreadyExists(msg), // Already in chain
-                        -26 => DapiError::FailedPrecondition(msg), // RPC_VERIFY_REJECTED
+                        -5 => DapiError::NotFound(msg),              // Invalid address or key / Not found
+                        -8 => DapiError::NotFound(msg),              // Block height out of range
+                        -1 => DapiError::InvalidArgument(msg),       // Invalid parameter
+                        -27 => DapiError::AlreadyExists(msg),        // Already in chain
+                        -26 => DapiError::FailedPrecondition(msg),   // RPC_VERIFY_REJECTED
                         -25 | -22 => DapiError::InvalidArgument(msg), // Deserialization/Verify error
-                        _ => DapiError::Unavailable(format!("Core RPC error {}: {}", code, msg)),
+                        _ => DapiError::Unavailable(format!(
+                            "Core RPC error {}: {}",
+                            code, msg
+                        )),
                     }
                 }
                 jsonrpc::Error::Transport(_) => DapiError::Unavailable(jerr.to_string()),
