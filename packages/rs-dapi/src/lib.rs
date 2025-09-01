@@ -1,5 +1,6 @@
 // lib.rs - rs-dapi library
 
+pub mod cache;
 pub mod clients;
 pub mod config;
 pub mod error;

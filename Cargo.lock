@@ -1355,7 +1355,7 @@ dependencies = [
  "hex",
  "http",
  "js-sys",
- "lru",
+ "lru 0.12.5",
  "rs-dapi-client",
  "rustls-pemfile",
  "sanitize-filename",
@@ -3275,6 +3275,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86ea4e65087ff52f3862caff188d489f1fab49a0cb09e01b2e3f1a617b10aaed"
+dependencies = [
+ "hashbrown 0.15.2",
+]
+
+[[package]]
 name = "lz4-sys"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4580,6 +4589,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.4",
  "base64 0.22.1",
+ "blake3",
  "chrono",
  "clap",
  "dapi-grpc",
@@ -4588,6 +4598,7 @@ dependencies = [
  "envy",
  "futures",
  "hex",
+ "lru 0.16.0",
  "reqwest",
  "reqwest-middleware",
  "serde",
@@ -4626,7 +4637,7 @@ dependencies = [
  "http",
  "http-body-util",
  "http-serde",
- "lru",
+ "lru 0.12.5",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -4650,7 +4661,7 @@ dependencies = [
  "dpp",
  "futures",
  "hex",
- "lru",
+ "lru 0.12.5",
  "reqwest",
  "serde",
  "serde_json",

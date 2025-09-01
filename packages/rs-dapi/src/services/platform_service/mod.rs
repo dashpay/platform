@@ -38,8 +38,28 @@ macro_rules! drive_method {
             'life0: 'async_trait,
             Self: 'async_trait,
         {
+            use crate::cache::make_cache_key;
             let mut client = self.drive_client.get_client();
-            async move { client.$method_name(request).await }.boxed()
+            let cache = self.platform_cache.clone();
+            let method = stringify!($method_name);
+            async move {
+                // Build cache key from method + request bytes
+                let key = make_cache_key(method, request.get_ref());
+
+                // Try cache
+                if let Some(decoded) = cache.get(&key).await as Option<$response_type> {
+                    return Ok(Response::new(decoded));
+                }
+
+                // Fetch from Drive
+                let resp = client.$method_name(request).await?;
+
+                // Store in cache using inner message
+                cache.put(key, resp.get_ref()).await;
+
+                Ok(resp)
+            }
+            .boxed()
         }
     };
 }
@@ -54,6 +74,7 @@ pub struct PlatformServiceImpl {
     pub tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
     pub websocket_client: Arc<TenderdashWebSocketClient>,
     pub config: Arc<Config>,
+    pub platform_cache: crate::cache::LruResponseCache,
 }
 
 impl PlatformServiceImpl {
@@ -68,11 +89,13 @@ impl PlatformServiceImpl {
             1000,
         ));
 
+        let cache = crate::cache::LruResponseCache::new(1024);
         Self {
             drive_client,
             tenderdash_client,
             websocket_client,
             config,
+            platform_cache: cache,
         }
     }
 }
