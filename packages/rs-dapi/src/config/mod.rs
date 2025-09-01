@@ -110,6 +110,15 @@ pub struct CoreConfig {
     /// ZMQ URI for receiving real-time blockchain events from Dash Core
     #[serde(rename = "dapi_core_zmq_url")]
     pub zmq_url: String,
+    /// JSON-RPC URL for Dash Core RPC (e.g., http://127.0.0.1:9998)
+    #[serde(rename = "dapi_core_rpc_url")]
+    pub rpc_url: String,
+    /// Dash Core RPC username
+    #[serde(rename = "dapi_core_rpc_user")]
+    pub rpc_user: String,
+    /// Dash Core RPC password
+    #[serde(rename = "dapi_core_rpc_pass")]
+    pub rpc_pass: zeroize::Zeroizing<String>,
 }
 
 impl Default for DapiConfig {
@@ -146,6 +155,9 @@ impl Default for CoreConfig {
     fn default() -> Self {
         Self {
             zmq_url: "tcp://127.0.0.1:29998".to_string(),
+            rpc_url: "http://127.0.0.1:9998".to_string(),
+            rpc_user: String::new(),
+            rpc_pass: String::new().into(),
         }
     }
 }

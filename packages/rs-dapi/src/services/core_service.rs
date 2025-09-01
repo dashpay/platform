@@ -14,6 +14,7 @@ use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::trace;
 
+use crate::clients::CoreClient;
 use crate::config::Config;
 use crate::services::streaming_service::StreamingServiceImpl;
 
@@ -22,13 +23,19 @@ use crate::services::streaming_service::StreamingServiceImpl;
 pub struct CoreServiceImpl {
     pub streaming_service: Arc<StreamingServiceImpl>,
     pub config: Arc<Config>,
+    pub core_client: CoreClient,
 }
 
 impl CoreServiceImpl {
-    pub fn new(streaming_service: Arc<StreamingServiceImpl>, config: Arc<Config>) -> Self {
-        Self {
-            streaming_service,
-            config,
+    pub fn new(
+        streaming_service: Arc<StreamingServiceImpl>,
+        config: Arc<Config>,
+        core_client: CoreClient,
+    ) -> Self {
+        Self { 
+            streaming_service, 
+            config, 
+            core_client 
         }
     }
 }
@@ -63,9 +70,13 @@ impl Core for CoreServiceImpl {
         _request: Request<GetBestBlockHeightRequest>,
     ) -> Result<Response<GetBestBlockHeightResponse>, Status> {
         trace!("Received get_best_block_height request");
-        Err(Status::unimplemented(
-            "get_best_block_height not yet implemented",
-        ))
+        let height = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(|e| Status::unavailable(e.to_string()))?;
+
+        Ok(Response::new(GetBestBlockHeightResponse { height }))
     }
 
     async fn broadcast_transaction(

@@ -16,7 +16,7 @@ use tracing::{error, info, warn};
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 
-use crate::clients::{DriveClient, TenderdashClient};
+use crate::clients::{CoreClient, DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::error::{DAPIResult, DapiError};
 use crate::logging::{middleware::AccessLogLayer, AccessLogger};
@@ -61,7 +61,15 @@ impl DapiServer {
             config.clone(),
         );
 
-        let core_service = CoreServiceImpl::new(streaming_service, config.clone());
+        // Create Dash Core RPC client
+        let core_client = CoreClient::new(
+            config.dapi.core.rpc_url.clone(),
+            config.dapi.core.rpc_user.clone(),
+            config.dapi.core.rpc_pass.clone(),
+        )
+        .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
+
+        let core_service = CoreServiceImpl::new(streaming_service, config.clone(), core_client);
 
         let rest_translator = Arc::new(RestTranslator::new());
         let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());
@@ -110,7 +118,15 @@ impl DapiServer {
             config.clone(),
         );
 
-        let core_service = CoreServiceImpl::new(streaming_service.clone(), config.clone());
+        let core_client = CoreClient::new(
+            config.dapi.core.rpc_url.clone(),
+            config.dapi.core.rpc_user.clone(),
+            config.dapi.core.rpc_pass.clone(),
+        )
+        .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
+
+        let core_service =
+            CoreServiceImpl::new(streaming_service.clone(), config.clone(), core_client);
 
         let rest_translator = Arc::new(RestTranslator::new());
         let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());

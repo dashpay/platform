@@ -21,6 +21,9 @@ Service Configuration:
   DAPI_TENDERDASH_URI         - Tenderdash RPC URI (default: http://127.0.0.1:26657)
   DAPI_TENDERDASH_WEBSOCKET_URI - Tenderdash WebSocket URI (default: ws://127.0.0.1:26657/websocket)
   DAPI_CORE_ZMQ_URL           - Dash Core ZMQ URL (default: tcp://127.0.0.1:29998)
+  DAPI_CORE_RPC_URL           - Dash Core JSON-RPC URL (default: http://127.0.0.1:9998)
+  DAPI_CORE_RPC_USER          - Dash Core RPC username (default: empty)
+  DAPI_CORE_RPC_PASS          - Dash Core RPC password (default: empty)
   DAPI_STATE_TRANSITION_WAIT_TIMEOUT - Timeout in ms (default: 30000)
 
 CONFIGURATION LOADING:
