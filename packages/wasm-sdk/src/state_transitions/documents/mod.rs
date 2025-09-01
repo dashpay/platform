@@ -185,6 +185,15 @@ impl WasmSdk {
         
         Ok(result_obj.into())
     }
+    
+    /// Get the next revision for a document, handling errors for missing revisions and overflow
+    fn get_next_revision(document: &dash_sdk::platform::Document) -> Result<u64, JsValue> {
+        let current_revision = document.revision()
+            .ok_or_else(|| JsValue::from_str("Document revision is missing"))?;
+        
+        current_revision.checked_add(1)
+            .ok_or_else(|| JsValue::from_str("Document revision overflow"))
+    }
 }
 
 #[wasm_bindgen]
@@ -835,7 +844,8 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch document: {}", e)))?
             .ok_or_else(|| JsValue::from_str("Document not found"))?;
         
-        let current_revision = existing_doc.revision().unwrap_or(0);
+        let current_revision = existing_doc.revision()
+            .ok_or_else(|| JsValue::from_str("Document revision is missing"))?;
         
         // Fetch the identity to get the correct key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
@@ -966,14 +976,14 @@ impl WasmSdk {
             .ok_or_else(|| JsValue::from_str("Document not found"))?;
         
         // Get the current revision and increment it
-        let current_revision = document.revision().unwrap_or(0);
+        let next_revision = Self::get_next_revision(&document)?;
         
         // Create a modified document with incremented revision for the transfer transition
         let transfer_document = Document::V0(DocumentV0 {
             id: document.id(),
             owner_id: document.owner_id(),
             properties: document.properties().clone(),
-            revision: Some(current_revision + 1),
+            revision: Some(next_revision),
             created_at: document.created_at(),
             updated_at: document.updated_at(),
             transferred_at: document.transferred_at(),
@@ -1110,14 +1120,14 @@ impl WasmSdk {
         }
         
         // Get the current revision and increment it
-        let current_revision = document.revision().unwrap_or(0);
+        let next_revision = Self::get_next_revision(&document)?;
         
         // Create a modified document with incremented revision for the purchase transition
         let purchase_document = Document::V0(DocumentV0 {
             id: document.id(),
             owner_id: document.owner_id(),
             properties: document.properties().clone(),
-            revision: Some(current_revision + 1),
+            revision: Some(next_revision),
             created_at: document.created_at(),
             updated_at: document.updated_at(),
             transferred_at: document.transferred_at(),
@@ -1267,14 +1277,14 @@ impl WasmSdk {
         }
         
         // Get the current revision and increment it
-        let current_revision = existing_doc.revision().unwrap_or(0);
+        let next_revision = Self::get_next_revision(&existing_doc)?;
         
         // Create a modified document with incremented revision for the price update transition
         let price_update_document = Document::V0(DocumentV0 {
             id: existing_doc.id(),
             owner_id: existing_doc.owner_id(),
             properties: existing_doc.properties().clone(),
-            revision: Some(current_revision + 1),
+            revision: Some(next_revision),
             created_at: existing_doc.created_at(),
             updated_at: existing_doc.updated_at(),
             transferred_at: existing_doc.transferred_at(),
