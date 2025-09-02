@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use tonic::{Request, Response, Status};
 use tracing::{debug, error, info, warn};
 
+use super::error_mapping::map_drive_code_to_status;
 use crate::services::PlatformServiceImpl;
 
 impl PlatformServiceImpl {
@@ -82,9 +83,8 @@ impl PlatformServiceImpl {
             }
 
             // Convert Drive error response
-            return self
-                .create_grpc_error_from_drive_response(broadcast_result.code, broadcast_result.info)
-                .await;
+            let status = map_drive_code_to_status(broadcast_result.code, broadcast_result.info);
+            return Err(status);
         }
 
         info!(st_hash = %st_hash, "State transition broadcasted successfully");
@@ -198,12 +198,8 @@ impl PlatformServiceImpl {
             Ok(check_response) => {
                 if check_response.code != 0 {
                     // Return validation error
-                    return self
-                        .create_grpc_error_from_drive_response(
-                            check_response.code,
-                            check_response.info,
-                        )
-                        .await;
+                    let status = map_drive_code_to_status(check_response.code, check_response.info);
+                    Err(status)
                 } else {
                     // CheckTx passes but ST was removed from block - this is a bug
                     warn!(
@@ -223,35 +219,5 @@ impl PlatformServiceImpl {
         }
     }
 
-    /// Convert Drive error codes to appropriate gRPC Status
-    async fn create_grpc_error_from_drive_response(
-        &self,
-        code: u32,
-        info: Option<String>,
-    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
-        let message = info.unwrap_or_else(|| format!("Drive error code: {}", code));
-
-        // Map common Drive error codes to gRPC status codes
-        let status = match code {
-            1 => Status::invalid_argument(message),
-            2 => Status::failed_precondition(message),
-            3 => Status::out_of_range(message),
-            4 => Status::unimplemented(message),
-            5 => Status::internal(message),
-            6 => Status::unavailable(message),
-            7 => Status::unauthenticated(message),
-            8 => Status::permission_denied(message),
-            9 => Status::aborted(message),
-            10 => Status::out_of_range(message),
-            11 => Status::unimplemented(message),
-            12 => Status::internal(message),
-            13 => Status::internal(message),
-            14 => Status::unavailable(message),
-            15 => Status::data_loss(message),
-            16 => Status::unauthenticated(message),
-            _ => Status::unknown(message),
-        };
-
-        Err(status)
-    }
+    // mapping moved to error_mapping.rs for consistency
 }

@@ -2,6 +2,7 @@
 // This file contains the core PlatformServiceImpl struct and delegates to individual modules
 
 mod broadcast_state_transition;
+mod error_mapping;
 mod get_status;
 mod wait_for_state_transition_result;
 

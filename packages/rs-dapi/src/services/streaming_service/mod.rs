@@ -8,27 +8,18 @@ mod transaction_filter;
 mod transaction_stream;
 mod zmq_listener;
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
-use tokio::time::Instant;
-use tracing::{error, info, trace};
-
 use crate::clients::traits::TenderdashClientTrait;
 use crate::config::Config;
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tokio::task::JoinSet;
+use tokio::time::{sleep, Duration};
+use tracing::{error, info, trace, warn};
 
 pub(crate) use subscriber_manager::{
     FilterType, StreamingMessage, SubscriberManager, SubscriptionType,
 };
 pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
-
-/// Cache expiration time for streaming responses
-const CACHE_EXPIRATION_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
-
-/// Type alias for cache data: (data, timestamp)
-type CacheData = (Vec<u8>, Instant);
-/// Type alias for the cache store
-type CacheStore = Arc<RwLock<HashMap<String, CacheData>>>;
 
 /// Streaming service implementation with ZMQ integration
 #[derive(Clone)]
@@ -38,8 +29,9 @@ pub struct StreamingServiceImpl {
     pub config: Arc<Config>,
     pub zmq_listener: Arc<dyn ZmqListenerTrait>,
     pub subscriber_manager: Arc<SubscriberManager>,
-    pub cache: CacheStore,
     pub block_notify: broadcast::Sender<()>,
+    /// Background workers; aborted when the last reference is dropped
+    pub workers: Arc<JoinSet<()>>,
 }
 
 impl StreamingServiceImpl {
@@ -66,44 +58,62 @@ impl StreamingServiceImpl {
         let subscriber_manager = Arc::new(SubscriberManager::new());
 
         let (block_notify, _) = broadcast::channel(32);
-        let service = Self {
+
+        // Prepare background workers set
+        let mut workers = JoinSet::new();
+
+        // Spawn ZMQ subscribe + process loop
+        workers.spawn(Self::zmq_subscribe_and_process_worker(
+            zmq_listener.clone(),
+            subscriber_manager.clone(),
+            block_notify.clone(),
+        ));
+
+        info!("Starting streaming service background tasks");
+
+        Ok(Self {
             drive_client,
             tenderdash_client,
             config,
             zmq_listener,
             subscriber_manager,
-            cache: Arc::new(RwLock::new(HashMap::new())),
             block_notify,
-        };
-
-        info!("Starting streaming service background tasks");
-        service.start_background_tasks();
-
-        Ok(service)
+            workers: Arc::new(workers),
+        })
     }
 
-    /// Start the streaming service background tasks
-    fn start_background_tasks(&self) {
-        trace!("Starting ZMQ listener and event processing tasks");
-        // Start ZMQ listener
-        let zmq_listener = self.zmq_listener.clone();
-
-        // Start event processing task
-        let subscriber_manager = self.subscriber_manager.clone();
-        let block_notify = self.block_notify.clone();
-        tokio::spawn(async move {
-            let zmq_events = match zmq_listener.subscribe().await {
-                Ok(zmq) => zmq,
-                Err(e) => {
-                    error!("ZMQ listener error: {}", e);
-                    panic!("Failed to start ZMQ listener: {}", e);
+    /// Background worker: subscribe to ZMQ and process events, with retry/backoff
+    async fn zmq_subscribe_and_process_worker(
+        zmq_listener: Arc<dyn ZmqListenerTrait>,
+        subscriber_manager: Arc<SubscriberManager>,
+        block_notify: broadcast::Sender<()>,
+    ) {
+        trace!("Starting ZMQ subscribe/process loop");
+        let mut backoff = Duration::from_secs(1);
+        let max_backoff = Duration::from_secs(60);
+        loop {
+            match zmq_listener.subscribe().await {
+                Ok(zmq_events) => {
+                    trace!("ZMQ listener started successfully, processing events");
+                    Self::process_zmq_events(
+                        zmq_events,
+                        subscriber_manager.clone(),
+                        block_notify.clone(),
+                    )
+                    .await;
+                    // processing ended; mark unhealthy and retry after short delay
+                    warn!("ZMQ event processing ended; restarting after {:?}", backoff);
+                    sleep(backoff).await;
+                    backoff = (backoff * 2).min(max_backoff);
                 }
-            };
-
-            trace!("ZMQ listener started successfully, processing events");
-            Self::process_zmq_events(zmq_events, subscriber_manager, block_notify).await;
-            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
-        });
+                Err(e) => {
+                    error!("ZMQ subscribe failed: {}", e);
+                    warn!("Retrying ZMQ subscribe in {:?}", backoff);
+                    sleep(backoff).await;
+                    backoff = (backoff * 2).min(max_backoff);
+                }
+            }
+        }
     }
 
     /// Process ZMQ events and forward to matching subscribers
@@ -152,36 +162,8 @@ impl StreamingServiceImpl {
         self.block_notify.subscribe()
     }
 
-    /// Get a cached response if it exists and is still fresh
-    pub async fn get_cached_response(&self, cache_key: &str) -> Option<Vec<u8>> {
-        if let Some((cached_response, cached_time)) =
-            self.cache.read().await.get(cache_key).cloned()
-        {
-            if cached_time.elapsed() < CACHE_EXPIRATION_DURATION {
-                trace!("Cache hit for key: {}", cache_key);
-                return Some(cached_response);
-            }
-        }
-        trace!("Cache miss for key: {}", cache_key);
-        None
-    }
-
-    /// Set a response in the cache with current timestamp
-    pub async fn set_cached_response(&self, cache_key: String, response: Vec<u8>) {
-        trace!("Caching response for key: {}", cache_key);
-        let cache_entry = (response, Instant::now());
-        self.cache.write().await.insert(cache_key, cache_entry);
-    }
-
-    /// Clear expired entries from the cache
-    pub async fn clear_expired_cache_entries(&self) {
-        trace!("Clearing expired cache entries");
-        let mut cache = self.cache.write().await;
-        let initial_size = cache.len();
-        cache.retain(|_, (_, cached_time)| cached_time.elapsed() < CACHE_EXPIRATION_DURATION);
-        let cleared_count = initial_size - cache.len();
-        if cleared_count > 0 {
-            trace!("Cleared {} expired cache entries", cleared_count);
-        }
+    /// Returns current health of the ZMQ streaming pipeline
+    pub fn is_healthy(&self) -> bool {
+        self.zmq_listener.is_connected()
     }
 }

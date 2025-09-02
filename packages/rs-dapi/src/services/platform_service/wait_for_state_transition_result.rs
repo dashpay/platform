@@ -1,8 +1,8 @@
+use super::error_mapping::build_state_transition_error;
 use crate::services::platform_service::PlatformServiceImpl;
 use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_request, wait_for_state_transition_result_response, Proof,
-    ResponseMetadata, StateTransitionBroadcastError, WaitForStateTransitionResultRequest,
-    WaitForStateTransitionResultResponse,
+    ResponseMetadata, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use std::time::Duration;
@@ -128,13 +128,11 @@ impl PlatformServiceImpl {
         if let Some(tx_result) = &tx_response.tx_result {
             if tx_result.code != 0 {
                 // Transaction had an error
-                let error = self
-                    .create_state_transition_error(
-                        tx_result.code,
-                        tx_result.info.as_deref().unwrap_or(""),
-                        tx_result.data.as_deref(),
-                    )
-                    .await?;
+                let error = build_state_transition_error(
+                    tx_result.code,
+                    tx_result.info.as_deref().unwrap_or(""),
+                    tx_result.data.as_deref(),
+                );
 
                 response_v0.result = Some(
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error)
@@ -207,9 +205,7 @@ impl PlatformServiceImpl {
             }
             crate::clients::TransactionResult::Error { code, info, data } => {
                 // Error case - create error response
-                let error = self
-                    .create_state_transition_error(code, &info, data.as_deref())
-                    .await?;
+                let error = build_state_transition_error(code, &info, data.as_deref());
                 response_v0.result = Some(
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error)
                 );
@@ -223,33 +219,6 @@ impl PlatformServiceImpl {
         };
 
         Ok(Response::new(response))
-    }
-
-    async fn create_state_transition_error(
-        &self,
-        code: u32,
-        info: &str,
-        data: Option<&str>,
-    ) -> Result<StateTransitionBroadcastError, Status> {
-        // This is similar to the broadcast_state_transition error handling
-        // We can reuse the error creation logic from that module
-
-        let mut error = StateTransitionBroadcastError {
-            code,
-            message: info.to_string(),
-            data: Vec::new(),
-        };
-
-        // If there's data, try to parse it as base64 and include it
-        if let Some(data_str) = data {
-            if let Ok(data_bytes) =
-                base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, data_str)
-            {
-                error.data = data_bytes;
-            }
-        }
-
-        Ok(error)
     }
 
     async fn fetch_proof_for_state_transition(
