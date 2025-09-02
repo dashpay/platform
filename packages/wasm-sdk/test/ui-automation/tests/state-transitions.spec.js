@@ -751,6 +751,9 @@ test.describe('WASM SDK State Transition Tests', () => {
       await test.step('Transfer card back to primary identity', async () => {
         console.log('Transferring card back to primary identity...');
 
+        // Get primary identity ID from test data
+        const primaryIdentityId = parameterInjector.testData.stateTransitionParameters.dataContract.dataContractCreate.testnet[0].identityId;
+
         // Execute the transfer transition
         const transferResult = await executeStateTransitionWithCustomParams(
           wasmSdkPage,
@@ -759,7 +762,7 @@ test.describe('WASM SDK State Transition Tests', () => {
           'documentTransfer',
           'testnet',
           {
-            recipientId: "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC" // Transfer back to primary identity
+            recipientId: primaryIdentityId // Transfer back to primary identity
           }
         );
 
@@ -770,7 +773,7 @@ test.describe('WASM SDK State Transition Tests', () => {
         validateDocumentTransferResult(
           transferResult.result,
           documentId,
-          "7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC" // Primary identity as recipient
+          primaryIdentityId // Primary identity as recipient
         );
 
         console.log('✅ Complete marketplace workflow completed: Create → Set Price → Purchase → Transfer');
