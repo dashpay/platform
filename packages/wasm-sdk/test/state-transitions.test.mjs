@@ -64,6 +64,24 @@ const TOKEN_CONTRACT = 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv';
 // Identity State Transitions
 describe('Identity State Transitions');
 
+await test('identity_create - requires funding', async () => {
+    try {
+        // Would need funding transaction
+        const result = await wasmSdk.identity_create(
+            sdk,
+            TEST_MNEMONIC,
+            null,   // no alias
+            0       // key index
+        );
+        throw new Error('Should fail without funding');
+    } catch (error) {
+        if (error.message.includes('Should fail')) {
+            throw error;
+        }
+        console.log('   Expected error without funding');
+    }
+});
+
 await test('identity_create with all SECP256K1 keys (common scenario)', async () => {
     try {
         // Generate unique keys for testing (1 asset lock + 3 identity keys)
