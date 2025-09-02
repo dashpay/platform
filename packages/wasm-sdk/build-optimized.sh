@@ -47,4 +47,13 @@ if ! grep -q '"name": "dash"' package.json; then
     echo "Warning: package.json does not have 'dash' as the package name"
 fi
 
+# Run bundle analysis
+echo ""
+echo "Running bundle size analysis..."
+if [ -x "$SCRIPT_DIR/analyze-bundle.sh" ]; then
+    "$SCRIPT_DIR/analyze-bundle.sh"
+else
+    echo "Warning: analyze-bundle.sh not found or not executable"
+fi
+
 echo "Ready for npm publish!"
