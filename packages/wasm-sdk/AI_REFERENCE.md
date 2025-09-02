@@ -266,9 +266,9 @@ Parameters:
   - Example: `GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec`
 - `documentType` (text, required) - Document Type
   - Example: `domain`
-- `whereClause` (text, optional) - Where Clause (JSON)
+- `where` (json, optional) - Where Clause (JSON)
   - Example: `[["normalizedParentDomainName", "==", "dash"], ["normalizedLabel", "==", "therea1s11mshaddy5"]]`
-- `orderBy` (text, optional) - Order By (JSON)
+- `orderBy` (json, optional) - Order By (JSON)
   - Example: `[["$createdAt", "desc"]]`
 - `limit` (number, optional) - Limit
 
