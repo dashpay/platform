@@ -17,11 +17,36 @@ use crate::services::platform_service::PlatformServiceImpl;
 impl PlatformServiceImpl {
     pub async fn get_status_impl(
         &self,
-        _request: Request<GetStatusRequest>,
+        request: Request<GetStatusRequest>,
     ) -> Result<Response<GetStatusResponse>, Status> {
-        // Build fresh response
+        use crate::cache::make_cache_key;
+        use crate::metrics;
+        use std::time::Duration;
+
+        // Build cache key and try TTL cache first (3 minutes)
+        let key = make_cache_key("get_status", request.get_ref());
+        if let Some(mut cached) = self
+            .platform_cache
+            .get_with_ttl::<GetStatusResponse>(&key, Duration::from_secs(180))
+            .await
+        {
+            // Refresh local time to current instant like JS implementation
+            if let Some(get_status_response::Version::V0(ref mut v0)) = cached.version {
+                if let Some(ref mut time) = v0.time {
+                    time.local = chrono::Utc::now().timestamp() as u64;
+                }
+            }
+            metrics::cache_hit("get_status");
+            return Ok(Response::new(cached));
+        }
+
+        // Build fresh response and cache it
         match self.build_status_response().await {
-            Ok(response) => Ok(Response::new(response)),
+            Ok(response) => {
+                self.platform_cache.put(key, &response).await;
+                metrics::cache_miss("get_status");
+                Ok(Response::new(response))
+            }
             Err(status) => Err(status),
         }
     }

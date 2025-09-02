@@ -39,6 +39,7 @@ macro_rules! drive_method {
             Self: 'async_trait,
         {
             use crate::cache::make_cache_key;
+            use crate::metrics;
             let mut client = self.drive_client.get_client();
             let cache = self.platform_cache.clone();
             let method = stringify!($method_name);
@@ -48,11 +49,13 @@ macro_rules! drive_method {
 
                 // Try cache
                 if let Some(decoded) = cache.get(&key).await as Option<$response_type> {
+                    metrics::cache_hit(method);
                     return Ok(Response::new(decoded));
                 }
 
                 // Fetch from Drive
                 let resp = client.$method_name(request).await?;
+                metrics::cache_miss(method);
 
                 // Store in cache using inner message
                 cache.put(key, resp.get_ref()).await;

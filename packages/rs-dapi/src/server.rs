@@ -439,11 +439,11 @@ async fn handle_live() -> Json<Value> {
     }))
 }
 
-async fn handle_metrics() -> Json<Value> {
-    Json(serde_json::json!({
-        "requests_total": 0,
-        "requests_per_second": 0,
-        "memory_usage_bytes": 0,
-        "uptime_seconds": 0
-    }))
+async fn handle_metrics() -> axum::response::Response {
+    let (body, content_type) = crate::metrics::gather_prometheus();
+    axum::response::Response::builder()
+        .status(200)
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::from("")))
 }
