@@ -23,7 +23,7 @@ class ParameterInjector {
       }
 
       const parameters = allParameters[parameterSetIndex] || allParameters[0];
-      console.log(`📝 Injecting parameters for ${category}.${queryType}:`, parameters);
+      console.log(`📝 Injecting parameters for ${category}.${queryType}`);
 
       await this.page.fillQueryParameters(parameters);
       return true;
@@ -51,7 +51,7 @@ class ParameterInjector {
       // Merge base parameters with custom overrides
       const parameters = { ...baseParameters, ...customParams };
       
-      console.log(`📝 Injecting state transition parameters for ${category}.${transitionType}:`, parameters);
+      console.log(`📝 Injecting state transition parameters for ${category}.${transitionType}`);
 
       await this.page.fillStateTransitionParameters(parameters);
       return true;
