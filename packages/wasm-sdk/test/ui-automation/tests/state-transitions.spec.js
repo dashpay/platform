@@ -1242,7 +1242,7 @@ test.describe('WASM SDK State Transition Tests', () => {
         keepsHistory: false,
         documentSchemas: 'invalid_json_here',
         identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
-        privateKey: "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"
+        privateKey: "11111111111111111111111111111111111111111111111111"
       };
 
       await wasmSdkPage.fillStateTransitionParameters(invalidParams);
