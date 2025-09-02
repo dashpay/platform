@@ -1,4 +1,4 @@
-use dashcore_rpc::dashcore::{consensus::encode::deserialize, Transaction as CoreTx};
+use dashcore_rpc::dashcore::{Transaction as CoreTx, Txid};
 use std::io::Cursor;
 
 /// Bloom filter implementation for efficient transaction filtering
@@ -62,7 +62,7 @@ impl TransactionFilter {
     /// Test if a transaction matches this filter (BIP37 semantics)
     pub fn matches_transaction(&mut self, tx: &CoreTx) -> bool {
         // 1) Check transaction hash (big-endian)
-        let txid_be = match hex::decode(tx.txid().to_string()) { Ok(b) => b, Err(_) => Vec::new() };
+        let txid_be = txid_to_be_bytes(&tx.txid());
         if self.contains(&txid_be) {
             return true;
         }
@@ -90,7 +90,7 @@ impl TransactionFilter {
         // 3) Check inputs: prev outpoint present in filter or scriptSig pushdata present
         for input in tx.input.iter() {
             let mut outpoint = Vec::with_capacity(36);
-            let prev_txid_be = match hex::decode(input.previous_output.txid.to_string()) { Ok(b) => b, Err(_) => Vec::new() };
+            let prev_txid_be = txid_to_be_bytes(&input.previous_output.txid);
             outpoint.extend_from_slice(&prev_txid_be);
             outpoint.extend_from_slice(&input.previous_output.vout.to_le_bytes());
             if self.contains(&outpoint) || script_matches(self, input.script_sig.as_bytes()) {
@@ -206,12 +206,6 @@ pub struct FilterStats {
     pub false_positive_rate: f64,
 }
 
-/// Test multiple elements against a bloom filter
-/// Test elements against a bloom filter
-pub fn test_elements_against_filter(filter: &TransactionFilter, elements: &[Vec<u8>]) -> bool {
-    elements.iter().any(|element| filter.contains(element))
-}
-
 /// Flags matching dashcore-lib for filter update behavior
 pub const BLOOM_UPDATE_NONE: u32 = 0;
 pub const BLOOM_UPDATE_ALL: u32 = 1;
@@ -229,6 +223,14 @@ fn script_matches(filter: &TransactionFilter, script: &[u8]) -> bool {
     false
 }
 
+#[inline]
+fn txid_to_be_bytes(txid: &Txid) -> Vec<u8> {
+    use dashcore_rpc::dashcore::hashes::Hash;
+    let mut arr = txid.to_byte_array();
+    arr.reverse();
+    arr.to_vec()
+}
+
 /// Rough check whether scriptPubKey represents a pubkey or multisig (used by update flag)
 fn is_pubkey_script(script: &[u8]) -> bool {
     if script.len() >= 35 && (script[0] == 33 || script[0] == 65) {
@@ -244,7 +246,7 @@ pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
     while i < script.len() {
         let op = script[i];
         i += 1;
-        let len = if op >= 1 && op <= 75 {
+        let len = if (1..=75).contains(&op) {
             op as usize
         } else if op == 0x4c {
             if i >= script.len() {
@@ -282,6 +284,8 @@ pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use dashcore_rpc::dashcore::hashes::Hash;
+
     use super::*;
 
     #[test]
@@ -312,6 +316,18 @@ mod tests {
     }
 
     #[test]
+    fn test_txid_endianness_conversion() {
+        use dashcore_rpc::dashcore::Txid as CoreTxid;
+        use std::str::FromStr;
+
+        // Big-endian hex string (human-readable form)
+        let hex_be = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let txid = CoreTxid::from_str(hex_be).expect("valid txid hex");
+        let be_bytes = super::txid_to_be_bytes(&txid);
+        assert_eq!(be_bytes, hex::decode(hex_be).unwrap());
+    }
+
+    #[test]
     fn test_bit_checking() {
         let data = vec![0b10101010]; // Alternating bits
         let filter = TransactionFilter::new(data, 1, 0, 0);
@@ -336,11 +352,53 @@ mod tests {
     }
 
     #[test]
-    fn test_element_extraction() {
-        let tx_data = b"dummy_transaction_data";
-        let elements = extract_transaction_elements(tx_data);
+    fn test_matches_txid() {
+        use dashcore_rpc::dashcore::Transaction as CoreTx;
 
-        assert_eq!(elements.len(), 1);
-        assert_eq!(elements[0], tx_data.to_vec());
+        // Minimal transaction (no inputs/outputs)
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+
+        // Insert txid into filter, then it must match
+        let txid_be = super::txid_to_be_bytes(&tx.txid());
+        let mut filter = TransactionFilter::new(vec![0; 128], 3, 0, super::BLOOM_UPDATE_NONE);
+        filter.insert(&txid_be);
+        assert!(filter.matches_transaction(&tx));
+    }
+
+    #[test]
+    fn test_output_match_and_update_outpoint() {
+        use dashcore_rpc::dashcore::{PubkeyHash, ScriptBuf, Transaction as CoreTx, TxOut};
+
+        // Build a P2PKH output
+        let h160 = PubkeyHash::from_byte_array([0x11; 20]);
+        let script = ScriptBuf::new_p2pkh(&h160);
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 1000,
+                script_pubkey: script,
+            }],
+            special_transaction_payload: None,
+        };
+
+        let mut filter = TransactionFilter::new(vec![0; 256], 5, 12345, super::BLOOM_UPDATE_ALL);
+        // Insert the hash160 (which is a script pushdata) into filter
+        filter.insert(&h160.to_byte_array());
+
+        // Should match due to output script pushdata
+        assert!(filter.matches_transaction(&tx));
+
+        // And since BLOOM_UPDATE_ALL, outpoint (txid||vout) is inserted
+        let mut outpoint = super::txid_to_be_bytes(&tx.txid());
+        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        assert!(filter.contains(&outpoint));
     }
 }
