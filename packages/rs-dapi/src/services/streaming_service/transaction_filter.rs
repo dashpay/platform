@@ -1,5 +1,5 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use dashcore_rpc::dashcore::{consensus::encode::deserialize, Transaction as CoreTx};
+use std::io::Cursor;
 
 /// Bloom filter implementation for efficient transaction filtering
 
@@ -46,26 +46,68 @@ impl TransactionFilter {
         true
     }
 
-    /// Test if a transaction matches this filter
-    pub fn matches_transaction(&self, tx_data: &[u8]) -> bool {
-        // TODO: Implement proper transaction parsing and testing
-        // This should extract outputs, inputs, and other relevant data
-        // and test each against the bloom filter
+    /// Insert data into the filter (sets bits for each hash)
+    pub fn insert(&mut self, data: &[u8]) {
+        if self.data.is_empty() || self.hash_funcs == 0 {
+            return;
+        }
+        let bit_count = self.data.len() * 8;
+        for i in 0..self.hash_funcs {
+            let hash = self.hash_data(data, i);
+            let bit_index = (hash % bit_count as u32) as usize;
+            self.set_bit(bit_index);
+        }
+    }
 
-        // For now, test the raw transaction data
-        self.contains(tx_data)
+    /// Test if a transaction matches this filter (BIP37 semantics)
+    pub fn matches_transaction(&mut self, tx: &CoreTx) -> bool {
+        // 1) Check transaction hash (big-endian)
+        let txid_be = match hex::decode(tx.txid().to_string()) { Ok(b) => b, Err(_) => Vec::new() };
+        if self.contains(&txid_be) {
+            return true;
+        }
+
+        // 2) Check outputs: any pushdata in script matches; optionally update filter with outpoint
+        for (index, out) in tx.output.iter().enumerate() {
+            if script_matches(self, out.script_pubkey.as_bytes()) {
+                // Update filter on match if flags allow
+                const BLOOM_UPDATE_ALL: u32 = super::transaction_filter::BLOOM_UPDATE_ALL;
+                const BLOOM_UPDATE_P2PUBKEY_ONLY: u32 =
+                    super::transaction_filter::BLOOM_UPDATE_P2PUBKEY_ONLY;
+                if self.flags == BLOOM_UPDATE_ALL
+                    || (self.flags == BLOOM_UPDATE_P2PUBKEY_ONLY
+                        && is_pubkey_script(out.script_pubkey.as_bytes()))
+                {
+                    let mut outpoint = Vec::with_capacity(36);
+                    outpoint.extend_from_slice(&txid_be);
+                    outpoint.extend_from_slice(&(index as u32).to_le_bytes());
+                    self.insert(&outpoint);
+                }
+                return true;
+            }
+        }
+
+        // 3) Check inputs: prev outpoint present in filter or scriptSig pushdata present
+        for input in tx.input.iter() {
+            let mut outpoint = Vec::with_capacity(36);
+            let prev_txid_be = match hex::decode(input.previous_output.txid.to_string()) { Ok(b) => b, Err(_) => Vec::new() };
+            outpoint.extend_from_slice(&prev_txid_be);
+            outpoint.extend_from_slice(&input.previous_output.vout.to_le_bytes());
+            if self.contains(&outpoint) || script_matches(self, input.script_sig.as_bytes()) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Hash data using the specified hash function index
     fn hash_data(&self, data: &[u8], hash_func_index: u32) -> u32 {
-        let mut hasher = DefaultHasher::new();
-
-        // Include the hash function index and tweak in the hash
-        hash_func_index.hash(&mut hasher);
-        self.tweak.hash(&mut hasher);
-        data.hash(&mut hasher);
-
-        hasher.finish() as u32
+        // BIP37 Murmur3 32-bit with seed: (i * 0xFBA4C795 + nTweak)
+        let seed = hash_func_index
+            .wrapping_mul(0xFBA4C795)
+            .wrapping_add(self.tweak);
+        murmur3::murmur3_32(&mut Cursor::new(data), seed).unwrap_or(0)
     }
 
     /// Check if a bit is set in the filter
@@ -142,6 +184,14 @@ impl TransactionFilter {
             .map(|byte| byte.count_ones() as usize)
             .sum()
     }
+
+    fn set_bit(&mut self, bit_index: usize) {
+        let byte_index = bit_index / 8;
+        let bit_offset = bit_index % 8;
+        if byte_index < self.data.len() {
+            self.data[byte_index] |= 1u8 << bit_offset;
+        }
+    }
 }
 
 /// Statistics about a bloom filter
@@ -156,25 +206,78 @@ pub struct FilterStats {
     pub false_positive_rate: f64,
 }
 
-/// Extract elements from a transaction for bloom filter testing
-
-pub fn extract_transaction_elements(tx_data: &[u8]) -> Vec<Vec<u8>> {
-    // TODO: Implement proper transaction parsing
-    // This should extract:
-    // - Transaction hash
-    // - Output scripts
-    // - Input previous transaction hashes
-    // - Public keys
-    // - Addresses
-
-    // For now, return the transaction data itself
-    vec![tx_data.to_vec()]
-}
-
 /// Test multiple elements against a bloom filter
 /// Test elements against a bloom filter
 pub fn test_elements_against_filter(filter: &TransactionFilter, elements: &[Vec<u8>]) -> bool {
     elements.iter().any(|element| filter.contains(element))
+}
+
+/// Flags matching dashcore-lib for filter update behavior
+pub const BLOOM_UPDATE_NONE: u32 = 0;
+pub const BLOOM_UPDATE_ALL: u32 = 1;
+pub const BLOOM_UPDATE_P2PUBKEY_ONLY: u32 = 2;
+
+// We use dashcore::Transaction directly; no local ParsedTransaction necessary.
+
+/// Return true if any pushdata element in script is contained in the filter
+fn script_matches(filter: &TransactionFilter, script: &[u8]) -> bool {
+    for data in extract_pushdatas(script) {
+        if filter.contains(&data) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Rough check whether scriptPubKey represents a pubkey or multisig (used by update flag)
+fn is_pubkey_script(script: &[u8]) -> bool {
+    if script.len() >= 35 && (script[0] == 33 || script[0] == 65) {
+        return true;
+    }
+    script.contains(&33u8) || script.contains(&65u8)
+}
+
+/// Extract pushdata from a Bitcoin script (supports OP_PUSH(1..75), PUSHDATA1/2/4)
+pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
+    let mut i = 0usize;
+    let mut parts = Vec::new();
+    while i < script.len() {
+        let op = script[i];
+        i += 1;
+        let len = if op >= 1 && op <= 75 {
+            op as usize
+        } else if op == 0x4c {
+            if i >= script.len() {
+                break;
+            }
+            let l = script[i] as usize;
+            i += 1;
+            l
+        } else if op == 0x4d {
+            if i + 1 >= script.len() {
+                break;
+            }
+            let l = u16::from_le_bytes([script[i], script[i + 1]]) as usize;
+            i += 2;
+            l
+        } else if op == 0x4e {
+            if i + 3 >= script.len() {
+                break;
+            }
+            let l = u32::from_le_bytes([script[i], script[i + 1], script[i + 2], script[i + 3]])
+                as usize;
+            i += 4;
+            l
+        } else {
+            continue;
+        };
+        if i + len > script.len() {
+            break;
+        }
+        parts.push(script[i..i + len].to_vec());
+        i += len;
+    }
+    parts
 }
 
 #[cfg(test)]
@@ -195,6 +298,17 @@ mod tests {
         assert_eq!(filter.data, data);
         assert_eq!(filter.hash_funcs, 3);
         assert_eq!(filter.tweak, 12345);
+    }
+
+    #[test]
+    fn test_extract_pushdatas_simple() {
+        // OP_DUP OP_HASH160 0x14 <20b> OP_EQUALVERIFY OP_CHECKSIG
+        let mut script = vec![0x76, 0xa9, 0x14];
+        script.extend(vec![0u8; 20]);
+        script.extend([0x88, 0xac]);
+        let parts = extract_pushdatas(&script);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].len(), 20);
     }
 
     #[test]

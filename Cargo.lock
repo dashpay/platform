@@ -4634,6 +4634,7 @@ dependencies = [
  "futures",
  "hex",
  "lru 0.16.0",
+ "murmur3",
  "once_cell",
  "prometheus",
  "reqwest",

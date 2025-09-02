@@ -4,6 +4,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, trace, warn};
 
+use super::transaction_filter::TransactionFilter;
+use dashcore_rpc::dashcore::{consensus::encode::deserialize, Transaction as CoreTx};
+
 /// Unique identifier for a subscription
 pub type SubscriptionId = String;
 
@@ -11,12 +14,7 @@ pub type SubscriptionId = String;
 #[derive(Debug, Clone)]
 pub enum FilterType {
     /// Bloom filter for transaction matching
-    BloomFilter {
-        data: Vec<u8>,
-        hash_funcs: u32,
-        tweak: u32,
-        flags: u32,
-    },
+    BloomFilter(TransactionFilter),
     /// All blocks filter (no filtering)
     AllBlocks,
     /// All masternodes filter (no filtering)
@@ -224,17 +222,14 @@ impl SubscriberManager {
     }
 
     /// Check if data matches the subscription filter
-    fn matches_filter(&self, filter: &FilterType, _data: &[u8]) -> bool {
+    fn matches_filter(&self, filter: &FilterType, data: &[u8]) -> bool {
         match filter {
-            FilterType::BloomFilter {
-                data: _filter_data,
-                hash_funcs: _,
-                tweak: _,
-                flags: _,
-            } => {
-                // TODO: Implement proper bloom filter matching
-                // For now, always match to test the pipeline
-                true
+            FilterType::BloomFilter(f) => {
+                let mut tx_filter = f.clone();
+                match deserialize::<CoreTx>(data) {
+                    Ok(tx) => tx_filter.matches_transaction(&tx),
+                    Err(_) => tx_filter.contains(data),
+                }
             }
             FilterType::AllBlocks => true,
             FilterType::AllMasternodes => true,
