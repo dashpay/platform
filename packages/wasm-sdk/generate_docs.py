@@ -662,6 +662,8 @@ h3 {
     font-size: 0.9em;
     margin-bottom: 10px;
     position: relative;
+    white-space: pre-wrap;
+    overflow-x: auto;
 }
 
 .run-button {
