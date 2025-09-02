@@ -465,6 +465,25 @@ public class SPVClient: ObservableObject {
         return stats
     }
 
+    // MARK: - Sync Snapshot
+    public func getSyncSnapshot() -> SPVSyncSnapshot? {
+        guard let client = client else { return nil }
+        guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else { return nil }
+        defer { dash_spv_ffi_sync_progress_destroy(ptr) }
+        let p = ptr.pointee
+        return SPVSyncSnapshot(
+            headerHeight: p.header_height,
+            filterHeaderHeight: p.filter_header_height,
+            masternodeHeight: p.masternode_height,
+            headersSynced: p.headers_synced,
+            filterHeadersSynced: p.filter_headers_synced,
+            masternodesSynced: p.masternodes_synced,
+            filterSyncAvailable: p.filter_sync_available,
+            filtersDownloaded: p.filters_downloaded,
+            lastSyncedFilterHeight: p.last_synced_filter_height
+        )
+    }
+
     // MARK: - Checkpoints
     // Tries to fetch the latest checkpoint height for this client's network.
     // Requires newer FFI with dash_spv_ffi_checkpoint_latest. Returns nil if unavailable.
@@ -599,6 +618,19 @@ public struct SPVStats {
     public let headerHeight: Int
     public let filterHeight: Int
     public let mempoolSize: Int
+}
+
+// A lightweight snapshot of sync progress from FFISyncProgress
+public struct SPVSyncSnapshot {
+    public let headerHeight: UInt32
+    public let filterHeaderHeight: UInt32
+    public let masternodeHeight: UInt32
+    public let headersSynced: Bool
+    public let filterHeadersSynced: Bool
+    public let masternodesSynced: Bool
+    public let filterSyncAvailable: Bool
+    public let filtersDownloaded: UInt32
+    public let lastSyncedFilterHeight: UInt32
 }
 
 public enum SPVError: LocalizedError {

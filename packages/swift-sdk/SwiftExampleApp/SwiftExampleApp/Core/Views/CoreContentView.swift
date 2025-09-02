@@ -29,23 +29,12 @@ struct CoreContentView: View {
             (wallet.networks & networkBit) != 0
         }
     }
-    @State private var isSyncing = false
-    @State private var headerProgress: Double = 0.0
-    @State private var masternodeProgress: Double = 0.0
-    @State private var transactionProgress: Double = 0.0
+    // Progress values come from WalletService (kept in sync with SPV callbacks)
     
     // Computed properties to ensure progress values are always valid
-    private var safeHeaderProgress: Double {
-        min(max(headerProgress, 0.0), 1.0)
-    }
-    
-    private var safeMasternodeProgress: Double {
-        min(max(masternodeProgress, 0.0), 1.0)
-    }
-    
-    private var safeTransactionProgress: Double {
-        min(max(transactionProgress, 0.0), 1.0)
-    }
+    private var safeHeaderProgress: Double { min(max(walletService.headerProgress, 0.0), 1.0) }
+    private var safeMasternodeProgress: Double { min(max(walletService.masternodeProgress, 0.0), 1.0) }
+    private var safeTransactionProgress: Double { min(max(walletService.transactionProgress, 0.0), 1.0) }
     
     var body: some View {
         List {
@@ -68,12 +57,12 @@ struct CoreContentView: View {
                         
                         Button(action: toggleSync) {
                             HStack(spacing: 4) {
-                                Image(systemName: isSyncing ? "pause.fill" : "play.fill")
-                                Text(isSyncing ? "Pause" : "Start")
+                                Image(systemName: walletService.isSyncing ? "pause.fill" : "play.fill")
+                                Text(walletService.isSyncing ? "Pause" : "Start")
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(isSyncing ? Color.orange : Color.blue)
+                            .background(walletService.isSyncing ? Color.orange : Color.blue)
                             .foregroundColor(.white)
                             .cornerRadius(8)
                         }
@@ -170,15 +159,13 @@ struct CoreContentView: View {
                     .environment(\.modelContext, modelContext)
             }
         }
-        .onAppear {
-            startSyncMonitoring()
-        }
+        // No local polling; rows bind to WalletService progress directly
     }
     
     // MARK: - Sync Methods
     
     private func toggleSync() {
-        if isSyncing {
+        if walletService.isSyncing {
             pauseSync()
         } else {
             startSync()
@@ -187,75 +174,32 @@ struct CoreContentView: View {
     
     private func startSync() {
         Task {
-            isSyncing = true
             await walletService.startSync()
         }
     }
     
     private func pauseSync() {
         walletService.stopSync()
-        isSyncing = false
     }
     
     private func restartHeaderSync() {
-        headerProgress = 0.0
-        if isSyncing {
+        if walletService.isSyncing {
             // TODO: Call walletService.restartHeaderSync() when implemented
             print("Restarting header sync...")
         }
     }
     
     private func restartMasternodeSync() {
-        masternodeProgress = 0.0
-        if isSyncing {
+        if walletService.isSyncing {
             // TODO: Call walletService.restartMasternodeSync() when implemented
             print("Restarting masternode sync...")
         }
     }
     
     private func restartTransactionSync() {
-        transactionProgress = 0.0
-        if isSyncing {
+        if walletService.isSyncing {
             // TODO: Call walletService.restartTransactionSync() when implemented
             print("Restarting transaction sync...")
-        }
-    }
-    
-    private func startSyncMonitoring() {
-        // Monitor real sync progress from walletService
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
-            if let progress = walletService.detailedSyncProgress {
-                let syncProgress = progress as! SyncProgress
-                
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    // Map sync stages to individual progress values
-                    switch syncProgress.stage {
-                    case .headers:
-                        headerProgress = syncProgress.progress
-                        masternodeProgress = 0
-                        transactionProgress = 0
-                    case .filters:  // Masternodes
-                        headerProgress = 1.0
-                        masternodeProgress = syncProgress.progress
-                        transactionProgress = 0
-                    case .downloading:  // Transactions
-                        headerProgress = 1.0
-                        masternodeProgress = 1.0
-                        transactionProgress = syncProgress.progress
-                    case .complete:
-                        headerProgress = 1.0
-                        masternodeProgress = 1.0
-                        transactionProgress = 1.0
-                    default:
-                        break
-                    }
-                }
-                
-                // Stop monitoring when sync is complete
-                if syncProgress.stage == .complete && !walletService.isSyncing {
-                    timer.invalidate()
-                }
-            }
         }
     }
 }

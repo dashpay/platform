@@ -13,6 +13,9 @@ public class WalletService: ObservableObject {
     @Published public var isSyncing = false
     @Published public var syncProgress: Double?
     @Published public var detailedSyncProgress: Any? // Use SPVClient.SyncProgress
+    @Published public var headerProgress: Double = 0
+    @Published public var masternodeProgress: Double = 0
+    @Published public var transactionProgress: Double = 0
     @Published public var lastSyncError: Error?
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
     @Published var currentNetwork: Network = .testnet
@@ -57,42 +60,50 @@ public class WalletService: ObservableObject {
         spvClient = SPVClient(network: network.sdkNetwork)
         spvClient?.delegate = self
         
-        do {
-            // Initialize the SPV client with proper configuration
-            let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
-            try spvClient?.initialize(dataDir: dataDir)
-            
-            // Start the SPV client
-            try spvClient?.start()
-            print("✅ SPV Client initialized and started successfully for \(network.rawValue)")
-
-            // Seed UI with latest checkpoint height if we don't have a header yet
-            if self.latestHeaderHeight == 0, let cp = spvClient?.getLatestCheckpointHeight() {
-                self.latestHeaderHeight = Int(cp)
-            }
-            beginSPVStatsPolling()
-            
-            // Create SDK wallet manager (unified, not tied to SPV pointer for now)
+        // Capture current references on the main actor to avoid cross-actor hops later
+        guard let client = spvClient, let mc = self.modelContainer else { return }
+        let net = currentNetwork
+        Task.detached(priority: .userInitiated) {
             do {
-                let sdkWalletManager = try SwiftDashSDK.WalletManager()
-                self.walletManager = try WalletManager(
-                    sdkWalletManager: sdkWalletManager,
-                    modelContainer: modelContainer
-                )
-                // Attach a transaction service (SDK-backed in the future)
-                self.walletManager?.transactionService = TransactionService(
-                    walletManager: self.walletManager!,
-                    modelContainer: modelContainer,
-                    spvClient: spvClient
-                )
-                print("✅ WalletManager wrapper initialized successfully")
+                // Initialize the SPV client with proper configuration
+                let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
+                try client.initialize(dataDir: dataDir)
+
+                // Start the SPV client
+                try client.start()
+                print("✅ SPV Client initialized and started successfully for \(net.rawValue)")
+
+                // Seed UI with latest checkpoint height if we don't have a header yet
+                let seedHeight = client.getLatestCheckpointHeight()
+                await MainActor.run {
+                    if WalletService.shared.latestHeaderHeight == 0, let cp = seedHeight {
+                        WalletService.shared.latestHeaderHeight = Int(cp)
+                    }
+                    WalletService.shared.beginSPVStatsPolling()
+                }
+
+                // Create SDK wallet manager (unified, not tied to SPV pointer for now)
+                do {
+                    let sdkWalletManager = try SwiftDashSDK.WalletManager()
+                    let wrapper: WalletManager = try await MainActor.run {
+                        try WalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
+                    }
+                    await MainActor.run {
+                        WalletService.shared.walletManager = wrapper
+                        WalletService.shared.walletManager?.transactionService = TransactionService(
+                            walletManager: wrapper,
+                            modelContainer: mc,
+                            spvClient: client
+                        )
+                        print("✅ WalletManager wrapper initialized successfully")
+                    }
+                } catch {
+                    print("❌ Failed to initialize WalletManager wrapper:\nError: \(error)")
+                }
             } catch {
-                print("❌ Failed to initialize WalletManager wrapper:")
-                print("Error: \(error)")
+                print("❌ Failed to initialize SPV Client: \(error)")
+                await MainActor.run { WalletService.shared.lastSyncError = error }
             }
-        } catch {
-            print("❌ Failed to initialize SPV Client: \(error)")
-            lastSyncError = error
         }
         
         print("Loading current wallet...")
@@ -399,16 +410,22 @@ extension WalletService {
     private func beginSPVStatsPolling() {
         spvStatsTimer?.invalidate()
         spvStatsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self = self, let stats = self.spvClient?.getStats() else { return }
-            DispatchQueue.main.async {
-                // Only overwrite with positive values; keep seeded values otherwise
-                if stats.headerHeight > 0 {
-                    self.latestHeaderHeight = max(self.latestHeaderHeight, stats.headerHeight)
+            guard let self = self else { return }
+            // Call FFI off the main actor to avoid UI stalls
+            Task.detached(priority: .utility) { [weak self] in
+                let client = await self?.spvClient
+                guard let client = client else { return }
+                guard let stats = client.getStats() else { return }
+                await MainActor.run {
+                    // Only overwrite with positive values; keep seeded values otherwise
+                    if stats.headerHeight > 0 {
+                        self?.latestHeaderHeight = max(self?.latestHeaderHeight ?? 0, stats.headerHeight)
+                    }
+                    if stats.filterHeight > 0 {
+                        self?.latestFilterHeight = max(self?.latestFilterHeight ?? 0, stats.filterHeight)
+                    }
+                    // Keep latestMasternodeListHeight as 0 until available
                 }
-                if stats.filterHeight > 0 {
-                    self.latestFilterHeight = max(self.latestFilterHeight, stats.filterHeight)
-                }
-                // Keep latestMasternodeListHeight as 0 until available
             }
         }
         if let t = spvStatsTimer { RunLoop.main.add(t, forMode: .common) }
@@ -420,20 +437,56 @@ extension WalletService {
 extension WalletService: SPVClientDelegate {
     nonisolated public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
         Task { @MainActor in
-            // Update published properties
-            self.syncProgress = progress.overallProgress
-            
-            // Convert to detailed progress for UI
+            // Prefer a deterministic percentage from heights, not FFI's percentage
+            let headerPct = min(1.0, max(0.0, Double(progress.currentHeight) / Double(max(1, progress.targetHeight))))
+
+            // Update published properties (top overlay + headers row)
+            self.syncProgress = headerPct
+            self.headerProgress = headerPct
+
+            // Convert to detailed progress for UI (top overlay)
             self.detailedSyncProgress = SyncProgress(
                 current: UInt64(progress.currentHeight),
                 total: UInt64(progress.targetHeight),
                 rate: progress.rate,
-                progress: progress.overallProgress,
+                progress: headerPct,
                 stage: mapSyncStage(progress.stage)
             )
             
             if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
                 print("📊 Sync progress: \(progress.stage.rawValue) - \(Int(progress.overallProgress * 100))%")
+            }
+        }
+
+        // Update per-section progress using best available data without blocking UI
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self = self else { return }
+            // Capture actor-isolated values we might need
+            let (client, prevTx, prevMn): (SPVClient?, Double, Double) = await MainActor.run {
+                (self.spvClient, self.transactionProgress, self.masternodeProgress)
+            }
+
+            // 1) Headers: use detailed current/total from progress callback
+            let headerPct = min(1.0, max(0.0, Double(progress.currentHeight) / Double(max(1, progress.targetHeight))))
+
+            // 2) Filters: prefer snapshot lastSyncedFilterHeight / headerHeight; fallback to stats ratio
+            var txPct = prevTx
+            if let snap = client?.getSyncSnapshot(), snap.headerHeight > 0 {
+                txPct = min(1.0, max(0.0, Double(snap.lastSyncedFilterHeight) / Double(snap.headerHeight)))
+            } else if let stats = client?.getStats(), stats.headerHeight > 0 {
+                txPct = min(1.0, max(0.0, Double(stats.filterHeight) / Double(stats.headerHeight)))
+            }
+
+            // 3) Masternodes: show only synced/unsynced (no misleading ratio)
+            var mnPct = prevMn
+            if let snap = client?.getSyncSnapshot() {
+                mnPct = snap.masternodesSynced ? 1.0 : 0.0
+            }
+
+            await MainActor.run {
+                self.headerProgress = headerPct
+                self.transactionProgress = txPct
+                self.masternodeProgress = mnPct
             }
         }
     }
