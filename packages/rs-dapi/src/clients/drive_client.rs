@@ -95,10 +95,20 @@ impl DriveClient {
         info!("Creating Drive client for: {}", uri);
         let channel = Self::create_channel(uri).await?;
 
+        // Configure clients with larger message sizes.
+        // Compression (gzip) is intentionally DISABLED at rs-dapi level; Envoy handles it.
+        info!("Drive client compression: disabled (handled by Envoy)");
+        const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+        const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+
         let client = Self {
             base_url: Arc::new(uri.to_string()),
-            client: PlatformClient::new(channel.clone()),
-            internal_client: DriveInternalClient::new(channel.clone()),
+            client: PlatformClient::new(channel.clone())
+                .max_decoding_message_size(MAX_DECODING_BYTES)
+                .max_encoding_message_size(MAX_ENCODING_BYTES),
+            internal_client: DriveInternalClient::new(channel.clone())
+                .max_decoding_message_size(MAX_DECODING_BYTES)
+                .max_encoding_message_size(MAX_ENCODING_BYTES),
         };
 
         // Validate connection by making a test status call

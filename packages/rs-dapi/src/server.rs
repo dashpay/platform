@@ -219,13 +219,27 @@ impl DapiServer {
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
 
+        const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+        const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+
+        // NOTE: Compression (gzip) is intentionally DISABLED at rs-dapi level.
+        // Envoy handles wire compression at the edge. Keeping it disabled here
+        // avoids double-compression overhead.
+        info!("gRPC compression: disabled (handled by Envoy)");
+
         dapi_grpc::tonic::transport::Server::builder()
-            .add_service(PlatformServer::new(
-                Arc::try_unwrap(platform_service).unwrap_or_else(|arc| (*arc).clone()),
-            ))
-            .add_service(CoreServer::new(
-                Arc::try_unwrap(core_service).unwrap_or_else(|arc| (*arc).clone()),
-            ))
+            .add_service(
+                PlatformServer::new(
+                    Arc::try_unwrap(platform_service).unwrap_or_else(|arc| (*arc).clone()),
+                )
+                .max_decoding_message_size(MAX_DECODING_BYTES)
+                .max_encoding_message_size(MAX_ENCODING_BYTES),
+            )
+            .add_service(
+                CoreServer::new(Arc::try_unwrap(core_service).unwrap_or_else(|arc| (*arc).clone()))
+                    .max_decoding_message_size(MAX_DECODING_BYTES)
+                    .max_encoding_message_size(MAX_ENCODING_BYTES),
+            )
             .serve(addr)
             .await?;
 
