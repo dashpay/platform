@@ -9,7 +9,7 @@ use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::Identi
 use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
-use simple_signer::SingleKeySigner;
+use simple_signer::{SingleKeySigner, signer::SimpleSigner};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use js_sys;
@@ -80,8 +80,9 @@ impl WasmSdk {
         let keys_array = keys_data.as_array()
             .ok_or_else(|| JsValue::from_str("public_keys must be a JSON array"))?;
         
-        // Create identity public keys
+        // Create identity public keys and collect private keys for signing
         let mut identity_public_keys = std::collections::BTreeMap::new();
+        let mut signer = SimpleSigner::default();
         let mut key_id = 0u32;
         
         for key_data in keys_array {
@@ -122,32 +123,33 @@ impl WasmSdk {
                 _ => SecurityLevel::HIGH
             };
             
-            // Check if privateKeyHex is provided - if so, derive public key data from it
-            let public_key_data = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
+            // Get private key - required for signing each key
+            let private_key_bytes = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
                 // Decode private key from hex
-                let private_key_bytes = hex::decode(private_key_hex)
+                let bytes = hex::decode(private_key_hex)
                     .map_err(|e| JsValue::from_str(&format!("Invalid private key hex: {}", e)))?;
                 
-                if private_key_bytes.len() != 32 {
-                    return Err(JsValue::from_str(&format!("Private key must be 32 bytes, got {}", private_key_bytes.len())));
+                if bytes.len() != 32 {
+                    return Err(JsValue::from_str(&format!("Private key must be 32 bytes, got {}", bytes.len())));
                 }
                 
                 let mut private_key_array = [0u8; 32];
-                private_key_array.copy_from_slice(&private_key_bytes);
-                
-                // Use DPP's built-in method to get the correct public key data for the key type
-                // Use network from SDK configuration
-                key_type.public_key_data_from_private_key_data(
-                    &private_key_array,
-                    self.network()
-                ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?
-            } else if let Some(data_str) = key_data["data"].as_str() {
-                // Fall back to using provided data (base64 encoded)
-                dash_sdk::dpp::dashcore::base64::decode(data_str)
-                    .map_err(|e| JsValue::from_str(&format!("Invalid base64 key data: {}", e)))?
+                private_key_array.copy_from_slice(&bytes);
+                private_key_array
+            } else if let Some(private_key_wif) = key_data["privateKeyWif"].as_str() {
+                // Parse WIF format private key
+                let private_key = PrivateKey::from_wif(private_key_wif)
+                    .map_err(|e| JsValue::from_str(&format!("Invalid WIF private key: {}", e)))?;
+                private_key.inner.secret_bytes()
             } else {
-                return Err(JsValue::from_str("Either privateKeyHex or data must be provided"));
+                return Err(JsValue::from_str("Either privateKeyHex or privateKeyWif must be provided for each key"));
             };
+            
+            // Derive public key data from private key
+            let public_key_data = key_type.public_key_data_from_private_key_data(
+                &private_key_bytes,
+                self.network()
+            ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?;
             
             // Create the identity public key
             use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -162,6 +164,9 @@ impl WasmSdk {
                 disabled_at: None,
             });
             
+            // Add the public key and its private key to the signer
+            signer.add_key(public_key.clone(), private_key_bytes);
+            
             identity_public_keys.insert(key_id, public_key);
             key_id += 1;
         }
@@ -175,13 +180,8 @@ impl WasmSdk {
             revision: 0,
         });
         
-        // Create signer from asset lock proof private key using SDK's network configuration
-        let signer = SingleKeySigner::from_string(&asset_lock_proof_private_key, self.network())
-            .map_err(|e| {
-                let error_msg = format!("Invalid private key: {}", e);
-                web_sys::console::error_1(&JsValue::from_str(&error_msg));
-                JsValue::from_str(&error_msg)
-            })?;
+        // Use the SimpleSigner we built with all the identity keys
+        // The signer now contains all private keys for signing each public key individually
         
         // Put identity to platform and wait
         let created_identity = match identity

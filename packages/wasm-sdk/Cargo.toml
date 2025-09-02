@@ -25,7 +25,7 @@ token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
