@@ -43,6 +43,7 @@ pub use {
     fetch_unproved::FetchUnproved,
     proof_data::{DocumentFetchManyWithProofs, DocumentsWithProofData, FetchWithProof, ProofData},
     query::{
-        LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT,
+        IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
+        DEFAULT_EPOCH_QUERY_LIMIT,
     },
 };
