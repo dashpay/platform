@@ -226,7 +226,9 @@ const testData = {
           {
             dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             documentType: "domain",
-            limit: 10
+            limit: 10,
+            where: '[["normalizedParentDomainName", "==", "dash"], ["normalizedLabel", "startsWith", "test"]]',
+            orderBy: '[["normalizedLabel", "asc"]]'
           }
         ]
       },

@@ -4,13 +4,103 @@ use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 
+// Response structures for the gRPC getStatus endpoint
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct PlatformStatus {
-    version: u32,
-    network: String,
-    block_height: Option<u64>,
-    core_height: Option<u64>,
+struct StatusResponse {
+    version: StatusVersion,
+    node: StatusNode,
+    chain: StatusChain,
+    network: StatusNetwork,
+    state_sync: StatusStateSync,
+    time: StatusTime,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusVersion {
+    software: StatusSoftware,
+    protocol: StatusProtocol,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusSoftware {
+    dapi: String,
+    drive: Option<String>,
+    tenderdash: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusProtocol {
+    tenderdash: StatusTenderdashProtocol,
+    drive: StatusDriveProtocol,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusTenderdashProtocol {
+    p2p: u32,
+    block: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusDriveProtocol {
+    latest: u32,
+    current: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusNode {
+    id: String,
+    pro_tx_hash: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusChain {
+    catching_up: bool,
+    latest_block_hash: String,
+    latest_app_hash: String,
+    latest_block_height: String,
+    earliest_block_hash: String,
+    earliest_app_hash: String,
+    earliest_block_height: String,
+    max_peer_block_height: String,
+    core_chain_locked_height: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusNetwork {
+    chain_id: String,
+    peers_count: u32,
+    listening: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusStateSync {
+    total_synced_time: String,
+    remaining_time: String,
+    total_snapshots: u32,
+    chunk_process_avg_time: String,
+    snapshot_height: String,
+    snapshot_chunks_count: String,
+    backfilled_blocks: String,
+    backfill_blocks_total: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct StatusTime {
+    local: String,
+    block: Option<String>,
+    genesis: Option<String>,
+    epoch: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -60,38 +150,160 @@ struct PathElement {
 
 #[wasm_bindgen]
 pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-    use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
-    use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+    use dapi_grpc::platform::v0::get_status_request::{Version, GetStatusRequestV0};
+    use dapi_grpc::platform::v0::GetStatusRequest;
+    use dash_sdk::RequestSettings;
+    use rs_dapi_client::DapiRequestExecutor;
     
-    // Get the network from SDK
-    let network_str = match sdk.network {
-        dash_sdk::dpp::dashcore::Network::Dash => "mainnet",
-        dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
-        dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
-        dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
-        _ => "unknown",
-    }.to_string();
-    
-    // Try to fetch current epoch info to get block heights
-    let (block_height, core_height) = match ExtendedEpochInfo::fetch_current(sdk.as_ref()).await {
-        Ok(epoch_info) => {
-            // Extract heights from epoch info
-            let platform_height = Some(epoch_info.first_block_height());
-            let core_height = Some(epoch_info.first_core_block_height() as u64);
-            (platform_height, core_height)
-        }
-        Err(_) => {
-            // If we can't fetch epoch info, heights remain None
-            (None, None)
-        }
+    // Create the gRPC request
+    let request = GetStatusRequest {
+        version: Some(Version::V0(GetStatusRequestV0 {})),
     };
     
-    let status = PlatformStatus {
-        version: sdk.version(),
-        network: network_str,
-        block_height,
-        core_height,
+    // Execute the request
+    let response = sdk
+        .as_ref()
+        .execute(request, RequestSettings::default())
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to get status: {}", e)))?;
+    
+    // Parse the response
+    use dapi_grpc::platform::v0::get_status_response::Version as ResponseVersion;
+    
+    let v0_response = match response.inner.version {
+        Some(ResponseVersion::V0(v0)) => v0,
+        None => return Err(JsError::new("No version in GetStatus response")),
+    };
+    
+    // Map the response to our StatusResponse structure
+    let status = StatusResponse {
+        version: StatusVersion {
+            software: StatusSoftware {
+                dapi: v0_response.version.as_ref()
+                    .map(|v| v.software.as_ref())
+                    .flatten()
+                    .map(|s| s.dapi.clone())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                drive: v0_response.version.as_ref()
+                    .and_then(|v| v.software.as_ref())
+                    .and_then(|s| s.drive.clone()),
+                tenderdash: v0_response.version.as_ref()
+                    .and_then(|v| v.software.as_ref())
+                    .and_then(|s| s.tenderdash.clone()),
+            },
+            protocol: StatusProtocol {
+                tenderdash: StatusTenderdashProtocol {
+                    p2p: v0_response.version.as_ref()
+                        .and_then(|v| v.protocol.as_ref())
+                        .and_then(|p| p.tenderdash.as_ref())
+                        .map(|t| t.p2p)
+                        .unwrap_or(0),
+                    block: v0_response.version.as_ref()
+                        .and_then(|v| v.protocol.as_ref())
+                        .and_then(|p| p.tenderdash.as_ref())
+                        .map(|t| t.block)
+                        .unwrap_or(0),
+                },
+                drive: StatusDriveProtocol {
+                    latest: v0_response.version.as_ref()
+                        .and_then(|v| v.protocol.as_ref())
+                        .and_then(|p| p.drive.as_ref())
+                        .map(|d| d.latest)
+                        .unwrap_or(0),
+                    current: v0_response.version.as_ref()
+                        .and_then(|v| v.protocol.as_ref())
+                        .and_then(|p| p.drive.as_ref())
+                        .map(|d| d.current)
+                        .unwrap_or(0),
+                },
+            },
+        },
+        node: StatusNode {
+            id: v0_response.node.as_ref()
+                .map(|n| hex::encode(&n.id))
+                .unwrap_or_else(|| "unknown".to_string()),
+            pro_tx_hash: v0_response.node.as_ref()
+                .and_then(|n| n.pro_tx_hash.as_ref())
+                .map(|hash| hex::encode(hash)),
+        },
+        chain: StatusChain {
+            catching_up: v0_response.chain.as_ref()
+                .map(|c| c.catching_up)
+                .unwrap_or(false),
+            latest_block_hash: v0_response.chain.as_ref()
+                .map(|c| hex::encode(&c.latest_block_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            latest_app_hash: v0_response.chain.as_ref()
+                .map(|c| hex::encode(&c.latest_app_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            latest_block_height: v0_response.chain.as_ref()
+                .map(|c| c.latest_block_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            earliest_block_hash: v0_response.chain.as_ref()
+                .map(|c| hex::encode(&c.earliest_block_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            earliest_app_hash: v0_response.chain.as_ref()
+                .map(|c| hex::encode(&c.earliest_app_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            earliest_block_height: v0_response.chain.as_ref()
+                .map(|c| c.earliest_block_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            max_peer_block_height: v0_response.chain.as_ref()
+                .map(|c| c.max_peer_block_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            core_chain_locked_height: v0_response.chain.as_ref()
+                .and_then(|c| c.core_chain_locked_height),
+        },
+        network: StatusNetwork {
+            chain_id: v0_response.network.as_ref()
+                .map(|n| n.chain_id.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            peers_count: v0_response.network.as_ref()
+                .map(|n| n.peers_count)
+                .unwrap_or(0),
+            listening: v0_response.network.as_ref()
+                .map(|n| n.listening)
+                .unwrap_or(false),
+        },
+        state_sync: StatusStateSync {
+            total_synced_time: v0_response.state_sync.as_ref()
+                .map(|s| s.total_synced_time.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            remaining_time: v0_response.state_sync.as_ref()
+                .map(|s| s.remaining_time.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            total_snapshots: v0_response.state_sync.as_ref()
+                .map(|s| s.total_snapshots)
+                .unwrap_or(0),
+            chunk_process_avg_time: v0_response.state_sync.as_ref()
+                .map(|s| s.chunk_process_avg_time.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            snapshot_height: v0_response.state_sync.as_ref()
+                .map(|s| s.snapshot_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            snapshot_chunks_count: v0_response.state_sync.as_ref()
+                .map(|s| s.snapshot_chunks_count.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            backfilled_blocks: v0_response.state_sync.as_ref()
+                .map(|s| s.backfilled_blocks.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            backfill_blocks_total: v0_response.state_sync.as_ref()
+                .map(|s| s.backfill_blocks_total.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+        },
+        time: StatusTime {
+            local: v0_response.time.as_ref()
+                .map(|t| t.local.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            block: v0_response.time.as_ref()
+                .and_then(|t| t.block)
+                .map(|b| b.to_string()),
+            genesis: v0_response.time.as_ref()
+                .and_then(|t| t.genesis)
+                .map(|g| g.to_string()),
+            epoch: v0_response.time.as_ref()
+                .and_then(|t| t.epoch),
+        },
     };
     
     serde_wasm_bindgen::to_value(&status)
