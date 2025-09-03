@@ -161,6 +161,10 @@
           </label>
         </div>
         
+        <div class="no-proof-info" style="display: none; margin: 15px 0; padding: 10px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; text-align: center;" id="noProofInfoContainer">
+          <span style="color: #6c757d; font-size: 0.9em;">Note: this query does not provide cryptographic proof verification.</span>
+        </div>
+        
         <button id="executeQuery" class="execute-button" style="display: none;">Execute Query</button>
       </div>
     </div>
@@ -3206,6 +3210,51 @@ ${indentStr}]`;
           );
           displayResult(JSON.stringify(result, null, 2));
           updateStatusWithTime('Token configuration updated successfully', 'success', startTime);
+        } else if (transitionType === 'tokenTransfer') {
+          result = await sdk.tokenTransfer(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.amount,
+            identityId, // sender ID
+            values.recipientId,
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Tokens transferred successfully', 'success', startTime);
+        } else if (transitionType === 'tokenFreeze') {
+          result = await sdk.tokenFreeze(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.identityToFreeze,
+            identityId, // freezer ID
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Tokens frozen successfully', 'success', startTime);
+        } else if (transitionType === 'tokenUnfreeze') {
+          result = await sdk.tokenUnfreeze(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.identityToUnfreeze,
+            identityId, // unfreezer ID
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Tokens unfrozen successfully', 'success', startTime);
+        } else if (transitionType === 'tokenDestroyFrozen') {
+          result = await sdk.tokenDestroyFrozen(
+            values.contractId,
+            Number(values.tokenPosition),
+            values.identityId, // identity whose frozen tokens to destroy
+            identityId, // destroyer ID
+            privateKey,
+            values.publicNote || null
+          );
+          displayResult(JSON.stringify(result, null, 2));
+          updateStatusWithTime('Frozen tokens destroyed successfully', 'success', startTime);
         } else if (transitionType === 'documentCreate') {
           // Collect document fields from dynamic inputs
           const documentData = collectDocumentFields();
@@ -4126,6 +4175,7 @@ ${indentStr}]`;
       document.getElementById('queryType').style.display = 'none';
       document.getElementById('queryInputs').style.display = 'none';
       document.getElementById('proofToggleContainer').style.display = 'none';
+      document.getElementById('noProofInfoContainer').style.display = 'none';
       document.getElementById('executeQuery').style.display = 'none';
       document.getElementById('queryDescription').style.display = 'none';
     });
@@ -4145,6 +4195,7 @@ ${indentStr}]`;
       // Hide inputs and button
       queryInputs.style.display = 'none';
       document.getElementById('proofToggleContainer').style.display = 'none';
+      document.getElementById('noProofInfoContainer').style.display = 'none';
       executeButton.style.display = 'none';
       queryDescription.style.display = 'none';
       
@@ -4319,12 +4370,22 @@ ${indentStr}]`;
         queryInputs.style.display = 'block';
         executeButton.style.display = 'block';
         
-        // Show proof toggle for queries only
+        // Show proof toggle for queries that support proofs
         const proofToggleContainer = document.getElementById('proofToggleContainer');
+        const noProofInfoContainer = document.getElementById('noProofInfoContainer');
         if (operationType === 'queries') {
-          proofToggleContainer.style.display = 'block';
+          // Check if query supports proof (defaults to true if not specified)
+          const supportsProof = definition?.supportsProof !== false;
+          if (supportsProof) {
+            proofToggleContainer.style.display = 'block';
+            noProofInfoContainer.style.display = 'none';
+          } else {
+            proofToggleContainer.style.display = 'none';
+            noProofInfoContainer.style.display = 'block';
+          }
         } else {
           proofToggleContainer.style.display = 'none';
+          noProofInfoContainer.style.display = 'none';
         }
         
         // Update button text based on operation type
@@ -4409,6 +4470,7 @@ ${indentStr}]`;
       } else {
         queryInputs.style.display = 'none';
         document.getElementById('proofToggleContainer').style.display = 'none';
+        document.getElementById('noProofInfoContainer').style.display = 'none';
         executeButton.style.display = 'none';
         queryDescription.style.display = 'none';
       }

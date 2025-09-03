@@ -317,6 +317,7 @@ impl WasmSdk {
     /// * `sender_id` - The identity ID of the sender
     /// * `recipient_id` - The identity ID of the recipient
     /// * `private_key_wif` - The private key in WIF format for signing
+    /// * `public_note` - Optional public note for the transfer
     ///
     /// # Returns
     ///
@@ -330,8 +331,76 @@ impl WasmSdk {
         sender_id: String,
         recipient_id: String,
         private_key_wif: String,
+        public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        Err(JsValue::from_str("Token transfer not yet implemented - similar pattern to mint/burn"))
+        let sdk = self.inner_clone();
+        
+        // Parse and validate parameters
+        let (contract_id, sender_identifier, token_amount, _) = self.parse_token_params(
+            &data_contract_id,
+            &sender_id,
+            &amount,
+            None,
+        ).await?;
+        
+        // Parse recipient ID
+        let recipient_identifier = Identifier::from_string(&recipient_id, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid recipient ID: {}", e)))?;
+        
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        
+        // Get identity to find matching authentication key
+        let identity = dash_sdk::platform::Identity::fetch(&sdk, sender_identifier)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch identity: {}", e)))?
+            .ok_or_else(|| JsValue::from_str("Identity not found"))?;
+        
+        // Get identity contract nonce
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(sender_identifier, contract_id, true, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
+        
+        // Find matching authentication key and create signer
+        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
+        let public_key = matching_key.clone();
+        
+        // Calculate token ID
+        let token_id = Identifier::from(calculate_token_id(
+            contract_id.as_bytes(),
+            token_position,
+        ));
+        
+        // Create the state transition
+        let platform_version = sdk.version();
+        let state_transition = BatchTransition::new_token_transfer_transition(
+            token_id,
+            sender_identifier,
+            contract_id,
+            token_position,
+            token_amount,
+            recipient_identifier,
+            public_note,
+            None, // shared_encrypted_note
+            None, // private_encrypted_note
+            &public_key,
+            identity_contract_nonce,
+            UserFeeIncrease::default(),
+            &signer,
+            platform_version,
+            None, // state_transition_creation_options
+        ).map_err(|e| JsValue::from_str(&format!("Failed to create transfer transition: {}", e)))?;
+        
+        // Broadcast the transition
+        let proof_result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
+        
+        // Format and return result
+        self.format_token_result(proof_result)
     }
 
     /// Freeze tokens for a specific identity.
@@ -343,6 +412,7 @@ impl WasmSdk {
     /// * `identity_to_freeze` - The identity ID whose tokens to freeze
     /// * `freezer_id` - The identity ID of the freezer (must have permission)
     /// * `private_key_wif` - The private key in WIF format for signing
+    /// * `public_note` - Optional public note for the freeze operation
     ///
     /// # Returns
     ///
@@ -355,8 +425,74 @@ impl WasmSdk {
         identity_to_freeze: String,
         freezer_id: String,
         private_key_wif: String,
+        public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        Err(JsValue::from_str("Token freeze not yet implemented"))
+        let sdk = self.inner_clone();
+        
+        // Parse and validate parameters
+        let (contract_id, freezer_identifier, _, _) = self.parse_token_params(
+            &data_contract_id,
+            &freezer_id,
+            "0", // Amount not needed for freeze
+            None,
+        ).await?;
+        
+        // Parse identity to freeze
+        let frozen_identity_id = Identifier::from_string(&identity_to_freeze, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid identity to freeze: {}", e)))?;
+        
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        
+        // Get identity to find matching authentication key
+        let identity = dash_sdk::platform::Identity::fetch(&sdk, freezer_identifier)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch identity: {}", e)))?
+            .ok_or_else(|| JsValue::from_str("Identity not found"))?;
+        
+        // Get identity contract nonce
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(freezer_identifier, contract_id, true, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
+        
+        // Find matching authentication key and create signer
+        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
+        let public_key = matching_key.clone();
+        
+        // Calculate token ID
+        let token_id = Identifier::from(calculate_token_id(
+            contract_id.as_bytes(),
+            token_position,
+        ));
+        
+        // Create the state transition
+        let platform_version = sdk.version();
+        let state_transition = BatchTransition::new_token_freeze_transition(
+            token_id,
+            freezer_identifier,
+            contract_id,
+            token_position,
+            frozen_identity_id,
+            public_note,
+            None, // using_group_info
+            &public_key,
+            identity_contract_nonce,
+            UserFeeIncrease::default(),
+            &signer,
+            platform_version,
+            None, // state_transition_creation_options
+        ).map_err(|e| JsValue::from_str(&format!("Failed to create freeze transition: {}", e)))?;
+        
+        // Broadcast the transition
+        let proof_result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
+        
+        // Format and return result
+        self.format_token_result(proof_result)
     }
 
     /// Unfreeze tokens for a specific identity.
@@ -368,6 +504,7 @@ impl WasmSdk {
     /// * `identity_to_unfreeze` - The identity ID whose tokens to unfreeze
     /// * `unfreezer_id` - The identity ID of the unfreezer (must have permission)
     /// * `private_key_wif` - The private key in WIF format for signing
+    /// * `public_note` - Optional public note for the unfreeze operation
     ///
     /// # Returns
     ///
@@ -380,8 +517,74 @@ impl WasmSdk {
         identity_to_unfreeze: String,
         unfreezer_id: String,
         private_key_wif: String,
+        public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        Err(JsValue::from_str("Token unfreeze not yet implemented"))
+        let sdk = self.inner_clone();
+        
+        // Parse and validate parameters
+        let (contract_id, unfreezer_identifier, _, _) = self.parse_token_params(
+            &data_contract_id,
+            &unfreezer_id,
+            "0", // Amount not needed for unfreeze
+            None,
+        ).await?;
+        
+        // Parse identity to unfreeze
+        let frozen_identity_id = Identifier::from_string(&identity_to_unfreeze, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid identity to unfreeze: {}", e)))?;
+        
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        
+        // Get identity to find matching authentication key
+        let identity = dash_sdk::platform::Identity::fetch(&sdk, unfreezer_identifier)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch identity: {}", e)))?
+            .ok_or_else(|| JsValue::from_str("Identity not found"))?;
+        
+        // Get identity contract nonce
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(unfreezer_identifier, contract_id, true, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
+        
+        // Find matching authentication key and create signer
+        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
+        let public_key = matching_key.clone();
+        
+        // Calculate token ID
+        let token_id = Identifier::from(calculate_token_id(
+            contract_id.as_bytes(),
+            token_position,
+        ));
+        
+        // Create the state transition
+        let platform_version = sdk.version();
+        let state_transition = BatchTransition::new_token_unfreeze_transition(
+            token_id,
+            unfreezer_identifier,
+            contract_id,
+            token_position,
+            frozen_identity_id,
+            public_note,
+            None, // using_group_info
+            &public_key,
+            identity_contract_nonce,
+            UserFeeIncrease::default(),
+            &signer,
+            platform_version,
+            None, // state_transition_creation_options
+        ).map_err(|e| JsValue::from_str(&format!("Failed to create unfreeze transition: {}", e)))?;
+        
+        // Broadcast the transition
+        let proof_result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
+        
+        // Format and return result
+        self.format_token_result(proof_result)
     }
 
     /// Destroy frozen tokens.
@@ -393,6 +596,7 @@ impl WasmSdk {
     /// * `identity_id` - The identity ID whose frozen tokens to destroy
     /// * `destroyer_id` - The identity ID of the destroyer (must have permission)
     /// * `private_key_wif` - The private key in WIF format for signing
+    /// * `public_note` - Optional public note for the destroy operation
     ///
     /// # Returns
     ///
@@ -405,8 +609,74 @@ impl WasmSdk {
         identity_id: String,
         destroyer_id: String,
         private_key_wif: String,
+        public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        Err(JsValue::from_str("Token destroy frozen not yet implemented"))
+        let sdk = self.inner_clone();
+        
+        // Parse and validate parameters
+        let (contract_id, destroyer_identifier, _, _) = self.parse_token_params(
+            &data_contract_id,
+            &destroyer_id,
+            "0", // Amount not needed for destroy frozen
+            None,
+        ).await?;
+        
+        // Parse identity whose frozen tokens to destroy
+        let frozen_identity_id = Identifier::from_string(&identity_id, Encoding::Base58)
+            .map_err(|e| JsValue::from_str(&format!("Invalid identity to destroy frozen funds: {}", e)))?;
+        
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        
+        // Get identity to find matching authentication key
+        let identity = dash_sdk::platform::Identity::fetch(&sdk, destroyer_identifier)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch identity: {}", e)))?
+            .ok_or_else(|| JsValue::from_str("Identity not found"))?;
+        
+        // Get identity contract nonce
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(destroyer_identifier, contract_id, true, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
+        
+        // Find matching authentication key and create signer
+        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
+        let public_key = matching_key.clone();
+        
+        // Calculate token ID
+        let token_id = Identifier::from(calculate_token_id(
+            contract_id.as_bytes(),
+            token_position,
+        ));
+        
+        // Create the state transition
+        let platform_version = sdk.version();
+        let state_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
+            token_id,
+            destroyer_identifier,
+            contract_id,
+            token_position,
+            frozen_identity_id,
+            public_note,
+            None, // using_group_info
+            &public_key,
+            identity_contract_nonce,
+            UserFeeIncrease::default(),
+            &signer,
+            platform_version,
+            None, // state_transition_creation_options
+        ).map_err(|e| JsValue::from_str(&format!("Failed to create destroy frozen transition: {}", e)))?;
+        
+        // Broadcast the transition
+        let proof_result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
+        
+        // Format and return result
+        self.format_token_result(proof_result)
     }
     
     /// Set or update the price for direct token purchases.
