@@ -14,11 +14,11 @@ pub type SubscriptionId = String;
 #[derive(Debug, Clone)]
 pub enum FilterType {
     /// Bloom filter for transaction matching with update flags; filter is persisted/mutable
-    BloomFilter(Arc<std::sync::RwLock<CoreBloomFilter>>, BloomFlags),
+    CoreBloomFilter(Arc<std::sync::RwLock<CoreBloomFilter>>, BloomFlags),
     /// All blocks filter (no filtering)
-    AllBlocks,
+    CoreAllBlocks,
     /// All masternodes filter (no filtering)
-    AllMasternodes,
+    CoreAllMasternodes,
 }
 
 /// Subscription information for a streaming client
@@ -224,7 +224,7 @@ impl SubscriberManager {
     /// Check if data matches the subscription filter
     fn matches_filter(&self, filter: &FilterType, data: &[u8]) -> bool {
         match filter {
-            FilterType::BloomFilter(f_lock, flags) => match deserialize::<CoreTx>(data) {
+            FilterType::CoreBloomFilter(f_lock, flags) => match deserialize::<CoreTx>(data) {
                 Ok(tx) => match f_lock.write() {
                     Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
                     Err(_) => false,
@@ -234,8 +234,8 @@ impl SubscriberManager {
                     Err(_) => false,
                 },
             },
-            FilterType::AllBlocks => true,
-            FilterType::AllMasternodes => true,
+            FilterType::CoreAllBlocks => true,
+            FilterType::CoreAllMasternodes => true,
         }
     }
 
@@ -273,7 +273,7 @@ mod tests {
 
         let id = manager
             .add_subscription(
-                FilterType::AllBlocks,
+                FilterType::CoreAllBlocks,
                 SubscriptionType::BlockHeadersWithChainLocks,
                 sender,
             )
@@ -302,7 +302,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::unbounded_channel();
 
         // Create a filter with all bits set so contains() returns true for any data
-        let filter = FilterType::BloomFilter(
+        let filter = FilterType::CoreBloomFilter(
             std::sync::Arc::new(std::sync::RwLock::new(
                 dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
                     vec![0xFF; 8],
@@ -388,7 +388,7 @@ mod tests {
         )
         .unwrap();
         base_filter.insert(&h160.to_byte_array());
-        let filter = FilterType::BloomFilter(
+        let filter = FilterType::CoreBloomFilter(
             std::sync::Arc::new(std::sync::RwLock::new(base_filter)),
             BloomFlags::All,
         );

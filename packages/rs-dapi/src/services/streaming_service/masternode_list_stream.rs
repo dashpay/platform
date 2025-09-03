@@ -15,7 +15,7 @@ impl StreamingServiceImpl {
     ) -> Result<Response<UnboundedReceiverStream<Result<MasternodeListResponse, Status>>>, Status>
     {
         // Create filter (no filtering needed for masternode list - all updates)
-        let filter = FilterType::AllMasternodes;
+        let filter = FilterType::CoreAllMasternodes;
 
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();

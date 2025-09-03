@@ -7,10 +7,10 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
 
+use crate::services::streaming_service::bloom::bloom_flags_from_int;
 use crate::services::streaming_service::subscriber_manager::{
     FilterType, StreamingMessage, SubscriptionType,
 };
-use crate::services::streaming_service::bloom::bloom_flags_from_int;
 use crate::services::streaming_service::StreamingServiceImpl;
 
 impl StreamingServiceImpl {
@@ -53,7 +53,7 @@ impl StreamingServiceImpl {
         )
         .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
 
-        let filter = FilterType::BloomFilter(
+        let filter = FilterType::CoreBloomFilter(
             std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
             flags,
         );

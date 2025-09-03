@@ -32,7 +32,7 @@ impl StreamingServiceImpl {
         }
 
         // Create filter (no filtering needed for block headers - all blocks)
-        let filter = FilterType::AllBlocks;
+        let filter = FilterType::CoreAllBlocks;
 
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
