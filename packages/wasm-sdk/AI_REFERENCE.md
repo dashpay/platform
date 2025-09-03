@@ -763,7 +763,7 @@ Parameters:
 - `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
   - WIF format private key
 - `publicKeys` (string, required) - Public Keys
-  - JSON array of public keys. Key requirements: ECDSA_SECP256K1 and BLS12_381 require privateKeyHex or privateKeyWif for signing, ECDSA_HASH160 requires only the data field (base64-encoded 20-byte public key hash).
+  - JSON array of public keys. Key requirements: ECDSA_SECP256K1 requires privateKeyHex or privateKeyWif for signing, BLS12_381 requires privateKeyHex for signing, ECDSA_HASH160 requires either the data field (base64-encoded 20-byte public key hash) or privateKeyHex (produces empty signatures).
 
 Example:
 ```javascript
@@ -775,21 +775,21 @@ const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThe
 const publicKeys = JSON.stringify([
   {
     id: 0,
-    keyType: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
-    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
-    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
+    keyType: "ECDSA_SECP256K1",
+    purpose: "AUTHENTICATION",
+    securityLevel: "MASTER",
     data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
     readOnly: false,
-    privateKeyHex: "d1a9b9c8f0e7c2b3a4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7" // Private key for this public key
+    privateKeyWif: "XBrZJKcW4ajWVNAU6yP87WQog6CjFnpbqyAKgNTZRqmhYvPgMNV2"
   },
   {
     id: 1,
-    keyType: 2, // ECDSA_HASH160 - only needs data field (public key hash)
-    purpose: 0,
-    securityLevel: 2,
-    data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
+    keyType: "ECDSA_HASH160",
+    purpose: "AUTHENTICATION",
+    securityLevel: "HIGH",
+    data: "ripemd160hash20bytes1234", // Base64-encoded 20-byte RIPEMD160 hash
     readOnly: false,
-    // No private key needed for ECDSA_HASH160
+    // ECDSA_HASH160 keys produce empty signatures (not required/used for signing)
   }
 ]);
 
