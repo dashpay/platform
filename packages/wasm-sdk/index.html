@@ -3062,6 +3062,7 @@ ${indentStr}]`;
           const seedPhrase = values.seedPhrase?.trim();
           const identityIndex = parseInt(values.identityIndex || '0');
           const keySelectionMode = values.keySelectionMode || 'default';
+          const selectedKeyType = values.keyType || 'ECDSA_HASH160';
           
           if (!seedPhrase || !validate_mnemonic(seedPhrase)) {
             throw new Error('Invalid seed phrase');
@@ -3089,10 +3090,11 @@ ${indentStr}]`;
             
             // Create public key objects for the SDK
             // Pass private keys so the SDK can derive the correct public key data using DPP
+            // Use the selected key type for all keys
             publicKeys = [
               {
                 id: 0,
-                keyType: "ECDSA_HASH160",
+                keyType: selectedKeyType,
                 purpose: "AUTHENTICATION",
                 securityLevel: "MASTER",
                 privateKeyHex: masterKey.private_key_hex,
@@ -3100,7 +3102,7 @@ ${indentStr}]`;
               },
               {
                 id: 1,
-                keyType: "ECDSA_HASH160",
+                keyType: selectedKeyType,
                 purpose: "AUTHENTICATION",
                 securityLevel: "HIGH",
                 privateKeyHex: authKey.private_key_hex,
@@ -3108,7 +3110,7 @@ ${indentStr}]`;
               },
               {
                 id: 2,
-                keyType: "ECDSA_HASH160",
+                keyType: selectedKeyType,
                 purpose: "TRANSFER",
                 securityLevel: "CRITICAL",
                 privateKeyHex: transferKey.private_key_hex,
@@ -4298,6 +4300,7 @@ ${indentStr}]`;
             const seedPhrase = dynamicInputs.querySelector('[name="seedPhrase"]')?.value?.trim();
             const identityIndex = parseInt(dynamicInputs.querySelector('[name="identityIndex"]')?.value || '0');
             const keySelectionMode = dynamicInputs.querySelector('[name="keySelectionMode"]')?.value || 'default';
+            const selectedKeyType = dynamicInputs.querySelector('[name="keyType"]')?.value || 'ECDSA_HASH160';
             const previewContainer = document.getElementById('keyPreviewContainer');
             
             if (!seedPhrase || !previewContainer) return;
@@ -4325,21 +4328,26 @@ ${indentStr}]`;
                 const transferKeyPath = `m/9'/${currentNetwork === 'mainnet' ? 5 : 1}'/5'/0'/0'/${identityIndex}'/2'`;
                 const transferKey = derive_key_from_seed_with_path(seedPhrase, undefined, transferKeyPath, currentNetwork);
                 
+                // Show signature requirement info
+                const signatureInfo = selectedKeyType === 'ECDSA_SECP256K1' 
+                  ? ' (Individual signatures required)' 
+                  : ' (No individual signatures required)';
+                
                 keysHtml += `
                   <div style="margin-bottom: 10px;">
                     <strong>Master Key:</strong><br>
                     <span style="font-family: monospace; font-size: 0.9em;">${masterKey.private_key_wif}</span><br>
-                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Authentication | Security: Master | Type: ECDSA_HASH160</span>
+                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Authentication | Security: Master | Type: ${selectedKeyType}${signatureInfo}</span>
                   </div>
                   <div style="margin-bottom: 10px;">
                     <strong>Key 1:</strong><br>
                     <span style="font-family: monospace; font-size: 0.9em;">${authKey.private_key_wif}</span><br>
-                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Authentication | Security: High | Type: ECDSA_HASH160</span>
+                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Authentication | Security: High | Type: ${selectedKeyType}${signatureInfo}</span>
                   </div>
                   <div style="margin-bottom: 10px;">
                     <strong>Key 2:</strong><br>
                     <span style="font-family: monospace; font-size: 0.9em;">${transferKey.private_key_wif}</span><br>
-                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Transfer | Security: Critical | Type: ECDSA_HASH160</span>
+                    <span style="color: #6c757d; font-size: 0.85em;">Purpose: Transfer | Security: Critical | Type: ${selectedKeyType}${signatureInfo}</span>
                   </div>
                 `;
                 
@@ -4358,10 +4366,12 @@ ${indentStr}]`;
           const seedInput = dynamicInputs.querySelector('[name="seedPhrase"]');
           const indexInput = dynamicInputs.querySelector('[name="identityIndex"]');
           const modeSelect = dynamicInputs.querySelector('[name="keySelectionMode"]');
+          const keyTypeSelect = dynamicInputs.querySelector('[name="keyType"]');
           
           if (seedInput) seedInput.addEventListener('input', updateKeyPreview);
           if (indexInput) indexInput.addEventListener('input', updateKeyPreview);
           if (modeSelect) modeSelect.addEventListener('change', updateKeyPreview);
+          if (keyTypeSelect) keyTypeSelect.addEventListener('change', updateKeyPreview);
           
           // Initial update
           updateKeyPreview();

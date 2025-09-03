@@ -1235,6 +1235,24 @@
               "help": "Default adds standard keys for most Platform operations. Advanced allows custom key configuration."
             },
             {
+              "name": "keyType",
+              "type": "select",
+              "label": "Key Type",
+              "required": true,
+              "value": "ECDSA_HASH160",
+              "options": [
+                {
+                  "value": "ECDSA_HASH160",
+                  "label": "ECDSA_HASH160 (Dash Evo Tool default)"
+                },
+                {
+                  "value": "ECDSA_SECP256K1",
+                  "label": "ECDSA_SECP256K1 (Dash mobile wallet default)"
+                }
+              ],
+              "help": "Choose key type"
+            },
+            {
               "name": "keyPreview",
               "type": "keyPreview",
               "label": "Keys to be added",
