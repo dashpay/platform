@@ -36,8 +36,9 @@ use std::collections::btree_map::Entry;
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
+use std::path::Path;
 #[cfg(feature = "mocks")]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 #[cfg(not(target_arch = "wasm32"))]
