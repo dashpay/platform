@@ -21,8 +21,8 @@ arc-swap = "1.7.1"
 async-trait = "0.1.83"
 hex = "0.4.3"
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
-    "bls-signatures",
-], tag = "v0.39.6" }
+    "bls",
+], rev = "a86e1cd7b95910ef5ab43c75afa27c102a89cc54" }
 futures = "0.3"
 url = "2.5"
 

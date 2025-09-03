@@ -29,7 +29,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "rand",
   "signer",
   "serde",
-], default-features = false, tag = "v0.39.6" }
+], default-features = false, rev = "a86e1cd7b95910ef5ab43c75afa27c102a89cc54" }
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
 # getrandom_v3 is used by some deps, this is a workaround to enable wasm_js feature

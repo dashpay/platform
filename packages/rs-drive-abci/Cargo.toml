@@ -28,7 +28,7 @@ rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.39.6" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "a86e1cd7b95910ef5ab43c75afa27c102a89cc54" }
 dpp = { path = "../rs-dpp", default-features = false, features = ["abci"] }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 rust_decimal = "1.2.5"
