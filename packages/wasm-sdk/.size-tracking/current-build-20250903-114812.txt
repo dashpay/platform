@@ -1,0 +1,11 @@
+# Build sizes captured at Wed  3 Sep 2025 11:48:47 SAST
+dash_wasm_sdk_bg.wasm: 12334225
+optimized.wasm: 7003056
+wasm_sdk_bg.wasm: 7003056
+dash_wasm_sdk_bg.js:  182660
+dash_wasm_sdk.js:  189773
+wasm_sdk.js:  189768
+dash_wasm_sdk_bg.wasm.d.ts:   24503
+dash_wasm_sdk.d.ts:   67663
+wasm_sdk_bg.wasm.d.ts:   24503
+wasm_sdk.d.ts:   67663
