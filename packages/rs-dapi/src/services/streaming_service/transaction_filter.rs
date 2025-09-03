@@ -394,4 +394,114 @@ mod tests {
         let parts_trunc = extract_pushdatas(&script_trunc);
         assert_eq!(parts_trunc.len(), 0);
     }
+
+    #[test]
+    fn test_all_flag_updates_enable_second_tx_match() {
+        use dashcore_rpc::dashcore::{PubkeyHash, ScriptBuf, Transaction as CoreTx, TxIn, TxOut, OutPoint};
+
+        // TX A: output P2PKH matching inserted h160
+        let h160 = PubkeyHash::from_byte_array([0x55; 20]);
+        let script = ScriptBuf::new_p2pkh(&h160);
+        let tx_a = CoreTx { version: 2, lock_time: 0, input: vec![], output: vec![TxOut { value: 1000, script_pubkey: script }], special_transaction_payload: None };
+
+        // TX B spends A:0
+        let tx_b = CoreTx { version: 2, lock_time: 0, input: vec![TxIn { previous_output: OutPoint { txid: tx_a.txid(), vout: 0 }, script_sig: ScriptBuf::new(), sequence: 0xFFFFFFFF, witness: Default::default() }], output: vec![], special_transaction_payload: None };
+
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 1024], 5, 123, BloomFlags::All).unwrap();
+        // Seed with h160 so A matches via output pushdata
+        filter.insert(&h160.to_byte_array());
+        assert!(matches_transaction(&mut filter, &tx_a, BloomFlags::All));
+
+        // Now B should match due to outpoint inserted by A under BloomFlags::All
+        assert!(matches_transaction(&mut filter, &tx_b, BloomFlags::All));
+    }
+
+    #[test]
+    fn test_none_flag_does_not_update_for_second_tx() {
+        use dashcore_rpc::dashcore::{PubkeyHash, ScriptBuf, Transaction as CoreTx, TxIn, TxOut, OutPoint};
+
+        let h160 = PubkeyHash::from_byte_array([0x66; 20]);
+        let script = ScriptBuf::new_p2pkh(&h160);
+        let tx_a = CoreTx { version: 2, lock_time: 0, input: vec![], output: vec![TxOut { value: 1000, script_pubkey: script }], special_transaction_payload: None };
+        let tx_b = CoreTx { version: 2, lock_time: 0, input: vec![TxIn { previous_output: OutPoint { txid: tx_a.txid(), vout: 0 }, script_sig: ScriptBuf::new(), sequence: 0xFFFFFFFF, witness: Default::default() }], output: vec![], special_transaction_payload: None };
+
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 2048], 5, 456, BloomFlags::None).unwrap();
+        filter.insert(&h160.to_byte_array());
+        assert!(matches_transaction(&mut filter, &tx_a, BloomFlags::None));
+
+        // Under None, outpoint should not have been inserted; B should not match (very low FP risk with large filter)
+        assert!(!matches_transaction(&mut filter, &tx_b, BloomFlags::None));
+    }
+
+    #[test]
+    fn test_p2sh_and_opreturn_do_not_update_under_pubkeyonly() {
+        use dashcore_rpc::dashcore::{ScriptHash, ScriptBuf, Transaction as CoreTx, TxOut};
+
+        // P2SH: OP_HASH160 <20b> OP_EQUAL
+        let sh = ScriptHash::from_byte_array([0x77; 20]);
+        let p2sh = ScriptBuf::new_p2sh(&sh);
+        // OP_RETURN with 8 bytes
+        let mut opret_bytes = Vec::new();
+        opret_bytes.push(0x6a); // OP_RETURN
+        opret_bytes.push(8u8); // push 8
+        opret_bytes.extend([0xAB; 8]);
+        let op_return = ScriptBuf::from_bytes(opret_bytes);
+
+        // Insert both pushdatas so outputs match, but flags should prevent update
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 1024], 5, 789, BloomFlags::PubkeyOnly).unwrap();
+        filter.insert(&sh.to_byte_array());
+        filter.insert(&[0xAB; 8]);
+
+        // TX with P2SH
+        let tx_sh = CoreTx { version: 2, lock_time: 0, input: vec![], output: vec![TxOut { value: 1, script_pubkey: p2sh }], special_transaction_payload: None };
+        assert!(matches_transaction(&mut filter, &tx_sh, BloomFlags::PubkeyOnly));
+        let mut outpoint = txid_to_be_bytes(&tx_sh.txid());
+        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        assert!(!filter.contains(&outpoint));
+
+        // TX with OP_RETURN
+        let tx_or = CoreTx { version: 2, lock_time: 0, input: vec![], output: vec![TxOut { value: 0, script_pubkey: op_return }], special_transaction_payload: None };
+        assert!(matches_transaction(&mut filter, &tx_or, BloomFlags::PubkeyOnly));
+        let mut outpoint2 = txid_to_be_bytes(&tx_or.txid());
+        outpoint2.extend_from_slice(&(0u32).to_le_bytes());
+        assert!(!filter.contains(&outpoint2));
+    }
+
+    #[test]
+    fn test_nonminimal_push_still_matches() {
+        use dashcore_rpc::dashcore::{Transaction as CoreTx, TxOut, ScriptBuf};
+
+        // Build a script with PUSHDATA1 (0x4c) pushing 3 bytes 0xDE 0xAD 0xBE
+        let script = ScriptBuf::from_bytes(vec![0x4c, 0x03, 0xDE, 0xAD, 0xBE]);
+        let tx = CoreTx { version: 2, lock_time: 0, input: vec![], output: vec![TxOut { value: 1, script_pubkey: script }], special_transaction_payload: None };
+
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 1024], 5, 321, BloomFlags::None).unwrap();
+        filter.insert(&[0xDE, 0xAD, 0xBE]);
+        assert!(matches_transaction(&mut filter, &tx, BloomFlags::None));
+    }
+
+    #[test]
+    fn test_witness_only_pushdata_does_not_match() {
+        use dashcore_rpc::dashcore::{Transaction as CoreTx, TxIn, TxOut, ScriptBuf, OutPoint};
+        use std::str::FromStr;
+
+        // Pubkey only in witness
+        let pubkey = [0x02; 33];
+        let input = TxIn { previous_output: OutPoint { txid: dashcore_rpc::dashcore::Txid::from_str("0000000000000000000000000000000000000000000000000000000000000000").unwrap(), vout: 0 }, script_sig: ScriptBuf::new(), sequence: 0xFFFFFFFF, witness: vec![pubkey.to_vec()].into() };
+        let tx = CoreTx { version: 2, lock_time: 0, input: vec![input], output: vec![TxOut { value: 0, script_pubkey: ScriptBuf::new() }], special_transaction_payload: None };
+
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 4096], 5, 654, BloomFlags::None).unwrap();
+        filter.insert(&pubkey);
+        // Should not match since we don't scan witness for pushdatas
+        assert!(!matches_transaction(&mut filter, &tx, BloomFlags::None));
+    }
+
+    #[test]
+    fn test_bloom_flags_from_int_mapping() {
+        assert!(matches!(bloom_flags_from_int(0u32), BloomFlags::None));
+        assert!(matches!(bloom_flags_from_int(1u32), BloomFlags::All));
+        assert!(matches!(bloom_flags_from_int(2u32), BloomFlags::PubkeyOnly));
+        // Invalid values map to None with an error log
+        assert!(matches!(bloom_flags_from_int(255u32), BloomFlags::None));
+    }
 }
