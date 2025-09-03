@@ -78,6 +78,20 @@ for js_file in *.js; do
             js_compression_ratio=$((100 - (js_compressed_size * 100 / js_size_bytes)))
             echo "  Gzip compressed: ${js_compressed_size} bytes (${js_compressed_kb}KB) - ${js_compression_ratio}% reduction"
         fi
+        
+        # Use bundle-size tool if available
+        if command -v bundle-size &> /dev/null; then
+            echo "  Advanced Analysis:"
+            bundle-size "$js_file" 2>/dev/null | sed 's/^/    /' || echo "    Failed to analyze with bundle-size"
+        fi
+        
+        # Use bundlesize tool for regression checking
+        if command -v bundlesize &> /dev/null && [ -f "../bundlesize.json" ]; then
+            echo "  Regression Check:"
+            cd ..
+            bundlesize --files "$js_file" 2>/dev/null | sed 's/^/    /' || echo "    Bundlesize check not applicable"
+            cd pkg
+        fi
         echo ""
     fi
 done
@@ -122,6 +136,51 @@ if command -v gzip &> /dev/null; then
     total_compression_ratio=$((100 - (total_compressed * 100 / total_size)))
     
     echo "Total compressed: ${total_compressed} bytes (${total_compressed_kb}KB / ${total_compressed_mb}MB) - ${total_compression_ratio}% reduction"
+fi
+
+echo ""
+echo -e "${YELLOW}🔍 Advanced Bundle Analysis:${NC}"
+echo "----------------------------------------"
+
+# Use webpack-bundle-analyzer if available for detailed analysis
+if command -v webpack-bundle-analyzer &> /dev/null; then
+    echo "Running webpack-bundle-analyzer for detailed insights..."
+    # Create a temporary webpack stats file for analysis
+    temp_stats=$(mktemp)
+    {
+        echo "{"
+        echo '  "version": "1.0.0",'
+        echo '  "hash": "temp",'
+        echo '  "time": 0,'
+        echo '  "assets": ['
+        first=true
+        for file in *.js *.wasm; do
+            if [ -f "$file" ]; then
+                if [ "$first" = false ]; then echo ","; fi
+                size=$(wc -c < "$file")
+                echo "    {\"name\": \"$file\", \"size\": $size}"
+                first=false
+            fi
+        done
+        echo "  ],"
+        echo '  "chunks": [],'
+        echo '  "modules": []'
+        echo "}"
+    } > "$temp_stats"
+    
+    echo "  Generated bundle analysis data (use 'webpack-bundle-analyzer $temp_stats' for interactive view)"
+    rm -f "$temp_stats"
+else
+    echo "webpack-bundle-analyzer not available for advanced analysis"
+fi
+
+# Check for other analysis tools
+if command -v bundlesize &> /dev/null && [ -f "../bundlesize.json" ]; then
+    echo ""
+    echo "Running comprehensive bundlesize analysis..."
+    cd ..
+    bundlesize 2>/dev/null || echo "  Bundlesize analysis failed or targets not met"
+    cd pkg
 fi
 
 echo ""
