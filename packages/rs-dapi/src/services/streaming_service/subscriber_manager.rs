@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, trace, warn};
 
-use super::transaction_filter::TransactionFilter;
+use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::{consensus::encode::deserialize, Transaction as CoreTx};
 
 /// Unique identifier for a subscription
@@ -13,8 +13,8 @@ pub type SubscriptionId = String;
 /// Types of filters supported by the streaming service
 #[derive(Debug, Clone)]
 pub enum FilterType {
-    /// Bloom filter for transaction matching (stored with interior mutability for updates)
-    BloomFilter(Arc<std::sync::RwLock<TransactionFilter>>),
+    /// Bloom filter for transaction matching with update flags; filter is persisted/mutable
+    BloomFilter(Arc<std::sync::RwLock<CoreBloomFilter>>, BloomFlags),
     /// All blocks filter (no filtering)
     AllBlocks,
     /// All masternodes filter (no filtering)
@@ -224,9 +224,11 @@ impl SubscriberManager {
     /// Check if data matches the subscription filter
     fn matches_filter(&self, filter: &FilterType, data: &[u8]) -> bool {
         match filter {
-            FilterType::BloomFilter(f_lock) => match deserialize::<CoreTx>(data) {
+            FilterType::BloomFilter(f_lock, flags) => match deserialize::<CoreTx>(data) {
                 Ok(tx) => match f_lock.write() {
-                    Ok(mut guard) => guard.matches_transaction(&tx),
+                    Ok(mut guard) => {
+                        super::transaction_filter::matches_transaction(&mut guard, &tx, *flags)
+                    }
                     Err(_) => false,
                 },
                 Err(_) => match f_lock.read() {
@@ -259,11 +261,8 @@ impl Default for SubscriberManager {
 
 #[cfg(test)]
 mod tests {
-    use crate::services::streaming_service::transaction_filter::{
-        BLOOM_UPDATE_ALL, BLOOM_UPDATE_NONE,
-    };
-
     use super::*;
+    use dashcore_rpc::dashcore::bloom::BloomFlags;
     use dashcore_rpc::dashcore::consensus::encode::serialize;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash, ScriptBuf, TxIn, TxOut};
@@ -305,14 +304,18 @@ mod tests {
         let (sender, mut receiver) = mpsc::unbounded_channel();
 
         // Create a filter with all bits set so contains() returns true for any data
-        let filter = FilterType::BloomFilter(std::sync::Arc::new(std::sync::RwLock::new(
-            TransactionFilter::new(
-                vec![0xFF; 8], // 64 bits set
-                5,
-                0,
-                BLOOM_UPDATE_NONE,
-            ),
-        )));
+        let filter = FilterType::BloomFilter(
+            std::sync::Arc::new(std::sync::RwLock::new(
+                dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
+                    vec![0xFF; 8],
+                    5,
+                    0,
+                    BloomFlags::None,
+                )
+                .expect("failed to create bloom filter"),
+            )),
+            BloomFlags::None,
+        );
 
         let _id = manager
             .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
@@ -379,11 +382,18 @@ mod tests {
         };
 
         // Subscription with BLOOM_UPDATE_ALL so outpoint should be added after TX A matches
-        let mut base_filter = TransactionFilter::new(vec![0; 512], 5, 12345, BLOOM_UPDATE_ALL);
+        let mut base_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
+            vec![0; 512],
+            5,
+            12345,
+            BloomFlags::All,
+        )
+        .unwrap();
         base_filter.insert(&h160.to_byte_array());
-        let filter = FilterType::BloomFilter(std::sync::Arc::new(std::sync::RwLock::new(
-            base_filter,
-        )));
+        let filter = FilterType::BloomFilter(
+            std::sync::Arc::new(std::sync::RwLock::new(base_filter)),
+            BloomFlags::All,
+        );
 
         let _id = manager
             .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)

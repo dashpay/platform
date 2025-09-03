@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use crate::services::streaming_service::subscriber_manager::{
     FilterType, StreamingMessage, SubscriptionType,
 };
-use crate::services::streaming_service::transaction_filter::TransactionFilter;
+use crate::services::streaming_service::transaction_filter::bloom_flags_from_int;
 use crate::services::streaming_service::StreamingServiceImpl;
 
 impl StreamingServiceImpl {
@@ -44,14 +44,19 @@ impl StreamingServiceImpl {
         // Create filter from bloom filter parameters
         let bloom_filter_clone = bloom_filter.clone();
         let count = req.count;
-        let filter = FilterType::BloomFilter(std::sync::Arc::new(std::sync::RwLock::new(
-            TransactionFilter::new(
-                bloom_filter_clone.v_data.clone(),
-                bloom_filter_clone.n_hash_funcs,
-                bloom_filter_clone.n_tweak,
-                bloom_filter_clone.n_flags,
-            ),
-        )));
+        let flags = bloom_flags_from_int(bloom_filter_clone.n_flags);
+        let core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
+            bloom_filter_clone.v_data.clone(),
+            bloom_filter_clone.n_hash_funcs,
+            bloom_filter_clone.n_tweak,
+            flags,
+        )
+        .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
+
+        let filter = FilterType::BloomFilter(
+            std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
+            flags,
+        );
 
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
