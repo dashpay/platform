@@ -763,7 +763,7 @@ Parameters:
 - `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
   - WIF format private key
 - `publicKeys` (string, required) - Public Keys
-  - JSON array of public keys
+  - JSON array of public keys with private keys for signing. ECDSA_SECP256K1 and BLS12_381 keys require privateKeyHex field.
 
 Example:
 ```javascript
@@ -771,7 +771,7 @@ Example:
 const assetLockProof = "a9147d3b... (hex-encoded)";
 const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
 
-// Public keys array with proper key types
+// Public keys array with proper key types and private keys for signing
 const publicKeys = JSON.stringify([
   {
     id: 0,
@@ -779,15 +779,17 @@ const publicKeys = JSON.stringify([
     purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
     securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
     data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
-    readOnly: false
+    readOnly: false,
+    privateKeyHex: "d1a9b9c8f0e7c2b3a4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7" // Private key for this public key
   },
   {
     id: 1,
-    type: 0,
+    type: 2, // ECDSA_HASH160 - doesn't require private key for signing
     purpose: 0,
     securityLevel: 2,
     data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
     readOnly: false
+    // Note: ECDSA_HASH160 keys don't need privateKeyHex as they don't get individual signatures
   }
 ]);
 
