@@ -124,18 +124,14 @@ mod tests {
     }
 
     #[test]
-    fn test_bit_checking() {
-        let data = vec![0b10101010]; // Alternating bits
-        let filter = CoreBloomFilter::from_bytes(data, 1, 0, BloomFlags::None).unwrap();
-        // We don't test bit internals anymore; just ensure contains respects empty vs set data
-        assert!(!filter.contains(&[0u8; 1]));
-    }
-
-    #[test]
-    fn test_filter_stats() {
-        let data = vec![0xFF, 0x00]; // First byte all 1s, second byte all 0s
-        let filter = CoreBloomFilter::from_bytes(data, 2, 0, BloomFlags::None).unwrap();
-        assert!(filter.contains(&[0xFF])); // sanity: some data may hit due to all-ones byte
+    fn test_insert_and_contains_roundtrip() {
+        // Start with an all-zero bit array: contains should be false
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 128], 3, 0, BloomFlags::None).unwrap();
+        let key = b"hello";
+        assert!(!filter.contains(key));
+        // After inserting the same key, it must be contained
+        filter.insert(key);
+        assert!(filter.contains(key));
     }
 
     #[test]
