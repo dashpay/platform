@@ -13,8 +13,8 @@ pub type SubscriptionId = String;
 /// Types of filters supported by the streaming service
 #[derive(Debug, Clone)]
 pub enum FilterType {
-    /// Bloom filter for transaction matching
-    BloomFilter(TransactionFilter),
+    /// Bloom filter for transaction matching (stored with interior mutability for updates)
+    BloomFilter(Arc<std::sync::RwLock<TransactionFilter>>),
     /// All blocks filter (no filtering)
     AllBlocks,
     /// All masternodes filter (no filtering)
@@ -224,13 +224,16 @@ impl SubscriberManager {
     /// Check if data matches the subscription filter
     fn matches_filter(&self, filter: &FilterType, data: &[u8]) -> bool {
         match filter {
-            FilterType::BloomFilter(f) => {
-                let mut tx_filter = f.clone();
-                match deserialize::<CoreTx>(data) {
-                    Ok(tx) => tx_filter.matches_transaction(&tx),
-                    Err(_) => tx_filter.contains(data),
-                }
-            }
+            FilterType::BloomFilter(f_lock) => match deserialize::<CoreTx>(data) {
+                Ok(tx) => match f_lock.write() {
+                    Ok(mut guard) => guard.matches_transaction(&tx),
+                    Err(_) => false,
+                },
+                Err(_) => match f_lock.read() {
+                    Ok(guard) => guard.contains(data),
+                    Err(_) => false,
+                },
+            },
             FilterType::AllBlocks => true,
             FilterType::AllMasternodes => true,
         }
@@ -302,12 +305,14 @@ mod tests {
         let (sender, mut receiver) = mpsc::unbounded_channel();
 
         // Create a filter with all bits set so contains() returns true for any data
-        let filter = FilterType::BloomFilter(TransactionFilter::new(
-            vec![0xFF; 8], // 64 bits set
-            5,
-            0,
-            BLOOM_UPDATE_NONE,
-        ));
+        let filter = FilterType::BloomFilter(std::sync::Arc::new(std::sync::RwLock::new(
+            TransactionFilter::new(
+                vec![0xFF; 8], // 64 bits set
+                5,
+                0,
+                BLOOM_UPDATE_NONE,
+            ),
+        )));
 
         let _id = manager
             .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
@@ -376,7 +381,9 @@ mod tests {
         // Subscription with BLOOM_UPDATE_ALL so outpoint should be added after TX A matches
         let mut base_filter = TransactionFilter::new(vec![0; 512], 5, 12345, BLOOM_UPDATE_ALL);
         base_filter.insert(&h160.to_byte_array());
-        let filter = FilterType::BloomFilter(base_filter);
+        let filter = FilterType::BloomFilter(std::sync::Arc::new(std::sync::RwLock::new(
+            base_filter,
+        )));
 
         let _id = manager
             .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
