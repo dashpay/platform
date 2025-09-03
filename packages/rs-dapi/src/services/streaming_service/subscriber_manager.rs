@@ -256,7 +256,15 @@ impl Default for SubscriberManager {
 
 #[cfg(test)]
 mod tests {
+    use crate::services::streaming_service::transaction_filter::{
+        BLOOM_UPDATE_ALL, BLOOM_UPDATE_NONE,
+    };
+
     use super::*;
+    use dashcore_rpc::dashcore::consensus::encode::serialize;
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::{OutPoint, PubkeyHash, ScriptBuf, TxIn, TxOut};
+    use tokio::time::{timeout, Duration};
 
     #[tokio::test]
     async fn test_subscription_management() {
@@ -286,5 +294,110 @@ mod tests {
         assert_ne!(id1, id2);
         assert!(id1.starts_with("sub_"));
         assert!(id2.starts_with("sub_"));
+    }
+
+    #[tokio::test]
+    async fn test_non_tx_bytes_fallbacks_to_contains() {
+        let manager = SubscriberManager::new();
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+
+        // Create a filter with all bits set so contains() returns true for any data
+        let filter = FilterType::BloomFilter(TransactionFilter::new(
+            vec![0xFF; 8], // 64 bits set
+            5,
+            0,
+            BLOOM_UPDATE_NONE,
+        ));
+
+        let _id = manager
+            .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
+            .await;
+
+        // Send non-transaction bytes
+        let payload = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        manager.notify_transaction_subscribers(&payload).await;
+
+        // We should receive one transaction message with the same bytes
+        let msg = timeout(Duration::from_millis(200), receiver.recv())
+            .await
+            .expect("timed out")
+            .expect("channel closed");
+
+        match msg {
+            StreamingMessage::Transaction {
+                tx_data,
+                merkle_proof: _,
+            } => {
+                assert_eq!(tx_data, payload);
+            }
+            other => panic!("unexpected message: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_bloom_update_persistence_across_messages_fails_currently() {
+        // This test describes desired behavior and is expected to FAIL with the current
+        // implementation because filter updates are not persisted (filter is cloned per check).
+        let manager = SubscriberManager::new();
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+
+        // Build TX A with a P2PKH output whose hash160 we seed into the filter
+        let h160 = PubkeyHash::from_byte_array([0x44; 20]);
+        let script_a = ScriptBuf::new_p2pkh(&h160);
+        let tx_a = dashcore_rpc::dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 1500,
+                script_pubkey: script_a,
+            }],
+            special_transaction_payload: None,
+        };
+
+        // Build TX B spending outpoint (tx_a.txid, vout=0)
+        let tx_a_txid = tx_a.txid();
+        let tx_b = dashcore_rpc::dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: tx_a_txid,
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xFFFFFFFF,
+                witness: Default::default(),
+            }],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+
+        // Subscription with BLOOM_UPDATE_ALL so outpoint should be added after TX A matches
+        let mut base_filter = TransactionFilter::new(vec![0; 512], 5, 12345, BLOOM_UPDATE_ALL);
+        base_filter.insert(&h160.to_byte_array());
+        let filter = FilterType::BloomFilter(base_filter);
+
+        let _id = manager
+            .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
+            .await;
+
+        // Notify with TX A (should match by output pushdata)
+        let tx_a_bytes = serialize(&tx_a);
+        manager.notify_transaction_subscribers(&tx_a_bytes).await;
+        let _first = timeout(Duration::from_millis(200), receiver.recv())
+            .await
+            .expect("timed out waiting for first match")
+            .expect("channel closed");
+
+        // Notify with TX B: desired behavior is to match due to persisted outpoint update
+        let tx_b_bytes = serialize(&tx_b);
+        manager.notify_transaction_subscribers(&tx_b_bytes).await;
+
+        // Expect a second message (this will FAIL until persistence is implemented)
+        let _second = timeout(Duration::from_millis(400), receiver.recv())
+            .await
+            .expect("timed out waiting for second match (persistence missing?)")
+            .expect("channel closed");
     }
 }

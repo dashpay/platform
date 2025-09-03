@@ -401,4 +401,203 @@ mod tests {
         outpoint.extend_from_slice(&(0u32).to_le_bytes());
         assert!(filter.contains(&outpoint));
     }
+
+    #[test]
+    fn test_output_match_no_update_when_flag_none() {
+        use dashcore_rpc::dashcore::{PubkeyHash, ScriptBuf, Transaction as CoreTx, TxOut};
+
+        // Build a P2PKH output
+        let h160 = PubkeyHash::from_byte_array([0x22; 20]);
+        let script = ScriptBuf::new_p2pkh(&h160);
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 1000,
+                script_pubkey: script,
+            }],
+            special_transaction_payload: None,
+        };
+
+        let mut filter = TransactionFilter::new(vec![0; 256], 5, 42, super::BLOOM_UPDATE_NONE);
+        filter.insert(&h160.to_byte_array());
+
+        // Should match due to output script pushdata
+        assert!(filter.matches_transaction(&tx));
+
+        // But outpoint should NOT be inserted when BLOOM_UPDATE_NONE
+        let mut outpoint = super::txid_to_be_bytes(&tx.txid());
+        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        assert!(!filter.contains(&outpoint));
+    }
+
+    #[test]
+    fn test_output_match_no_update_p2pkh_when_flag_p2pubkey_only() {
+        use dashcore_rpc::dashcore::{PubkeyHash, ScriptBuf, Transaction as CoreTx, TxOut};
+
+        // Build a P2PKH output
+        let h160 = PubkeyHash::from_byte_array([0x33; 20]);
+        let script = ScriptBuf::new_p2pkh(&h160);
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 1000,
+                script_pubkey: script,
+            }],
+            special_transaction_payload: None,
+        };
+
+        let mut filter =
+            TransactionFilter::new(vec![0; 256], 5, 999, super::BLOOM_UPDATE_P2PUBKEY_ONLY);
+        filter.insert(&h160.to_byte_array());
+
+        // Should match due to output script pushdata
+        assert!(filter.matches_transaction(&tx));
+
+        // But outpoint should NOT be inserted for P2PKH under P2PUBKEY_ONLY
+        let mut outpoint = super::txid_to_be_bytes(&tx.txid());
+        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        assert!(!filter.contains(&outpoint));
+    }
+
+    #[test]
+    fn test_output_match_updates_for_p2pk_when_flag_p2pubkey_only() {
+        use dashcore_rpc::dashcore::{ScriptBuf, Transaction as CoreTx, TxOut};
+
+        // Build a bare P2PK-like script: 33-byte push followed by OP_CHECKSIG
+        let mut script_bytes = Vec::with_capacity(35);
+        script_bytes.push(33u8); // push 33 bytes
+        script_bytes.extend([0x02; 33]); // fake compressed pubkey
+        script_bytes.push(0xAC); // OP_CHECKSIG
+        let script = ScriptBuf::from_bytes(script_bytes);
+
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 1000,
+                script_pubkey: script.clone(),
+            }],
+            special_transaction_payload: None,
+        };
+
+        // Insert the pubkey (33 bytes) itself to match output pushdata
+        let mut filter =
+            TransactionFilter::new(vec![0; 256], 5, 777, super::BLOOM_UPDATE_P2PUBKEY_ONLY);
+        filter.insert(&[0x02; 33]);
+
+        // Should match and, due to P2PUBKEY_ONLY and pubkey script, update outpoint
+        assert!(filter.matches_transaction(&tx));
+
+        let mut outpoint = super::txid_to_be_bytes(&tx.txid());
+        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        assert!(filter.contains(&outpoint));
+    }
+
+    #[test]
+    fn test_input_matches_when_prevout_in_filter() {
+        use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, TxIn};
+        use std::str::FromStr;
+
+        // Create a dummy previous txid
+        let prev_txid = dashcore_rpc::dashcore::Txid::from_str(
+            "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        )
+        .unwrap();
+
+        let input = TxIn {
+            previous_output: OutPoint {
+                txid: prev_txid,
+                vout: 5,
+            },
+            script_sig: ScriptBuf::new(),
+            sequence: 0xFFFFFFFF,
+            witness: Default::default(),
+        };
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![input],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+
+        // Seed filter with the prevout (prev_txid||vout)
+        let mut filter = TransactionFilter::new(vec![0; 256], 5, 0, super::BLOOM_UPDATE_NONE);
+        let mut prev_outpoint = super::txid_to_be_bytes(&prev_txid);
+        prev_outpoint.extend_from_slice(&(5u32).to_le_bytes());
+        filter.insert(&prev_outpoint);
+
+        assert!(filter.matches_transaction(&tx));
+    }
+
+    #[test]
+    fn test_input_matches_by_scriptsig_pushdata() {
+        use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, TxIn};
+        use std::str::FromStr;
+
+        // Build a scriptSig pushing a 33-byte pubkey
+        let mut script_sig_bytes = Vec::new();
+        script_sig_bytes.push(33u8);
+        let pubkey = [0x03; 33];
+        script_sig_bytes.extend(pubkey);
+        let script_sig = ScriptBuf::from_bytes(script_sig_bytes);
+
+        let input = TxIn {
+            previous_output: OutPoint {
+                txid: dashcore_rpc::dashcore::Txid::from_str(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap(),
+                vout: 0,
+            },
+            script_sig,
+            sequence: 0xFFFFFFFF,
+            witness: Default::default(),
+        };
+
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![input],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+
+        let mut filter = TransactionFilter::new(vec![0; 256], 5, 555, super::BLOOM_UPDATE_NONE);
+        // Seed the filter with the same 33-byte pubkey so scriptSig matches
+        filter.insert(&pubkey);
+
+        assert!(filter.matches_transaction(&tx));
+    }
+
+    #[test]
+    fn test_extract_pushdatas_pushdata_variants() {
+        // PUSHDATA1
+        let script1 = vec![0x4c, 0x03, 0xAA, 0xBB, 0xCC];
+        let parts1 = extract_pushdatas(&script1);
+        assert_eq!(parts1.len(), 1);
+        assert_eq!(parts1[0], vec![0xAA, 0xBB, 0xCC]);
+
+        // PUSHDATA2 (len=3)
+        let script2 = vec![0x4d, 0x03, 0x00, 0xDE, 0xAD, 0xBE];
+        let parts2 = extract_pushdatas(&script2);
+        assert_eq!(parts2.len(), 1);
+        assert_eq!(parts2[0], vec![0xDE, 0xAD, 0xBE]);
+
+        // PUSHDATA4 (len=3)
+        let script3 = vec![0x4e, 0x03, 0x00, 0x00, 0x00, 0xFA, 0xFB, 0xFC];
+        let parts3 = extract_pushdatas(&script3);
+        assert_eq!(parts3.len(), 1);
+        assert_eq!(parts3[0], vec![0xFA, 0xFB, 0xFC]);
+
+        // Truncated should not panic and should ignore incomplete push
+        let script_trunc = vec![0x4d, 0x02];
+        let parts_trunc = extract_pushdatas(&script_trunc);
+        assert_eq!(parts_trunc.len(), 0);
+    }
 }
