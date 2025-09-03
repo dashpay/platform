@@ -775,7 +775,7 @@ const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThe
 const publicKeys = JSON.stringify([
   {
     id: 0,
-    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
+    keyType: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
     purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
     securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
     data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
@@ -784,7 +784,7 @@ const publicKeys = JSON.stringify([
   },
   {
     id: 1,
-    type: 2, // ECDSA_HASH160 - requires private key to derive public key hash
+    keyType: 2, // ECDSA_HASH160 - requires private key to derive public key hash
     purpose: 0,
     securityLevel: 2,
     data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
