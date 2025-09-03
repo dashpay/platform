@@ -2,6 +2,7 @@
   "name": "wasm-sdk",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "./build.sh",
     "build:release": "./build-optimized.sh",
