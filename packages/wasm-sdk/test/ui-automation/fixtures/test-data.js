@@ -772,7 +772,6 @@ const testData = {
             tokenPosition: 0,
             amount: "1",
             totalAgreedPrice: "10",
-            keyId: 0,
             description: "Direct purchase of tokens at configured price"
           }
         ]
