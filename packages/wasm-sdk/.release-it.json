@@ -1,0 +1,27 @@
+{
+  "git": {
+    "commitMessage": "chore(wasm-sdk): release v${version}",
+    "tagName": "wasm-sdk-v${version}",
+    "tagAnnotation": "Release v${version}"
+  },
+  "npm": {
+    "publish": false
+  },
+  "github": {
+    "release": true,
+    "releaseName": "WASM SDK v${version}",
+    "releaseNotes": "npx auto-changelog --stdout"
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": "conventionalcommits",
+      "infile": "CHANGELOG.md",
+      "ignoreRecommendedBump": true,
+      "strictSemVer": false
+    }
+  },
+  "hooks": {
+    "before:init": ["npm run build"],
+    "after:release": ["echo Successfully released ${name} v${version} to ${repo.repository}."]
+  }
+}

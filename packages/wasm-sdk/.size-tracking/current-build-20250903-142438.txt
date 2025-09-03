@@ -1,7 +1,7 @@
-# Baseline sizes captured at Wed  3 Sep 2025 14:24:38 SAST
+# Build sizes captured at Wed  3 Sep 2025 14:25:09 SAST
 dash_wasm_sdk_bg.wasm: 12334225
-optimized.wasm: 7002819
-wasm_sdk_bg.wasm: 7002819
+optimized.wasm: 7002995
+wasm_sdk_bg.wasm: 7002995
 dash_wasm_sdk_bg.js:  182660
 dash_wasm_sdk.js:  189773
 wasm_sdk.js:  189768
