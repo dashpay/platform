@@ -146,12 +146,98 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         self.wallet_info
             .add_managed_account_from_xpub(account_type, network, account_xpub)
     }
+
+    fn add_managed_bls_account(
+        &mut self,
+        wallet: &Wallet,
+        account_type: AccountType,
+        network: Network,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info
+            .add_managed_bls_account(wallet, account_type, network)
+    }
+
+    fn add_managed_bls_account_with_passphrase(
+        &mut self,
+        wallet: &Wallet,
+        account_type: AccountType,
+        network: Network,
+        passphrase: &str,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info.add_managed_bls_account_with_passphrase(
+            wallet,
+            account_type,
+            network,
+            passphrase,
+        )
+    }
+
+    fn add_managed_bls_account_from_public_key(
+        &mut self,
+        account_type: AccountType,
+        network: Network,
+        bls_public_key: [u8; 48],
+    ) -> key_wallet::Result<()> {
+        self.wallet_info.add_managed_bls_account_from_public_key(
+            account_type,
+            network,
+            bls_public_key,
+        )
+    }
+
+    fn add_managed_eddsa_account(
+        &mut self,
+        wallet: &Wallet,
+        account_type: AccountType,
+        network: Network,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info
+            .add_managed_eddsa_account(wallet, account_type, network)
+    }
+
+    fn add_managed_eddsa_account_with_passphrase(
+        &mut self,
+        wallet: &Wallet,
+        account_type: AccountType,
+        network: Network,
+        passphrase: &str,
+    ) -> key_wallet::Result<()> {
+        self.wallet_info.add_managed_eddsa_account_with_passphrase(
+            wallet,
+            account_type,
+            network,
+            passphrase,
+        )
+    }
+
+    fn add_managed_eddsa_account_from_public_key(
+        &mut self,
+        account_type: AccountType,
+        network: Network,
+        ed25519_public_key: [u8; 32],
+    ) -> key_wallet::Result<()> {
+        self.wallet_info.add_managed_eddsa_account_from_public_key(
+            account_type,
+            network,
+            ed25519_public_key,
+        )
+    }
 }
 
 /// Implement WalletInfoInterface for PlatformWalletInfo
 impl WalletInfoInterface for PlatformWalletInfo {
-    fn with_name(wallet_id: [u8; 32], name: String) -> Self {
-        PlatformWalletInfo::new(wallet_id, name)
+    fn from_wallet(wallet: &Wallet) -> Self {
+        Self {
+            wallet_info: ManagedWalletInfo::from_wallet(wallet),
+            identity_manager: IdentityManager::new(),
+        }
+    }
+
+    fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
+        Self {
+            wallet_info: ManagedWalletInfo::from_wallet_with_name(wallet, name),
+            identity_manager: IdentityManager::new(),
+        }
     }
 
     fn wallet_id(&self) -> [u8; 32] {
@@ -222,6 +308,14 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.transaction_history()
     }
 
+    fn accounts_mut(&mut self, network: Network) -> Option<&mut ManagedAccountCollection> {
+        self.wallet_info.accounts_mut(network)
+    }
+
+    fn accounts(&self, network: Network) -> Option<&ManagedAccountCollection> {
+        self.wallet_info.accounts(network)
+    }
+
     fn process_matured_transactions(
         &mut self,
         network: Network,
@@ -241,14 +335,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn network_immature_balance(&self, network: Network) -> u64 {
         self.wallet_info.network_immature_balance(network)
-    }
-
-    fn accounts_mut(&mut self, network: Network) -> Option<&mut ManagedAccountCollection> {
-        self.wallet_info.accounts_mut(network)
-    }
-
-    fn accounts(&self, network: Network) -> Option<&ManagedAccountCollection> {
-        self.wallet_info.accounts(network)
     }
 
     fn create_unsigned_payment_transaction(

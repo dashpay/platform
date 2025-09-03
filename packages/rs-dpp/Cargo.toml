@@ -23,24 +23,17 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-#dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
-#  "std",
-#  "secp-recovery",
-#  "rand",
-#  "signer",
-#  "serde",
-#], default-features = false, rev = "a725e4dc7585441fb7d7ed1ea79453b24117637b" }
-dashcore = { path = "../../../rust-dashcore/dash", features = [
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0", features = [
   "std",
   "secp-recovery",
   "rand",
   "signer",
   "serde",
 ], default-features = false }
-key-wallet = { path = "../../../rust-dashcore/key-wallet", optional = true }
-key-wallet-manager = { path = "../../../rust-dashcore/key-wallet-manager", optional = true }
-dash-spv = { path = "../../../rust-dashcore/dash-spv", optional = true }
-dashcore-rpc = { path = "../../../rust-dashcore/rpc-client", optional = true }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0", optional = true }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0", optional = true }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0", optional = true }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0", optional = true }
 
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }

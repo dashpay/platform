@@ -3,6 +3,7 @@ import argparse
 import os
 import re
 import sys
+from typing import Optional
 
 
 DESC = """
@@ -23,7 +24,17 @@ Commented lines are not modified.
 
 
 GIT_URL = "https://github.com/dashpay/rust-dashcore"
-LOCAL_PATH = "../../../rust-dashcore/dash"
+
+# Dependency names we switch and their local paths
+DEP_LOCAL_PATHS = {
+    "dashcore": "../../../rust-dashcore/dash",
+    "key-wallet": "../../../rust-dashcore/key-wallet",
+    "key-wallet-manager": "../../../rust-dashcore/key-wallet-manager",
+    "dash-spv": "../../../rust-dashcore/dash-spv",
+    "dashcore-rpc": "../../../rust-dashcore/rpc-client",
+    "key-wallet-ffi": "../../../rust-dashcore/key-wallet-ffi",
+    "dash-spv-ffi": "../../../rust-dashcore/dash-spv-ffi",
+}
 
 
 def find_cargo_tomls(root: str):
@@ -36,9 +47,10 @@ def find_cargo_tomls(root: str):
             yield os.path.join(dirpath, "Cargo.toml")
 
 
-def iter_inline_dashcore_blocks(text: str):
-    # Regex across lines to capture inline table from 'dashcore = {' to the first closing '}'
-    pattern = re.compile(r"(^|\n)(?P<indent>\s*)dashcore\s*=\s*\{[^}]*\}", re.S)
+def iter_inline_dep_blocks(text: str):
+    # Regex across lines to capture inline tables for any of the target deps
+    dep_names = "|".join(map(re.escape, DEP_LOCAL_PATHS.keys()))
+    pattern = re.compile(rf"(^|\n)(?P<indent>\s*)(?P<name>{dep_names})\s*=\s*\{{[^}}]*\}}", re.S)
     for m in pattern.finditer(text):
         block_start = m.start() + (0 if text[m.start()] != '\n' else 1)
         block_end = m.end()
@@ -49,7 +61,8 @@ def iter_inline_dashcore_blocks(text: str):
             line_end = len(text)
         if text[line_start:line_end].lstrip().startswith('#'):
             continue
-        yield (block_start, block_end)
+        dep_name = m.group('name')
+        yield (block_start, block_end, dep_name)
 
 
 def parse_inline_table(s: str):
@@ -91,7 +104,7 @@ def serialize_inline_table(prefix: str, pairs):
     return f"{prefix}{{ {body} }}"
 
 
-def switch_dep(block_text: str, mode: str, value: str | None):
+def switch_dep(block_text: str, dep_name: str, mode: str, value: Optional[str]):
     # keep the spacing before the '{'
     prefix = block_text[:block_text.find('{')]
     pairs = parse_inline_table(block_text)
@@ -109,7 +122,7 @@ def switch_dep(block_text: str, mode: str, value: str | None):
     if mode == 'local':
         # Insert path first
         keys.insert(0, 'path')
-        d['path'] = f'"{LOCAL_PATH}"'
+        d['path'] = f'"{DEP_LOCAL_PATHS[dep_name]}"'
     elif mode == 'rev':
         keys.insert(0, 'git')
         d['git'] = f'"{GIT_URL}"'
@@ -137,20 +150,20 @@ def switch_dep(block_text: str, mode: str, value: str | None):
     return serialize_inline_table(prefix, ordered_pairs)
 
 
-def process_file(path: str, mode: str, value: str | None) -> bool:
+def process_file(path: str, mode: str, value: Optional[str]) -> bool:
     with open(path, 'r', encoding='utf-8') as f:
         text = f.read()
 
     # Collect blocks first because we will mutate the text
-    blocks = list(iter_inline_dashcore_blocks(text))
+    blocks = list(iter_inline_dep_blocks(text))
     if not blocks:
         return False
 
     # Apply from end to start to keep indices valid
     changed = False
-    for start, end in reversed(blocks):
+    for start, end, dep_name in reversed(blocks):
         block_text = text[start:end]
-        new_block = switch_dep(block_text, mode, value)
+        new_block = switch_dep(block_text, dep_name, mode, value)
         if new_block != block_text:
             text = text[:start] + new_block + text[end:]
             changed = True
@@ -185,7 +198,7 @@ def main():
             edited.append(cargo)
 
     if edited:
-        print(f"Updated dashcore dependency in {len(edited)} file(s):")
+        print(f"Updated rust-dashcore dependencies in {len(edited)} file(s):")
         for p in edited:
             print(f" - {os.path.relpath(p, repo_root)}")
     else:

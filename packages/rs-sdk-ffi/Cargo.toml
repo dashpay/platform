@@ -16,12 +16,12 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
 simple-signer = { path = "../simple-signer" }
 
 # Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { path = "../../../rust-dashcore/dash-spv-ffi" }
-key-wallet-ffi = { path = "../../../rust-dashcore/key-wallet-ffi" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0" }
 
 # Key and wallet management
-key-wallet = { path = "../../../rust-dashcore/key-wallet" }
-dashcore = { path = "../../../rust-dashcore/dash" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "576703c44fbe48425c44bf1b5407f747ea36baf0" }
 secp256k1 = "0.30"
 
 # FFI and serialization
