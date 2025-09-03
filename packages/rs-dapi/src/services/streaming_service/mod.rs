@@ -4,7 +4,7 @@
 mod block_header_stream;
 mod masternode_list_stream;
 mod subscriber_manager;
-mod transaction_filter;
+mod bloom;
 mod transaction_stream;
 mod zmq_listener;
 

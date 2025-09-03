@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use crate::services::streaming_service::subscriber_manager::{
     FilterType, StreamingMessage, SubscriptionType,
 };
-use crate::services::streaming_service::transaction_filter::bloom_flags_from_int;
+use crate::services::streaming_service::bloom::bloom_flags_from_int;
 use crate::services::streaming_service::StreamingServiceImpl;
 
 impl StreamingServiceImpl {

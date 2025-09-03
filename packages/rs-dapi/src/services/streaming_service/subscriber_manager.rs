@@ -226,9 +226,7 @@ impl SubscriberManager {
         match filter {
             FilterType::BloomFilter(f_lock, flags) => match deserialize::<CoreTx>(data) {
                 Ok(tx) => match f_lock.write() {
-                    Ok(mut guard) => {
-                        super::transaction_filter::matches_transaction(&mut guard, &tx, *flags)
-                    }
+                    Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
                     Err(_) => false,
                 },
                 Err(_) => match f_lock.read() {
