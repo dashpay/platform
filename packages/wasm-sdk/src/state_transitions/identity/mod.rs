@@ -27,10 +27,9 @@ impl WasmSdk {
     ///
     /// * `asset_lock_proof` - The asset lock proof (transaction hex)
     /// * `asset_lock_proof_private_key` - The private key that controls the asset lock
-    /// * `public_keys` - JSON array of public keys to add to the identity. Each key object must include:
-    ///   - All key types require either `privateKeyHex` or `privateKeyWif` field
-    ///   - ECDSA_SECP256K1 and BLS12_381 keys: Used for individual key signatures
-    ///   - ECDSA_HASH160 keys: Used to derive the public key hash (produces empty signatures)
+    /// * `public_keys` - JSON array of public keys to add to the identity. Each key object requirements:
+    ///   - ECDSA_SECP256K1 and BLS12_381: Require `privateKeyHex` or `privateKeyWif` for signing
+    ///   - ECDSA_HASH160: Accepts either `privateKeyHex` (to derive hash) or `data` field (base64-encoded 20-byte hash)
     ///
     /// # Implementation Notes
     ///
@@ -132,33 +131,91 @@ impl WasmSdk {
                 _ => SecurityLevel::HIGH
             };
             
-            // Get private key - required for signing each key
-            let private_key_bytes = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
-                // Decode private key from hex
-                let bytes = hex::decode(private_key_hex)
-                    .map_err(|e| JsValue::from_str(&format!("Invalid private key hex: {}", e)))?;
-                
-                if bytes.len() != 32 {
-                    return Err(JsValue::from_str(&format!("Private key must be 32 bytes, got {}", bytes.len())));
+            // Handle key data based on key type
+            let (public_key_data, private_key_bytes) = match key_type {
+                KeyType::ECDSA_HASH160 => {
+                    // Derive HASH160 data from the private key if provided
+                    if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
+                        // Decode private key from hex
+                        let bytes = hex::decode(private_key_hex)
+                            .map_err(|e| JsValue::from_str(&format!("Invalid private key hex: {}", e)))?;
+
+                        if bytes.len() != 32 {
+                            return Err(JsValue::from_str(&format!(
+                                "Private key must be 32 bytes, got {}",
+                                bytes.len()
+                            )));
+                        }
+
+                        let mut private_key_array = [0u8; 32];
+                        private_key_array.copy_from_slice(&bytes);
+
+                        // Derive HASH160 public key data from private key using network
+                        let derived_data = key_type
+                            .public_key_data_from_private_key_data(&private_key_array, self.network())
+                            .map_err(|e| {
+                                JsValue::from_str(&format!(
+                                    "Failed to derive ECDSA_HASH160 public key data: {}",
+                                    e
+                                ))
+                            })?;
+
+                        // HASH160 keys are not used for signing during identity creation
+                        (derived_data, [0u8; 32])
+                    } else if let Some(data_str) = key_data["data"].as_str() {
+                        let key_data_bytes = dash_sdk::dpp::dashcore::base64::decode(data_str)
+                            .map_err(|e| JsValue::from_str(&format!("Invalid base64 key data: {}", e)))?;
+
+                        // Enforce correct HASH160 size (20 bytes).
+                        if key_data_bytes.len() != 20 {
+                            return Err(JsValue::from_str(&format!(
+                                "ECDSA_HASH160 key data must be 20 bytes, got {}",
+                                key_data_bytes.len()
+                            )));
+                        }
+
+                        (key_data_bytes, [0u8; 32])
+                    } else {
+                        return Err(JsValue::from_str(
+                            "ECDSA_HASH160 requires either 'privateKeyHex' to derive from or 'data' (base64-encoded 20-byte hash)",
+                        ));
+                    }
+                },
+                KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
+                    // For signing key types, require private key and derive public key data
+                    let private_key_bytes = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
+                        // Decode private key from hex
+                        let bytes = hex::decode(private_key_hex)
+                            .map_err(|e| JsValue::from_str(&format!("Invalid private key hex: {}", e)))?;
+                        
+                        if bytes.len() != 32 {
+                            return Err(JsValue::from_str(&format!("Private key must be 32 bytes, got {}", bytes.len())));
+                        }
+                        
+                        let mut private_key_array = [0u8; 32];
+                        private_key_array.copy_from_slice(&bytes);
+                        private_key_array
+                    } else if let Some(private_key_wif) = key_data["privateKeyWif"].as_str() {
+                        // Parse WIF format private key
+                        let private_key = PrivateKey::from_wif(private_key_wif)
+                            .map_err(|e| JsValue::from_str(&format!("Invalid WIF private key: {}", e)))?;
+                        private_key.inner.secret_bytes()
+                    } else {
+                        return Err(JsValue::from_str(&format!("{} keys require either privateKeyHex or privateKeyWif", key_type_str)));
+                    };
+                    
+                    // Derive public key data from private key
+                    let public_key_data = key_type.public_key_data_from_private_key_data(
+                        &private_key_bytes,
+                        self.network()
+                    ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?;
+                    
+                    (public_key_data, private_key_bytes)
+                },
+                _ => {
+                    return Err(JsValue::from_str(&format!("Unsupported key type for identity creation: {}", key_type_str)));
                 }
-                
-                let mut private_key_array = [0u8; 32];
-                private_key_array.copy_from_slice(&bytes);
-                private_key_array
-            } else if let Some(private_key_wif) = key_data["privateKeyWif"].as_str() {
-                // Parse WIF format private key
-                let private_key = PrivateKey::from_wif(private_key_wif)
-                    .map_err(|e| JsValue::from_str(&format!("Invalid WIF private key: {}", e)))?;
-                private_key.inner.secret_bytes()
-            } else {
-                return Err(JsValue::from_str("Either privateKeyHex or privateKeyWif must be provided for each key"));
             };
-            
-            // Derive public key data from private key
-            let public_key_data = key_type.public_key_data_from_private_key_data(
-                &private_key_bytes,
-                self.network()
-            ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?;
             
             // Create the identity public key
             use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -173,8 +230,10 @@ impl WasmSdk {
                 disabled_at: None,
             });
             
-            // Add the public key and its private key to the signer
-            signer.add_key(public_key.clone(), private_key_bytes);
+            // Add the public key and its private key to the signer (only for signing key types)
+            if key_type != KeyType::ECDSA_HASH160 {
+                signer.add_key(public_key.clone(), private_key_bytes);
+            }
             
             identity_public_keys.insert(key_id, public_key);
             key_id += 1;

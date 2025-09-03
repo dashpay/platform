@@ -763,7 +763,7 @@ Parameters:
 - `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
   - WIF format private key
 - `publicKeys` (string, required) - Public Keys
-  - JSON array of public keys with corresponding private keys. All key types require private keys: ECDSA_SECP256K1 accepts privateKeyHex or privateKeyWIF, BLS12_381 requires privateKeyHex, ECDSA_HASH160 requires privateKeyHex (to derive the public key hash).
+  - JSON array of public keys. Key requirements: ECDSA_SECP256K1 and BLS12_381 require privateKeyHex or privateKeyWif for signing, ECDSA_HASH160 requires only the data field (base64-encoded 20-byte public key hash).
 
 Example:
 ```javascript
@@ -784,12 +784,12 @@ const publicKeys = JSON.stringify([
   },
   {
     id: 1,
-    keyType: 2, // ECDSA_HASH160 - requires private key to derive public key hash
+    keyType: 2, // ECDSA_HASH160 - only needs data field (public key hash)
     purpose: 0,
     securityLevel: 2,
     data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
     readOnly: false,
-    privateKeyHex: "e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3" // For deriving public key hash
+    // No private key needed for ECDSA_HASH160
   }
 ]);
 
