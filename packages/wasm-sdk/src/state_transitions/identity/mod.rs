@@ -181,8 +181,8 @@ impl WasmSdk {
                         ));
                     }
                 },
-                KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
-                    // For signing key types, require private key and derive public key data
+                KeyType::ECDSA_SECP256K1 => {
+                    // For ECDSA signing keys, support both hex and WIF formats
                     let private_key_bytes = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
                         // Decode private key from hex
                         let bytes = hex::decode(private_key_hex)
@@ -201,14 +201,44 @@ impl WasmSdk {
                             .map_err(|e| JsValue::from_str(&format!("Invalid WIF private key: {}", e)))?;
                         private_key.inner.secret_bytes()
                     } else {
-                        return Err(JsValue::from_str(&format!("{} keys require either privateKeyHex or privateKeyWif", key_type_str)));
+                        return Err(JsValue::from_str("ECDSA_SECP256K1 keys require either privateKeyHex or privateKeyWif"));
                     };
                     
                     // Derive public key data from private key
                     let public_key_data = key_type.public_key_data_from_private_key_data(
                         &private_key_bytes,
                         self.network()
-                    ).map_err(|e| JsValue::from_str(&format!("Failed to derive public key data: {}", e)))?;
+                    ).map_err(|e| JsValue::from_str(&format!("Failed to derive ECDSA_SECP256K1 public key data: {}", e)))?;
+                    
+                    (public_key_data, private_key_bytes)
+                },
+                KeyType::BLS12_381 => {
+                    // BLS12_381 keys only support hex format (WIF is not valid for BLS keys)
+                    if key_data["privateKeyWif"].is_string() {
+                        return Err(JsValue::from_str("BLS12_381 keys do not support WIF format, use privateKeyHex only"));
+                    }
+                    
+                    let private_key_bytes = if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
+                        // Decode private key from hex
+                        let bytes = hex::decode(private_key_hex)
+                            .map_err(|e| JsValue::from_str(&format!("Invalid private key hex: {}", e)))?;
+                        
+                        if bytes.len() != 32 {
+                            return Err(JsValue::from_str(&format!("Private key must be 32 bytes, got {}", bytes.len())));
+                        }
+                        
+                        let mut private_key_array = [0u8; 32];
+                        private_key_array.copy_from_slice(&bytes);
+                        private_key_array
+                    } else {
+                        return Err(JsValue::from_str("BLS12_381 keys require privateKeyHex"));
+                    };
+                    
+                    // Derive public key data from private key
+                    let public_key_data = key_type.public_key_data_from_private_key_data(
+                        &private_key_bytes,
+                        self.network()
+                    ).map_err(|e| JsValue::from_str(&format!("Failed to derive BLS12_381 public key data: {}", e)))?;
                     
                     (public_key_data, private_key_bytes)
                 },
